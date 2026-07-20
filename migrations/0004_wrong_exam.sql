@@ -1,0 +1,18 @@
+ALTER TABLE questions ADD COLUMN from_wrong_note INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE exams (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subject_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  exam_date TEXT NOT NULL,          -- YYYY-MM-DD
+  scope TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE plan_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  exam_id INTEGER NOT NULL,
+  day TEXT NOT NULL,                -- YYYY-MM-DD
+  task TEXT NOT NULL,
+  done INTEGER NOT NULL DEFAULT 0
+);
