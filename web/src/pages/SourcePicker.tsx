@@ -25,6 +25,8 @@ export default function SourcePicker({
     : materials;
   const selected = materials.reduce((count, material) => count + (excluded.has(material.id) ? 0 : 1), 0);
   const visibleIds = visible.map((material) => material.id);
+  const visibleSelected = visible.reduce((count, material) => count + (excluded.has(material.id) ? 0 : 1), 0);
+  const allVisibleSelected = visible.length > 0 && visibleSelected === visible.length;
 
   return (
     <details className="note-source-picker">
@@ -41,11 +43,20 @@ export default function SourcePicker({
           placeholder="문제집·자료 이름 검색"
           aria-label={`${label} 검색`}
         />
-        <div className="note-source-actions">
-          <span>{visible.length}개 표시</span>
-          <button type="button" onClick={() => onSetVisible(visibleIds, true)}>전체 선택</button>
-          <button type="button" onClick={() => onSetVisible(visibleIds, false)}>전체 해제</button>
-        </div>
+        {/* 전체 선택 토글 행 — 전부 선택되면 행이 라임으로 점등, 일부만이면 라임 테두리 */}
+        <label className="note-source-row note-source-all">
+          <input
+            type="checkbox"
+            checked={allVisibleSelected}
+            ref={(el) => { if (el) el.indeterminate = !allVisibleSelected && visibleSelected > 0; }}
+            onChange={() => onSetVisible(visibleIds, !allVisibleSelected)}
+            aria-label={`${label} 전체 선택`}
+          />
+          <span>
+            <strong>전체 선택</strong>
+            <small>{visible.length}개 표시 · {visibleSelected}개 선택</small>
+          </span>
+        </label>
         <div className="note-source-list" role="group" aria-label={`${label}에 포함할 자료`}>
           {visible.map((material) => (
             <label className="note-source-row" key={material.id}>

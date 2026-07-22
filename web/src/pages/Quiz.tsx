@@ -14,6 +14,7 @@ import {
   NotFoundError,
 } from "../api";
 import { escapeHtmlText, Md, MdInline, mdInlineHtml } from "../md";
+import SourcePicker from "./SourcePicker";
 import { AiPending } from "../Pending";
 import { getAnswerAttempt, type AnswerAttempt } from "../answer-attempt";
 
@@ -375,11 +376,18 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       return next;
     });
   }
-  function toggleAllGenerationMaterials() {
-    setGenMaterialIds(prev => prev.size === readyMaterials.length
-      ? new Set()
-      : new Set(readyMaterials.map(m => m.id)));
+  function setGenerationMaterialsVisible(ids: number[], included: boolean) {
+    setGenMaterialIds(prev => {
+      const next = new Set(prev);
+      for (const id of ids) included ? next.add(id) : next.delete(id);
+      return next;
+    });
   }
+  // SourcePicker는 제외 집합 계약 — 포함 집합(genMaterialIds)에서 파생
+  const genExcluded = useMemo(
+    () => new Set(readyMaterials.filter(m => !genMaterialIds.has(m.id)).map(m => m.id)),
+    [readyMaterials, genMaterialIds],
+  );
 
   // ── AI 생성 ───────────────────────────────────────────────────────────────────
   async function doGenerate() {
@@ -846,31 +854,19 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
         {/* AI 생성 */}
         <div className="quiz-add-section">
           <div className="quiz-generation-scope">
-            <span className="quiz-generation-label">생성 기준 자료</span>
             {readyMaterials.length > 0 ? (
-              <div className="quiz-generation-files" role="group" aria-label="AI 문제 생성 기준 자료">
-                <label className="quiz-check-label">
-                  <input
-                    type="checkbox"
-                    checked={genMaterialIds.size === readyMaterials.length}
-                    ref={el => { if (el) el.indeterminate = genMaterialIds.size > 0 && genMaterialIds.size < readyMaterials.length; }}
-                    onChange={toggleAllGenerationMaterials}
-                  />
-                  전체 자료
-                </label>
-                {readyMaterials.map(material => (
-                  <label className="quiz-check-label" key={material.id} title={material.original_filename ?? material.title}>
-                    <input
-                      type="checkbox"
-                      checked={genMaterialIds.has(material.id)}
-                      onChange={() => toggleGenerationMaterial(material.id)}
-                    />
-                    <span>{material.title}</span>
-                  </label>
-                ))}
-              </div>
+              <SourcePicker
+                label="생성 기준 자료"
+                materials={readyMaterials}
+                excluded={genExcluded}
+                onToggle={toggleGenerationMaterial}
+                onSetVisible={setGenerationMaterialsVisible}
+              />
             ) : (
-              <span className="quiz-status-msg">준비된 자료 없음</span>
+              <>
+                <span className="quiz-generation-label">생성 기준 자료</span>
+                <span className="quiz-status-msg">준비된 자료 없음</span>
+              </>
             )}
           </div>
           <input
@@ -957,11 +953,12 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
 
                 {open && g.items.map(q => (
                   <div key={q.id} className="quiz-row">
-                    <label className="quiz-check-label">
+                    <label className="quiz-check-label quiz-check-box" title="이 문제 선택">
                       <input
                         type="checkbox"
                         checked={allInScope || selected.has(q.id)}
                         onChange={() => toggleSelect(q.id)}
+                        aria-label="이 문제 선택"
                       />
                     </label>
                     <span className={`q-chip qtype`}>{qtypeLabel(q.qtype)}</span>
