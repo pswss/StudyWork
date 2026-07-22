@@ -53,9 +53,9 @@ describe("해설 탭 브라우저 경계", () => {
   });
 
   it("자료가 하나뿐이어도 단권화 소스 선택을 다시 열 수 있다", () => {
-    const detail = readFileSync("web/src/pages/SubjectDetail.tsx", "utf8");
+    const notes = readFileSync("web/src/pages/NotesPanel.tsx", "utf8");
 
-    expect(detail.match(/\{srcCount > 0 && \(/g)).toHaveLength(2);
-    expect(detail).not.toContain("{srcCount > 1 && (");
+    expect(notes.match(/\{srcCount > 0 && \(/g)).toHaveLength(2);
+    expect(notes).not.toContain("{srcCount > 1 && (");
   });
 });

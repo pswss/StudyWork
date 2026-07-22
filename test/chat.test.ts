@@ -4,7 +4,7 @@ import { makeEnv, call } from "./helpers";
 // AI 호출은 모킹 — 노드 풀에서는 라우트와 같은 모듈 그래프이므로 vi.mock이 적용된다.
 // capMaterialExcerpts는 실제 구현 유지 — 라우트를 통과한 컨텍스트 예산을 그대로 검증한다.
 const aiMocks = vi.hoisted(() => ({
-  chat: vi.fn(async () => "꼭짓점은 (2, 9)입니다."),
+  chat: vi.fn(async (..._args: unknown[]) => "꼭짓점은 (2, 9)입니다."),
 }));
 vi.mock("../src/claude", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/claude")>();

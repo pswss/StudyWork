@@ -131,7 +131,8 @@ describe("Markdown HTML sanitizing", () => {
 
   it("앱과 HTML 저장이 실제 KaTeX 루트에 같은 공식 박스·간격 selector를 가진다", () => {
     const appCss = readFileSync("web/src/styles.css", "utf8");
-    const detailSource = readFileSync("web/src/pages/SubjectDetail.tsx", "utf8");
+    // 노트 HTML 다운로드 인라인 스타일은 NotesPanel(구 SubjectDetail)에 있다
+    const detailSource = readFileSync("web/src/pages/NotesPanel.tsx", "utf8");
 
     for (const source of [appCss, detailSource]) {
       expect(source).toMatch(/\.katex:has\(\s*>\s*math\[display="block"\]\s*\)/);
