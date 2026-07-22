@@ -35,8 +35,11 @@ subjects.delete("/:id", async (c) => {
     await c.env.FILES.delete(m.r2_key);
   }
   const { results: bookFiles } = await c.env.DB.prepare(
-    "SELECT id, r2_key FROM book_files WHERE book_id IN (SELECT id FROM books WHERE subject_id = ?)"
-  ).bind(id).all<{ id: number; r2_key: string }>();
+    "SELECT id, book_id, r2_key FROM book_files WHERE book_id IN (SELECT id FROM books WHERE subject_id = ?)"
+  ).bind(id).all<{ id: number; book_id: number; r2_key: string }>();
+  for (const bookId of new Set(bookFiles.map((file) => file.book_id))) {
+    cancelJob(`book-solutions:${bookId}`);
+  }
   for (const f of bookFiles) {
     clearBookExtractionCache(f.id);
     cancelJob(`book:${f.id}`);

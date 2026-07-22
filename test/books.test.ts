@@ -22,6 +22,7 @@ const mockState = vi.hoisted(() => ({
   failProblemCall: null as number | null,
   failProblemSliceBase: null as number | null,
   failProblemContentPageCount: null as number | null,
+  changedAnswerMode: false,
   failProblemProviderCode: null as "auth" | "invalid_config" | "invalid_file" | "file_too_large" | "rate_limit" | null,
   boundaryVariantMode: false,
   outerBoundaryVariantMode: false,
@@ -29,7 +30,19 @@ const mockState = vi.hoisted(() => ({
   problemCalls: 0,
   materialCalls: 0,
   answerDetectionCalls: 0,
+  solutionCalls: 0,
+  solutionDelay: 0,
+  solutionBoundaryMode: false,
+  failSolutionSliceBaseOnce: null as number | null,
+  failedSolutionSliceBases: new Set<number>(),
+  solutionInputs: [] as { sliceBase: number; contentPageCount: number }[],
+  solutions: [
+    { number: "①", answer: "3", explanation: "공식 해설 1", page: 1, complete: true as const },
+    { number: "２번", answer: "o", explanation: "공식 해설 2", page: 1, complete: true as const },
+    { number: "문제 3.", answer: "3", explanation: "공식 해설 3", page: 1, complete: true as const },
+  ],
   lastProblemSignal: null as AbortSignal | null,
+  lastSolutionSignal: null as AbortSignal | null,
   problemInputs: [] as { sliceBase: number; pageCount: number; contentPageCount: number; answerKeyPages: number[] }[],
   sections: [] as { part: string; from: number; to: number }[],
 }));
@@ -54,6 +67,47 @@ vi.mock("../src/claude", async (importOriginal) => {
     const pdf = await PDFDocument.load(readFileSync(path));
     const last = sliceBase + pdf.getPageCount() - 1;
     return last > sliceBase ? [last - 1, last] : [last];
+  },
+  extractSolutionsFromFile: async (
+    _path: string,
+    _kind: string,
+    opts?: { signal?: AbortSignal; sliceBase?: number; contentPageCount?: number }
+  ) => {
+    mockState.solutionCalls++;
+    mockState.lastSolutionSignal = opts?.signal ?? null;
+    if (opts?.sliceBase !== undefined) {
+      mockState.solutionInputs.push({
+        sliceBase: opts.sliceBase,
+        contentPageCount: opts.contentPageCount ?? 0,
+      });
+    }
+    if (mockState.solutionDelay) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, mockState.solutionDelay);
+        opts?.signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          reject(new Error("사용자 중단"));
+        }, { once: true });
+      });
+    }
+    if (
+      opts?.sliceBase === mockState.failSolutionSliceBaseOnce
+      && !mockState.failedSolutionSliceBases.has(opts.sliceBase)
+    ) {
+      mockState.failedSolutionSliceBases.add(opts.sliceBase);
+      throw new original.ProblemChunkValidationError("해설 청크 구조 오류");
+    }
+    if (mockState.solutionBoundaryMode) {
+      if (opts?.sliceBase === 1) return [
+        { number: "1", answer: "3", explanation: "경계 해설 1", page: 1, complete: true as const },
+        { number: "2", answer: "o", explanation: "lookahead로 완성한 해설", page: 4, complete: true as const },
+        { number: "3", answer: "3", explanation: "다음 청크 소유", page: 5, complete: true as const },
+      ];
+      if (opts?.sliceBase === 5) return [
+        { number: "3", answer: "3", explanation: "경계 해설 3", page: 5, complete: true as const },
+      ];
+    }
+    return mockState.solutions;
   },
   extractProblemsFromFile: async (
     path: string,
@@ -106,7 +160,7 @@ vi.mock("../src/claude", async (importOriginal) => {
     }
     const suffix = opts?.sliceBase ? ` ${opts.sliceBase}` : "";
     return [
-      { qtype: "short", difficulty: "중", question: `y=2(x-3)^2+5 의 꼭짓점은?${suffix}`, choices: null, answer: "③", explanation: "꼭짓점은 (3,5).", page: 2, figure: true, box: [0.2, 0.5] },
+      { qtype: "short", difficulty: "중", question: `y=2(x-3)^2+5 의 꼭짓점은?${suffix}`, choices: null, answer: mockState.changedAnswerMode ? "②" : "③", explanation: mockState.changedAnswerMode ? "" : "꼭짓점은 (3,5).", page: 2, figure: true, box: [0.2, 0.5] },
       { qtype: "ox", difficulty: "하", question: `a>0 이면 포물선은 위로 열린다.${suffix}`, choices: null, answer: "o", explanation: "", page: 2, figure: false, box: null },
       { qtype: "mcq", difficulty: "상", question: `다음 중 옳은 것은?${suffix}`, choices: ["①x", "②y", "③z"], answer: "③", explanation: "z가 옳다.", page: 3, figure: false, box: null },
     ];
@@ -159,6 +213,18 @@ async function waitReady(id: number): Promise<any> {
   throw new Error("백그라운드 처리 대기 시간 초과");
 }
 
+async function waitBookReady(id: number): Promise<any> {
+  for (let i = 0; i < 200; i++) {
+    const res = await call(env, `/api/books/${id}`, { headers: { cookie } });
+    if (res.status === 200) {
+      const book = await res.json() as any;
+      if (book.files.length > 0 && book.files.every((file: any) => file.status !== "processing")) return book;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("문제집 처리 대기 시간 초과");
+}
+
 beforeAll(async () => {
   const login = await call(env, "/api/login", {
     method: "POST",
@@ -178,6 +244,16 @@ beforeAll(async () => {
 async function questionsOf(bid: number): Promise<any[]> {
   const res = await call(env, `/api/subjects/${subjectId}/questions`, { headers: { cookie } });
   return ((await res.json()) as any[]).filter((q) => q.book_id === bid);
+}
+
+async function waitAIJob(id: number): Promise<any> {
+  for (let i = 0; i < 200; i++) {
+    const res = await call(env, `/api/ai-jobs/${id}`, { headers: { cookie } });
+    const job = await res.json() as any;
+    if (job.status !== "processing") return job;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("AI 작업 대기 시간 초과");
 }
 
 describe("문제 추출 라우트 (파일 → questions 직행)", () => {
@@ -216,6 +292,391 @@ describe("문제 추출 라우트 (파일 → questions 직행)", () => {
     // 퀴즈 플레이에도 그림 전파
     const quiz = (await (await call(env, `/api/subjects/${subjectId}/quiz?count=50`, { headers: { cookie } })).json()) as any[];
     expect(quiz.some((q) => q.has_figure === true)).toBe(true);
+  });
+
+  it("선택한 기존 문제집에 공식 해설만 원자적으로 추가", async () => {
+    const before = await questionsOf(bookId);
+    await env.DB.prepare(
+      "UPDATE questions SET correct_count = 4, wrong_count = 2 WHERE id = ?"
+    ).bind(before[1].id).run();
+    const fd = new FormData();
+    fd.append("file", png("쎈 수학(상) 해설.png", pngBytes(720)));
+    const res = await call(env, `/api/subjects/${subjectId}/books/${bookId}/explanations`, {
+      method: "POST",
+      headers: { cookie },
+      body: fd,
+    });
+    expect(res.status).toBe(202);
+    const { jobId } = await res.json() as { jobId: number };
+    const job = await waitAIJob(jobId);
+    expect(job).toMatchObject({ status: "ready", result: { updated: 1, bookId } });
+
+    const after = await questionsOf(bookId);
+    expect(after.map((question) => question.id)).toEqual(before.map((question) => question.id));
+    expect(after[1]).toMatchObject({
+      answer: before[1].answer,
+      explanation: "공식 해설 2",
+      correct_count: 4,
+      wrong_count: 2,
+      src_file_id: before[1].src_file_id,
+      src_page: before[1].src_page,
+    });
+    const listed = (await getBooks()).find((book) => book.id === bookId);
+    expect(listed).toMatchObject({ question_count: 3, explained_count: 3 });
+  });
+
+  it("해설 수나 정답 순서가 다르면 기존 해설을 하나도 바꾸지 않음", async () => {
+    const before = (await questionsOf(bookId)).map((question) => question.explanation);
+    mockState.solutions = [
+      { number: "1", answer: "3", explanation: "바뀌면 안 됨 1", page: 1, complete: true },
+      { number: "2", answer: "x", explanation: "바뀌면 안 됨 2", page: 1, complete: true },
+      { number: "3", answer: "3", explanation: "바뀌면 안 됨 3", page: 1, complete: true },
+    ];
+    try {
+      const fd = new FormData();
+      fd.append("file", png("다른 책 해설.png", pngBytes(721)));
+      const res = await call(env, `/api/subjects/${subjectId}/books/${bookId}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: fd,
+      });
+      expect(res.status).toBe(202);
+      const { jobId } = await res.json() as { jobId: number };
+      expect(await waitAIJob(jobId)).toMatchObject({ status: "error" });
+      expect((await questionsOf(bookId)).map((question) => question.explanation)).toEqual(before);
+    } finally {
+      mockState.solutions = [
+        { number: "①", answer: "3", explanation: "공식 해설 1", page: 1, complete: true },
+        { number: "２번", answer: "o", explanation: "공식 해설 2", page: 1, complete: true },
+        { number: "문제 3.", answer: "3", explanation: "공식 해설 3", page: 1, complete: true },
+      ];
+    }
+  });
+
+  it("정답이 같아도 인쇄 번호 순서가 다르면 해설을 연결하지 않음", async () => {
+    const before = (await questionsOf(bookId)).map((question) => question.explanation);
+    mockState.solutions = [
+      { number: "1", answer: "3", explanation: "번호 검증 1", page: 1, complete: true },
+      { number: "3", answer: "o", explanation: "번호 검증 2", page: 1, complete: true },
+      { number: "2", answer: "3", explanation: "번호 검증 3", page: 1, complete: true },
+    ];
+    try {
+      const fd = new FormData();
+      fd.append("file", png("번호가 뒤바뀐 해설.png", pngBytes(723)));
+      const res = await call(env, `/api/subjects/${subjectId}/books/${bookId}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: fd,
+      });
+      expect(res.status).toBe(202);
+      const { jobId } = await res.json() as { jobId: number };
+      expect(await waitAIJob(jobId)).toMatchObject({ status: "error" });
+      expect((await questionsOf(bookId)).map((question) => question.explanation)).toEqual(before);
+    } finally {
+      mockState.solutions = [
+        { number: "①", answer: "3", explanation: "공식 해설 1", page: 1, complete: true },
+        { number: "２번", answer: "o", explanation: "공식 해설 2", page: 1, complete: true },
+        { number: "문제 3.", answer: "3", explanation: "공식 해설 3", page: 1, complete: true },
+      ];
+    }
+  });
+
+  it("PDF 해설은 4쪽 소유+2쪽 lookahead로 경계를 완성하고 실패 청크만 한 번 재시도", async () => {
+    const upload = new FormData();
+    upload.append("title", `경계 해설 대상 ${Date.now()}`);
+    upload.append("file", png("경계-문제.png", pngBytes(724)));
+    const uploaded = await call(env, `/api/subjects/${subjectId}/books`, {
+      method: "POST",
+      headers: { cookie },
+      body: upload,
+    });
+    const target = await uploaded.json() as { id: number };
+    await waitReady(target.id);
+
+    const pdf = await PDFDocument.create();
+    for (let page = 0; page < 10; page++) pdf.addPage([100, 100]);
+    const bytes = await pdf.save();
+    mockState.solutionBoundaryMode = true;
+    mockState.failSolutionSliceBaseOnce = 5;
+    mockState.failedSolutionSliceBases.clear();
+    mockState.solutionInputs = [];
+    try {
+      const fd = new FormData();
+      fd.append("file", new File([new Uint8Array(bytes).buffer], "경계-해설.pdf", { type: "application/pdf" }));
+      const res = await call(env, `/api/subjects/${subjectId}/books/${target.id}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: fd,
+      });
+      expect(res.status).toBe(202);
+      const { jobId } = await res.json() as { jobId: number };
+      expect(await waitAIJob(jobId)).toMatchObject({ status: "ready", result: { updated: 1 } });
+
+      const questions = await questionsOf(target.id);
+      expect(questions[1].explanation).toBe("lookahead로 완성한 해설");
+      expect(mockState.solutionInputs).toEqual(expect.arrayContaining([
+        { sliceBase: 1, contentPageCount: 6 },
+        { sliceBase: 5, contentPageCount: 6 },
+      ]));
+      expect(mockState.solutionInputs.filter((input) => input.sliceBase === 5)).toHaveLength(2);
+    } finally {
+      mockState.solutionBoundaryMode = false;
+      mockState.failSolutionSliceBaseOnce = null;
+      mockState.failedSolutionSliceBases.clear();
+      mockState.solutionInputs = [];
+      await call(env, `/api/books/${target.id}`, { method: "DELETE", headers: { cookie } });
+    }
+  });
+
+  it("해설 병합과 자료 자동 재추출이 서로의 claim을 막음", async () => {
+    const sourceKey = `test/solution-lock-${Date.now()}.png`;
+    await env.FILES.put(sourceKey, pngBytes(725).buffer);
+    const material = await env.DB.prepare(
+      `INSERT INTO materials
+         (subject_id, kind, title, r2_key, extracted_text, status, book_id, book_processing)
+       VALUES (?, 'image', '해설 락 자료', ?, '문제 본문', 'ready', ?, 1) RETURNING id`
+    ).bind(subjectId, sourceKey, bookId).first<{ id: number }>();
+    try {
+      const busyForm = new FormData();
+      busyForm.append("file", png("재추출-진행중-해설.png", pngBytes(726)));
+      const busy = await call(env, `/api/subjects/${subjectId}/books/${bookId}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: busyForm,
+      });
+      expect(busy.status).toBe(409);
+
+      await env.DB.prepare("UPDATE materials SET book_processing = 0 WHERE id = ?").bind(material!.id).run();
+      mockState.solutionDelay = 80;
+      const activeForm = new FormData();
+      activeForm.append("file", png("해설-진행중.png", pngBytes(727)));
+      const active = await call(env, `/api/subjects/${subjectId}/books/${bookId}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: activeForm,
+      });
+      expect(active.status).toBe(202);
+      const { jobId } = await active.json() as { jobId: number };
+      await expect(startMaterialToBook(env, material!.id)).resolves.toMatchObject({ code: 409 });
+      expect(await env.DB.prepare("SELECT book_processing FROM materials WHERE id = ?")
+        .bind(material!.id).first()).toEqual({ book_processing: 0 });
+      expect(await waitAIJob(jobId)).toMatchObject({ status: "ready" });
+    } finally {
+      mockState.solutionDelay = 0;
+      await env.DB.prepare("DELETE FROM materials WHERE id = ?").bind(material!.id).run();
+      await env.FILES.delete(sourceKey);
+    }
+  });
+
+  it("기존 문제집 파일 추가와 해설 병합을 book 단위로 상호 배제", async () => {
+    const title = `파일-해설-lock-${Date.now()}`;
+    const initialForm = new FormData();
+    initialForm.append("title", title);
+    initialForm.append("file", png("lock-원본.png", pngBytes(730)));
+    const initial = await call(env, `/api/subjects/${subjectId}/books`, {
+      method: "POST",
+      headers: { cookie },
+      body: initialForm,
+    });
+    expect(initial.status).toBe(201);
+    const target = await initial.json() as { id: number };
+    await waitBookReady(target.id);
+
+    const originalPut = env.FILES.put.bind(env.FILES);
+    let releasePut!: () => void;
+    let markPutEntered!: () => void;
+    const putGate = new Promise<void>((resolve) => { releasePut = resolve; });
+    const putEntered = new Promise<void>((resolve) => { markPutEntered = resolve; });
+    let intercepted = false;
+    let pendingMutation: Promise<Response> | null = null;
+    try {
+      mockState.solutionDelay = 80;
+      mockState.lastSolutionSignal = null;
+      const solutionForm = new FormData();
+      solutionForm.append("file", png("lock-해설.png", pngBytes(731)));
+      const solution = await call(env, `/api/subjects/${subjectId}/books/${target.id}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: solutionForm,
+      });
+      expect(solution.status).toBe(202);
+      const { jobId } = await solution.json() as { jobId: number };
+      for (let i = 0; i < 50 && mockState.lastSolutionSignal === null; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+
+      const blockedFileForm = new FormData();
+      blockedFileForm.append("title", title);
+      blockedFileForm.append("file", png("해설중-추가.png", pngBytes(732)));
+      expect((await call(env, `/api/subjects/${subjectId}/books`, {
+        method: "POST",
+        headers: { cookie },
+        body: blockedFileForm,
+      })).status).toBe(409);
+      expect(await waitAIJob(jobId)).toMatchObject({ status: "ready" });
+      mockState.solutionDelay = 0;
+
+      env.FILES.put = async (key: string, data: ArrayBuffer) => {
+        if (!intercepted && key.startsWith(`books/${subjectId}/`)) {
+          intercepted = true;
+          markPutEntered();
+          await putGate;
+        }
+        await originalPut(key, data);
+      };
+      const mutationForm = new FormData();
+      mutationForm.append("title", title);
+      mutationForm.append("file", png("추가중-파일.png", pngBytes(733)));
+      pendingMutation = call(env, `/api/subjects/${subjectId}/books`, {
+        method: "POST",
+        headers: { cookie },
+        body: mutationForm,
+      });
+      await putEntered;
+
+      const blockedSolutionForm = new FormData();
+      blockedSolutionForm.append("file", png("파일추가중-해설.png", pngBytes(734)));
+      expect((await call(env, `/api/subjects/${subjectId}/books/${target.id}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: blockedSolutionForm,
+      })).status).toBe(409);
+
+      releasePut();
+      expect((await pendingMutation).status).toBe(201);
+      await waitBookReady(target.id);
+    } finally {
+      mockState.solutionDelay = 0;
+      mockState.lastSolutionSignal = null;
+      releasePut();
+      env.FILES.put = originalPut;
+      await pendingMutation?.catch(() => undefined);
+      await call(env, `/api/books/${target.id}`, { method: "DELETE", headers: { cookie } });
+    }
+  });
+
+  it("해설 lock은 질문과 AI ready 상태의 DB batch가 끝난 뒤 해제", async () => {
+    const title = `해설-commit-lock-${Date.now()}`;
+    const initialForm = new FormData();
+    initialForm.append("title", title);
+    initialForm.append("file", png("commit-원본.png", pngBytes(735)));
+    const initial = await call(env, `/api/subjects/${subjectId}/books`, {
+      method: "POST",
+      headers: { cookie },
+      body: initialForm,
+    });
+    expect(initial.status).toBe(201);
+    const target = await initial.json() as { id: number };
+    await waitBookReady(target.id);
+
+    const originalBatch = env.DB.batch.bind(env.DB);
+    let releaseBatch!: () => void;
+    let markBatchEntered!: () => void;
+    const batchGate = new Promise<void>((resolve) => { releaseBatch = resolve; });
+    const batchEntered = new Promise<void>((resolve) => { markBatchEntered = resolve; });
+    let intercepted = false;
+    env.DB.batch = async (statements) => {
+      if (!intercepted) {
+        intercepted = true;
+        markBatchEntered();
+        await batchGate;
+      }
+      return originalBatch(statements);
+    };
+    try {
+      const firstForm = new FormData();
+      firstForm.append("file", png("commit-해설-1.png", pngBytes(736)));
+      const first = await call(env, `/api/subjects/${subjectId}/books/${target.id}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: firstForm,
+      });
+      expect(first.status).toBe(202);
+      const { jobId } = await first.json() as { jobId: number };
+      await batchEntered;
+
+      const secondForm = new FormData();
+      secondForm.append("file", png("commit-해설-2.png", pngBytes(737)));
+      expect((await call(env, `/api/subjects/${subjectId}/books/${target.id}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: secondForm,
+      })).status).toBe(409);
+
+      releaseBatch();
+      expect(await waitAIJob(jobId)).toMatchObject({ status: "ready" });
+    } finally {
+      releaseBatch();
+      env.DB.batch = originalBatch;
+      await call(env, `/api/books/${target.id}`, { method: "DELETE", headers: { cookie } });
+    }
+  });
+
+  it("과목 삭제는 진행 중인 해설 AI 작업도 취소", async () => {
+    const subjectRes = await call(env, "/api/subjects", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: `삭제 해설 ${Date.now()}` }),
+    });
+    const targetSubject = await subjectRes.json() as { id: number };
+    const upload = new FormData();
+    upload.append("title", "삭제 중 해설 문제집");
+    upload.append("file", png("삭제-문제.png", pngBytes(728)));
+    const uploaded = await call(env, `/api/subjects/${targetSubject.id}/books`, {
+      method: "POST",
+      headers: { cookie },
+      body: upload,
+    });
+    const targetBook = await uploaded.json() as { id: number };
+    await waitBookReady(targetBook.id);
+
+    mockState.solutionDelay = 200;
+    mockState.lastSolutionSignal = null;
+    try {
+      const fd = new FormData();
+      fd.append("file", png("삭제-해설.png", pngBytes(729)));
+      const started = await call(
+        env,
+        `/api/subjects/${targetSubject.id}/books/${targetBook.id}/explanations`,
+        { method: "POST", headers: { cookie }, body: fd }
+      );
+      expect(started.status).toBe(202);
+      for (let i = 0; i < 50 && mockState.lastSolutionSignal === null; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      expect(mockState.lastSolutionSignal).not.toBeNull();
+
+      const deleted = await call(env, `/api/subjects/${targetSubject.id}`, {
+        method: "DELETE",
+        headers: { cookie },
+      });
+      expect(deleted.status).toBe(200);
+      expect((mockState.lastSolutionSignal as AbortSignal | null)?.aborted).toBe(true);
+    } finally {
+      mockState.solutionDelay = 0;
+      mockState.lastSolutionSignal = null;
+    }
+  });
+
+  it("문제 재추출 뒤에도 업로드한 공식 해설을 보존", async () => {
+    const res = await call(env, `/api/book-files/${fileId}/retry`, {
+      method: "POST",
+      headers: { cookie },
+    });
+    expect(res.status).toBe(200);
+    await waitReady(bookId);
+    expect((await questionsOf(bookId))[1].explanation).toBe("공식 해설 2");
+  });
+
+  it("다른 과목 경로에서는 선택한 문제집을 찾지 않음", async () => {
+    const fd = new FormData();
+    fd.append("file", png("해설.png", pngBytes(722)));
+    const res = await call(env, `/api/subjects/${subjectId + 999}/books/${bookId}/explanations`, {
+      method: "POST",
+      headers: { cookie },
+      body: fd,
+    });
+    expect(res.status).toBe(404);
   });
 
   it("원본 파일 서빙", async () => {
@@ -559,6 +1020,40 @@ describe("문제 추출 라우트 (파일 → questions 직행)", () => {
     expect(afterSuccess.find((q) => q.question === target.question)).toMatchObject({ correct_count: 4, wrong_count: 2 });
   });
 
+  it("재추출 지문이 같아도 정답이 바뀌면 기존 공식 해설을 승계하지 않음", async () => {
+    const fd = new FormData();
+    fd.append("title", `답변경-해설승계-${Date.now()}`);
+    fd.append("file", png("답변경-원본.png"));
+    const uploaded = await call(env, `/api/subjects/${subjectId}/books`, {
+      method: "POST",
+      headers: { cookie },
+      body: fd,
+    });
+    expect(uploaded.status).toBe(201);
+    const target = await uploaded.json() as { id: number; files: number[] };
+    await waitBookReady(target.id);
+
+    try {
+      const before = (await questionsOf(target.id)).find((question) => question.question.includes("꼭짓점"));
+      await env.DB.prepare("UPDATE questions SET explanation = ? WHERE id = ?")
+        .bind("이전 정답용 공식 해설", before.id).run();
+
+      mockState.changedAnswerMode = true;
+      const retry = await call(env, `/api/book-files/${target.files[0]}/retry`, {
+        method: "POST",
+        headers: { cookie },
+      });
+      expect(retry.status).toBe(200);
+      await waitBookReady(target.id);
+
+      const after = (await questionsOf(target.id)).find((question) => question.question === before.question);
+      expect(after).toMatchObject({ answer: "2", explanation: "" });
+    } finally {
+      mockState.changedAnswerMode = false;
+      await call(env, `/api/books/${target.id}`, { method: "DELETE", headers: { cookie } });
+    }
+  });
+
   it("processing 중 중복 재추출은 409", async () => {
     mockState.delay = 80;
     try {
@@ -569,6 +1064,78 @@ describe("문제 추출 라우트 (파일 → questions 직행)", () => {
       await waitReady(bookId);
     } finally {
       mockState.delay = 0;
+    }
+  });
+
+  it("파일 재추출과 해설 추가는 book claim으로 양방향 배제", async () => {
+    mockState.solutionDelay = 80;
+    mockState.lastSolutionSignal = null;
+    const solutionForm = new FormData();
+    solutionForm.append("file", png("재추출-배제-해설.png"));
+    const solution = await call(env, `/api/subjects/${subjectId}/books/${bookId}/explanations`, {
+      method: "POST",
+      headers: { cookie },
+      body: solutionForm,
+    });
+    expect(solution.status).toBe(202);
+    const { jobId } = await solution.json() as { jobId: number };
+    for (let i = 0; i < 50 && mockState.lastSolutionSignal === null; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect((await call(env, `/api/book-files/${fileId}/retry`, {
+      method: "POST",
+      headers: { cookie },
+    })).status).toBe(409);
+    expect(await waitAIJob(jobId)).toMatchObject({ status: "ready" });
+    mockState.solutionDelay = 0;
+    mockState.lastSolutionSignal = null;
+
+    const originalPrepare = env.DB.prepare.bind(env.DB);
+    let releaseClaim!: () => void;
+    let markClaimEntered!: () => void;
+    const claimGate = new Promise<void>((resolve) => { releaseClaim = resolve; });
+    const claimEntered = new Promise<void>((resolve) => { markClaimEntered = resolve; });
+    let intercepted = false;
+    let pendingRetry: Promise<Response> | null = null;
+    env.DB.prepare = ((sql: string) => {
+      const statement = originalPrepare(sql);
+      if (!intercepted && sql.includes("UPDATE book_files SET status = 'processing'")) {
+        intercepted = true;
+        const first = statement.first.bind(statement);
+        statement.first = (async <T>() => {
+          markClaimEntered();
+          await claimGate;
+          return first<T>();
+        }) as typeof statement.first;
+      }
+      return statement;
+    }) as typeof env.DB.prepare;
+    mockState.delay = 80;
+    try {
+      pendingRetry = call(env, `/api/book-files/${fileId}/retry`, {
+        method: "POST",
+        headers: { cookie },
+      });
+      await claimEntered;
+
+      const blockedSolutionForm = new FormData();
+      blockedSolutionForm.append("file", png("재추출-claim중-해설.png"));
+      expect((await call(env, `/api/subjects/${subjectId}/books/${bookId}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: blockedSolutionForm,
+      })).status).toBe(409);
+
+      releaseClaim();
+      expect((await pendingRetry).status).toBe(200);
+      expect((await waitReady(bookId)).files[0].status).toBe("ready");
+    } finally {
+      releaseClaim();
+      env.DB.prepare = originalPrepare;
+      await pendingRetry?.catch(() => undefined);
+      mockState.delay = 0;
+      mockState.solutionDelay = 0;
+      mockState.lastSolutionSignal = null;
     }
   });
 

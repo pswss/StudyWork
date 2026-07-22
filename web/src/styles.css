@@ -384,14 +384,20 @@ nav {
 /* upload area */
 .upload-area { display: flex; flex-direction: column; gap: 8px; }
 .file-label {
-  display: block; text-align: center; padding: 11px 0;
+  position: relative; display: flex; align-items: center; justify-content: center;
+  min-height: 44px; text-align: center; padding: 11px 0;
   border: 1px dashed var(--line-strong); border-radius: 6px;
   font-family: var(--disp); font-size: 11.5px; font-weight: 600; letter-spacing: .1em;
   text-transform: uppercase; color: var(--ink-2); cursor: pointer;
-  transition: all .3s var(--ease);
+  touch-action: manipulation;
+  transition: border-color .3s var(--ease), color .3s var(--ease), opacity .3s var(--ease);
 }
 .file-label:hover { border-color: var(--lime); color: var(--ink); }
-.file-label input { display: none; }
+.file-label input {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer;
+}
+.file-label:has(input:focus-visible) { outline: 2px solid var(--lime); outline-offset: 2px; }
 .upload-status {
   font-family: var(--disp); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
   color: var(--lime); text-align: center;
@@ -402,7 +408,7 @@ nav {
 .text-input {
   background: var(--panel-2); border: 1px solid var(--line);
   border-radius: 6px; color: var(--ink); padding: 11px 14px;
-  font-size: 13.5px; font-family: var(--body); outline: none;
+  min-height: 44px; font-size: 13.5px; font-family: var(--body);
   transition: border-color .3s var(--ease); width: 100%;
 }
 .text-input:focus { border-color: var(--lime-dim); }
@@ -419,7 +425,8 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   position: relative; background: none; border: none; cursor: pointer;
   display: flex; align-items: baseline; justify-content: center; gap: 8px;
   flex: 1; /* 탭 바가 패널 전체 폭을 꽉 채우도록 균등 분배 */
-  padding: 4px 18px 16px; color: var(--ink-3);
+  min-height: 44px; padding: 4px 18px 16px; color: var(--ink-3);
+  touch-action: manipulation;
   transition: color .3s var(--ease);
 }
 .tab-num {
@@ -556,6 +563,33 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 }
 .ai-settings-loading { margin: auto; }
 
+/* official workbook explanations */
+.solution-panel { gap: 20px; }
+.solution-head { padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+.solution-head h2 {
+  font-family: var(--serif); font-size: 23px; font-weight: 800;
+  color: var(--ink); letter-spacing: -.01em; margin-bottom: 7px;
+}
+.solution-head p, .solution-help { color: var(--ink-2); font-size: 13px; line-height: 1.65; }
+.solution-field { display: flex; flex-direction: column; gap: 8px; }
+.solution-field > span {
+  font-family: var(--disp); font-size: 11px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2);
+}
+.solution-field .quiz-select { width: 100%; min-height: 44px; }
+.solution-summary {
+  display: flex; align-items: center; gap: 18px; padding: 14px 0;
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.solution-summary > div { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.solution-summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-size: 14px; }
+.solution-summary span { color: var(--ink-2); font-size: 12px; }
+.solution-summary progress { width: min(180px, 35%); height: 5px; accent-color: var(--lime); }
+.solution-upload.disabled { opacity: .5; cursor: wait; }
+.solution-status { color: var(--bad); font-size: 13px; line-height: 1.5; }
+.solution-status.ok { color: var(--lime); }
+.solution-help { margin-top: auto; padding-top: 18px; border-top: 1px solid var(--line); }
+
 /* AI 진행 표시 (공용) */
 .ai-pending {
   display: inline-flex; align-items: center; gap: 10px;
@@ -590,6 +624,47 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   font-family: var(--disp); font-size: 11px; font-weight: 600; letter-spacing: .1em;
   text-transform: uppercase; color: var(--ink-3);
 }
+.note-source-picker {
+  width: min(100%, 680px); margin: 4px 0 16px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2);
+}
+.note-source-picker > summary {
+  display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 11px 14px;
+  cursor: pointer; color: var(--ink-2); font-size: 13px; list-style: none;
+  touch-action: manipulation;
+}
+.note-source-picker > summary::-webkit-details-marker { display: none; }
+.note-source-picker > summary strong { margin-left: auto; color: var(--lime); font-size: 12px; }
+.note-source-picker > summary::after { content: "⌄"; color: var(--ink-3); transition: transform .2s var(--ease); }
+.note-source-picker[open] > summary::after { transform: rotate(180deg); }
+.note-source-panel { padding: 0 12px 12px; border-top: 1px solid var(--line); }
+.note-source-search { margin: 12px 0 8px; }
+.note-source-actions {
+  display: flex; align-items: center; gap: 10px; min-height: 44px;
+  color: var(--ink-3); font-size: 11px;
+}
+.note-source-actions button {
+  min-height: 44px; padding: 8px 2px; border: 0; background: none; color: var(--ink-2);
+  font: inherit; cursor: pointer;
+  touch-action: manipulation;
+}
+.note-source-actions button:first-of-type { margin-left: auto; }
+.note-source-actions button:hover { color: var(--lime); }
+.note-source-list {
+  max-height: 280px; overflow-y: auto; border-top: 1px solid var(--line);
+}
+.note-source-row {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 4px;
+  border-bottom: 1px solid var(--line); cursor: pointer; content-visibility: auto;
+  contain-intrinsic-size: auto 48px;
+}
+.note-source-row:last-child { border-bottom: 0; }
+.note-source-row:hover { background: rgba(217, 255, 63, .025); }
+.note-source-row input { margin-top: 3px; accent-color: var(--lime); }
+.note-source-row > span { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 3px; }
+.note-source-row strong { color: var(--ink-2); font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+.note-source-row small { color: var(--ink-2); font-family: var(--disp); font-size: 12px; overflow-wrap: anywhere; }
+.note-source-none { padding: 22px 4px; color: var(--ink-3); font-size: 13px; text-align: center; }
 .note-empty { color: var(--ink-3); font-size: 15px; text-align: center; margin: auto; font-family: var(--serif); }
 .note-spinning {
   color: var(--lime); font-size: 13px; text-align: center; margin: auto;
@@ -727,7 +802,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .quiz-select {
   background: var(--panel-2); border: 1px solid var(--line);
   border-radius: 6px; color: var(--ink); padding: 8px 12px;
-  font-size: 12.5px; font-family: var(--body); outline: none;
+  font-size: 12.5px; font-family: var(--body);
   cursor: pointer; transition: border-color .2s var(--ease);
 }
 .quiz-select:focus { border-color: var(--lime-dim); }

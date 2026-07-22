@@ -12,7 +12,7 @@ export function AiPending({ label }: { label: string }) {
     <span className="ai-pending" role="status" aria-live="polite">
       <span className="ai-pending-dots" aria-hidden="true"><i /><i /><i /></span>
       <span>{label}</span>
-      <span className="ai-pending-sec">{sec}초</span>
+      <span className="ai-pending-sec" aria-hidden="true">{sec}초</span>
     </span>
   );
 }

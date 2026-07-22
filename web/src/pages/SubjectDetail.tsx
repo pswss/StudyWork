@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef, KeyboardEvent } from "react";
 import { useEscape } from "../escape";
 import {
-  Subject, Material, Message, Note,
+  Subject, Material, Message, Note, Book,
   materials as apiMaterials,
   uploadMaterial, retryMaterial, deleteMaterial, cancelMaterial,
   messages as apiMessages, chat,
@@ -13,6 +13,7 @@ import {
   NoteVersion, noteVersions as apiNoteVersions, noteVersion as apiNoteVersion,
   AIStatus, aiStatus as apiAIStatus,
   retryBookFile, cancelBookFile,
+  books as apiBooks, uploadBookExplanations, aiJob as apiAIJob, NotFoundError,
 } from "../api";
 import Quiz from "./Quiz";
 import Exam from "./Exam";
@@ -27,14 +28,103 @@ interface Props {
   onTabChange?: (index: number) => void;
 }
 
-// 탭: 채팅·퀴즈·시험·노트. 자료 업로드 시 문제·해설은 자동으로 퀴즈(문제 칸)에 등록되고
-// 원본 그림도 퀴즈에서 함께 본다 — 별도의 문제집 탭·개념은 없다.
-type Tab = "chat" | "quiz" | "exam" | "note" | "settings";
+type Tab = "chat" | "quiz" | "solution" | "exam" | "note" | "settings";
 
-const TAB_ORDER: Tab[] = ["chat", "quiz", "exam", "note", "settings"];
+const TAB_ORDER: Tab[] = ["chat", "quiz", "solution", "exam", "note", "settings"];
 const TAB_LABELS: Record<Tab, string> = {
-  chat: "채팅", quiz: "퀴즈", exam: "시험", note: "노트", settings: "설정",
+  chat: "채팅", quiz: "퀴즈", solution: "해설", exam: "시험", note: "노트", settings: "설정",
 };
+
+const solutionJobKey = (subjectId: number) => `studywork:solution-job:${subjectId}`;
+
+export function storedSolutionJob(subjectId: number): number | null {
+  try {
+    const id = Number(sessionStorage.getItem(solutionJobKey(subjectId)));
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+export function uploadValidationError(file: Pick<File, "name" | "type" | "size">): string | null {
+  const lower = file.name.toLowerCase();
+  const isPdf = file.type === "application/pdf" || lower.endsWith(".pdf");
+  const isImage = ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)
+    || /\.(jpe?g|png|webp|gif)$/.test(lower);
+  if (!isPdf && !isImage) return "PDF, JPEG, PNG, WebP, GIF만 지원합니다";
+  const maxBytes = isPdf ? 200 * 1024 * 1024 : 30 * 1024 * 1024;
+  if (file.size <= 0 || file.size > maxBytes) {
+    return `${isPdf ? "200MB" : "30MB"} 이하 파일만 지원합니다`;
+  }
+  return null;
+}
+
+function NoteSourcePicker({
+  materials,
+  excluded,
+  onToggle,
+  onSetVisible,
+}: {
+  materials: Material[];
+  excluded: Set<number>;
+  onToggle: (id: number) => void;
+  onSetVisible: (ids: number[], included: boolean) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const needle = query.trim().normalize("NFKC").toLowerCase();
+  const visible = needle
+    ? materials.filter((material) =>
+        `${material.title} ${material.original_filename ?? ""}`.normalize("NFKC").toLowerCase().includes(needle)
+      )
+    : materials;
+  const selected = materials.reduce((count, material) => count + (excluded.has(material.id) ? 0 : 1), 0);
+  const visibleIds = visible.map((material) => material.id);
+
+  return (
+    <details className="note-source-picker">
+      <summary>
+        <span>단권화 소스</span>
+        <strong>{selected}/{materials.length}개 선택</strong>
+      </summary>
+      <div className="note-source-panel">
+        <input
+          className="text-input note-source-search"
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="문제집·자료 이름 검색"
+          aria-label="단권화 소스 검색"
+        />
+        <div className="note-source-actions">
+          <span>{visible.length}개 표시</span>
+          <button type="button" onClick={() => onSetVisible(visibleIds, true)}>전체 선택</button>
+          <button type="button" onClick={() => onSetVisible(visibleIds, false)}>전체 해제</button>
+        </div>
+        <div className="note-source-list" role="group" aria-label="단권화에 포함할 소스">
+          {visible.map((material) => (
+            <label className="note-source-row" key={material.id}>
+              <input
+                type="checkbox"
+                checked={!excluded.has(material.id)}
+                onChange={() => onToggle(material.id)}
+              />
+              <span>
+                <strong>{material.title}</strong>
+                <small>
+                  {material.kind === "pdf" ? "PDF" : material.kind === "image" ? "사진" : "텍스트"}
+                  {material.original_filename && material.original_filename !== material.title
+                    ? ` · ${material.original_filename}`
+                    : ""}
+                </small>
+              </span>
+            </label>
+          ))}
+          {visible.length === 0 && <p className="note-source-none">일치하는 소스가 없습니다.</p>}
+        </div>
+      </div>
+    </details>
+  );
+}
 
 export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
   const [mats, setMats] = useState<Material[]>([]);
@@ -59,6 +149,16 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
   const [editText, setEditText] = useState("");
   const [savingNote, setSavingNote] = useState(false);
   const [loadErr, setLoadErr] = useState("");
+  const [bookList, setBookList] = useState<Book[]>([]);
+  const [solutionBookId, setSolutionBookId] = useState<number | null>(null);
+  const [solutionUploading, setSolutionUploading] = useState(false);
+  const [solutionJob, setSolutionJob] = useState<{ subjectId: number; id: number } | null>(() => {
+    const id = storedSolutionJob(subject.id);
+    return id === null ? null : { subjectId: subject.id, id };
+  });
+  const [solutionStatus, setSolutionStatus] = useState("");
+  const [solutionBooksLoading, setSolutionBooksLoading] = useState(false);
+  const [solutionBooksError, setSolutionBooksError] = useState("");
   const [renderedNote, setRenderedNote] = useState<{
     source: string;
     chunks: string[];
@@ -81,6 +181,9 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
   const matsPendingRef = useRef<Map<number, Promise<void>>>(new Map());
   const noteRequestRef = useRef(0);
   const materialActionRef = useRef<number | null>(null);
+  const booksRequestRef = useRef(0);
+  const solutionUploadRequestRef = useRef(0);
+  const solutionJobId = solutionJob?.subjectId === subject.id ? solutionJob.id : null;
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
@@ -93,6 +196,16 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
     setCurrentNote(undefined);
     setVersions([]);
     setViewVersion(null);
+    setBookList([]);
+    setSolutionBookId(null);
+    const storedJobId = storedSolutionJob(subject.id);
+    setSolutionJob(storedJobId === null ? null : { subjectId: subject.id, id: storedJobId });
+    setSolutionStatus("");
+    setSolutionBooksLoading(false);
+    setSolutionBooksError("");
+    setSolutionUploading(false);
+    booksRequestRef.current++;
+    solutionUploadRequestRef.current++;
     void loadMats(subject.id);
   }, [subject.id]);
   useEffect(() => { loadMsgs(); }, [subject.id]);
@@ -111,6 +224,60 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
   useEffect(() => {
     if (tab === "note" && currentNote === undefined) void loadNote(subject.id);
   }, [tab, subject.id, currentNote]);
+  useEffect(() => {
+    if (tab === "solution") void loadBooks(subject.id);
+  }, [tab, subject.id]);
+
+  useEffect(() => {
+    if (solutionJob === null || solutionJob.subjectId !== subject.id) return;
+    const jobId = solutionJob.id;
+    const polledSubjectId = solutionJob.subjectId;
+    const key = solutionJobKey(polledSubjectId);
+    let stopped = false;
+    let timer: number | undefined;
+    const check = async () => {
+      try {
+        const job = await apiAIJob<{ updated: number }>(jobId);
+        if (stopped || !mountedRef.current) return;
+        if (job.subject_id !== polledSubjectId || job.kind !== "book-explanations") {
+          try { sessionStorage.removeItem(key); } catch {}
+          setSolutionJob(null);
+          setSolutionStatus("이 과목의 해설 추가 작업이 아닙니다. 다시 업로드해 주세요.");
+          return;
+        }
+        if (job.status === "processing") {
+          setSolutionStatus("");
+          timer = window.setTimeout(check, 2500);
+          return;
+        }
+        try { sessionStorage.removeItem(key); } catch {}
+        setSolutionJob(null);
+        if (job.status === "ready") {
+          setSolutionStatus(`해설 ${job.result?.updated ?? 0}개를 추가했습니다.`);
+          await loadBooks(polledSubjectId);
+        } else {
+          setSolutionStatus(job.error ?? "해설 추가에 실패했습니다.");
+        }
+      } catch (error) {
+        if (stopped || !mountedRef.current) return;
+        if (error instanceof NotFoundError) {
+          try { sessionStorage.removeItem(key); } catch {}
+          setSolutionJob(null);
+          setSolutionStatus("이전 해설 추가 작업을 찾을 수 없습니다. 다시 업로드해 주세요.");
+          return;
+        }
+        setSolutionStatus(error instanceof Error
+          ? `${error.message} · 작업 상태를 다시 확인합니다.`
+          : "해설 작업 상태를 확인하지 못했습니다. 다시 확인합니다.");
+        timer = window.setTimeout(check, 5000);
+      }
+    };
+    void check();
+    return () => {
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [solutionJob, subject.id]);
 
   // 단권화는 서버 백그라운드 — processing이면 5초마다 노트 상태 갱신
   const consolidating = currentNote?.status === "processing";
@@ -153,6 +320,40 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
       if (matsPendingRef.current.get(subjectId) === request) {
         matsPendingRef.current.delete(subjectId);
       }
+    }
+  }
+  async function loadBooks(subjectId = subject.id) {
+    if (subjectIdRef.current !== subjectId) return;
+    const request = ++booksRequestRef.current;
+    setSolutionBooksLoading(true);
+    setSolutionBooksError("");
+    try {
+      const next = await apiBooks(subjectId);
+      if (
+        !mountedRef.current
+        || subjectIdRef.current !== subjectId
+        || request !== booksRequestRef.current
+      ) return;
+      setBookList(next);
+      setSolutionBookId((current) =>
+        current !== null && next.some((book) => book.id === current && book.question_count > 0)
+          ? current
+          : next.find((book) => book.question_count > 0)?.id ?? null
+      );
+    } catch (error) {
+      if (
+        mountedRef.current
+        && subjectIdRef.current === subjectId
+        && request === booksRequestRef.current
+      ) {
+        setSolutionBooksError(error instanceof Error ? error.message : "문제집을 불러오지 못했습니다.");
+      }
+    } finally {
+      if (
+        mountedRef.current
+        && subjectIdRef.current === subjectId
+        && request === booksRequestRef.current
+      ) setSolutionBooksLoading(false);
     }
   }
   async function loadMsgs() {
@@ -234,18 +435,9 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
     try {
       for (let index = 0; index < files.length; index++) {
         const file = files[index];
-        const lower = file.name.toLowerCase();
-        const isPdf = file.type === "application/pdf" || lower.endsWith(".pdf");
-        const isImage = ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type) ||
-          /\.(jpe?g|png|webp|gif)$/.test(lower);
-        const maxBytes = isPdf ? 200 * 1024 * 1024 : 30 * 1024 * 1024;
-        if (!isPdf && !isImage) {
-          errors.push(`${file.name}: PDF, JPEG, PNG, WebP, GIF만 지원합니다`);
-          if (subjectIdRef.current === uploadSubjectId) setUploadStatus(`${index + 1}/${files.length}`);
-          continue;
-        }
-        if (file.size <= 0 || file.size > maxBytes) {
-          errors.push(`${file.name}: ${isPdf ? "200MB" : "30MB"} 이하 파일만 지원합니다`);
+        const validationError = uploadValidationError(file);
+        if (validationError) {
+          errors.push(`${file.name}: ${validationError}`);
           if (subjectIdRef.current === uploadSubjectId) setUploadStatus(`${index + 1}/${files.length}`);
           continue;
         }
@@ -271,6 +463,48 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
         setUploading(false);
         setUploadStatus("");
       }
+    }
+  }
+
+  async function onSolutionFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || solutionBookId === null || solutionUploading || solutionJobId !== null) return;
+    const validationError = uploadValidationError(file);
+    if (validationError) {
+      setSolutionStatus(`${file.name}: ${validationError}`);
+      return;
+    }
+    const requestedSubjectId = subject.id;
+    const requestedBookId = solutionBookId;
+    const request = ++solutionUploadRequestRef.current;
+    setSolutionUploading(true);
+    setSolutionStatus("");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const job = await uploadBookExplanations(requestedSubjectId, requestedBookId, form);
+      try { sessionStorage.setItem(solutionJobKey(requestedSubjectId), String(job.jobId)); } catch {}
+      if (
+        !mountedRef.current
+        || subjectIdRef.current !== requestedSubjectId
+        || request !== solutionUploadRequestRef.current
+      ) return;
+      setSolutionJob({ subjectId: requestedSubjectId, id: job.jobId });
+    } catch (error) {
+      if (
+        mountedRef.current
+        && subjectIdRef.current === requestedSubjectId
+        && request === solutionUploadRequestRef.current
+      ) {
+        setSolutionStatus(error instanceof Error ? error.message : "해설 업로드에 실패했습니다.");
+      }
+    } finally {
+      if (
+        mountedRef.current
+        && subjectIdRef.current === requestedSubjectId
+        && request === solutionUploadRequestRef.current
+      ) setSolutionUploading(false);
     }
   }
 
@@ -371,12 +605,21 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
   const [exclMats, setExclMats] = useState<Set<number>>(new Set());
   const selMatIds = readyMats.filter(m => !exclMats.has(m.id)).map(m => m.id);
   const srcCount = readyMats.length;
+  useEffect(() => setExclMats(new Set()), [subject.id]);
 
   function toggleMat(id: number) {
     setExclMats(prev => {
       const n = new Set(prev);
       if (n.has(id)) n.delete(id); else n.add(id);
       return n;
+    });
+  }
+
+  function setVisibleMats(ids: number[], included: boolean) {
+    setExclMats(prev => {
+      const next = new Set(prev);
+      for (const id of ids) included ? next.delete(id) : next.add(id);
+      return next;
     });
   }
 
@@ -424,6 +667,8 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
 
   const matCount = mats.length;
   const msgCount = msgs.length;
+  const solutionBooks = bookList.filter((book) => book.question_count > 0);
+  const selectedSolutionBook = solutionBooks.find((book) => book.id === solutionBookId) ?? null;
   const displayedNoteContent = viewVersion?.content ?? currentNote?.content ?? "";
   useEffect(() => {
     if (!displayedNoteContent) {
@@ -636,8 +881,10 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
             {TAB_ORDER.map((t, i) => (
               <button
                 key={t}
+                id={`subject-tab-${t}`}
                 role="tab"
                 aria-selected={tab === t}
+                aria-controls={`subject-panel-${t}`}
                 tabIndex={tab === t ? 0 : -1}
                 className={`tab-index${tab === t ? " active" : ""}`}
                 onClick={() => selectTab(t)}
@@ -649,7 +896,13 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
           </div>
 
           {tab === "chat" && (
-            <div className="panel main-card" key="chat">
+            <div
+              id="subject-panel-chat"
+              className="panel main-card"
+              key="chat"
+              role="tabpanel"
+              aria-labelledby="subject-tab-chat"
+            >
               <div className="chat-log">
                 {msgs.length === 0 && !busy && (
                   <div className="chat-empty">자료를 올리고 질문해 보세요.</div>
@@ -716,15 +969,107 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
             </div>
           )}
 
-          <div className="panel main-card" hidden={tab !== "quiz"} aria-hidden={tab !== "quiz"}>
+          <div
+            id="subject-panel-quiz"
+            className="panel main-card"
+            role="tabpanel"
+            aria-labelledby="subject-tab-quiz"
+            hidden={tab !== "quiz"}
+            aria-hidden={tab !== "quiz"}
+          >
             <Quiz subject={subject} materials={mats} active={tab === "quiz"} kickWrongQuiz={0} />
           </div>
 
-          <div className="panel main-card" hidden={tab !== "exam"} aria-hidden={tab !== "exam"}>
+          {tab === "solution" && (
+            <div
+              id="subject-panel-solution"
+              className="panel main-card solution-panel"
+              role="tabpanel"
+              aria-labelledby="subject-tab-solution"
+            >
+              <div className="solution-head">
+                <h2>기존 문제집에 해설 추가</h2>
+                <p>문제집을 고르고 같은 책의 공식 해설 PDF나 이미지를 올리세요.</p>
+              </div>
+              {solutionBooksError && (
+                <p className="solution-status" role="alert">{solutionBooksError}</p>
+              )}
+              {solutionBooksLoading && solutionBooks.length === 0 ? (
+                <AiPending label="문제집 불러오는 중" />
+              ) : solutionBooks.length > 0 ? (
+                <>
+                  <label className="solution-field">
+                    <span>문제집</span>
+                    <select
+                      className="quiz-select"
+                      value={solutionBookId ?? ""}
+                      onChange={(event) => setSolutionBookId(Number(event.target.value))}
+                      disabled={solutionUploading || solutionJobId !== null}
+                    >
+                      {solutionBooks.map((book) => (
+                        <option key={book.id} value={book.id}>
+                          {book.title} · 해설 {book.explained_count}/{book.question_count}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {selectedSolutionBook && (
+                    <div className="solution-summary">
+                      <div>
+                        <strong>{selectedSolutionBook.title}</strong>
+                        <span>{selectedSolutionBook.question_count}문제 중 {selectedSolutionBook.explained_count}문제 해설 있음</span>
+                      </div>
+                      <progress
+                        max={selectedSolutionBook.question_count}
+                        value={selectedSolutionBook.explained_count}
+                        aria-label="해설 등록률"
+                      />
+                    </div>
+                  )}
+                  <label className={`file-label solution-upload${solutionJobId !== null ? " disabled" : ""}`}>
+                    {solutionUploading ? "업로드 중" : solutionJobId !== null ? "해설 분석 중" : "해설 파일 선택"}
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/jpeg,image/png,image/webp,image/gif"
+                      onChange={onSolutionFileChange}
+                      disabled={solutionUploading || solutionJobId !== null || solutionBookId === null}
+                    />
+                  </label>
+                  <p className="solution-help">
+                    문제집 문항 번호가 1번부터 빠짐없이 이어지고, 전체 해설지가 같은 순서로 모든 문항을 포함해야 합니다. 문항 수와 정답이 하나라도 다르면 기존 문제는 바꾸지 않습니다.
+                  </p>
+                </>
+              ) : !solutionBooksError ? (
+                <div className="quiz-empty">먼저 자료에서 문제 추출을 완료하세요.</div>
+              ) : null}
+              {solutionJobId !== null && <AiPending label="문항 순서와 정답을 확인하며 해설 추가 중" />}
+              {solutionStatus && (
+                <p className={solutionStatus.includes("추가했습니다") ? "solution-status ok" : "solution-status"} role="status">
+                  {solutionStatus}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div
+            id="subject-panel-exam"
+            className="panel main-card"
+            role="tabpanel"
+            aria-labelledby="subject-tab-exam"
+            hidden={tab !== "exam"}
+            aria-hidden={tab !== "exam"}
+          >
             <Exam subject={subject} active={tab === "exam"} />
           </div>
 
-          <div className="panel main-card" hidden={tab !== "note"} aria-hidden={tab !== "note"}>
+          <div
+            id="subject-panel-note"
+            className="panel main-card"
+            role="tabpanel"
+            aria-labelledby="subject-tab-note"
+            hidden={tab !== "note"}
+            aria-hidden={tab !== "note"}
+          >
               <div className="note-wrap" style={{ display: "flex", flexDirection: "column", flex: 1 }}>
                 {consolidating ? (
                   <div className="note-spinning" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, alignItems: "center", justifyContent: "center" }}>
@@ -821,18 +1166,13 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
                         )}
                       </div>
                     </div>
-                    {srcCount > 1 && (
-                      <div className="chat-mode-row" style={{ marginTop: 8, marginBottom: 4 }}>
-                        <span className="quiz-status-msg">단권화할 소스:</span>
-                        {readyMats.map(m => (
-                          <button
-                            key={`m${m.id}`}
-                            className={`mode-chip${!exclMats.has(m.id) ? " active" : ""}`}
-                            title="클릭해서 단권화 포함/제외"
-                            onClick={() => toggleMat(m.id)}
-                          >{m.title}</button>
-                        ))}
-                      </div>
+                    {srcCount > 0 && (
+                      <NoteSourcePicker
+                        materials={readyMats}
+                        excluded={exclMats}
+                        onToggle={toggleMat}
+                        onSetVisible={setVisibleMats}
+                      />
                     )}
                     <input
                       className="text-input instr-input"
@@ -864,17 +1204,13 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
                 ) : (
                   <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
                     <div className="note-empty">자료를 올리고 단권화를 실행하세요.</div>
-                    {srcCount > 1 && (
-                      <div className="chat-mode-row" style={{ justifyContent: "center", flexWrap: "wrap" }}>
-                        {readyMats.map(m => (
-                          <button
-                            key={`m${m.id}`}
-                            className={`mode-chip${!exclMats.has(m.id) ? " active" : ""}`}
-                            title="클릭해서 단권화 포함/제외"
-                            onClick={() => toggleMat(m.id)}
-                          >{m.title}</button>
-                        ))}
-                      </div>
+                    {srcCount > 0 && (
+                      <NoteSourcePicker
+                        materials={readyMats}
+                        excluded={exclMats}
+                        onToggle={toggleMat}
+                        onSetVisible={setVisibleMats}
+                      />
                     )}
                     <textarea
                       className="text-input"
@@ -897,7 +1233,13 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
             </div>
 
           {tab === "settings" && (
-            <div className="panel main-card" key="settings">
+            <div
+              id="subject-panel-settings"
+              className="panel main-card"
+              key="settings"
+              role="tabpanel"
+              aria-labelledby="subject-tab-settings"
+            >
               <AISettingsPanel
                 onSaved={() => {
                   apiAIStatus("chat")

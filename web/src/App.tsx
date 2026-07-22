@@ -29,7 +29,7 @@ export default function App() {
   const [subjectList, setSubjectList] = useState<Subject[]>([]);
   const [openSubject, setOpenSubject] = useState<Subject | null>(null);
   const [loading, setLoading] = useState(true);
-  // 상세 화면 활성 탭 인덱스(0-4) — 3D 조형물 반응용
+  // 상세 화면 활성 탭 인덱스(0-5) — 3D 조형물 반응용
   const [accent, setAccent] = useState(0);
 
   // probe auth on mount

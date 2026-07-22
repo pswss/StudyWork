@@ -4,6 +4,7 @@ import {
   parsePageExtractions,
   parseQuestionsJson,
   parseQuizItemsEx,
+  parseSolutionItems,
   validateGeneratedQuestions,
 } from "../src/claude";
 
@@ -292,6 +293,30 @@ describe("parseQuizItemsEx", () => {
     ["보기와 불일치하는 정답", { ...base, answer: "④" }],
   ])("%s는 청크 전체를 거부", (_label, item) => {
     expect(() => parseQuizItemsEx(JSON.stringify([base, item]))).toThrow();
+  });
+});
+
+describe("parseSolutionItems", () => {
+  it("공식 해설의 순서·정답·페이지를 보존", () => {
+    expect(parseSolutionItems(JSON.stringify([
+      { number: "1", answer: "③", explanation: "$x=3$을 대입한다.", page: 4, complete: true },
+      { number: "2", answer: "5", explanation: "양변을 더하면 5이다.", page: 4, complete: true },
+    ]))).toEqual([
+      { number: "1", answer: "③", explanation: "$x=3$을 대입한다.", page: 4, complete: true },
+      { number: "2", answer: "5", explanation: "양변을 더하면 5이다.", page: 4, complete: true },
+    ]);
+  });
+
+  it("정답·해설·페이지가 비정상이면 저장 전에 거부", () => {
+    expect(() => parseSolutionItems(JSON.stringify([
+      { number: "1", answer: "", explanation: "", page: 0, complete: false },
+    ]))).toThrow();
+  });
+
+  it("청크 경계에서 잘린 해설은 거부", () => {
+    expect(() => parseSolutionItems(JSON.stringify([
+      { number: "1", answer: "3", explanation: "다음 페이지에 계속", page: 6, complete: false },
+    ]))).toThrow("청크 경계에서 내용이 잘렸습니다");
   });
 });
 

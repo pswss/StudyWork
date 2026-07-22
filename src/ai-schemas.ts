@@ -65,6 +65,23 @@ export const QUIZ_FILE_ITEMS_SCHEMA = arrayEnvelope(
   }
 );
 
+export const SOLUTION_FILE_ITEMS_SCHEMA = arrayEnvelope(
+  "studywork_solution_file_items",
+  "Worked solutions extracted from an attached answer-and-explanation file in document order.",
+  {
+    type: "object",
+    properties: {
+      number: { type: "string" },
+      answer: { type: "string" },
+      explanation: { type: "string" },
+      page: { type: "integer", minimum: 1 },
+      complete: { type: "boolean" },
+    },
+    required: ["number", "answer", "explanation", "page", "complete"],
+    additionalProperties: false,
+  }
+);
+
 export const ANSWER_KEY_PAGES_SCHEMA = arrayEnvelope(
   "studywork_answer_key_pages",
   "Original PDF pages that visibly contain official answer tables or official solutions.",

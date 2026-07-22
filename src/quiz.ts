@@ -383,7 +383,7 @@ function displayAnswer(qtype: string, answer: string, choicesJson: string | null
   return index === null ? answer : choices[index];
 }
 
-function gradeAnswer(
+export function gradeAnswer(
   qtype: string,
   correctAnswer: string,
   userAnswer: string,

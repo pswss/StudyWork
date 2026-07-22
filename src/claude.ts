@@ -21,6 +21,7 @@ import {
   QUIZ_FILE_ITEMS_SCHEMA,
   QUIZ_ITEMS_SCHEMA,
   SECTION_MAP_SCHEMA,
+  SOLUTION_FILE_ITEMS_SCHEMA,
   STUDY_PLAN_SCHEMA,
 } from "./ai-schemas";
 import { resolveAIExecutionSettings, type AIOperation } from "./ai-settings";
@@ -929,6 +930,14 @@ export interface QuizItemEx {
   box: [number, number] | null;
 }
 
+export interface SolutionItem {
+  number: string;
+  answer: string;
+  explanation: string;
+  page: number;
+  complete: true;
+}
+
 const CIRCLED_NUMBERS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳";
 
 function normalizeChoiceText(text: string): string {
@@ -1023,6 +1032,26 @@ export function parseQuizItemsEx(text: string): QuizItemEx[] {
       if (Number.isFinite(t) && Number.isFinite(b) && t >= 0 && b <= 1 && t < b) box = [t, b];
     }
     return { qtype, difficulty, question, choices, answer, explanation, page, figure: o.figure === true, box };
+  });
+}
+
+export function parseSolutionItems(text: string): SolutionItem[] {
+  return parseJsonArray(text).map((raw, index) => {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      throw new Error(`해설 ${index + 1}: 객체가 아닙니다.`);
+    }
+    const item = raw as Record<string, unknown>;
+    const number = typeof item.number === "string" ? item.number.trim() : "";
+    const answer = typeof item.answer === "string" ? item.answer.trim() : "";
+    const explanation = typeof item.explanation === "string" ? item.explanation.trim() : "";
+    const page = Number(item.page);
+    const complete = item.complete;
+    if (!number) throw new Error(`해설 ${index + 1}: 문제 번호가 비어 있습니다.`);
+    if (!answer) throw new Error(`해설 ${index + 1}: 정답이 비어 있습니다.`);
+    if (!explanation) throw new Error(`해설 ${index + 1}: 내용이 비어 있습니다.`);
+    if (!Number.isInteger(page) || page < 1) throw new Error(`해설 ${index + 1}: 페이지가 유효하지 않습니다.`);
+    if (complete !== true) throw new Error(`해설 ${index + 1}: 청크 경계에서 내용이 잘렸습니다.`);
+    return { number, answer, explanation, page, complete };
   });
 }
 
@@ -1173,6 +1202,61 @@ export async function extractProblemsFromFile(
     throw new ProblemChunkValidationError("문제 추출 실패: 응답이 6회 연속 출력 한도에서 잘렸습니다");
   }
   return all;
+}
+
+export async function extractSolutionsFromFile(
+  absPath: string,
+  kind: "image" | "pdf",
+  opts?: { sliceBase?: number; signal?: AbortSignal; contentPageCount?: number }
+): Promise<SolutionItem[]> {
+  const pagesInFile = kind === "pdf" ? await pdfPageCount(absPath) : 1;
+  if (!pagesInFile) throw new AIProviderError("invalid_file", "해설지 페이지 수를 확인할 수 없습니다");
+  const contentPageCount = opts?.contentPageCount ?? pagesInFile;
+  if (!Number.isInteger(contentPageCount) || contentPageCount < 1 || contentPageCount > pagesInFile) {
+    throw new AIProviderError("invalid_file", "해설 추출 페이지 범위가 유효하지 않습니다");
+  }
+  const firstPage = opts?.sliceBase ?? 1;
+  const lastPage = firstPage + contentPageCount - 1;
+  const readInstruction = kind === "pdf"
+    ? `Read the first ${contentPageCount} attached page image(s) as original document pages ${firstPage}-${lastPage}.`
+    : "Read the attached image.";
+  const prompt =
+    `${readInstruction}\n\n${PERSONAL_USE_NOTE}` +
+    `This is the official answer-and-explanation file for an already imported workbook. ` +
+    `Extract EVERY worked solution in document order as structured data.\n` +
+    `Rules:\n` +
+    `- Return exactly one item per underlying workbook problem, in the same order as the document.\n` +
+    `- number: the visible printed problem label. Never emit an unlabeled continuation or an item whose label is not visible.\n` +
+    `- answer: the official final answer. Never solve or invent an answer.\n` +
+    `- explanation: copy the complete official reasoning in Korean with formulas in LaTeX. Never summarize or invent steps.\n` +
+    `- Emit an item only when its printed problem label and start are visible in the attached pages; ignore continuation fragments that began before ${firstPage}.\n` +
+    `- complete: true only when the full worked solution is visible through its final step and answer. Use false if it continues beyond page ${lastPage}.\n` +
+    `- Ignore covers, contents, ads, and compact quick-answer tables that duplicate later worked solutions.\n` +
+    `- page: original page where the solution starts, from ${firstPage} through ${lastPage}.\n` +
+    `- Output only the requested structured data.`;
+  const result = await runAgent(prompt, {
+    allowedTools: ["Read"],
+    allowedReadPath: absPath,
+    fileKind: kind,
+    operation: "problem-extract",
+    responseSchema: SOLUTION_FILE_ITEMS_SCHEMA,
+    maxTurns: 16,
+    signal: opts?.signal,
+  });
+  let items: SolutionItem[];
+  try {
+    items = parseSolutionItems(result);
+  } catch (error) {
+    throw new ProblemChunkValidationError(error instanceof Error ? error.message : "해설 구조 검증 실패");
+  }
+  for (const [index, item] of items.entries()) {
+    if (item.page < firstPage || item.page > lastPage) {
+      throw new ProblemChunkValidationError(
+        `해설 ${index + 1}: ${firstPage}-${lastPage} 범위를 벗어났습니다`
+      );
+    }
+  }
+  return items;
 }
 
 /**

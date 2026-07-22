@@ -27,7 +27,8 @@ export function runAIJob(
   db: LocalDB,
   jobId: number,
   task: () => Promise<AIJobCommit>,
-  publicError = "AI 작업에 실패했습니다. 잠시 후 다시 시도해 주세요."
+  publicError = "AI 작업에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+  onSettled?: () => void | Promise<void>
 ): void {
   setImmediate(() => {
     void (async () => {
@@ -43,6 +44,12 @@ export function runAIJob(
           ).bind(publicError, jobId).run();
         } catch (saveError: unknown) {
           console.error(`[AI 작업 ${jobId} 상태 저장 실패] ${saveError instanceof Error ? saveError.message : "unknown error"}`);
+        }
+      } finally {
+        try {
+          await onSettled?.();
+        } catch (settleError: unknown) {
+          console.error(`[AI 작업 ${jobId} 정리 실패] ${settleError instanceof Error ? settleError.message : "unknown error"}`);
         }
       }
     })();

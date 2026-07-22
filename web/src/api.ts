@@ -293,6 +293,8 @@ export interface Book {
   title: string;
   created_at: string;
   files: BookFile[];
+  question_count: number;
+  explained_count: number;
   counts: Record<BookCategory, number>;
 }
 
@@ -318,6 +320,19 @@ export async function books(subjectId: number): Promise<Book[]> {
 
 export async function uploadBook(subjectId: number, data: FormData): Promise<{ id: number; status: string }> {
   return req<{ id: number; status: string }>("POST", `/api/subjects/${subjectId}/books`, undefined, data);
+}
+
+export async function uploadBookExplanations(
+  subjectId: number,
+  bookId: number,
+  data: FormData
+): Promise<AIJobStart> {
+  return req<AIJobStart>(
+    "POST",
+    `/api/subjects/${subjectId}/books/${bookId}/explanations`,
+    undefined,
+    data
+  );
 }
 
 export async function bookDetail(id: number): Promise<BookDetail> {
