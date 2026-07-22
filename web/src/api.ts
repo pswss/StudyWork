@@ -122,9 +122,14 @@ export async function messages(subjectId: number): Promise<Message[]> {
 export async function chat(
   subjectId: number,
   message: string,
-  mode: "materials" | "general" = "materials"
+  mode: "materials" | "general" = "materials",
+  materialIds?: number[] // 자료 기반 모드 컨텍스트 범위 — 생략하면 전체
 ): Promise<{ reply: string }> {
-  return req<{ reply: string }>("POST", `/api/subjects/${subjectId}/chat`, { message, mode });
+  return req<{ reply: string }>("POST", `/api/subjects/${subjectId}/chat`, {
+    message,
+    mode,
+    ...(materialIds ? { materialIds } : {}),
+  });
 }
 
 // ===== AI runtime =====

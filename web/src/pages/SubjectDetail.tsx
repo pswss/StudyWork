@@ -19,6 +19,7 @@ import Quiz from "./Quiz";
 import WrongPanel from "./Wrong";
 import Exam from "./Exam";
 import AISettingsPanel from "./AISettingsPanel";
+import SourcePicker from "./SourcePicker";
 import { Md, mdHtml, splitMarkdownChunks, escapeHtmlText } from "../md";
 import { Reveal } from "../motion";
 import { AiPending } from "../Pending";
@@ -60,71 +61,16 @@ export function uploadValidationError(file: Pick<File, "name" | "type" | "size">
   return null;
 }
 
-function NoteSourcePicker({
-  materials,
-  excluded,
-  onToggle,
-  onSetVisible,
-}: {
-  materials: Material[];
-  excluded: Set<number>;
-  onToggle: (id: number) => void;
-  onSetVisible: (ids: number[], included: boolean) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const needle = query.trim().normalize("NFKC").toLowerCase();
-  const visible = needle
-    ? materials.filter((material) =>
-        `${material.title} ${material.original_filename ?? ""}`.normalize("NFKC").toLowerCase().includes(needle)
-      )
-    : materials;
-  const selected = materials.reduce((count, material) => count + (excluded.has(material.id) ? 0 : 1), 0);
-  const visibleIds = visible.map((material) => material.id);
+// 채팅 컨텍스트 자료 선택(제외 집합) 과목별 영속 — 서버 재시작·새로고침에도 유지
+const chatExclKey = (subjectId: number) => `studywork:chat-excl:${subjectId}`;
 
-  return (
-    <details className="note-source-picker">
-      <summary>
-        <span>단권화 소스</span>
-        <strong>{selected}/{materials.length}개 선택</strong>
-      </summary>
-      <div className="note-source-panel">
-        <input
-          className="text-input note-source-search"
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="문제집·자료 이름 검색"
-          aria-label="단권화 소스 검색"
-        />
-        <div className="note-source-actions">
-          <span>{visible.length}개 표시</span>
-          <button type="button" onClick={() => onSetVisible(visibleIds, true)}>전체 선택</button>
-          <button type="button" onClick={() => onSetVisible(visibleIds, false)}>전체 해제</button>
-        </div>
-        <div className="note-source-list" role="group" aria-label="단권화에 포함할 소스">
-          {visible.map((material) => (
-            <label className="note-source-row" key={material.id}>
-              <input
-                type="checkbox"
-                checked={!excluded.has(material.id)}
-                onChange={() => onToggle(material.id)}
-              />
-              <span>
-                <strong>{material.title}</strong>
-                <small>
-                  {material.kind === "pdf" ? "PDF" : material.kind === "image" ? "사진" : "텍스트"}
-                  {material.original_filename && material.original_filename !== material.title
-                    ? ` · ${material.original_filename}`
-                    : ""}
-                </small>
-              </span>
-            </label>
-          ))}
-          {visible.length === 0 && <p className="note-source-none">일치하는 소스가 없습니다.</p>}
-        </div>
-      </div>
-    </details>
-  );
+function storedChatExcl(subjectId: number): Set<number> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(chatExclKey(subjectId)) ?? "[]");
+    return new Set(Array.isArray(raw) ? raw.filter((id) => Number.isSafeInteger(id)) : []);
+  } catch {
+    return new Set();
+  }
 }
 
 export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
@@ -143,6 +89,8 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
   const [textBody, setTextBody] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [chatMode, setChatMode] = useState<"materials" | "general">("materials");
+  // 채팅 컨텍스트 자료 선택 — 제외 집합, 과목별 localStorage 영속 (기본 전체)
+  const [chatExcl, setChatExcl] = useState<Set<number>>(() => storedChatExcl(subject.id));
   const [aiRuntime, setAIRuntime] = useState<AIStatus | "unavailable" | null>(null);
   const [busy, setBusy] = useState(false);
   const [chatErr, setChatErr] = useState("");
@@ -197,6 +145,7 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
     subjectIdRef.current = subject.id;
     noteRequestRef.current++;
     setQuizView("bank");
+    setChatExcl(storedChatExcl(subject.id));
     setMats([]);
     setCurrentNote(undefined);
     setVersions([]);
@@ -576,17 +525,35 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
     await runMaterialAction(material.id, () => deleteMaterial(material.id));
   }
 
+  // 채팅 컨텍스트 선택 갱신 + 과목별 영속
+  function updateChatExcl(update: (prev: Set<number>) => Set<number>) {
+    setChatExcl(prev => {
+      const next = update(prev);
+      try { localStorage.setItem(chatExclKey(subject.id), JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }
+
   // send chat
   async function sendChat() {
     const msg = chatInput.trim();
     if (!msg || busy) return;
+    // 자료 기반 모드: 일부만 선택했으면 그 목록을 명시적으로 보낸다 (기본 전체 = 생략)
+    const someExcluded = chatMode === "materials" && readyMats.some(m => chatExcl.has(m.id));
+    const chatMatIds = someExcluded
+      ? readyMats.filter(m => !chatExcl.has(m.id)).map(m => m.id)
+      : undefined;
+    if (someExcluded && chatMatIds!.length === 0) {
+      setChatErr("컨텍스트로 쓸 자료를 하나 이상 선택하세요.");
+      return;
+    }
     setChatInput("");
     setChatErr("");
     const optimistic: Message = { id: Date.now(), role: "user", content: msg, mode: chatMode, created_at: new Date().toISOString() };
     setMsgs(prev => [...prev, optimistic]);
     setBusy(true);
     try {
-      const { reply } = await chat(subject.id, msg, chatMode);
+      const { reply } = await chat(subject.id, msg, chatMode, chatMatIds);
       if (!mountedRef.current) return;
       const asst: Message = { id: Date.now() + 1, role: "assistant", content: reply, mode: chatMode, created_at: new Date().toISOString() };
       setMsgs(prev => [...prev, asst]);
@@ -957,6 +924,23 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
                   {aiRuntime !== null && aiRuntime !== "unavailable" && aiRuntime.state === "ready" && `${aiRuntime.model} · ${aiRuntime.reasoningEffort} · 로컬 CLI`}
                 </span>
               </div>
+              {chatMode === "materials" && readyMats.length > 0 && (
+                <SourcePicker
+                  label="채팅 컨텍스트"
+                  materials={readyMats}
+                  excluded={chatExcl}
+                  onToggle={(id) => updateChatExcl(prev => {
+                    const next = new Set(prev);
+                    next.has(id) ? next.delete(id) : next.add(id);
+                    return next;
+                  })}
+                  onSetVisible={(ids, included) => updateChatExcl(prev => {
+                    const next = new Set(prev);
+                    for (const id of ids) included ? next.delete(id) : next.add(id);
+                    return next;
+                  })}
+                />
+              )}
               <div className="chat-input-row">
                 <textarea
                   className="chat-textarea"
@@ -1200,7 +1184,8 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
                       </div>
                     </div>
                     {srcCount > 0 && (
-                      <NoteSourcePicker
+                      <SourcePicker
+                        label="단권화 소스"
                         materials={readyMats}
                         excluded={exclMats}
                         onToggle={toggleMat}
@@ -1238,7 +1223,8 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
                   <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
                     <div className="note-empty">자료를 올리고 단권화를 실행하세요.</div>
                     {srcCount > 0 && (
-                      <NoteSourcePicker
+                      <SourcePicker
+                        label="단권화 소스"
                         materials={readyMats}
                         excluded={exclMats}
                         onToggle={toggleMat}

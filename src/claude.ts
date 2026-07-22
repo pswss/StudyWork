@@ -848,6 +848,20 @@ export function buildQuizSourceContext(
   ).join("\n\n");
 }
 
+/** 채팅 등 텍스트 컨텍스트용 — 자료별 본문을 균등 발췌로 잘라 총량을 예산 안에 가둔다. */
+export function capMaterialExcerpts<T extends { extracted_text: string }>(
+  materials: T[],
+  maxChars = QUIZ_SOURCE_MAX_CHARS
+): T[] {
+  const usable = materials.filter((material) => material.extracted_text.trim());
+  if (usable.length === 0) return [];
+  const perMaterial = Math.max(1, Math.floor(maxChars / usable.length));
+  return usable.map((material) => ({
+    ...material,
+    extracted_text: evenlySpacedExcerpt(material.extracted_text, perMaterial),
+  }));
+}
+
 const normalizedQuizText = (text: string) => text.trim().toLowerCase().replace(/\s+/g, " ");
 
 /** 생성 전용 엄격 검증. 파일 문제 추출의 느슨한 원문 형식과 분리한다. */
