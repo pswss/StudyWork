@@ -75,7 +75,8 @@ npm start               # = build:web + tsx src/server.ts
 
 - 개발: `npm run dev` (tsx watch — 백엔드만 자동 재시작. **프론트 수정은 `npm run build:web` 후 새로고침**, `npm start`는 watch가 아니므로 백엔드 수정 시 재시작 필요)
 - 테스트: `npm test` (vitest 전체 suite)
-- 서버 시작 시 로컬/LAN 주소가 출력된다. 데이터는 `./data`(env `DATA_DIR`) — 백업은 이 폴더만 복사
+- 서버 시작 시 로컬/LAN 주소가 출력된다. 데이터는 `./data`(env `DATA_DIR`) — 전체 백업은 이 폴더만 복사
+- DB 자동 백업: 서버가 부팅 직후 + 24시간마다 `PRAGMA wal_checkpoint(TRUNCATE)` 후 `VACUUM INTO data/backups/<YYYY-MM-DD>.db` 스냅샷을 만든다(하루 1개 멱등, 최근 14개 유지). 파일 원본(`data/files/`)은 폴더 복사 백업에 포함
 
 ### AI 설정
 

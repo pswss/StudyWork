@@ -6,7 +6,7 @@
 // INSERT/UPDATE ... RETURNING 은 better-sqlite3 .get()/.all() 로 처리한다.
 
 import Database from "better-sqlite3";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 
 // SELECT 및 RETURNING 절이 있는 문장은 row(들)를 돌려준다 → .get()/.all() 사용.
@@ -106,6 +106,29 @@ export class LocalDB {
       });
       runMigration();
     }
+  }
+
+  // 일일 백업 — WAL 체크포인트 후 VACUUM INTO로 스냅샷을 만들고 오래된 백업을 정리한다.
+  // 오늘 백업이 이미 있으면 건너뛴다(재시작 멱등). 만든 파일 경로 또는 null 반환.
+  backupDaily(dir: string, keep = 14): string | null {
+    mkdirSync(dir, { recursive: true });
+    // 날짜는 로컬 기준 조립 — toISOString()은 UTC라 KST 자정~09시에 하루 밀린다
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const backups = () => readdirSync(dir).filter((name) => /^\d{4}-\d{2}-\d{2}\.db$/.test(name)).sort();
+
+    let created: string | null = null;
+    if (!backups().includes(`${today}.db`)) {
+      const target = join(dir, `${today}.db`);
+      this.db.pragma("wal_checkpoint(TRUNCATE)");
+      // 경로에 작은따옴표가 있으면 SQL 리터럴이 깨진다 — SQLite 규칙대로 이스케이프
+      this.db.exec(`VACUUM INTO '${target.replaceAll("'", "''")}'`);
+      created = target;
+    }
+    for (const name of backups().slice(0, -keep)) {
+      try { unlinkSync(join(dir, name)); } catch { /* 정리 실패는 다음 주기에 재시도 */ }
+    }
+    return created;
   }
 
   close(): void {

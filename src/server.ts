@@ -79,6 +79,19 @@ const env: Env = {
 retryPendingToBook(env).catch((e) => console.error("[문제집화 재시도]", e));
 setInterval(() => retryPendingToBook(env).catch((e) => console.error("[문제집화 재시도]", e)), 10 * 60 * 1000);
 
+// 일일 자동 백업 — launchd 상시 구동 전제, 부팅 직후 1회 + 24시간마다. 최근 14개 유지.
+const BACKUP_DIR = join(DATA_DIR, "backups");
+function runDailyBackup() {
+  try {
+    const created = db.backupDaily(BACKUP_DIR, 14);
+    if (created) console.log(`[백업] ${created}`);
+  } catch (e) {
+    console.error("[백업 실패]", e);
+  }
+}
+runDailyBackup();
+setInterval(runDailyBackup, 24 * 60 * 60 * 1000);
+
 // 정적 파일(web/dist) 서빙 — /api 이외 경로. SPA fallback → index.html.
 const WEB_DIST = resolve(import.meta.dirname, "..", "web", "dist");
 app.use("/*", async (c, next) => {
