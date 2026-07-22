@@ -9,11 +9,12 @@ import { insertQuestions } from "./quiz";
 export const wrongRoutes = new Hono<{ Bindings: Env }>();
 
 // ── GET /api/subjects/:id/wrong ──────────────────────────────────────────────
-// wrong_count > 0 인 문제 목록, 오답 횟수 내림차순
+// wrong_count > 0 인 문제 목록, 오답 횟수 내림차순. 마지막 시도 시각 포함(없으면 null)
 wrongRoutes.get("/subjects/:id/wrong", async (c) => {
   const subjectId = c.req.param("id");
   const { results } = await c.env.DB.prepare(
-    "SELECT * FROM questions WHERE subject_id = ? AND wrong_count > 0 ORDER BY wrong_count DESC"
+    "SELECT q.*, (SELECT MAX(created_at) FROM question_attempts qa WHERE qa.question_id = q.id) AS last_attempted_at " +
+    "FROM questions q WHERE subject_id = ? AND wrong_count > 0 ORDER BY wrong_count DESC"
   )
     .bind(subjectId)
     .all<Record<string, unknown>>();

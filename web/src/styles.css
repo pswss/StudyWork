@@ -1055,7 +1055,14 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
 /* ============================================================================
    WRONG (오답)
    ========================================================================== */
-.wrong-wrap { display: flex; flex-direction: column; }
+/* 퀴즈 탭 보조 뷰 토글 (문제 은행 / 오답 노트) — 채팅 모드 칩과 동일 패턴 */
+.quiz-view-row {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--line);
+}
+.quiz-subview[hidden] { display: none; }
+.quiz-subview { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.wrong-wrap { display: flex; flex-direction: column; animation: contentIn .3s var(--ease) both; }
 .wrong-summary {
   font-family: var(--disp); font-size: 12px; font-weight: 600; letter-spacing: .08em;
   text-transform: uppercase; color: var(--ink-3);
@@ -1065,13 +1072,23 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
 .wrong-unresolved { color: var(--bad); font-weight: 700; }
 .wrong-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
 .wrong-file-label {
-  display: inline-block; padding: 7px 16px;
+  position: relative; display: inline-block; padding: 7px 16px;
   border: 1px dashed var(--line-strong); border-radius: 6px;
   font-family: var(--disp); font-size: 11px; font-weight: 600; letter-spacing: .1em;
   text-transform: uppercase; color: var(--ink-2); cursor: pointer; transition: all .3s var(--ease);
 }
 .wrong-file-label:hover { border-color: var(--lime); color: var(--ink); }
 .wrong-file-label.disabled { opacity: .4; cursor: not-allowed; }
+/* 파일 input은 시각적으로 숨기되 포커스·클릭 가능하게 (file-label과 동일 패턴) */
+.wrong-file-label input {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer;
+}
+.wrong-file-label:has(input:focus-visible) { outline: 2px solid var(--lime); outline-offset: 2px; }
+.wrong-attempt-meta {
+  font-family: var(--disp); font-size: 11px; letter-spacing: .04em;
+  color: var(--ink-3); font-variant-numeric: tabular-nums;
+}
 .wrong-analysis {
   margin: 18px 0; padding: 18px 20px; background: var(--panel-2);
   border: 1px solid var(--line); border-radius: 6px;

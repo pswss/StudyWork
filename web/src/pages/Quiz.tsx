@@ -26,6 +26,13 @@ interface Props {
 
 type View = "bank" | "play" | "result";
 
+interface PlayScore {
+  id: number; // 문제 id — 결과 화면 "틀린 것만 다시"에 사용
+  correct: boolean;
+  question: string;
+  answer: string;
+}
+
 interface PlayState {
   items: QuizItem[];
   index: number;
@@ -33,7 +40,7 @@ interface PlayState {
   result: AnswerResult | null;
   selectedChoice: string | null; // mcq 선택
   shortInput: string;
-  scores: { correct: boolean; question: string; answer: string }[];
+  scores: PlayScore[];
 }
 
 interface QuizRunOptions {
@@ -68,7 +75,7 @@ function storedGenerationJob(subjectId: number): number | null {
   }
 }
 
-function qtypeLabel(q: string) {
+export function qtypeLabel(q: string) {
   return q === "mcq" ? "객관식" : q === "short" ? "단답" : "OX";
 }
 
@@ -185,7 +192,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   const answerAttemptRef = useRef<AnswerAttempt | null>(null);
 
   // 결과
-  const [resultScores, setResultScores] = useState<{ correct: boolean; question: string; answer: string }[]>([]);
+  const [resultScores, setResultScores] = useState<PlayScore[]>([]);
   const [lastOpts, setLastOpts] = useState<QuizRunOptions | null>(null);
 
   // 은행 - 에러
@@ -543,7 +550,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
           ...prev,
           answered: true,
           result: res,
-          scores: [...prev.scores, { correct: res.correct, question: item.question, answer: res.answer }],
+          scores: [...prev.scores, { id: item.id, correct: res.correct, question: item.question, answer: res.answer }],
         };
       });
     } catch (e) {
@@ -590,6 +597,13 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     setStartCount(lastOpts.count);
     setStartWrong(lastOpts.wrong ?? false);
     await runQuiz(lastOpts);
+  }
+
+  // ── 틀린 것만 다시 — 이번 세션에서 틀린 바로 그 문제들만 재출제 (재추첨 아님) ─────
+  async function doRetryMissed() {
+    const missedIds = resultScores.filter(s => !s.correct).map(s => s.id);
+    if (missedIds.length === 0) return;
+    await runQuiz({ source: "all", diff: "all", count: missedIds.length, questionIds: missedIds });
   }
 
   // ── 렌더: 플레이 뷰 ──────────────────────────────────────────────────────────
@@ -752,7 +766,12 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
           </div>
         )}
         <div className="result-actions">
-          <button className="btn primary" onClick={doRetry} disabled={startingQuiz}>
+          {wrong.length > 0 && (
+            <button className="btn primary" onClick={doRetryMissed} disabled={startingQuiz}>
+              {startingQuiz ? "불러오는 중..." : "틀린 것만 다시"}
+            </button>
+          )}
+          <button className={`btn${wrong.length === 0 ? " primary" : ""}`} onClick={doRetry} disabled={startingQuiz}>
             {startingQuiz ? "불러오는 중..." : "다시 풀기"}
           </button>
           <button className="btn" onClick={returnToBank}>문제 은행으로</button>

@@ -16,6 +16,7 @@ import {
   books as apiBooks, uploadBookExplanations, aiJob as apiAIJob, NotFoundError,
 } from "../api";
 import Quiz from "./Quiz";
+import WrongPanel from "./Wrong";
 import Exam from "./Exam";
 import AISettingsPanel from "./AISettingsPanel";
 import { Md, mdHtml, splitMarkdownChunks, escapeHtmlText } from "../md";
@@ -131,6 +132,9 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [currentNote, setCurrentNote] = useState<Note | null | undefined>(undefined);
   const [tab, setTab] = useState<Tab>("chat");
+  // 퀴즈 탭 보조 뷰(문제 은행 / 오답 노트) + 오답 즉시 출제 트리거 카운터
+  const [quizView, setQuizView] = useState<"bank" | "wrong">("bank");
+  const [wrongKick, setWrongKick] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("");
   const [materialActionId, setMaterialActionId] = useState<number | null>(null);
@@ -192,6 +196,7 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
   useEffect(() => {
     subjectIdRef.current = subject.id;
     noteRequestRef.current++;
+    setQuizView("bank");
     setMats([]);
     setCurrentNote(undefined);
     setVersions([]);
@@ -977,7 +982,35 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
             hidden={tab !== "quiz"}
             aria-hidden={tab !== "quiz"}
           >
-            <Quiz subject={subject} materials={mats} active={tab === "quiz"} kickWrongQuiz={0} />
+            <div className="quiz-view-row">
+              <button
+                className={`mode-chip${quizView === "bank" ? " active" : ""}`}
+                onClick={() => setQuizView("bank")}
+              >문제 은행</button>
+              <button
+                className={`mode-chip${quizView === "wrong" ? " active" : ""}`}
+                onClick={() => setQuizView("wrong")}
+              >오답 노트</button>
+            </div>
+            {/* Quiz는 은행·플레이 상태 유지를 위해 항상 마운트, 오답 뷰일 땐 숨긴다 */}
+            <div className="quiz-subview" hidden={quizView !== "bank"}>
+              <Quiz
+                subject={subject}
+                materials={mats}
+                active={tab === "quiz" && quizView === "bank"}
+                kickWrongQuiz={wrongKick}
+              />
+            </div>
+            {quizView === "wrong" && (
+              <WrongPanel
+                subject={subject}
+                active={tab === "quiz" && quizView === "wrong"}
+                onRelearn={() => {
+                  setQuizView("bank");
+                  setWrongKick(k => k + 1);
+                }}
+              />
+            )}
           </div>
 
           {tab === "solution" && (

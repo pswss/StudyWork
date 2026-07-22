@@ -85,9 +85,6 @@ export interface Material {
   book_file_id?: number | null;
   book_error?: string | null;
 }
-export interface MaterialDetail extends Material {
-  extracted_text: string | null;
-}
 export async function materials(subjectId: number): Promise<Material[]> {
   return req<Material[]>("GET", `/api/subjects/${subjectId}/materials`);
 }
@@ -106,9 +103,6 @@ export async function retryMaterial(id: number): Promise<{ id: number; status: s
 }
 export async function cancelMaterial(id: number): Promise<void> {
   await req<void>("POST", `/api/materials/${id}/cancel`);
-}
-export async function materialDetail(id: number): Promise<MaterialDetail> {
-  return req<MaterialDetail>("GET", `/api/materials/${id}`);
 }
 export async function deleteMaterial(id: number): Promise<void> {
   await req<void>("DELETE", `/api/materials/${id}`);
@@ -298,28 +292,8 @@ export interface Book {
   counts: Record<BookCategory, number>;
 }
 
-export interface BookItem {
-  id: number;
-  file_id: number;
-  category: BookCategory;
-  number: string;
-  answer: string;
-  content: string;
-  page: number | null;
-  has_figure: number; // 1이면 그림·도형 딸린 항목 — 원본 페이지 이미지를 인라인 표시
-  figure_box: string | null; // "top,bottom" 페이지 높이 비율 — 있으면 그 구간만 잘라 표시
-}
-
-export interface BookDetail extends Book {
-  items: BookItem[];
-}
-
 export async function books(subjectId: number): Promise<Book[]> {
   return req<Book[]>("GET", `/api/subjects/${subjectId}/books`);
-}
-
-export async function uploadBook(subjectId: number, data: FormData): Promise<{ id: number; status: string }> {
-  return req<{ id: number; status: string }>("POST", `/api/subjects/${subjectId}/books`, undefined, data);
 }
 
 export async function uploadBookExplanations(
@@ -335,24 +309,12 @@ export async function uploadBookExplanations(
   );
 }
 
-export async function bookDetail(id: number): Promise<BookDetail> {
-  return req<BookDetail>("GET", `/api/books/${id}`);
-}
-
-export async function deleteBook(id: number): Promise<void> {
-  await req<void>("DELETE", `/api/books/${id}`);
-}
-
 export async function retryBookFile(fileId: number): Promise<{ id: number; status: string }> {
   return req<{ id: number; status: string }>("POST", `/api/book-files/${fileId}/retry`);
 }
 
 export async function cancelBookFile(fileId: number): Promise<void> {
   await req<void>("POST", `/api/book-files/${fileId}/cancel`);
-}
-
-export async function deleteBookFile(fileId: number): Promise<void> {
-  await req<void>("DELETE", `/api/book-files/${fileId}`);
 }
 
 // 원본 파일 URL (PDF는 #page=N 으로 해당 페이지 이동)
@@ -380,6 +342,7 @@ export interface WrongQuestion {
   wrong_count: number;
   from_wrong_note: number;
   created_at: string;
+  last_attempted_at: string | null; // 마지막 시도 시각 (사진 등록만 하고 아직 안 풀었으면 null)
 }
 
 export async function wrongQuestions(subjectId: number): Promise<WrongQuestion[]> {

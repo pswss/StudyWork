@@ -219,6 +219,28 @@ describe("GET /api/subjects/:id/quiz?wrong=1", () => {
   });
 });
 
+// ── 마지막 시도 시각 ──────────────────────────────────────────────────────────
+describe("GET /api/subjects/:id/wrong — last_attempted_at", () => {
+  it("시도가 없으면 null, 채점 후에는 시각을 반환", async () => {
+    const before = await call(env, `/api/subjects/${subjectId}/wrong`, { headers: { cookie } });
+    const rowsBefore = (await before.json()) as Array<{ id: number; last_attempted_at: string | null }>;
+    expect(rowsBefore.length).toBeGreaterThan(0);
+    for (const row of rowsBefore) expect(row.last_attempted_at).toBeNull();
+
+    const target = rowsBefore[0];
+    const answer = await call(env, `/api/questions/${target.id}/answer`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ answer: "일부러 틀린 답", attemptId: "attempt-last-at" }),
+    });
+    expect(answer.status).toBe(200);
+
+    const after = await call(env, `/api/subjects/${subjectId}/wrong`, { headers: { cookie } });
+    const rowsAfter = (await after.json()) as Array<{ id: number; last_attempted_at: string | null }>;
+    expect(rowsAfter.find((row) => row.id === target.id)?.last_attempted_at).toMatch(/^\d{4}-\d{2}-\d{2}/);
+  });
+});
+
 // ── POST /api/subjects/:id/wrong/analyze ─────────────────────────────────────
 describe("POST /api/subjects/:id/wrong/analyze", () => {
   it("오답 있으면 200, analysis 반환", async () => {
