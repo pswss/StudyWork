@@ -503,6 +503,60 @@ describe("GET /api/subjects/:id/quiz", () => {
   });
 });
 
+// ── SRS-lite 정렬 — 오답 우선 → 오래 안 본 순 → 랜덤 ──────────────────────────
+describe("GET /api/subjects/:id/quiz — SRS-lite 정렬", () => {
+  let srsSubjectId: number;
+  let neverTriedWrong: number; // 오답 우세 + 미시도 → 1순위 (미시도 = 가장 오래된 취급)
+  let staleWrong: number;      // 오답 우세 + 오래 전 시도 → 2순위
+  let recentWrong: number;     // 오답 우세 + 최근 시도 → 3순위
+  let neverTriedOk: number;    // 비오답 + 미시도 → 4순위
+  let recentOk: number;        // 비오답 + 최근 시도 → 5순위
+
+  beforeAll(async () => {
+    const res = await call(env, "/api/subjects", {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ name: "SRS정렬" }),
+    });
+    srsSubjectId = ((await res.json()) as { id: number }).id;
+
+    const add = async (marker: string, wrong: number, correct: number) =>
+      (await env.DB.prepare(
+        `INSERT INTO questions (subject_id, source, qtype, difficulty, question, answer, wrong_count, correct_count)
+         VALUES (?, 'uploaded', 'short', '중', ?, '정답', ?, ?) RETURNING id`
+      ).bind(srsSubjectId, marker, wrong, correct).first<{ id: number }>())!.id;
+    const attempt = (questionId: number, at: string) =>
+      env.DB.prepare(
+        "INSERT INTO question_attempts (question_id, attempt_id, correct, created_at) VALUES (?, ?, 0, ?)"
+      ).bind(questionId, `srs-${questionId}-${at}`, at).run();
+
+    neverTriedWrong = await add("srs-오답-미시도", 2, 0);
+    staleWrong = await add("srs-오답-오래됨", 2, 0);
+    recentWrong = await add("srs-오답-최근", 2, 0);
+    neverTriedOk = await add("srs-정상-미시도", 0, 1);
+    recentOk = await add("srs-정상-최근", 0, 1);
+    await attempt(staleWrong, "2026-01-01 00:00:00");
+    await attempt(recentWrong, "2026-07-01 00:00:00");
+    await attempt(recentOk, "2026-07-02 00:00:00");
+    // 최근 시도한 오답의 과거 기록 — MAX(created_at)만 반영되는지 확인
+    await attempt(recentWrong, "2025-12-01 00:00:00");
+  });
+
+  it("오답 우선 → 오래 안 본 순, 미시도는 가장 오래된 취급", async () => {
+    const res = await call(env, `/api/subjects/${srsSubjectId}/quiz?count=50`, { headers: { cookie } });
+    expect(res.status).toBe(200);
+    const ids = ((await res.json()) as Array<{ id: number }>).map((row) => row.id);
+    expect(ids).toEqual([neverTriedWrong, staleWrong, recentWrong, neverTriedOk, recentOk]);
+  });
+
+  it("wrong=1 필터 시멘틱 유지 — wrong_count>0만, 같은 정렬", async () => {
+    const res = await call(env, `/api/subjects/${srsSubjectId}/quiz?wrong=1&count=50`, { headers: { cookie } });
+    expect(res.status).toBe(200);
+    const ids = ((await res.json()) as Array<{ id: number }>).map((row) => row.id);
+    expect(ids).toEqual([neverTriedWrong, staleWrong, recentWrong]);
+  });
+});
+
 // ── 채점 전용 과목 + 문제 세트 ──────────────────────────────────────────────
 // 채점 테스트는 별도 과목에 DB 직접 삽입해 ID를 예측 가능하게 유지한다.
 describe("POST /api/questions/:id/answer", () => {

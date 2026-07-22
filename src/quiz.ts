@@ -250,8 +250,11 @@ quizRoutes.get("/subjects/:id/quiz", async (c) => {
     sql += " AND wrong_count > 0";
   }
 
-  // 오답 가중: 오답이 정답보다 많은 것 우선, 그 다음 랜덤
-  sql += " ORDER BY (wrong_count > correct_count) DESC, RANDOM() LIMIT ?";
+  // SRS-lite: 오답이 정답보다 많은 것 우선 → 오래 안 본 순(미시도는 가장 오래된 취급) → 랜덤 타이브레이크
+  sql +=
+    " ORDER BY (wrong_count > correct_count) DESC," +
+    " COALESCE((SELECT MAX(qa.created_at) FROM question_attempts qa WHERE qa.question_id = questions.id), '') ASC," +
+    " RANDOM() LIMIT ?";
   params.push(count);
 
   const { results } = await c.env.DB.prepare(sql)

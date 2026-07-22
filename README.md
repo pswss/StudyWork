@@ -193,7 +193,7 @@ docs/superpowers/ specs(설계서·UI 목업), plans(구현 계획 3개)
 | POST /api/subjects/:id/questions/extract ⚡ | multipart `file` | 201 `{added}` |
 | POST /api/subjects/:id/questions/generate ⚡ | `{count:1-20, difficulty:"하"\|"중"\|"상"\|"혼합", materialIds:[...]}` | 202 `{jobId,status}` — 선택 자료 기반 백그라운드 생성 |
 | GET /api/ai-jobs/:id | | `{id,subject_id,kind,status,result,error,...}` — 문제·시험 TODO 작업 상태 |
-| GET /api/subjects/:id/quiz | `?source=all\|uploaded\|generated &difficulty=all\|하\|중\|상 &count=1-50 &wrong=1` | 출제 목록(**정답·해설 제외**), `ORDER BY (wrong_count>correct_count) DESC, RANDOM()` |
+| GET /api/subjects/:id/quiz | `?source=all\|uploaded\|generated &difficulty=all\|하\|중\|상 &count=1-50 &wrong=1` | 출제 목록(**정답·해설 제외**), SRS-lite 정렬: 오답 우세 우선 → 오래 안 본 순(`question_attempts` MAX(created_at), 미시도=가장 오래된 취급) → RANDOM() 타이브레이크 |
 | POST /api/questions/:id/answer | `{answer}` (빈 문자열 400) | `{correct,answer,explanation}` + counts 갱신 |
 | DELETE /api/questions/:id | | |
 | GET /api/subjects/:id/wrong | | wrong_count>0 문제, 많이 틀린 순, `last_attempted_at` 포함(시도 없으면 null) |
