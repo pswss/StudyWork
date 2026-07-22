@@ -112,4 +112,71 @@ describe("materials API", () => {
     });
     expect(res.status).toBe(200);
   });
+
+  it("내부 문제집 삭제가 실패하면 자료 삭제도 롤백하고 파일을 보존", async () => {
+    const book = await env.DB.prepare(
+      "INSERT INTO books (subject_id, title) VALUES (?, '원자성 테스트') RETURNING id"
+    ).bind(subjectId).first<{ id: number }>();
+    const bookKey = `books/${subjectId}/atomic.pdf`;
+    await env.DB.prepare(
+      `INSERT INTO book_files (book_id, name, r2_key, mime, status)
+       VALUES (?, 'atomic.pdf', ?, 'application/pdf', 'ready')`
+    ).bind(book!.id, bookKey).run();
+    const materialKey = `materials/${subjectId}/atomic.pdf`;
+    const material = await env.DB.prepare(
+      `INSERT INTO materials (subject_id, kind, title, r2_key, status, book_id)
+       VALUES (?, 'pdf', '원자성 자료', ?, 'ready', ?) RETURNING id`
+    ).bind(subjectId, materialKey, book!.id).first<{ id: number }>();
+    await env.FILES.put(bookKey, new Uint8Array([1]).buffer);
+    await env.FILES.put(materialKey, new Uint8Array([2]).buffer);
+
+    await env.DB.prepare(
+      `CREATE TRIGGER fail_material_book_delete BEFORE DELETE ON books
+       WHEN OLD.id = ${book!.id}
+       BEGIN SELECT RAISE(ABORT, 'forced book delete failure'); END`
+    ).run();
+    try {
+      const res = await call(env, `/api/materials/${material!.id}`, {
+        method: "DELETE", headers: { cookie },
+      });
+      expect(res.status).toBe(500);
+      await expect(env.DB.prepare("SELECT id FROM materials WHERE id = ?").bind(material!.id).first())
+        .resolves.toMatchObject({ id: material!.id });
+      await expect(env.DB.prepare("SELECT id FROM books WHERE id = ?").bind(book!.id).first())
+        .resolves.toMatchObject({ id: book!.id });
+      expect(env.FILES.exists(materialKey)).toBe(true);
+      expect(env.FILES.exists(bookKey)).toBe(true);
+    } finally {
+      await env.DB.prepare("DROP TRIGGER IF EXISTS fail_material_book_delete").run();
+      await call(env, `/api/materials/${material!.id}`, { method: "DELETE", headers: { cookie } });
+      await env.FILES.delete(materialKey);
+      await env.FILES.delete(bookKey);
+    }
+  });
+
+  it("파일 정리 실패는 완료된 DB 삭제를 되돌리지 않음", async () => {
+    const key = `materials/${subjectId}/cleanup-failure.pdf`;
+    const material = await env.DB.prepare(
+      `INSERT INTO materials (subject_id, kind, title, r2_key, status)
+       VALUES (?, 'pdf', '파일 정리 실패', ?, 'ready') RETURNING id`
+    ).bind(subjectId, key).first<{ id: number }>();
+    await env.FILES.put(key, new Uint8Array([3]).buffer);
+    const originalDelete = env.FILES.delete.bind(env.FILES);
+    env.FILES.delete = async (target: string) => {
+      if (target === key) throw new Error("forced file cleanup failure");
+      return originalDelete(target);
+    };
+    try {
+      const res = await call(env, `/api/materials/${material!.id}`, {
+        method: "DELETE", headers: { cookie },
+      });
+      expect(res.status).toBe(200);
+      await expect(env.DB.prepare("SELECT id FROM materials WHERE id = ?").bind(material!.id).first())
+        .resolves.toBeNull();
+      expect(env.FILES.exists(key)).toBe(true);
+    } finally {
+      env.FILES.delete = originalDelete;
+      await env.FILES.delete(key);
+    }
+  });
 });

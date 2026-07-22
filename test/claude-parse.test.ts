@@ -258,6 +258,7 @@ describe("parseQuizItemsEx", () => {
     explanation: "해설",
     page: 2,
     figure: false,
+    figure_description: null,
     box: null,
   };
 
@@ -282,6 +283,18 @@ describe("parseQuizItemsEx", () => {
   it("OX 답을 canonical o/x로 정규화", () => {
     const item = { ...base, qtype: "ox", choices: null, choiceCount: null, answer: "참" };
     expect(parseQuizItemsEx(JSON.stringify([item]))[0].answer).toBe("o");
+  });
+
+  it("그림 설명을 정리해 보존하고 그림 여부와 함께 검증", () => {
+    const described = parseQuizItemsEx(JSON.stringify([{
+      ...base,
+      figure: true,
+      figure_description: "  x축의 2와 y축의 3을 지나는 점 A가 표시된 좌표평면.  ",
+      box: [0.2, 0.6],
+    }]))[0];
+    expect(described.figure_description).toBe("x축의 2와 y축의 3을 지나는 점 A가 표시된 좌표평면.");
+    expect(() => parseQuizItemsEx(JSON.stringify([{ ...base, figure: true, figure_description: "" }]))).toThrow("figure_description이 필수");
+    expect(() => parseQuizItemsEx(JSON.stringify([{ ...base, figure_description: "불필요한 설명" }]))).toThrow("null이어야");
   });
 
   it.each([

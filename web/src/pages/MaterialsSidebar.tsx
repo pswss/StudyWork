@@ -7,6 +7,8 @@ import {
   uploadMaterial, retryMaterial, deleteMaterial, cancelMaterial,
   retryBookFile, cancelBookFile,
 } from "../api";
+import { useUndoDelete } from "../UndoDelete";
+import { AiPending } from "../Pending";
 
 export function uploadValidationError(file: Pick<File, "name" | "type" | "size">): string | null {
   const lower = file.name.toLowerCase();
@@ -16,7 +18,7 @@ export function uploadValidationError(file: Pick<File, "name" | "type" | "size">
   if (!isPdf && !isImage) return "PDF, JPEG, PNG, WebP, GIF만 지원합니다";
   const maxBytes = isPdf ? 200 * 1024 * 1024 : 30 * 1024 * 1024;
   if (file.size <= 0 || file.size > maxBytes) {
-    return `${isPdf ? "200MB" : "30MB"} 이하 파일만 지원합니다`;
+    return `${isPdf ? "200 MB" : "30 MB"} 이하 파일만 지원합니다`;
   }
   return null;
 }
@@ -28,17 +30,30 @@ function kindLabel(k: Material["kind"]) {
 interface Props {
   subject: Subject;
   mats: Material[];
+  loading?: boolean;
   /** 자료 목록 재적재 — 부모의 loadMats(subjectId, refreshAfterPending=true) */
   reloadMats: (subjectId: number) => Promise<void>;
 }
 
-export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
+interface MaterialActionError {
+  materialId: number;
+  title: string;
+  context: string;
+  message: string;
+  retry: () => Promise<unknown>;
+}
+
+export default function MaterialsSidebar({ subject, mats, loading = false, reloadMats }: Props) {
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("");
+  const [uploadErrors, setUploadErrors] = useState<string[]>([]);
+  const [textError, setTextError] = useState("");
+  const [materialActionError, setMaterialActionError] = useState<MaterialActionError | null>(null);
   const [materialActionId, setMaterialActionId] = useState<number | null>(null);
   const [showTextForm, setShowTextForm] = useState(false);
   const [textTitle, setTextTitle] = useState("");
   const [textBody, setTextBody] = useState("");
+  const { pending: pendingDelete, schedule: scheduleDelete } = useUndoDelete();
 
   useEscape(showTextForm, () => setShowTextForm(false));
   const mountedRef = useRef(true);
@@ -55,6 +70,7 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
     const files = e.target.files ? Array.from(e.target.files) : [];
     if (files.length === 0) return;
     e.target.value = "";
+    setUploadErrors([]);
     const uploadSubjectId = subject.id;
     const errors: string[] = [];
     setUploading(true);
@@ -83,7 +99,7 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
         }
       }
       if (errors.length > 0 && mountedRef.current && subjectIdRef.current === uploadSubjectId) {
-        alert(errors.join("\n"));
+        setUploadErrors(errors);
       }
     } finally {
       if (mountedRef.current) {
@@ -98,6 +114,7 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
     const title = textTitle.trim();
     const text = textBody.trim();
     if (!title || !text) return;
+    setTextError("");
     setUploading(true);
     try {
       const fd = new FormData();
@@ -105,62 +122,96 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
       fd.append("text", text);
       await uploadMaterial(subject.id, fd);
       if (!mountedRef.current) return;
-      setTextTitle(""); setTextBody(""); setShowTextForm(false);
       await reloadMats(subject.id);
+      if (!mountedRef.current) return;
+      setTextTitle(""); setTextBody(""); setShowTextForm(false);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "저장 실패");
+      if (mountedRef.current) {
+        setTextError(`텍스트 저장 실패: ${err instanceof Error ? err.message : "저장 실패"}. 제목과 내용은 그대로 유지했습니다. 다시 저장해 주세요.`);
+      }
     } finally {
       if (mountedRef.current) setUploading(false);
     }
   }
 
-  async function runMaterialAction(id: number, action: () => Promise<unknown>) {
+  async function runMaterialAction(
+    id: number,
+    title: string,
+    context: string,
+    action: () => Promise<unknown>,
+    throwOnError = false,
+  ) {
     if (materialActionRef.current !== null) return;
     materialActionRef.current = id;
     setMaterialActionId(id);
+    setMaterialActionError(null);
     try {
       await action();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "자료 작업에 실패했습니다");
+      if (mountedRef.current && !throwOnError) {
+        setMaterialActionError({
+          materialId: id,
+          title,
+          context,
+          message: error instanceof Error ? error.message : "자료 작업에 실패했습니다",
+          retry: action,
+        });
+      }
+      if (throwOnError) throw error;
     } finally {
-      await reloadMats(subject.id);
-      materialActionRef.current = null;
-      if (mountedRef.current) setMaterialActionId(null);
+      try {
+        await reloadMats(subject.id);
+      } finally {
+        materialActionRef.current = null;
+        if (mountedRef.current) setMaterialActionId(null);
+      }
     }
   }
 
   // retry material
-  async function retry(id: number) {
-    await runMaterialAction(id, () => retryMaterial(id));
+  async function retry(material: Material) {
+    await runMaterialAction(material.id, material.title, "자료 분석 재시도", () => retryMaterial(material.id));
   }
 
   // cancel material analysis
-  async function doCancelMat(id: number) {
-    await runMaterialAction(id, () => cancelMaterial(id));
+  async function doCancelMat(material: Material) {
+    await runMaterialAction(material.id, material.title, "자료 분석 중단", () => cancelMaterial(material.id));
   }
 
-  async function doRetryBook(id: number, fileId: number) {
-    await runMaterialAction(id, () => retryBookFile(fileId));
+  async function doRetryBook(material: Material, fileId: number) {
+    await runMaterialAction(material.id, material.title, "문제 추출 재시도", () => retryBookFile(fileId));
   }
 
-  async function doCancelBook(id: number, fileId: number) {
-    await runMaterialAction(id, () => cancelBookFile(fileId));
+  async function doCancelBook(material: Material, fileId: number) {
+    await runMaterialAction(material.id, material.title, "문제 추출 중단", () => cancelBookFile(fileId));
   }
 
   // delete material
-  async function doDeleteMat(material: Material) {
+  function doDeleteMat(material: Material) {
     const confirmation = prompt(
-      `"${material.title}" 자료를 삭제하면 이 자료에서 추출된 문제와 원본 그림도 모두 삭제됩니다.\n\n계속하려면 "삭제"를 입력하세요.`
+      `“${material.title}” 자료를 삭제하면 이 자료에서 추출된 문제와 원본 그림도 모두 삭제됩니다.\n\n계속하려면 “삭제”를 입력하세요.`
     );
     if (confirmation?.trim() !== "삭제") return;
-    await runMaterialAction(material.id, () => deleteMaterial(material.id));
+    scheduleDelete({
+      key: `material:${material.id}`,
+      label: `“${material.title}” 자료`,
+      commit: () => runMaterialAction(
+        material.id,
+        material.title,
+        "자료 삭제",
+        () => deleteMaterial(material.id),
+        true,
+      ),
+    });
   }
 
   return (
     <div className="sidebar">
       <div className="panel sidebar-panel">
         <div className="sidebar-title">자료</div>
-        {mats.length === 0 && <p style={{ color: "var(--ink-3)", fontSize: 13 }}>자료가 없습니다.</p>}
+        {mats.length === 0 && (loading
+          ? <AiPending label="자료 불러오는 중" />
+          : <p style={{ color: "var(--ink-3)", fontSize: 13 }}>자료가 없습니다.</p>)}
         <div className="mat-list">
           {mats.map(m => (
             <div className="mat-entry" key={m.id}>
@@ -173,7 +224,7 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
                 {m.status === "processing" && (
                   <>
                     <span className="status-dot processing" role="img" aria-label="자료 분석 중" />
-                    <span className="quiz-status-msg">
+                    <span className="quiz-status-msg" role="status" aria-live="polite">
                       {m.retry_chunk_count
                         ? `${m.progress}% · 오류·미완료 ${m.retry_chunk_count}개 청크만 재시도 중`
                         : `${m.progress}%`}
@@ -181,8 +232,8 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
                     <button
                       className="retry-btn"
                       title="분석 중단"
-                      disabled={materialActionId !== null}
-                      onClick={() => doCancelMat(m.id)}
+                      disabled={materialActionId !== null || pendingDelete !== null}
+                      onClick={() => doCancelMat(m)}
                     >중단</button>
                   </>
                 )}
@@ -191,7 +242,7 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
                     <span className="status-dot ready" role="img" aria-label="자료 준비됨" />
                     {m.book_status === "processing" && (
                       <>
-                        <span className="quiz-status-msg" title="문제·해설을 뽑아 문제 칸에 등록 중">
+                        <span className="quiz-status-msg" role="status" aria-live="polite" title="문제·해설을 뽑아 문제 칸에 등록 중">
                           {m.book_retry_chunk_count && m.book_error?.includes("오류·미완료")
                             ? `문제 추출 ${m.book_progress ?? 0}% · 오류·미완료 ${m.book_retry_chunk_count}개 청크만 재시도 중`
                             : `문제 추출 ${m.book_progress ?? 0}%`}
@@ -199,8 +250,8 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
                         {m.book_file_id && (
                           <button
                             className="retry-btn"
-                            disabled={materialActionId !== null}
-                            onClick={() => doCancelBook(m.id, m.book_file_id!)}
+                            disabled={materialActionId !== null || pendingDelete !== null}
+                            onClick={() => doCancelBook(m, m.book_file_id!)}
                           >중단</button>
                         )}
                       </>
@@ -209,8 +260,8 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
                       <button
                         className="retry-btn"
                         title={m.book_error ?? "문제 추출 실패"}
-                        disabled={materialActionId !== null}
-                        onClick={() => doRetryBook(m.id, m.book_file_id!)}
+                        disabled={materialActionId !== null || pendingDelete !== null}
+                        onClick={() => doRetryBook(m, m.book_file_id!)}
                       >문제 재시도</button>
                     )}
                   </>
@@ -220,32 +271,32 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
                     <span className="status-dot error" role="img" aria-label="자료 분석 오류" />
                     <button
                       className="retry-btn"
-                      disabled={materialActionId !== null}
-                      onClick={() => retry(m.id)}
+                      disabled={materialActionId !== null || pendingDelete !== null}
+                      onClick={() => retry(m)}
                     >재시도</button>
                   </>
                 )}
                 <button
                   className="del-btn"
-                  aria-label={`${m.title} 삭제`}
-                  disabled={materialActionId !== null}
+                  aria-label={`${m.title} ${pendingDelete?.key === `material:${m.id}` ? "삭제 예정" : "삭제"}`}
+                  disabled={materialActionId !== null || pendingDelete !== null}
                   onClick={() => doDeleteMat(m)}
                 >✕</button>
               </div>
-              {m.status === "error" && m.error && <div className="mat-error">{m.error}</div>}
+              {m.status === "error" && m.error && <div className="mat-error" role="alert">{m.error}</div>}
               {m.status === "error" && Boolean(m.retry_chunk_count) && (
-                <div className="mat-warning">
+                <div className="mat-warning" role="status">
                   오류·미완료 {m.retry_chunk_count}/{m.chunk_total ?? "?"}개 청크. 재시도하면 이 청크만 다시 분석합니다.
                 </div>
               )}
               {m.integrity_warning && !m.integrity_warning.startsWith("페이지 근거 불완전:") && (
-                <div className="mat-warning">{m.integrity_warning}</div>
+                <div className="mat-warning" role="status">{m.integrity_warning}</div>
               )}
               {m.book_status === "error" && (
                 <>
-                  <div className="mat-error">{m.book_error ?? "문제 추출에 실패했습니다. 재시도해 주세요."}</div>
+                  <div className="mat-error" role="alert">{m.book_error ?? "문제 추출에 실패했습니다. 재시도해 주세요."}</div>
                   {Boolean(m.book_retry_chunk_count) && (
-                    <div className="mat-warning">
+                    <div className="mat-warning" role="status">
                       오류·미완료 {m.book_retry_chunk_count}/{m.book_chunk_total ?? "?"}개 청크. 다음 재시도에서는 이 청크만 다시 추출합니다.
                     </div>
                   )}
@@ -254,6 +305,22 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
             </div>
           ))}
         </div>
+        {materialActionError && (
+          <div className="mat-error" role="alert">
+            <strong>“{materialActionError.title}” {materialActionError.context} 실패</strong>
+            <div>{materialActionError.message}</div>
+            <button
+              className="btn sm"
+              disabled={materialActionId !== null || pendingDelete !== null}
+              onClick={() => runMaterialAction(
+                materialActionError.materialId,
+                materialActionError.title,
+                materialActionError.context,
+                materialActionError.retry,
+              )}
+            >다시 시도</button>
+          </div>
+        )}
 
         <div className="upload-area">
           <label className="file-label">
@@ -266,35 +333,49 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
               disabled={uploading}
             />
           </label>
-          <div className="upload-help">PDF 200MB·500쪽 이하 / 이미지 30MB 이하</div>
-          {uploading && <div className="upload-status">업로드 중 {uploadStatus}</div>}
+          <div className="upload-help">PDF 200 MB·500쪽 이하 / 이미지 30 MB 이하</div>
+          {uploading && <div className="upload-status" role="status" aria-live="polite">업로드 중 {uploadStatus}</div>}
+          {uploadErrors.length > 0 && (
+            <div className="mat-error" role="alert">
+              <strong>업로드하지 못한 파일</strong>
+              <ul>{uploadErrors.map(error => <li key={error}>{error}</li>)}</ul>
+              <div>위 파일을 다시 선택해 주세요. 성공한 파일은 이미 추가되었습니다.</div>
+            </div>
+          )}
           <button
             className="btn sm"
             style={{ width: "100%" }}
             onClick={() => setShowTextForm(v => !v)}
+            aria-expanded={showTextForm}
+            aria-controls="material-text-form"
           >
             텍스트 추가
           </button>
-          {showTextForm && (
-            <div className="text-form">
+          <div id="material-text-form" className="text-form" hidden={!showTextForm}>
               <input
                 className="text-input"
-                placeholder="제목"
+                name="material-title"
+                autoComplete="off"
+                aria-label="텍스트 자료 제목"
+                placeholder="예: 벡터 요약…"
                 value={textTitle}
                 onChange={e => setTextTitle(e.target.value)}
               />
               <textarea
                 className="text-input"
-                placeholder="내용"
+                name="material-content"
+                autoComplete="off"
+                aria-label="텍스트 자료 내용"
+                placeholder="예: 내적의 정의와 활용…"
                 value={textBody}
                 onChange={e => setTextBody(e.target.value)}
               />
+              {textError && <div className="mat-error" role="alert">{textError}</div>}
               <div style={{ display: "flex", gap: 8 }}>
                 <button className="btn sm primary" style={{ flex: 1 }} onClick={submitText} disabled={uploading}>저장</button>
                 <button className="btn sm" onClick={() => setShowTextForm(false)}>취소</button>
               </div>
-            </div>
-          )}
+          </div>
         </div>
       </div>
     </div>

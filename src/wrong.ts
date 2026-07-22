@@ -13,7 +13,8 @@ export const wrongRoutes = new Hono<{ Bindings: Env }>();
 wrongRoutes.get("/subjects/:id/wrong", async (c) => {
   const subjectId = c.req.param("id");
   const { results } = await c.env.DB.prepare(
-    "SELECT q.*, (SELECT MAX(created_at) FROM question_attempts qa WHERE qa.question_id = q.id) AS last_attempted_at " +
+    "SELECT q.*, EXISTS(SELECT 1 FROM book_files bf WHERE bf.id = q.src_file_id) AS src_file_exists, " +
+    "(SELECT MAX(created_at) FROM question_attempts qa WHERE qa.question_id = q.id) AS last_attempted_at " +
     "FROM questions q WHERE subject_id = ? AND wrong_count > 0 ORDER BY wrong_count DESC"
   )
     .bind(subjectId)
@@ -22,6 +23,7 @@ wrongRoutes.get("/subjects/:id/wrong", async (c) => {
   const rows = results.map((r) => ({
     ...r,
     choices: r.choices ? JSON.parse(r.choices as string) : null,
+    src_file_id: r.src_file_exists ? r.src_file_id : null,
   }));
   return c.json(rows);
 });

@@ -4,6 +4,13 @@ export class AuthError extends Error {}
 
 export class NotFoundError extends Error {}
 
+function httpErrorMessage(status: number): string {
+  if (status === 429) return "요청이 많습니다. 잠시 뒤 다시 시도해 주세요.";
+  if (status === 403) return "이 작업을 할 권한이 없습니다.";
+  if (status >= 500) return "서버가 요청을 처리하지 못했습니다. 잠시 뒤 다시 시도해 주세요.";
+  return "요청을 완료하지 못했습니다. 입력 내용을 확인하고 다시 시도해 주세요.";
+}
+
 async function req<T>(
   method: string,
   path: string,
@@ -21,11 +28,11 @@ async function req<T>(
   if (res.status === 401) {
     // 세션 만료를 앱 전역에 알려 로그인 화면으로 돌아가게 한다.
     window.dispatchEvent(new Event("sw:auth-expired"));
-    throw new AuthError("Unauthorized");
+    throw new AuthError("로그인이 필요합니다.");
   }
-  if (res.status === 404) throw new NotFoundError("Not found");
+  if (res.status === 404) throw new NotFoundError("요청한 항목을 찾을 수 없습니다.");
   if (!res.ok) {
-    let msg = `HTTP ${res.status}`;
+    let msg = httpErrorMessage(res.status);
     try {
       const j = await res.json() as { error?: string };
       if (j.error) msg = j.error;
@@ -131,6 +138,9 @@ export async function chat(
     ...(materialIds ? { materialIds } : {}),
   });
 }
+export async function cancelChat(subjectId: number): Promise<void> {
+  await req<void>("POST", `/api/subjects/${subjectId}/chat/cancel`);
+}
 
 // ===== AI runtime =====
 export interface AIStatus {
@@ -202,6 +212,7 @@ export interface Question {
   src_file_name: string | null; // 원본 자료 파일명 — 문제 은행을 파일별로 묶는 그룹 라벨
   src_page: number | null;
   has_figure: number; // 1이면 그림 딸린 문제 — 원본 페이지 이미지 인라인 표시
+  figure_description: string | null; // 풀이에 필요한 도형 요소·축·값·관계 설명
   figure_box: string | null; // "top,bottom" 페이지 높이 비율 — 있으면 그 구간만 잘라 표시
 }
 
@@ -215,6 +226,7 @@ export interface QuizItem {
   src_file_id: number | null; // 문제집 자동 등록 문제의 원본 파일 (도형·그림 확인용)
   src_page: number | null;
   has_figure: boolean; // 그림·도형 딸린 문제 — 원본 페이지 이미지를 인라인 표시
+  figure_description: string | null; // 풀이에 필요한 도형 요소·축·값·관계 설명
   figure_box: string | null; // "top,bottom" 페이지 높이 비율 — 있으면 그 구간만 잘라 표시
 }
 
@@ -346,6 +358,11 @@ export interface WrongQuestion {
   correct_count: number;
   wrong_count: number;
   from_wrong_note: number;
+  src_file_id: number | null;
+  src_page: number | null;
+  has_figure: number;
+  figure_description: string | null;
+  figure_box: string | null;
   created_at: string;
   last_attempted_at: string | null; // 마지막 시도 시각 (사진 등록만 하고 아직 안 풀었으면 null)
 }
@@ -398,6 +415,9 @@ export interface AIJobStart {
 
 export async function aiJob<T = unknown>(jobId: number): Promise<AIJob<T>> {
   return req<AIJob<T>>("GET", `/api/ai-jobs/${jobId}`);
+}
+export async function cancelAIJob(jobId: number): Promise<void> {
+  await req<void>("POST", `/api/ai-jobs/${jobId}/cancel`);
 }
 
 export async function exams(subjectId: number): Promise<Exam[]> {

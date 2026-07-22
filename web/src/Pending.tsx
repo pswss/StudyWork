@@ -9,10 +9,11 @@ export function AiPending({ label }: { label: string }) {
     return () => clearInterval(t);
   }, []);
   const elapsed = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")}`;
+  const displayLabel = /[…!?]$/.test(label.trim()) ? label : `${label}…`;
   return (
     <span className="ai-pending" role="status" aria-live="polite">
       <span className="ai-pending-dots" aria-hidden="true"><i /><i /><i /></span>
-      <span>{label}</span>
+      <span>{displayLabel}</span>
       <span className="ai-pending-sec" aria-hidden="true">{elapsed}</span>
     </span>
   );

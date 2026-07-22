@@ -418,11 +418,13 @@ materials.delete("/materials/:id", async (c) => {
   const id = Number(c.req.param("id"));
   cancelJob(`mat:${id}`); // 진행 중이던 추출 잡 중지
   const m = await c.env.DB.prepare(
-    "DELETE FROM materials WHERE id = ? RETURNING r2_key, book_id"
+    "SELECT r2_key, book_id FROM materials WHERE id = ?"
   )
     .bind(id).first<{ r2_key: string | null; book_id: number | null }>();
-  if (m?.r2_key) await c.env.FILES.delete(m.r2_key);
-  // 자료에서 뽑은 문제(내부 book)까지 연쇄 삭제 — 자료 지우면 그 문제·해설도 문제 칸에서 사라진다
-  if (m?.book_id) await deleteBookCascade(c.env, m.book_id);
+  const deleteMaterial = c.env.DB.prepare("DELETE FROM materials WHERE id = ?").bind(id);
+  // 자료와 내부 book을 한 batch에서 지워 둘 중 하나만 남는 부분 실패를 막는다.
+  if (m?.book_id) await deleteBookCascade(c.env, m.book_id, [deleteMaterial]);
+  else await c.env.DB.batch([deleteMaterial]);
+  if (m?.r2_key) await c.env.FILES.delete(m.r2_key).catch(() => {});
   return c.json({ ok: true });
 });

@@ -61,7 +61,36 @@ describe("chat API", () => {
     expect(msgs[0].role).toBe("user");
     expect(msgs[1].role).toBe("assistant");
     expect(aiMocks.chat).toHaveBeenCalledTimes(1);
-    expect(aiMocks.chat.mock.calls[0]).toHaveLength(4);
+    expect(aiMocks.chat.mock.calls[0]).toHaveLength(5);
+    expect(aiMocks.chat.mock.calls[0][4]).toBeInstanceOf(AbortSignal);
+  });
+
+  it("답변 생성을 중단하면 모델 신호를 끊고 대화를 저장하지 않음", async () => {
+    const before = await call(env, `/api/subjects/${subjectId}/messages`, { headers: { cookie } });
+    const beforeCount = ((await before.json()) as unknown[]).length;
+    let started!: () => void;
+    const begun = new Promise<void>(resolve => { started = resolve; });
+    let signal: AbortSignal | undefined;
+    aiMocks.chat.mockImplementationOnce(async (...args: unknown[]) => {
+      signal = args[4] as AbortSignal;
+      started();
+      await new Promise<void>((_resolve, reject) => signal!.addEventListener("abort", () => reject(new Error("사용자 중단")), { once: true }));
+      return "도달하지 않음";
+    });
+
+    const response = call(env, `/api/subjects/${subjectId}/chat`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ message: "긴 설명", mode: "general" }),
+    });
+    await begun;
+    const cancelled = await call(env, `/api/subjects/${subjectId}/chat/cancel`, { method: "POST", headers: { cookie } });
+    expect(cancelled.status).toBe(200);
+    expect(signal?.aborted).toBe(true);
+    expect((await response).status).toBe(502);
+
+    const after = await call(env, `/api/subjects/${subjectId}/messages`, { headers: { cookie } });
+    expect(((await after.json()) as unknown[]).length).toBe(beforeCount);
   });
 
   it("자료 기반 모드 + 자료 0개 → AI 미호출, 안내 반환", async () => {

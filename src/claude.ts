@@ -941,6 +941,7 @@ export interface QuizItemEx {
   explanation: string;
   page: number | null;
   figure: boolean;
+  figure_description: string | null;
   box: [number, number] | null;
 }
 
@@ -1039,13 +1040,26 @@ export function parseQuizItemsEx(text: string): QuizItemEx[] {
     }
     const pn = Number(o.page);
     const page = Number.isInteger(pn) && pn > 0 ? pn : null;
+    if (typeof o.figure !== "boolean") {
+      throw new Error(`항목 ${index}: figure는 boolean이어야 합니다.`);
+    }
+    const figure = o.figure;
+    let figureDescription: string | null = null;
+    if (figure) {
+      if (typeof o.figure_description !== "string" || !o.figure_description.trim()) {
+        throw new Error(`항목 ${index}: 그림 문제는 figure_description이 필수입니다.`);
+      }
+      figureDescription = o.figure_description.trim();
+    } else if (o.figure_description !== null) {
+      throw new Error(`항목 ${index}: 그림이 없으면 figure_description은 null이어야 합니다.`);
+    }
     let box: [number, number] | null = null;
-    if (o.figure === true && Array.isArray(o.box) && o.box.length === 2) {
+    if (figure && Array.isArray(o.box) && o.box.length === 2) {
       const t = Number(o.box[0]);
       const b = Number(o.box[1]);
       if (Number.isFinite(t) && Number.isFinite(b) && t >= 0 && b <= 1 && t < b) box = [t, b];
     }
-    return { qtype, difficulty, question, choices, answer, explanation, page, figure: o.figure === true, box };
+    return { qtype, difficulty, question, choices, answer, explanation, page, figure, figure_description: figureDescription, box };
   });
 }
 
@@ -1077,7 +1091,7 @@ export const PROBLEM_SECTION_RULES =
   `- Skip covers, prefaces, tables of contents, introductions, publisher notices, ads, blank pages, and answer-key-only rows as question items. Read answer keys and use them to fill answer, but never emit an answer-key row as a problem.\n`;
 
 export const QUIZ_EXTRACT_SPEC =
-  `[{"qtype":"mcq|short|ox","difficulty":"하|중|상","question":"...","choices":["..."]|null,"choiceCount":5|null,"answer":"...","explanation":"...","page":3,"figure":false,"box":null}]\n\n` +
+  `[{"qtype":"mcq|short|ox","difficulty":"하|중|상","question":"...","choices":["..."]|null,"choiceCount":5|null,"answer":"...","explanation":"...","page":3,"figure":false,"figure_description":null,"box":null}]\n\n` +
   `Rules:\n` +
   PROBLEM_SECTION_RULES +
   `- qtype: mcq for choice problems, short for short-answer/서술형, ox for O/X\n` +
@@ -1089,6 +1103,7 @@ export const QUIZ_EXTRACT_SPEC =
   `- explanation: copy the book's worked solution only when shown; otherwise use "". Never invent an explanation\n` +
   `- question: the problem statement (with its choices for context) in Korean, formulas in LaTeX ($...$ inline, $$...$$ block). NEVER put the solution/answer inside question\n` +
   `- figure: true if the problem has an accompanying figure/diagram/graph\n` +
+  `- figure_description: when figure is true, describe in Korean every visible element needed to solve it: figure/graph type, labeled points or shapes, axis names and directions, marked values or ticks, and spatial or quantitative relationships. State only what is visibly present; never reveal or infer the answer. Use null when figure is false\n` +
   `- box: when figure is true, [top,bottom] — the vertical span of the problem INCLUDING its figure as fractions of page height (e.g. [0.3,0.6]), be a bit generous; null otherwise\n` +
   `- Output ONLY the JSON array. Nothing else.`;
 

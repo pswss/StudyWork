@@ -7,6 +7,13 @@ let storedSolutionJob: (subjectId: number) => number | null;
 let uploadValidationError: (file: Pick<File, "name" | "type" | "size">) => string | null;
 
 beforeAll(async () => {
+  const values = new Map<string, string>();
+  Object.defineProperty(window, "localStorage", { configurable: true, value: {
+    clear: () => values.clear(),
+    getItem: (key: string) => values.get(key) ?? null,
+    removeItem: (key: string) => values.delete(key),
+    setItem: (key: string, value: string) => values.set(key, String(value)),
+  } });
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
@@ -14,12 +21,16 @@ beforeAll(async () => {
   ({ storedSolutionJob, uploadValidationError } = await import("../web/src/pages/SubjectDetail"));
 });
 
-afterEach(() => sessionStorage.clear());
+afterEach(() => {
+  window.localStorage.clear();
+  sessionStorage.clear();
+});
 
 describe("해설 탭 브라우저 경계", () => {
   it("과목별 진행 작업만 복구한다", () => {
-    sessionStorage.setItem("studywork:solution-job:7", "42");
-    sessionStorage.setItem("studywork:solution-job:8", "invalid");
+    window.localStorage.setItem("studywork:solution-job:7", "42");
+    window.localStorage.setItem("studywork:solution-job:8", "invalid");
+    sessionStorage.setItem("studywork:solution-job:9", "99");
 
     expect(storedSolutionJob(7)).toBe(42);
     expect(storedSolutionJob(8)).toBeNull();
@@ -29,10 +40,10 @@ describe("해설 탭 브라우저 경계", () => {
   it("서버 전송 전에 파일 형식·크기를 거른다", () => {
     expect(uploadValidationError({ name: "해설.pdf", type: "application/pdf", size: 200 * 1024 * 1024 })).toBeNull();
     expect(uploadValidationError({ name: "해설.pdf", type: "application/pdf", size: 200 * 1024 * 1024 + 1 })).toBe(
-      "200MB 이하 파일만 지원합니다"
+      "200 MB 이하 파일만 지원합니다"
     );
     expect(uploadValidationError({ name: "해설.png", type: "image/png", size: 30 * 1024 * 1024 + 1 })).toBe(
-      "30MB 이하 파일만 지원합니다"
+      "30 MB 이하 파일만 지원합니다"
     );
     expect(uploadValidationError({ name: "해설.txt", type: "text/plain", size: 10 })).toBe(
       "PDF, JPEG, PNG, WebP, GIF만 지원합니다"
@@ -57,6 +68,8 @@ describe("해설 탭 브라우저 경계", () => {
 
     expect(notes.match(/\{srcCount > 0 && \(/g)).toHaveLength(2);
     expect(notes).not.toContain("{srcCount > 1 && (");
+    expect(notes).toContain("editorRef.current?.focus()");
+    expect(notes).toContain("editButtonRef.current?.focus()");
   });
 
   it("자료 선택을 유지하고 색 외의 체크 피드백을 제공한다", () => {

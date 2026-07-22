@@ -3,7 +3,7 @@ import type { Env } from "./index";
 import { generateStudyPlan } from "./claude";
 import { checkAndIncrementUsage } from "./usage";
 import { createAIJob, readyAIJobStatement, runAIJob } from "./ai-jobs";
-import { cancelJob, finishJob, isCurrentJob, startJob } from "./jobs";
+import { cancelJob, isCurrentJob, startJob } from "./jobs";
 
 export const examRoutes = new Hono<{ Bindings: Env }>();
 
@@ -70,22 +70,21 @@ examRoutes.post("/subjects/:id/exams", async (c) => {
 
   const jobId = await createAIJob(c.env.DB, Number(subjectId), "exam-plan");
   const job = startJob(`exam-job:${jobId}`);
-  runAIJob(c.env.DB, jobId, async () => {
-    try {
-      const items = await generateStudyPlan(
-        subject.name,
-        body.title!.trim(),
-        body.exam_date!,
-        today,
-        scope,
-        materialTitles,
-        wrongSummary,
-        job.signal
-      );
-      if (!isCurrentJob(job)) throw new Error("작업이 중단되었습니다");
+  runAIJob(c.env.DB, jobId, job, async () => {
+    const items = await generateStudyPlan(
+      subject.name,
+      body.title!.trim(),
+      body.exam_date!,
+      today,
+      scope,
+      materialTitles,
+      wrongSummary,
+      job.signal
+    );
+    if (!isCurrentJob(job)) throw new Error("작업이 중단되었습니다");
 
-      if (items.length === 0) throw new Error("생성된 시험 TODO가 없습니다");
-      return {
+    if (items.length === 0) throw new Error("생성된 시험 학습 계획이 없습니다");
+    return {
         // 시험·TODO·job ready를 runAIJob이 한 batch로 저장한다. FK 실패도 전체 롤백된다.
         writes: [
           c.env.DB.prepare(
@@ -107,11 +106,8 @@ examRoutes.post("/subjects/:id/exams", async (c) => {
                updated_at = datetime('now')
            WHERE id = ?`
         ).bind(jobId, jobId),
-      };
-    } finally {
-      finishJob(job);
-    }
-  }, "시험 TODO 계획 생성에 실패했습니다.");
+    };
+  }, "시험 학습 계획 생성에 실패했습니다.");
 
   return c.json({ jobId, status: "processing" }, 202);
 });
@@ -212,25 +208,24 @@ examRoutes.post("/exams/:id/replan", async (c) => {
 
   const jobId = await createAIJob(c.env.DB, exam.subject_id, "exam-plan");
   const job = startJob(`exam:${exam.id}`);
-  runAIJob(c.env.DB, jobId, async () => {
-    try {
-      const newItems = await generateStudyPlan(
-        exam.subject_name,
-        exam.title,
-        exam.exam_date,
-        today,
-        scopeWithDone,
-        materialTitles,
-        wrongSummary,
-        job.signal
-      );
-      if (!isCurrentJob(job)) throw new Error("작업이 중단되었습니다");
-      if (newItems.length === 0) throw new Error("생성된 시험 TODO가 없습니다");
-      const exists = await c.env.DB.prepare("SELECT id FROM exams WHERE id = ?")
-        .bind(exam.id).first();
-      if (!exists) throw new Error("시험이 삭제되었습니다");
+  runAIJob(c.env.DB, jobId, job, async () => {
+    const newItems = await generateStudyPlan(
+      exam.subject_name,
+      exam.title,
+      exam.exam_date,
+      today,
+      scopeWithDone,
+      materialTitles,
+      wrongSummary,
+      job.signal
+    );
+    if (!isCurrentJob(job)) throw new Error("작업이 중단되었습니다");
+    if (newItems.length === 0) throw new Error("생성된 시험 학습 계획이 없습니다");
+    const exists = await c.env.DB.prepare("SELECT id FROM exams WHERE id = ?")
+      .bind(exam.id).first();
+    if (!exists) throw new Error("시험이 삭제되었습니다");
 
-      return {
+    return {
         // AI 성공 후 기존 미완료 계획 교체와 job ready를 같은 트랜잭션에 넣는다.
         writes: [
           c.env.DB.prepare("DELETE FROM plan_items WHERE exam_id = ? AND done = 0 AND day >= ?")
@@ -243,11 +238,8 @@ examRoutes.post("/exams/:id/replan", async (c) => {
           ),
         ],
         completion: readyAIJobStatement(c.env.DB, jobId, { examId: exam.id }),
-      };
-    } finally {
-      finishJob(job);
-    }
-  }, "시험 TODO 재계획에 실패했습니다.");
+    };
+  }, "시험 학습 계획을 조정하지 못했습니다.");
 
   return c.json({ jobId, status: "processing" }, 202);
 });
@@ -257,7 +249,9 @@ examRoutes.post("/exams/:id/replan", async (c) => {
 examRoutes.delete("/exams/:id", async (c) => {
   const examId = c.req.param("id");
   cancelJob(`exam:${examId}`);
-  await c.env.DB.prepare("DELETE FROM plan_items WHERE exam_id = ?").bind(examId).run();
-  await c.env.DB.prepare("DELETE FROM exams WHERE id = ?").bind(examId).run();
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM plan_items WHERE exam_id = ?").bind(examId),
+    c.env.DB.prepare("DELETE FROM exams WHERE id = ?").bind(examId),
+  ]);
   return c.json({ ok: true });
 });

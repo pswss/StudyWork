@@ -147,22 +147,22 @@ vi.mock("../src/claude", async (importOriginal) => {
       throw new original.ProblemChunkValidationError("항목 13: mcq choices는 2개 이상의 문자열 배열이어야 합니다.");
     }
     if (mockState.boundaryVariantMode && opts?.contentPageCount === 10) {
-      return [{ qtype: "short", difficulty: "중", question: "경계 앞쪽 문구", choices: null, answer: "1", explanation: "", page: 10, figure: false, box: null }];
+      return [{ qtype: "short", difficulty: "중", question: "경계 앞쪽 문구", choices: null, answer: "1", explanation: "", page: 10, figure: false, figure_description: null, box: null }];
     }
     if (mockState.boundaryVariantMode && opts?.contentPageCount === 11) {
-      return [{ qtype: "short", difficulty: "중", question: "경계 뒤쪽 문구", choices: null, answer: "1", explanation: "", page: 10, figure: false, box: null }];
+      return [{ qtype: "short", difficulty: "중", question: "경계 뒤쪽 문구", choices: null, answer: "1", explanation: "", page: 10, figure: false, figure_description: null, box: null }];
     }
     if (mockState.outerBoundaryVariantMode && opts?.sliceBase === 1) {
-      return [{ qtype: "short", difficulty: "중", question: "앞 청크가 다르게 읽은 경계 문항", choices: null, answer: "1", explanation: "", page: 20, figure: false, box: null }];
+      return [{ qtype: "short", difficulty: "중", question: "앞 청크가 다르게 읽은 경계 문항", choices: null, answer: "1", explanation: "", page: 20, figure: false, figure_description: null, box: null }];
     }
     if (mockState.outerBoundaryVariantMode && opts?.sliceBase === 20) {
-      return [{ qtype: "short", difficulty: "중", question: "뒤 청크가 온전히 읽은 경계 문항", choices: null, answer: "1", explanation: "", page: 20, figure: false, box: null }];
+      return [{ qtype: "short", difficulty: "중", question: "뒤 청크가 온전히 읽은 경계 문항", choices: null, answer: "1", explanation: "", page: 20, figure: false, figure_description: null, box: null }];
     }
     const suffix = opts?.sliceBase ? ` ${opts.sliceBase}` : "";
     return [
-      { qtype: "short", difficulty: "중", question: `y=2(x-3)^2+5 의 꼭짓점은?${suffix}`, choices: null, answer: mockState.changedAnswerMode ? "②" : "③", explanation: mockState.changedAnswerMode ? "" : "꼭짓점은 (3,5).", page: 2, figure: true, box: [0.2, 0.5] },
-      { qtype: "ox", difficulty: "하", question: `a>0 이면 포물선은 위로 열린다.${suffix}`, choices: null, answer: "o", explanation: "", page: 2, figure: false, box: null },
-      { qtype: "mcq", difficulty: "상", question: `다음 중 옳은 것은?${suffix}`, choices: ["①x", "②y", "③z"], answer: "③", explanation: "z가 옳다.", page: 3, figure: false, box: null },
+      { qtype: "short", difficulty: "중", question: `y=2(x-3)^2+5 의 꼭짓점은?${suffix}`, choices: null, answer: mockState.changedAnswerMode ? "②" : "③", explanation: mockState.changedAnswerMode ? "" : "꼭짓점은 (3,5).", page: 2, figure: true, figure_description: "x축과 y축이 있는 좌표평면에 꼭짓점 (3, 5)인 위로 열린 포물선이 표시되어 있다.", box: [0.2, 0.5] },
+      { qtype: "ox", difficulty: "하", question: `a>0 이면 포물선은 위로 열린다.${suffix}`, choices: null, answer: "o", explanation: "", page: 2, figure: false, figure_description: null, box: null },
+      { qtype: "mcq", difficulty: "상", question: `다음 중 옳은 것은?${suffix}`, choices: ["①x", "②y", "③z"], answer: "③", explanation: "z가 옳다.", page: 3, figure: false, figure_description: null, box: null },
     ];
   },
   };
@@ -289,9 +289,10 @@ describe("문제 추출 라우트 (파일 → questions 직행)", () => {
     expect(fig.src_page).toBe(2);
     expect(fig.src_file_id).toBe(fileId);
     expect(fig.figure_box).toBe("0.2,0.5");
+    expect(fig.figure_description).toContain("좌표평면");
     // 퀴즈 플레이에도 그림 전파
     const quiz = (await (await call(env, `/api/subjects/${subjectId}/quiz?count=50`, { headers: { cookie } })).json()) as any[];
-    expect(quiz.some((q) => q.has_figure === true)).toBe(true);
+    expect(quiz.some((q) => q.has_figure === true && q.figure_description.includes("좌표평면"))).toBe(true);
   });
 
   it("선택한 기존 문제집에 공식 해설만 원자적으로 추가", async () => {
@@ -1619,6 +1620,51 @@ describe("통합 업로드 라우팅 (자료 사이드바)", () => {
     } finally {
       mockState.failProblemProviderCode = null;
       await env.FILES.delete(material.key);
+    }
+  });
+
+  it("그림 설명 backfill은 하나씩 실행하고 인증 실패 뒤에도 재시도 표식을 보존", async () => {
+    const first = await createReadyMaterial("그림설명백필1");
+    const second = await createReadyMaterial("그림설명백필2");
+    await env.DB.prepare(
+      `UPDATE materials
+       SET pending_to_book = 1, figure_backfill_pending = 1
+       WHERE id IN (?, ?)`
+    ).bind(first.id, second.id).run();
+    const callsBefore = mockState.problemCalls;
+    mockState.delay = 80;
+    try {
+      await retryPendingToBook(env);
+      await retryPendingToBook(env); // 첫 backfill 진행 중에는 두 번째를 시작하지 않는다.
+      expect(mockState.problemCalls).toBe(callsBefore + 1);
+      await waitMatBook(first.id, "ready");
+      expect(await env.DB.prepare(
+        "SELECT pending_to_book, figure_backfill_pending FROM materials WHERE id = ?"
+      ).bind(first.id).first()).toEqual({ pending_to_book: 0, figure_backfill_pending: 0 });
+      expect(await env.DB.prepare(
+        "SELECT pending_to_book, figure_backfill_pending, book_processing FROM materials WHERE id = ?"
+      ).bind(second.id).first()).toEqual({ pending_to_book: 1, figure_backfill_pending: 1, book_processing: 0 });
+
+      mockState.delay = 0;
+      mockState.failProblemProviderCode = "auth";
+      await retryPendingToBook(env);
+      await waitMatBook(second.id, "error");
+      expect(await env.DB.prepare(
+        `SELECT pending_to_book, figure_backfill_pending, book_retry_count
+         FROM materials WHERE id = ?`
+      ).bind(second.id).first()).toEqual({ pending_to_book: 1, figure_backfill_pending: 1, book_retry_count: 0 });
+
+      mockState.failProblemProviderCode = null;
+      await retryPendingToBook(env);
+      await waitMatBook(second.id, "ready");
+      expect(await env.DB.prepare(
+        "SELECT pending_to_book, figure_backfill_pending FROM materials WHERE id = ?"
+      ).bind(second.id).first()).toEqual({ pending_to_book: 0, figure_backfill_pending: 0 });
+    } finally {
+      mockState.delay = 0;
+      mockState.failProblemProviderCode = null;
+      await env.FILES.delete(first.key);
+      await env.FILES.delete(second.key);
     }
   });
 

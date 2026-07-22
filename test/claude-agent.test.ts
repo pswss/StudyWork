@@ -298,6 +298,7 @@ describe("Agent 실행 경계", () => {
       explanation: "해설",
       page: 99,
       figure: false,
+      figure_description: null,
       box: null,
     }]);
     await expect(extractProblemsFromFile(image, "image")).rejects.toThrow("범위를 벗어났습니다");
@@ -314,6 +315,8 @@ describe("Agent 실행 경계", () => {
       expect(prompt).toContain("official answer-table pages from original PDF pages 361, 362");
       expect(prompt).toContain("exactly ONE item per printed problem block");
       expect(prompt).toContain("NEVER emit worked examples or illustrative question blocks from concept");
+      expect(prompt).toContain("figure_description");
+      expect(prompt).toContain("axis names and directions");
     };
     mock.result = JSON.stringify([{
       qtype: "mcq",
@@ -325,6 +328,7 @@ describe("Agent 실행 경계", () => {
       explanation: "",
       page: 8,
       figure: false,
+      figure_description: null,
       box: null,
     }]);
 

@@ -6,6 +6,7 @@ import {
   questions as apiQuestions,
   generateQuestions as apiGenerate,
   aiJob as apiAIJob,
+  cancelAIJob,
   quiz as apiQuiz,
   answerQuestion as apiAnswer,
   deleteQuestion as apiDeleteQuestion,
@@ -13,10 +14,11 @@ import {
   pageImageUrl,
   NotFoundError,
 } from "../api";
-import { escapeHtmlText, Md, MdInline, mdInlineHtml } from "../md";
+import { escapeHtmlText, Md, MdInline, MdInlineText, mdInlineHtml } from "../md";
 import SourcePicker from "./SourcePicker";
 import { AiPending } from "../Pending";
 import { getAnswerAttempt, type AnswerAttempt } from "../answer-attempt";
+import { useUndoDelete } from "../UndoDelete";
 
 interface Props {
   subject: Subject;
@@ -53,6 +55,26 @@ interface QuizRunOptions {
   srcFileId?: number;
 }
 
+interface QuizFilters {
+  source: "all" | "uploaded" | "generated";
+  difficulty: "all" | "하" | "중" | "상";
+  count: number;
+  wrong: boolean;
+}
+
+export function parseQuizFilters(search: string): QuizFilters {
+  const params = new URLSearchParams(search);
+  const source = params.get("quizSource");
+  const difficulty = params.get("quizDifficulty");
+  const count = Number(params.get("quizCount"));
+  return {
+    source: source === "uploaded" || source === "generated" ? source : "all",
+    difficulty: difficulty === "하" || difficulty === "중" || difficulty === "상" ? difficulty : "all",
+    count: Number.isInteger(count) && count >= 1 && count <= 50 ? count : 10,
+    wrong: params.get("quizWrong") === "1",
+  };
+}
+
 function shuffledQuestionIds(questions: Question[], count: number): number[] {
   const ids = questions.map(q => q.id);
   for (let i = ids.length - 1; i > 0; i--) {
@@ -80,14 +102,24 @@ export function qtypeLabel(q: string) {
   return q === "mcq" ? "객관식" : q === "short" ? "단답" : "OX";
 }
 
+export function quizShortcutChoice(item: Pick<QuizItem, "qtype" | "choices">, key: string): string | null {
+  if (item.qtype === "ox" && /^[ox]$/i.test(key)) return key.toUpperCase();
+  if (item.qtype !== "mcq" || !item.choices || !/^[1-9]$/.test(key)) return null;
+  return item.choices[Number(key) - 1] ?? null;
+}
+
 function accuracyLabel(q: Question): string {
   const total = q.correct_count + q.wrong_count;
-  if (total === 0) return "-";
-  return `${q.correct_count}/${total}`;
+  if (total === 0) return "기록 없음";
+  return `정답 ${q.correct_count}/${total}`;
+}
+
+export function figureAlt(description: string | null, page: number | null, number?: number): string {
+  return description?.trim() || `${number ? `${number}번 ` : ""}문제 풀이에 필요한 원본 도형 또는 그림 — p.${page ?? 1}`;
 }
 
 // ── 인쇄 헬퍼 ──────────────────────────────────────────────────────────────────
-function printQuestions(subjectName: string, qs: Question[], type: "question" | "answer") {
+function printQuestions(subjectName: string, qs: Question[], type: "question" | "answer"): string | null {
   let win: Window | null;
   try {
     win = window.open("", "_blank");
@@ -95,8 +127,7 @@ function printQuestions(subjectName: string, qs: Question[], type: "question" | 
     win = null;
   }
   if (!win) {
-    alert("팝업이 차단됐습니다. 팝업 허용 후 다시 시도하세요.");
-    return;
+    return "인쇄 창이 차단됐습니다. 이 사이트의 팝업을 허용한 뒤 다시 인쇄해 주세요.";
   }
   try {
     win.opener = null;
@@ -109,6 +140,11 @@ function printQuestions(subjectName: string, qs: Question[], type: "question" | 
       const num = i + 1;
       if (type === "question") {
         let html = `<div class="q-block"><p class="q-num">${num}.</p><p class="q-text">${mdInlineHtml(q.question)}</p>`;
+        if (q.src_file_id && q.has_figure) {
+          const src = escapeHtmlText(new URL(pageImageUrl(q.src_file_id, q.src_page, q.figure_box), window.location.origin).href);
+          const alt = escapeHtmlText(figureAlt(q.figure_description, q.src_page, num));
+          html += `<img class="q-figure" width="1200" height="900" src="${src}" alt="${alt}">`;
+        }
         if (q.qtype === "mcq" && q.choices) {
           html += `<ol class="choices">${q.choices.map(c => `<li>${mdInlineHtml(c)}</li>`).join("")}</ol>`;
         } else if (q.qtype === "short") {
@@ -132,6 +168,7 @@ function printQuestions(subjectName: string, qs: Question[], type: "question" | 
   .q-block{margin-bottom:24px;}
   .q-num{font-weight:700;margin-bottom:4px;}
   .q-text{margin-bottom:6px;line-height:1.7;}
+  .q-figure{display:block;max-width:100%;max-height:420px;object-fit:contain;margin:12px auto;}
   .choices{padding-left:24px;line-height:2;}
   .ans-blank{border-bottom:1px solid #555;height:28px;margin-top:8px;}
   .ox-blank{font-size:18px;margin-top:6px;letter-spacing:8px;}
@@ -141,10 +178,14 @@ function printQuestions(subjectName: string, qs: Question[], type: "question" | 
   win.document.close();
   win.focus();
   win.print();
+  return null;
 }
 
 // ── 메인 컴포넌트 ──────────────────────────────────────────────────────────────
 export default function Quiz({ subject, materials, active = true, kickWrongQuiz }: Props) {
+  const { pending: pendingDelete, schedule: scheduleDelete } = useUndoDelete();
+  const autoFocusInput = typeof window.matchMedia !== "function" || window.matchMedia("(pointer: fine)").matches;
+  const initialFilters = useMemo(() => parseQuizFilters(window.location.search), []);
   const mountedRef = useRef(true);
   const subjectIdRef = useRef(subject.id);
   const bankRequestRef = useRef(0);
@@ -165,17 +206,27 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   const [allInScope, setAllInScope] = useState(true);
 
   // 은행 - 퀴즈 시작 컨트롤
-  const [startSource, setStartSource] = useState("all");
-  const [startDiff, setStartDiff] = useState("all");
-  const [startCount, setStartCount] = useState(10);
-  const [startWrong, setStartWrong] = useState(false);
+  const [startSource, setStartSource] = useState<string>(initialFilters.source);
+  const [startDiff, setStartDiff] = useState<string>(initialFilters.difficulty);
+  const [startCount, setStartCount] = useState(initialFilters.count);
+  const [startWrong, setStartWrong] = useState(initialFilters.wrong);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (startSource === "all") params.delete("quizSource"); else params.set("quizSource", startSource);
+    if (startDiff === "all") params.delete("quizDifficulty"); else params.set("quizDifficulty", startDiff);
+    if (startCount === 10) params.delete("quizCount"); else params.set("quizCount", String(startCount));
+    if (startWrong) params.set("quizWrong", "1"); else params.delete("quizWrong");
+    window.history.replaceState(null, "", `${window.location.pathname}?${params}${window.location.hash}`);
+  }, [startCount, startDiff, startSource, startWrong]);
 
   // 은행 - AI 생성
   const [genCount, setGenCount] = useState(5);
   const [genDiff, setGenDiff] = useState("혼합");
   const [generating, setGenerating] = useState(false);
+  const [cancellingGeneration, setCancellingGeneration] = useState(false);
   const [genMsg, setGenMsg] = useState("");
   const [generationJobId, setGenerationJobId] = useState<number | null>(() => storedGenerationJob(subject.id));
+  const [generationOpen, setGenerationOpen] = useState(() => storedGenerationJob(subject.id) !== null);
   const readyMaterials = useMemo(() => materials.filter(m => m.status === "ready"), [materials]);
   // 제외 집합: 선택을 유지하면서 새 자료는 기본 포함한다 (Chat/Notes와 같은 계약).
   const [genExcluded, setGenExcluded] = useState<Set<number>>(new Set());
@@ -195,6 +246,12 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   const playGenerationRef = useRef(0);
   const answerRequestRef = useRef(0);
   const answerAttemptRef = useRef<AnswerAttempt | null>(null);
+  const startButtonRef = useRef<HTMLButtonElement>(null);
+  const questionFrameRef = useRef<HTMLDivElement>(null);
+  const shortAnswerRef = useRef<HTMLInputElement>(null);
+  const feedbackRef = useRef<HTMLDivElement>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const previousViewRef = useRef<View>("bank");
 
   // 결과
   const [resultScores, setResultScores] = useState<PlayScore[]>([]);
@@ -205,6 +262,23 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
 
   // ESC: 플레이/결과 → 문제 은행 (그만두기와 동일)
   useEscape(active && (view === "play" || view === "result"), returnToBank);
+
+  useEffect(() => {
+    if (!active) return;
+    const previous = previousViewRef.current;
+    previousViewRef.current = view;
+    if (view === "bank") {
+      if (previous !== "bank") startButtonRef.current?.focus();
+      return;
+    }
+    if (view === "result") {
+      resultRef.current?.focus();
+      return;
+    }
+    if (play?.answered) feedbackRef.current?.focus();
+    else if (play?.items[play.index]?.qtype === "short" && autoFocusInput) shortAnswerRef.current?.focus();
+    else questionFrameRef.current?.focus();
+  }, [active, autoFocusInput, play?.answered, play?.index, view]);
 
   function returnToBank() {
     quizRequestRef.current++;
@@ -246,8 +320,9 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     setGenExcluded(new Set());
     const savedJobId = storedGenerationJob(subject.id);
     setGenerationJobId(savedJobId);
+    setGenerationOpen(savedJobId !== null);
     setGenerating(savedJobId !== null);
-    setGenMsg(savedJobId !== null ? "진행 중인 AI 문제 생성을 이어서 확인합니다." : "");
+    setGenMsg(savedJobId !== null ? "진행 중인 문제 생성을 이어서 확인합니다." : "");
     void loadBank();
   }, [subject.id]);
 
@@ -267,7 +342,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
           setGenerationJobId(null);
           setGenerating(false);
           setGenMsg("");
-          setBankErr("이 과목의 AI 문제 생성 작업이 아닙니다. 다시 생성해 주세요.");
+          setBankErr("이 과목의 문제 생성 작업이 아닙니다. 다시 생성해 주세요.");
           return;
         }
         if (job.status === "processing") {
@@ -278,8 +353,13 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
         setGenerationJobId(null);
         setGenerating(false);
         if (job.status === "error") {
-          setGenMsg("");
-          setBankErr(job.error || "AI 문제 생성에 실패했습니다.");
+          if (job.error === "사용자 중단") {
+            setGenMsg("문제 생성을 중단했습니다.");
+            setBankErr("");
+          } else {
+            setGenMsg("");
+            setBankErr(job.error || "문제 생성에 실패했습니다.");
+          }
           return;
         }
         const added = job.result?.added ?? 0;
@@ -297,7 +377,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
           setGenerationJobId(null);
           setGenerating(false);
           setGenMsg("");
-          setBankErr("이전 AI 문제 생성 작업을 찾을 수 없습니다. 다시 생성해 주세요.");
+          setBankErr("이전 문제 생성 작업을 찾을 수 없습니다. 다시 생성해 주세요.");
           return;
         }
         setBankErr(error instanceof Error ? `${error.message} · 작업 상태를 다시 확인합니다.` : "작업 상태 확인 실패 · 다시 확인합니다.");
@@ -319,7 +399,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       const key = q.src_file_id ?? 0; // 0 = 원본 파일 없는 문제(AI 생성 등)
       let g = m.get(key);
       if (!g) {
-        g = { key, label: q.src_file_id ? (q.src_file_name ?? `파일 #${q.src_file_id}`) : "AI 생성·기타", items: [] };
+        g = { key, label: q.src_file_id ? (q.src_file_name ?? `파일 #${q.src_file_id}`) : "직접 생성·기타", items: [] };
         m.set(key, g);
       }
       g.items.push(q);
@@ -344,6 +424,13 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     "중": bankQs.filter(q => q.difficulty === "중").length,
     "상": bankQs.filter(q => q.difficulty === "상").length,
   };
+  const eligibleStartCount = useMemo(() => bankQs.filter(q =>
+    (allInScope || selected.has(q.id))
+    && (startSource === "all" || q.source === startSource)
+    && (startDiff === "all" || q.difficulty === startDiff)
+    && (!startWrong || q.wrong_count > 0)
+  ).length, [bankQs, allInScope, selected, startSource, startDiff, startWrong]);
+  const plannedStartCount = Math.min(startCount, eligibleStartCount);
 
   // ── 체크박스 ──────────────────────────────────────────────────────────────────
   function toggleSelect(id: number) {
@@ -388,7 +475,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   // ── AI 생성 ───────────────────────────────────────────────────────────────────
   async function doGenerate() {
     if (genMaterialIds.size === 0) {
-      setBankErr("AI 문제를 만들 기준 자료를 하나 이상 선택하세요.");
+      setBankErr("문제를 만들 기준 자료를 하나 이상 선택하세요.");
       return;
     }
     setGenerating(true);
@@ -406,6 +493,20 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       setGenMsg("");
       setBankErr(e instanceof Error ? e.message : "생성 실패");
       setGenerating(false);
+    }
+  }
+
+  async function stopGeneration() {
+    if (generationJobId === null || cancellingGeneration) return;
+    setCancellingGeneration(true);
+    setBankErr("");
+    try {
+      await cancelAIJob(generationJobId);
+      setGenMsg("문제 생성 중단 요청을 보냈습니다.");
+    } catch (error) {
+      setBankErr(error instanceof Error ? error.message : "문제 생성을 중단하지 못했습니다.");
+    } finally {
+      if (mountedRef.current) setCancellingGeneration(false);
     }
   }
 
@@ -495,16 +596,23 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   }, [kickWrongQuiz]);
 
   // ── 문제 삭제 ─────────────────────────────────────────────────────────────────
-  async function doDelete(id: number) {
-    if (!confirm("문제를 삭제하시겠습니까?")) return;
-    try {
-      await apiDeleteQuestion(id);
-      if (!mountedRef.current) return;
-      setBankQs(prev => prev.filter(q => q.id !== id));
-      setSelected(prev => { const next = new Set(prev); next.delete(id); return next; });
-    } catch (e) {
-      setBankErr(e instanceof Error ? e.message : "삭제 실패");
-    }
+  function doDelete(id: number) {
+    const question = bankQs.find(item => item.id === id);
+    scheduleDelete({
+      key: `question:${id}`,
+      label: question ? `“${question.question.slice(0, 28)}” 문제` : "문제",
+      commit: async () => {
+        try {
+          await apiDeleteQuestion(id);
+          if (!mountedRef.current) return;
+          setBankQs(prev => prev.filter(q => q.id !== id));
+          setSelected(prev => { const next = new Set(prev); next.delete(id); return next; });
+        } catch (error) {
+          await loadBank();
+          throw error;
+        }
+      },
+    });
   }
 
   // ── 상세 토글 ─────────────────────────────────────────────────────────────────
@@ -521,7 +629,8 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     const targets = !allInScope
       ? bankQs.filter(q => selected.has(q.id))
       : bankQs;
-    printQuestions(subject.name, targets, type);
+    const error = printQuestions(subject.name, targets, type);
+    if (error) setBankErr(error);
   }
 
   // ── 플레이어 - 확인 ───────────────────────────────────────────────────────────
@@ -569,6 +678,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   }
 
   function onShortKey(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.nativeEvent.isComposing) return;
     if (e.key === "Enter") doAnswer();
   }
 
@@ -592,6 +702,36 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     } : prev);
   }
 
+  useEffect(() => {
+    if (!active || view !== "play" || !play) return;
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, button, a")) return;
+      if (play.answered) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          doNext();
+        }
+        return;
+      }
+      if (answering) return;
+      const item = play.items[play.index];
+      const choice = quizShortcutChoice(item, event.key);
+      if (choice !== null) {
+        event.preventDefault();
+        setPlay(prev => prev ? { ...prev, selectedChoice: choice } : prev);
+        return;
+      }
+      if (event.key === "Enter" && play.selectedChoice) {
+        event.preventDefault();
+        void doAnswer();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [active, view, play, answering]);
+
   // ── 다시 풀기 ─────────────────────────────────────────────────────────────────
   async function doRetry() {
     if (!lastOpts) return;
@@ -613,7 +753,8 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   // ── 렌더: 플레이 뷰 ──────────────────────────────────────────────────────────
   if (view === "play" && play) {
     const item = play.items[play.index];
-    const progress = ((play.index) / play.items.length) * 100;
+    const submittedAnswer = item.qtype === "short" ? play.shortInput : play.selectedChoice ?? "";
+    const progress = ((play.index + 1) / play.items.length) * 100;
     const isCorrect = play.result?.correct;
 
     return (
@@ -626,14 +767,14 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
           className="quiz-progress-bar"
           role="progressbar"
           aria-label="퀴즈 진행률"
-          aria-valuemin={0}
+          aria-valuemin={1}
           aria-valuemax={play.items.length}
           aria-valuenow={play.index + 1}
         >
           <div className="quiz-progress-fill" style={{ transform: `scaleX(${progress / 100})` }} />
         </div>
         {/* key=index — 문항이 바뀔 때마다 프레임 재마운트로 전환 애니메이션 */}
-        <div className="quiz-question-frame" key={play.index}>
+        <div className="quiz-question-frame" key={play.index} ref={questionFrameRef} tabIndex={-1}>
         <div className="quiz-chips">
           <span className={`q-chip diff-${item.difficulty}`}>{item.difficulty}</span>
           <span className="q-chip qtype">{qtypeLabel(item.qtype)}</span>
@@ -650,25 +791,30 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
         <Md className="quiz-question-text" text={item.question} />
         {item.src_file_id && item.has_figure && (
           <img
+            className="quiz-figure"
+            width={1200}
+            height={900}
             src={pageImageUrl(item.src_file_id, item.src_page, item.figure_box)}
-            alt={`원본 p.${item.src_page ?? 1} (그림 포함)`}
-            loading="lazy"
-            style={{ maxWidth: "100%", borderRadius: 8, margin: "8px 0" }}
+            alt={figureAlt(item.figure_description, item.src_page)}
+            loading="eager"
+            fetchPriority="high"
           />
         )}
 
         {!play.answered && (
           <>
             {item.qtype === "mcq" && item.choices && (
-              <div className="quiz-choices">
+              <div className="quiz-choices" role="group" aria-label="객관식 답안">
                 {item.choices.map((c, i) => (
                   <button
                     key={i}
                     className={`choice-btn${play.selectedChoice === c ? " selected" : ""}`}
                     onClick={() => setPlay(prev => prev ? { ...prev, selectedChoice: c } : prev)}
                     disabled={answering}
+                    aria-keyshortcuts={String(i + 1)}
+                    aria-pressed={play.selectedChoice === c}
                   >
-                    <span className="choice-num">{i + 1}</span> <MdInline text={c} />
+                    <span className="choice-num" aria-hidden="true">{play.selectedChoice === c ? "✓" : i + 1}</span> <MdInlineText text={c} />
                   </button>
                 ))}
               </div>
@@ -676,57 +822,75 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
             {item.qtype === "short" && (
               <div className="quiz-short">
                 <input
+                  ref={shortAnswerRef}
                   className="text-input"
                   style={{ maxWidth: 420 }}
-                  placeholder="답을 입력하세요"
+                  name="short-answer"
+                  autoComplete="off"
+                  aria-label="단답형 답안"
                   value={play.shortInput}
                   onChange={e => setPlay(prev => prev ? { ...prev, shortInput: e.target.value } : prev)}
                   onKeyDown={onShortKey}
                   disabled={answering}
-                  autoFocus
+                  autoFocus={autoFocusInput}
                 />
               </div>
             )}
             {item.qtype === "ox" && (
-              <div className="quiz-ox">
+              <div className="quiz-ox" role="group" aria-label="OX 답안">
                 <button
                   className={`ox-btn${play.selectedChoice === "O" ? " selected" : ""}`}
                   onClick={() => setPlay(prev => prev ? { ...prev, selectedChoice: "O" } : prev)}
                   disabled={answering}
+                  aria-keyshortcuts="O"
+                  aria-pressed={play.selectedChoice === "O"}
                 >O</button>
                 <button
                   className={`ox-btn${play.selectedChoice === "X" ? " selected" : ""}`}
                   onClick={() => setPlay(prev => prev ? { ...prev, selectedChoice: "X" } : prev)}
                   disabled={answering}
+                  aria-keyshortcuts="X"
+                  aria-pressed={play.selectedChoice === "X"}
                 >X</button>
               </div>
             )}
+            <p className="quiz-shortcut-hint">
+              {item.qtype === "mcq" ? "1–9 선택 · Enter 확인" : item.qtype === "ox" ? "O/X 선택 · Enter 확인" : "Enter 확인"}
+            </p>
             <div style={{ marginTop: 24 }}>
-              {answerErr && <div className="chat-err" style={{ marginBottom: 12 }}>{answerErr}</div>}
+              {answerErr && <div className="chat-err" role="alert" style={{ marginBottom: 12 }}>{answerErr}</div>}
               <button
                 className="btn primary"
                 onClick={doAnswer}
+                aria-keyshortcuts="Enter"
                 disabled={
                   answering ||
                   (item.qtype === "mcq" && !play.selectedChoice) ||
                   (item.qtype === "short" && !play.shortInput.trim()) ||
                   (item.qtype === "ox" && !play.selectedChoice)
                 }
-              >{answering ? "채점 중..." : "확인"}</button>
+              >{answering ? "채점 중…" : "확인"}</button>
             </div>
           </>
         )}
 
         {play.answered && play.result && (
-          <div className={`quiz-feedback ${isCorrect ? "correct" : "wrong"}`}>
+          <div
+            ref={feedbackRef}
+            tabIndex={-1}
+            className={`quiz-feedback ${isCorrect ? "correct" : "wrong"}`}
+            role="status"
+            aria-live="polite"
+          >
             <div className="feedback-label">{isCorrect ? "정답" : "오답"}</div>
+            <div className="feedback-submitted">내 답: <strong><MdInline text={submittedAnswer} /></strong></div>
             <div className="feedback-answer">정답: <strong><MdInline text={play.result.answer} /></strong></div>
             {play.result.explanation && (
               <Md className="feedback-explanation" text={play.result.explanation} />
             )}
             {/* mcq: 채점 후 선택지 표시 */}
             {item.qtype === "mcq" && item.choices && (
-              <div className="quiz-choices answered">
+              <div className="quiz-choices answered" role="list" aria-label="채점된 객관식 답안">
                 {item.choices.map((c, i) => {
                   // 서버 채점(gradeAnswer)과 동일한 정규화: trim + 소문자 + 공백 축약
                   const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
@@ -736,15 +900,20 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                   if (isAnswer) cls += " correct-choice";
                   else if (isUserChoice && !isCorrect) cls += " wrong-choice";
                   return (
-                    <div key={i} className={cls}>
+                    <div key={i} className={cls} role="listitem">
                       <span className="choice-num">{i + 1}</span> <MdInline text={c} />
+                      {(isAnswer || isUserChoice) && (
+                        <span className="choice-state">
+                          {[isAnswer ? "정답" : "", isUserChoice ? "내 선택" : ""].filter(Boolean).join(" · ")}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
               </div>
             )}
-            <button className="btn primary" style={{ marginTop: 16 }} onClick={doNext}>
-              {play.index + 1 < play.items.length ? "다음 →" : "결과 보기"}
+            <button className="btn primary" style={{ marginTop: 16 }} onClick={doNext} aria-keyshortcuts="Enter">
+              {play.index + 1 < play.items.length ? <>다음 <span aria-hidden="true">→</span></> : "결과 보기"}
             </button>
           </div>
         )}
@@ -759,7 +928,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     const pct = resultScores.length > 0 ? Math.round((correctCount / resultScores.length) * 100) : 0;
     const wrong = resultScores.filter(s => !s.correct);
     return (
-      <div className="quiz-result">
+      <div className="quiz-result" ref={resultRef} tabIndex={-1}>
         <div className="result-score">
           <span className="result-num">{correctCount}</span>
           <span className="result-total">/ {resultScores.length}</span>
@@ -779,11 +948,11 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
         <div className="result-actions">
           {wrong.length > 0 && (
             <button className="btn primary" onClick={doRetryMissed} disabled={startingQuiz}>
-              {startingQuiz ? "불러오는 중..." : "틀린 것만 다시"}
+              {startingQuiz ? "불러오는 중…" : "틀린 것만 다시"}
             </button>
           )}
           <button className={`btn${wrong.length === 0 ? " primary" : ""}`} onClick={doRetry} disabled={startingQuiz}>
-            {startingQuiz ? "불러오는 중..." : "다시 풀기"}
+            {startingQuiz ? "불러오는 중…" : "다시 풀기"}
           </button>
           <button className="btn" onClick={returnToBank}>문제 은행으로</button>
         </div>
@@ -796,44 +965,46 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     <div className="quiz-bank">
       {/* 요약 */}
       <div className="quiz-summary">
-        총 {total}문제 · 업로드 {uploadedCount} · AI 생성 {generatedCount} · 하 {diffCounts["하"]} / 중 {diffCounts["중"]} / 상 {diffCounts["상"]}
+        총 {total}문제 · 자료 추출 {uploadedCount} · 직접 생성 {generatedCount} · 하 {diffCounts["하"]} / 중 {diffCounts["중"]} / 상 {diffCounts["상"]}
       </div>
 
-      {loadErr && <div className="chat-err" style={{ marginBottom: 12 }}>{loadErr}</div>}
-      {bankErr && <div className="chat-err" style={{ marginBottom: 12 }}>{bankErr}</div>}
+      {loadErr && (
+        <div className="chat-err" role="alert" style={{ marginBottom: 12 }}>
+          {loadErr} <button type="button" onClick={() => void loadBank()}>문제 다시 불러오기</button>
+        </div>
+      )}
+      {bankErr && <div className="chat-err" role="alert" style={{ marginBottom: 12 }}>{bankErr}</div>}
 
       {/* 퀴즈 시작 컨트롤 */}
-      <h3 className="quiz-control-label">출제 조건</h3>
+      <h2 className="quiz-control-label">출제 조건</h2>
       <div className="quiz-start-row">
         <span className="quiz-range-label">
           범위 · {allInScope ? `전체 ${total}문제` : `선택 ${selected.size}문제`}
         </span>
-        <select
-          className="quiz-select"
-          aria-label="퀴즈 출처"
-          value={startSource}
-          onChange={e => setStartSource(e.target.value)}
-        >
-          <option value="all">전체 출처</option>
-          <option value="uploaded">업로드</option>
-          <option value="generated">AI 생성</option>
-        </select>
-        <select
-          className="quiz-select"
-          aria-label="퀴즈 난이도"
-          value={startDiff}
-          onChange={e => setStartDiff(e.target.value)}
-        >
-          <option value="all">전체 난이도</option>
-          <option value="하">하</option>
-          <option value="중">중</option>
-          <option value="상">상</option>
-        </select>
+        <label className="quiz-control-field">
+          <span>출처</span>
+          <select className="quiz-select" value={startSource} onChange={e => setStartSource(e.target.value)}>
+            <option value="all">전체</option>
+            <option value="uploaded">업로드</option>
+            <option value="generated">직접 생성</option>
+          </select>
+        </label>
+        <label className="quiz-control-field">
+          <span>난이도</span>
+          <select className="quiz-select" value={startDiff} onChange={e => setStartDiff(e.target.value)}>
+            <option value="all">전체</option>
+            <option value="하">하</option>
+            <option value="중">중</option>
+            <option value="상">상</option>
+          </select>
+        </label>
         <label className="quiz-number-field">
           <span>문항 수</span>
           <input
             type="number"
             className="quiz-count-input"
+            name="quiz-count"
+            autoComplete="off"
             min={1}
             max={50}
             value={startCount}
@@ -849,71 +1020,97 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
           오답만
         </label>
         <button
+          ref={startButtonRef}
           className="btn primary sm"
           onClick={startQuiz}
-          disabled={total === 0 || startingQuiz}
-        >{startingQuiz ? "불러오는 중..." : "퀴즈 시작"}</button>
+          disabled={eligibleStartCount === 0 || startingQuiz || pendingDelete !== null}
+        >{startingQuiz ? "불러오는 중…" : "퀴즈 시작"}</button>
+        <span className={`quiz-plan${eligibleStartCount === 0 ? " empty" : ""}`} role="status" aria-live="polite">
+          {eligibleStartCount === 0 ? "조건에 맞는 문제 없음" : `${eligibleStartCount}문제 일치 · ${plannedStartCount}문제 출제`}
+        </span>
       </div>
 
       {/* 문제 추가 — 파일에서의 문제 등록은 사이드바 문제집화가 담당 */}
-      <h3 className="quiz-control-label">AI 문제 생성</h3>
-      <div className="quiz-add-row">
-        {/* AI 생성 */}
-        <div className="quiz-add-section">
-          <div className="quiz-generation-scope">
-            {readyMaterials.length > 0 ? (
-              <SourcePicker
-                label="생성 기준 자료"
-                materials={readyMaterials}
-                excluded={genExcluded}
-                onToggle={toggleGenerationMaterial}
-                onSetVisible={setGenerationMaterialsVisible}
+      <details
+        className="quiz-generate-disclosure"
+        key={subject.id}
+        open={generationOpen}
+        onToggle={event => setGenerationOpen(event.currentTarget.open)}
+      >
+        <summary>
+          <span>문제 만들기</span>
+          <small>{generating ? "생성 중…" : "선택 자료로 새 문제 만들기"}</small>
+        </summary>
+        <div className="quiz-add-row">
+          <div className="quiz-add-section">
+            <div className="quiz-generation-scope">
+              {readyMaterials.length > 0 ? (
+                <SourcePicker
+                  label="생성 기준 자료"
+                  materials={readyMaterials}
+                  excluded={genExcluded}
+                  onToggle={toggleGenerationMaterial}
+                  onSetVisible={setGenerationMaterialsVisible}
+                />
+              ) : (
+                <>
+                  <span className="quiz-generation-label">생성 기준 자료</span>
+                  <span className="quiz-status-msg">준비된 자료 없음</span>
+                </>
+              )}
+            </div>
+            <label className="quiz-number-field">
+              <span>문항 수</span>
+              <input
+                type="number"
+                className="quiz-count-input"
+                name="generation-count"
+                autoComplete="off"
+                min={1}
+                max={20}
+                value={genCount}
+                onChange={e => setGenCount(Math.max(1, Math.min(20, Number(e.target.value) || 5)))}
+                disabled={generating}
               />
-            ) : (
-              <>
-                <span className="quiz-generation-label">생성 기준 자료</span>
-                <span className="quiz-status-msg">준비된 자료 없음</span>
-              </>
+            </label>
+            <label className="quiz-control-field">
+              <span>난이도</span>
+              <select className="quiz-select" value={genDiff} onChange={e => setGenDiff(e.target.value)} disabled={generating}>
+                <option value="혼합">혼합</option>
+                <option value="하">하</option>
+                <option value="중">중</option>
+                <option value="상">상</option>
+              </select>
+            </label>
+            <button
+              className="btn sm"
+              onClick={doGenerate}
+              disabled={generating || genMaterialIds.size === 0}
+            >문제 생성</button>
+            {generating && (
+              <div className="pending-action-row">
+                <AiPending label="문제 생성 중 · 다른 탭으로 이동해도 계속됩니다" />
+                {generationJobId !== null && (
+                  <button type="button" className="btn sm" onClick={() => void stopGeneration()} disabled={cancellingGeneration}>
+                    {cancellingGeneration ? "중단 중…" : "생성 중단"}
+                  </button>
+                )}
+              </div>
+            )}
+            {genMsg && (
+              <span className={`quiz-status-msg${genMsg.includes("추가됨") ? " ok" : ""}`} role="status" aria-live="polite">{genMsg}</span>
             )}
           </div>
-          <label className="quiz-number-field">
-            <span>문항 수</span>
-            <input
-              type="number"
-              className="quiz-count-input"
-              min={1}
-              max={20}
-              value={genCount}
-              onChange={e => setGenCount(Math.max(1, Math.min(20, Number(e.target.value) || 5)))}
-              disabled={generating}
-            />
-          </label>
-          <select
-            className="quiz-select"
-            aria-label="AI 생성 난이도"
-            value={genDiff}
-            onChange={e => setGenDiff(e.target.value)}
-            disabled={generating}
-          >
-            <option value="혼합">혼합</option>
-            <option value="하">하</option>
-            <option value="중">중</option>
-            <option value="상">상</option>
-          </select>
-          <button
-            className="btn sm"
-            onClick={doGenerate}
-            disabled={generating || genMaterialIds.size === 0}
-          >AI 생성</button>
-          {generating && <AiPending label="AI 문제 생성 중 · 다른 탭으로 이동해도 계속됩니다" />}
-          {genMsg && (
-            <span className={`quiz-status-msg${genMsg.includes("추가됨") ? " ok" : ""}`}>{genMsg}</span>
-          )}
         </div>
-      </div>
+      </details>
+
+      <details className="context-help quiz-help">
+        <summary>퀴즈 사용법과 단축키</summary>
+        <p>범위·출처·난이도를 고르면 실제 출제 수가 바로 표시됩니다. 풀이 중 숫자키로 객관식을, O/X로 진위를 고르고 Enter로 확인하거나 다음 문제로 이동할 수 있습니다.</p>
+      </details>
 
       {/* 문제 목록 */}
-      {loading && <div className="quiz-status-msg" style={{ marginTop: 16 }}>불러오는 중...</div>}
+      {loading && <div className="quiz-status-msg" role="status" aria-live="polite" style={{ marginTop: 16 }}>불러오는 중…</div>}
 
       {!loading && bankQs.length > 0 && (
         <div className="quiz-list">
@@ -933,7 +1130,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
             </div>
           </div>
 
-          {groups.map(g => {
+          {groups.map((g, groupIndex) => {
             const open = openGroups.has(g.key) || groups.length === 1; // 그룹 하나뿐이면 항상 펼침
             const gsel = allInScope ? g.items.length : g.items.filter(q => selected.has(q.id)).length;
             return (
@@ -952,14 +1149,16 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                     className="quiz-file-toggle"
                     onClick={() => toggleGroup(g.key)}
                     aria-expanded={open}
+                    aria-controls={`quiz-file-panel-${groupIndex}`}
                     title="클릭해서 이 파일의 문제 열기/닫기"
                   >
-                    <span className={`quiz-file-chev${open ? " open" : ""}`}>▾</span>
+                    <span className={`quiz-file-chev${open ? " open" : ""}`} aria-hidden="true">▾</span>
                     <span className="quiz-file-name">{g.label}</span>
                     <span className="quiz-file-count">{allInScope ? g.items.length : `${gsel}/${g.items.length}`}문제</span>
                   </button>
                 </div>
 
+                <div id={`quiz-file-panel-${groupIndex}`} hidden={!open}>
                 {open && g.items.map(q => (
                   <div key={q.id} className="quiz-row">
                     <label className="quiz-check-label quiz-check-box" title="이 문제 선택">
@@ -978,12 +1177,23 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                       onClick={() => toggleExpand(q.id)}
                       title="클릭하면 상세 보기"
                       aria-expanded={expanded.has(q.id)}
-                    ><MdInline text={q.question} /></button>
+                      aria-controls={`quiz-question-detail-${q.id}`}
+                    ><MdInlineText text={q.question} /></button>
                     <span className="quiz-accuracy">{accuracyLabel(q)}</span>
-                    <button className="del-btn" aria-label="이 문제 삭제" onClick={() => doDelete(q.id)}>✕</button>
+                    <button
+                      className="del-btn"
+                      aria-label={pendingDelete?.key === `question:${q.id}` ? "이 문제 삭제 예정" : "이 문제 삭제"}
+                      disabled={pendingDelete !== null}
+                      onClick={() => doDelete(q.id)}
+                    >✕</button>
 
-                    {expanded.has(q.id) && (
-                      <div className="quiz-row-detail">
+                    <div
+                      className="quiz-row-detail"
+                      id={`quiz-question-detail-${q.id}`}
+                      hidden={!expanded.has(q.id)}
+                    >
+                      {expanded.has(q.id) && (
+                        <>
                         <Md className="quiz-row-full-q" text={q.question} />
                         {q.choices && (
                           <ol className="quiz-row-choices">
@@ -994,10 +1204,12 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                         {q.explanation && <Md className="quiz-row-explanation" text={q.explanation} />}
                         {q.src_file_id && q.has_figure === 1 && (
                           <img
+                            className="quiz-figure compact"
+                            width={1200}
+                            height={900}
                             src={pageImageUrl(q.src_file_id, q.src_page, q.figure_box)}
-                            alt={`원본 p.${q.src_page ?? 1} (그림 포함)`}
+                            alt={figureAlt(q.figure_description, q.src_page)}
                             loading="lazy"
-                            style={{ maxWidth: "100%", borderRadius: 8, marginTop: 8 }}
                           />
                         )}
                         {q.src_file_id && (
@@ -1005,10 +1217,12 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                             원본 보기{q.src_page ? ` p.${q.src_page}` : ""}
                           </a>
                         )}
-                      </div>
-                    )}
+                        </>
+                      )}
+                    </div>
                   </div>
                 ))}
+                </div>
               </div>
             );
           })}

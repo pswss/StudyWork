@@ -74,7 +74,7 @@ function hasPdfHeader(bytes: Uint8Array): boolean {
 
 export async function validateUpload(file: File): Promise<UploadValidationResult> {
   if (file.size <= 0) return { error: "빈 파일은 업로드할 수 없습니다" };
-  if (file.size > MAX_PDF_BYTES) return { error: "파일은 200MB 이하만 지원합니다" };
+  if (file.size > MAX_PDF_BYTES) return { error: "파일은 200 MB 이하만 지원합니다" };
 
   let bytes: ArrayBuffer;
   try {
@@ -87,7 +87,7 @@ export async function validateUpload(file: File): Promise<UploadValidationResult
   const name = safeUploadName(file.name);
 
   if (hasPdfHeader(view)) {
-    if (view.byteLength > MAX_PDF_BYTES) return { error: "PDF는 200MB 이하만 지원합니다" };
+    if (view.byteLength > MAX_PDF_BYTES) return { error: "PDF는 200 MB 이하만 지원합니다" };
     try {
       const pdf = await PDFDocument.load(view, { ignoreEncryption: true, updateMetadata: false });
       if (pdf.isEncrypted) return { error: "암호화된 PDF는 지원하지 않습니다. 암호를 해제한 사본을 사용해 주세요" };
@@ -104,6 +104,6 @@ export async function validateUpload(file: File): Promise<UploadValidationResult
 
   const mime = detectImageMime(view);
   if (!mime) return { error: "지원하는 PDF 또는 이미지 파일이 아닙니다" };
-  if (view.byteLength > MAX_IMAGE_BYTES) return { error: "이미지는 30MB 이하만 지원합니다" };
+  if (view.byteLength > MAX_IMAGE_BYTES) return { error: "이미지는 30 MB 이하만 지원합니다" };
   return { kind: "image", mime, name, bytes, contentHash, pageCount: 1 };
 }

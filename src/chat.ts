@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "./index";
 import { chat as aiChat, capMaterialExcerpts } from "./claude";
 import { checkAndIncrementUsage } from "./usage";
+import { cancelJob, finishJob, isCurrentJob, startJob } from "./jobs";
 
 export const chatRoutes = new Hono<{ Bindings: Env }>();
 
@@ -72,11 +73,13 @@ chatRoutes.post("/subjects/:id/chat", async (c) => {
   ).bind(subjectId).all<{ role: "user" | "assistant"; content: string }>();
   hist.push({ role: "user", content: message.trim() });
 
+  const job = startJob(`chat:${subjectId}`);
   try {
     // provider/model/reasoning은 서버 환경 설정만 사용한다. 요청 본문으로 덮어쓰지 않는다.
     // 자료 본문은 퀴즈 생성과 같은 96k 예산으로 자료별 균등 발췌 — 매 메시지 전체 주입 방지.
     const context = capMaterialExcerpts(mats).map(({ title, extracted_text }) => ({ title, extracted_text }));
-    const reply = await aiChat(subject.name, context, hist, general);
+    const reply = await aiChat(subject.name, context, hist, general, job.signal);
+    if (!isCurrentJob(job)) throw new Error("사용자 중단");
     // AI 성공 후에만 user+assistant 메시지 저장 (실패 시 유령 user 메시지 방지)
     const msgMode = general ? "general" : "materials";
     await c.env.DB.batch([
@@ -88,5 +91,12 @@ chatRoutes.post("/subjects/:id/chat", async (c) => {
     return c.json({ reply });
   } catch (e) {
     return c.json({ error: `AI 응답 실패: ${String(e)}` }, 502);
+  } finally {
+    finishJob(job);
   }
+});
+
+chatRoutes.post("/subjects/:id/chat/cancel", (c) => {
+  cancelJob(`chat:${c.req.param("id")}`);
+  return c.json({ status: "cancelled" });
 });

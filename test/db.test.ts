@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { describe, it, expect } from "vitest";
@@ -24,6 +24,36 @@ describe("D1 schema", () => {
     ).bind(s!.id).run();
     const m = await DB.prepare("SELECT * FROM materials WHERE subject_id = ?").bind(s!.id).first<{ kind: string }>();
     expect(m!.kind).toBe("text");
+  });
+
+  it("0027이 기존 그림 문항 원본을 대체 설명 재추출 대기열에 넣는다", async () => {
+    const sourceDir = resolve(import.meta.dirname, "..", "migrations");
+    const migrationDir = mkdtempSync(join(tmpdir(), "studywork-migrations-"));
+    for (const file of readdirSync(sourceDir).filter(name => name.endsWith(".sql") && name < "0027")) {
+      cpSync(join(sourceDir, file), join(migrationDir, file));
+    }
+    const dbPath = join(migrationDir, "legacy.db");
+    let db = new LocalDB(dbPath, { migrationsDir: migrationDir });
+    const subject = await db.prepare("INSERT INTO subjects (name) VALUES ('수학') RETURNING id").first<{ id: number }>();
+    const book = await db.prepare("INSERT INTO books (subject_id, title) VALUES (?, '도형') RETURNING id").bind(subject!.id).first<{ id: number }>();
+    await db.prepare(
+      "INSERT INTO materials (subject_id, kind, title, r2_key, extracted_text, status, book_id) VALUES (?, 'pdf', '도형', 'source.pdf', '본문', 'ready', ?)"
+    ).bind(subject!.id, book!.id).run();
+    await db.prepare(
+      "INSERT INTO questions (subject_id, source, qtype, difficulty, question, answer, has_figure, book_id) VALUES (?, 'uploaded', 'short', '중', '그림 문제', '1', 1, ?)"
+    ).bind(subject!.id, book!.id).run();
+    db.close();
+
+    cpSync(join(sourceDir, "0027_question_figure_description.sql"), join(migrationDir, "0027_question_figure_description.sql"));
+    db = new LocalDB(dbPath, { migrationsDir: migrationDir });
+    const material = await db.prepare(
+      "SELECT pending_to_book, book_retry_count, figure_backfill_pending FROM materials WHERE book_id = ?"
+    ).bind(book!.id).first<{ pending_to_book: number; book_retry_count: number; figure_backfill_pending: number }>();
+    const question = await db.prepare("SELECT figure_description FROM questions WHERE book_id = ?")
+      .bind(book!.id).first<{ figure_description: string | null }>();
+    expect(material).toEqual({ pending_to_book: 1, book_retry_count: 0, figure_backfill_pending: 1 });
+    expect(question?.figure_description).toBeNull();
+    db.close();
   });
 });
 

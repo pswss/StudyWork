@@ -142,6 +142,13 @@ export function escapeHtmlText(text: string): string {
 
 const renderBlockHtml = (text: string) => sanitizeHtml(marked.parse(pre(text)) as string);
 const renderInlineHtml = (text: string) => sanitizeHtml(marked.parseInline(pre(text)) as string);
+const renderControlInlineHtml = (text: string) => DOMPurify.sanitize(marked.parseInline(pre(text)) as string, {
+  ...SANITIZE_CONFIG,
+  FORBID_TAGS: [
+    ...(SANITIZE_CONFIG.FORBID_TAGS ?? []),
+    "a", "button", "input", "select", "option", "textarea", "details", "summary", "label",
+  ],
+});
 
 /** 블록 렌더 — 말풍선·해설·문제 본문 등 여러 줄 텍스트 */
 export function Md({ text, className }: { text: string; className?: string }) {
@@ -155,7 +162,12 @@ export function Md({ text, className }: { text: string; className?: string }) {
 
 /** 인라인 렌더 — 목록 행 제목·선택지·체크리스트 항목 등 한 줄 라벨 */
 export function MdInline({ text }: { text: string }) {
-  return <span dangerouslySetInnerHTML={{ __html: renderInlineHtml(text) }} />;
+  return <span className="md-inline" dangerouslySetInnerHTML={{ __html: renderInlineHtml(text) }} />;
+}
+
+/** 버튼·체크 라벨용 인라인 렌더 — 링크는 텍스트만 남겨 중첩 인터랙션을 막는다. */
+export function MdInlineText({ text }: { text: string }) {
+  return <span className="md-inline" dangerouslySetInnerHTML={{ __html: renderControlInlineHtml(text) }} />;
 }
 
 /** HTML 문자열이 필요한 곳(인쇄 시트)용 인라인 변환 */

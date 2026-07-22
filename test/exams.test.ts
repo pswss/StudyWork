@@ -5,6 +5,7 @@ const planControl = vi.hoisted(() => ({
   nextGate: null as Promise<void> | null,
   nextError: null as Error | null,
   nextEmpty: false,
+  lastSignal: null as AbortSignal | null,
 }));
 
 // AI 호출 전체 모킹
@@ -16,7 +17,10 @@ vi.mock("../src/claude", () => ({
   extractQuestionsFromFile: async () => [],
   generateQuestions: async () => [],
   analyzeWrongQuestions: async () => "분석 결과",
-  generateStudyPlan: async (_subjectName: string, _examTitle: string, examDate: string, today: string) => {
+  generateStudyPlan: async (...args: unknown[]) => {
+    const examDate = args[2] as string;
+    const today = args[3] as string;
+    planControl.lastSignal = args[7] as AbortSignal;
     const gate = planControl.nextGate;
     planControl.nextGate = null;
     if (gate) await gate;
@@ -151,6 +155,32 @@ describe("POST /api/subjects/:id/exams", () => {
       expect(item.day <= FUTURE_DATE).toBe(true);
       expect(item.done).toBe(0);
     }
+  });
+
+  it("계획 생성을 중단하면 모델 신호를 끊고 시험을 만들지 않음", async () => {
+    const before = await env.DB.prepare("SELECT COUNT(*) AS cnt FROM exams WHERE subject_id = ?")
+      .bind(subjectId).first<{ cnt: number }>();
+    let release!: () => void;
+    planControl.nextGate = new Promise<void>(resolve => { release = resolve; });
+    planControl.lastSignal = null;
+    const res = await call(env, `/api/subjects/${subjectId}/exams`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ title: "중단 시험", exam_date: FUTURE_DATE }),
+    });
+    const { jobId } = await res.json() as { jobId: number };
+    for (let i = 0; i < 20 && !planControl.lastSignal; i++) {
+      await new Promise(resolve => setTimeout(resolve, 1));
+    }
+
+    const cancelled = await call(env, `/api/ai-jobs/${jobId}/cancel`, { method: "POST", headers: { cookie } });
+    expect(cancelled.status).toBe(200);
+    expect((planControl.lastSignal as AbortSignal | null)?.aborted).toBe(true);
+    release();
+    await expect(waitForJob(jobId)).resolves.toMatchObject({ status: "error", error: "사용자 중단" });
+    const after = await env.DB.prepare("SELECT COUNT(*) AS cnt FROM exams WHERE subject_id = ?")
+      .bind(subjectId).first<{ cnt: number }>();
+    expect(after?.cnt).toBe(before?.cnt);
   });
 
   it("AI 생성 실패 시 시험 행과 TODO를 하나도 남기지 않음", async () => {
@@ -375,6 +405,29 @@ describe("DELETE /api/exams/:id", () => {
 
   beforeAll(async () => {
     deleteExamId = (await createFinishedExam("삭제할 시험", TOMORROW)).id;
+  });
+
+  it("시험 삭제 실패 시 앞선 계획 삭제도 롤백", async () => {
+    const before = await env.DB.prepare("SELECT COUNT(*) AS cnt FROM plan_items WHERE exam_id = ?")
+      .bind(deleteExamId).first<{ cnt: number }>();
+    await env.DB.prepare(
+      `CREATE TRIGGER fail_exam_delete BEFORE DELETE ON exams
+       WHEN OLD.id = ${deleteExamId}
+       BEGIN SELECT RAISE(ABORT, 'forced exam delete failure'); END`
+    ).run();
+    try {
+      const res = await call(env, `/api/exams/${deleteExamId}`, {
+        method: "DELETE",
+        headers: { cookie },
+      });
+      expect(res.status).toBe(500);
+      await expect(env.DB.prepare("SELECT id FROM exams WHERE id = ?").bind(deleteExamId).first())
+        .resolves.toMatchObject({ id: deleteExamId });
+      await expect(env.DB.prepare("SELECT COUNT(*) AS cnt FROM plan_items WHERE exam_id = ?")
+        .bind(deleteExamId).first<{ cnt: number }>()).resolves.toEqual(before);
+    } finally {
+      await env.DB.prepare("DROP TRIGGER IF EXISTS fail_exam_delete").run();
+    }
   });
 
   it("삭제 → ok:true", async () => {

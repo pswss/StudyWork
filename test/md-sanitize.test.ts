@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { Md, MdInline, escapeHtmlText, mdHtml, mdHtmlChunks, mdInlineHtml, sanitizeHtml } from "../web/src/md";
+import { Md, MdInline, MdInlineText, escapeHtmlText, mdHtml, mdHtmlChunks, mdInlineHtml, sanitizeHtml } from "../web/src/md";
 import { normalizeMarkdownTableMath } from "../src/markdown";
 
 const ATTACK = `
@@ -36,6 +36,16 @@ describe("Markdown HTML sanitizing", () => {
     const inline = MdInline({ text: ATTACK }).props.dangerouslySetInnerHTML.__html as string;
     expectSafe(block);
     expectSafe(inline);
+  });
+
+  it("인터랙티브 라벨에서는 링크를 텍스트로 풀어 중첩 인터랙션을 막는다", () => {
+    const html = MdInlineText({
+      text: '[공식 보기](https://example.com)<button>중첩 버튼</button><input value="중첩 입력">',
+    }).props.dangerouslySetInnerHTML.__html as string;
+    expect(html).toContain("공식 보기");
+    expect(html).not.toContain("<a");
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("<input");
   });
 
   it("정상 Markdown, 안전한 링크, KaTeX HTML·MathML을 보존한다", () => {

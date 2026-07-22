@@ -4,7 +4,11 @@ import { insertQuestions } from "../src/quiz";
 import type { QuizQuestion } from "../src/claude";
 
 const generationCalls = vi.hoisted(() => [] as unknown[][]);
-const generationControl = vi.hoisted(() => ({ invalidNext: false }));
+const generationControl = vi.hoisted(() => ({
+  invalidNext: false,
+  nextGate: null as Promise<void> | null,
+  lastSignal: null as AbortSignal | null,
+}));
 
 // AI 호출 전체를 모킹 — claude 모듈의 모든 export를 대체한다.
 vi.mock("../src/claude", () => ({
@@ -41,6 +45,10 @@ vi.mock("../src/claude", () => ({
   ],
   generateQuestions: async (...args: unknown[]) => {
     generationCalls.push(args);
+    generationControl.lastSignal = args.at(-1) as AbortSignal;
+    const gate = generationControl.nextGate;
+    generationControl.nextGate = null;
+    if (gate) await gate;
     if (generationControl.invalidNext) {
       generationControl.invalidNext = false;
       return [{
@@ -145,6 +153,35 @@ describe("POST /api/subjects/:id/questions/generate", () => {
       result: { added: 2 },
       error: null,
     });
+  });
+
+  it("진행 중 작업을 중단하면 신호를 보내고 문제를 저장하지 않음", async () => {
+    const before = await env.DB.prepare(
+      "SELECT COUNT(*) AS cnt FROM questions WHERE subject_id = ? AND source = 'generated'"
+    ).bind(subjectId).first<{ cnt: number }>();
+    let release!: () => void;
+    generationControl.nextGate = new Promise<void>(resolve => { release = resolve; });
+    generationControl.lastSignal = null;
+
+    const started = await call(env, `/api/subjects/${subjectId}/questions/generate`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ count: 2, difficulty: "혼합" }),
+    });
+    const { jobId } = await started.json() as { jobId: number };
+    for (let i = 0; i < 20 && !generationControl.lastSignal; i++) {
+      await new Promise(resolve => setTimeout(resolve, 1));
+    }
+
+    const cancelled = await call(env, `/api/ai-jobs/${jobId}/cancel`, { method: "POST", headers: { cookie } });
+    expect(cancelled.status).toBe(200);
+    expect((generationControl.lastSignal as AbortSignal | null)?.aborted).toBe(true);
+    release();
+    await expect(waitAIJob(jobId)).resolves.toMatchObject({ status: "error", error: "사용자 중단" });
+    const after = await env.DB.prepare(
+      "SELECT COUNT(*) AS cnt FROM questions WHERE subject_id = ? AND source = 'generated'"
+    ).bind(subjectId).first<{ cnt: number }>();
+    expect(after?.cnt).toBe(before?.cnt);
   });
 
   it("문항 저장 batch 실패 시 문제와 ready 상태를 함께 롤백", async () => {

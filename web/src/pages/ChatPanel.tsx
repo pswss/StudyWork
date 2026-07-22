@@ -1,13 +1,35 @@
 // ChatPanel.tsx — 튜터 채팅 패널 (SubjectDetail에서 순수 이동)
 // 메시지 목록(msgs)은 헤더 카운트 표시 때문에 부모 소유, 입력·모드·컨텍스트 선택은 여기 소유.
 import { useState, useEffect, useRef, KeyboardEvent, Dispatch, SetStateAction } from "react";
-import { Subject, Material, Message, AIStatus, chat } from "../api";
+import { Subject, Material, Message, AIStatus, chat, cancelChat, messages as apiMessages } from "../api";
 import { Md } from "../md";
 import { AiPending } from "../Pending";
 import SourcePicker from "./SourcePicker";
+import { learnerEffortLabel, learnerModelLabel } from "./AISettingsPanel";
 
 // 채팅 컨텍스트 자료 선택(제외 집합) 과목별 영속 — 서버 재시작·새로고침에도 유지
 const chatExclKey = (subjectId: number) => `studywork:chat-excl:${subjectId}`;
+const pendingChatKey = (subjectId: number) => `studywork:chat-pending:${subjectId}`;
+
+interface PendingChat {
+  message: string;
+  beforeId: number;
+  startedAt: number;
+}
+
+function storedPendingChat(subjectId: number): PendingChat | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(pendingChatKey(subjectId)) ?? "null") as Partial<PendingChat> | null;
+    return value
+      && typeof value.message === "string"
+      && Number.isSafeInteger(value.beforeId)
+      && typeof value.startedAt === "number"
+      ? value as PendingChat
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 function storedChatExcl(subjectId: number): Set<number> {
   try {
@@ -24,27 +46,91 @@ interface Props {
   setMsgs: Dispatch<SetStateAction<Message[]>>;
   readyMats: Material[];
   aiRuntime: AIStatus | "unavailable" | null;
+  active: boolean;
+  loading?: boolean;
 }
 
-export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime }: Props) {
+export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime, active, loading = false }: Props) {
   const [chatInput, setChatInput] = useState("");
   const [chatMode, setChatMode] = useState<"materials" | "general">("materials");
   // 채팅 컨텍스트 자료 선택 — 제외 집합, 과목별 localStorage 영속 (기본 전체)
   const [chatExcl, setChatExcl] = useState<Set<number>>(() => storedChatExcl(subject.id));
-  const [busy, setBusy] = useState(false);
+  const [recoveringChat, setRecoveringChat] = useState<PendingChat | null>(() => storedPendingChat(subject.id));
+  const [busy, setBusy] = useState(() => storedPendingChat(subject.id) !== null);
+  const [cancelling, setCancelling] = useState(false);
   const [chatErr, setChatErr] = useState("");
+  const [chatNotice, setChatNotice] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+  const restoreComposerRef = useRef(false);
   const mountedRef = useRef(true);
+  const cancelRequestedRef = useRef(false);
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
-  useEffect(() => { setChatExcl(storedChatExcl(subject.id)); }, [subject.id]);
-
-  // 탭 전환으로 다시 마운트돼도 항상 마지막 메시지가 보이게 마운트·갱신 시 스크롤
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs, busy]);
+    if (busy || !active || !restoreComposerRef.current) return;
+    const focused = document.activeElement as HTMLElement | null;
+    if (focused === document.body || focused?.closest(".chat-input-row")) composerRef.current?.focus();
+    restoreComposerRef.current = false;
+  }, [active, busy]);
+  useEffect(() => {
+    setChatExcl(storedChatExcl(subject.id));
+    const pending = storedPendingChat(subject.id);
+    setRecoveringChat(pending);
+    setBusy(pending !== null);
+    setCancelling(false);
+  }, [subject.id]);
+
+  useEffect(() => {
+    if (!recoveringChat) return;
+    let stopped = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const loaded = await apiMessages(subject.id);
+        if (stopped || !mountedRef.current) return;
+        const userIndex = loaded.findIndex(message =>
+          message.id > recoveringChat.beforeId
+          && message.role === "user"
+          && message.content === recoveringChat.message
+        );
+        if (userIndex >= 0 && loaded.slice(userIndex + 1).some(message => message.role === "assistant")) {
+          localStorage.removeItem(pendingChatKey(subject.id));
+          setMsgs(loaded);
+          setRecoveringChat(null);
+          setBusy(false);
+          setChatErr("");
+          setChatNotice("새로고침 전 답변을 이어받았습니다.");
+          return;
+        }
+        if (Date.now() - recoveringChat.startedAt > 10 * 60 * 1000) {
+          localStorage.removeItem(pendingChatKey(subject.id));
+          setRecoveringChat(null);
+          setBusy(false);
+          setChatInput(recoveringChat.message);
+          setChatErr("이전 답변 상태를 확인하지 못했습니다. 질문을 다시 보내 주세요.");
+          return;
+        }
+      } catch {
+        if (!stopped && mountedRef.current) setChatErr("이전 답변 상태를 다시 확인하고 있습니다.");
+      }
+      timer = window.setTimeout(poll, 2500);
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [recoveringChat, setMsgs, subject.id]);
+
+  // 보이는 채팅에서만 마지막 메시지로 이동한다. 모션 축소 설정이면 즉시 이동한다.
+  useEffect(() => {
+    if (!active) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    chatEndRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" });
+  }, [msgs, busy, active]);
 
   // 채팅 컨텍스트 선택 갱신 + 과목별 영속
   function updateChatExcl(update: (prev: Set<number>) => Set<number>) {
@@ -68,36 +154,80 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
       setChatErr("컨텍스트로 쓸 자료를 하나 이상 선택하세요.");
       return;
     }
+    restoreComposerRef.current = Boolean((document.activeElement as HTMLElement | null)?.closest(".chat-input-row"));
     setChatInput("");
     setChatErr("");
+    setChatNotice("");
+    cancelRequestedRef.current = false;
+    const pending: PendingChat = {
+      message: msg,
+      beforeId: msgs.reduce((max, item) => Math.max(max, item.id), 0),
+      startedAt: Date.now(),
+    };
+    try { localStorage.setItem(pendingChatKey(subject.id), JSON.stringify(pending)); } catch {}
     const optimistic: Message = { id: Date.now(), role: "user", content: msg, mode: chatMode, created_at: new Date().toISOString() };
     setMsgs(prev => [...prev, optimistic]);
     setBusy(true);
     try {
       const { reply } = await chat(subject.id, msg, chatMode, chatMatIds);
+      try { localStorage.removeItem(pendingChatKey(subject.id)); } catch {}
       if (!mountedRef.current) return;
       const asst: Message = { id: Date.now() + 1, role: "assistant", content: reply, mode: chatMode, created_at: new Date().toISOString() };
       setMsgs(prev => [...prev, asst]);
     } catch (err) {
       if (!mountedRef.current) return;
+      try { localStorage.removeItem(pendingChatKey(subject.id)); } catch {}
       setMsgs(prev => prev.filter(m => m.id !== optimistic.id));
       setChatInput(msg);
-      setChatErr(err instanceof Error ? err.message : "오류 발생");
+      if (!cancelRequestedRef.current) setChatErr(err instanceof Error ? err.message : "오류 발생");
     } finally {
-      if (mountedRef.current) setBusy(false);
+      cancelRequestedRef.current = false;
+      if (mountedRef.current) { setBusy(false); setCancelling(false); }
+    }
+  }
+
+  async function stopChat() {
+    if (!busy || cancelling) return;
+    cancelRequestedRef.current = true;
+    setCancelling(true);
+    setChatErr("");
+    try {
+      await cancelChat(subject.id);
+      setChatNotice("답변 생성을 중단했습니다.");
+      if (recoveringChat) {
+        try { localStorage.removeItem(pendingChatKey(subject.id)); } catch {}
+        setChatInput(recoveringChat.message);
+        setRecoveringChat(null);
+        setBusy(false);
+        setCancelling(false);
+      }
+    } catch (error) {
+      cancelRequestedRef.current = false;
+      if (mountedRef.current) {
+        setCancelling(false);
+        setChatErr(error instanceof Error ? error.message : "답변 생성을 중단하지 못했습니다.");
+      }
     }
   }
 
   function onChatKey(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.nativeEvent.isComposing) return;
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
   }
 
+  const runtime = aiRuntime !== null && aiRuntime !== "unavailable" ? aiRuntime : null;
+  const runtimeSummary = runtime?.state === "ready"
+    ? `${learnerModelLabel(runtime.model)} · ${learnerEffortLabel(runtime.reasoningEffort)}`
+    : runtime?.state === "rollback"
+      ? "이전 방식으로 실행 중"
+      : "설정 확인 필요";
+
   return (
     <>
-      <div className="chat-log">
-        {msgs.length === 0 && !busy && (
-          <div className="chat-empty">자료를 올리고 질문해 보세요.</div>
-        )}
+      <div className="chat-log" role="log" aria-live="polite" aria-relevant="additions text">
+        {msgs.length === 0 && !busy && (loading
+          ? <AiPending label="대화 불러오는 중" />
+          : <div className="chat-empty">자료를 올리고 질문해 보세요.</div>)}
         {msgs.map(m => (
           <div key={m.id} className={`chat-msg ${m.role}`}>
             <div className="msg-bubble">
@@ -114,10 +244,14 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
           <div className="chat-msg assistant">
             <div className="msg-bubble">
               <AiPending label="AI 답변 생성 중" />
+              <button type="button" className="btn sm" onClick={() => void stopChat()} disabled={cancelling}>
+                {cancelling ? "중단 중…" : "답변 중단"}
+              </button>
             </div>
           </div>
         )}
-        {chatErr && <div className="chat-err">{chatErr}</div>}
+        {chatErr && <div className="chat-err" role="alert">{chatErr}</div>}
+        {chatNotice && <div className="quiz-status-msg" role="status" aria-live="polite">{chatNotice}</div>}
         <div ref={chatEndRef} />
       </div>
       <div className="chat-mode-row">
@@ -131,19 +265,19 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
           aria-pressed={chatMode === "general"}
           onClick={() => setChatMode("general")}
         >일반 질문</button>
-        <span
-          className={`ai-config-badge${aiRuntime !== null && aiRuntime !== "unavailable" && aiRuntime.state !== "ready" ? " warning" : ""}`}
-          aria-live="polite"
-          title={aiRuntime !== null && aiRuntime !== "unavailable"
-            ? `서버 설정 · provider ${aiRuntime.provider} · effort ${aiRuntime.reasoningEffort ?? "해당 없음"}`
-            : undefined}
-        >
-          {aiRuntime === null && "AI 설정 확인 중"}
-          {aiRuntime === "unavailable" && "AI 설정 확인 불가"}
-          {aiRuntime !== null && aiRuntime !== "unavailable" && aiRuntime.state === "invalid" && "AI 설정 오류"}
-          {aiRuntime !== null && aiRuntime !== "unavailable" && aiRuntime.state === "rollback" && `${aiRuntime.model} · 롤백`}
-          {aiRuntime !== null && aiRuntime !== "unavailable" && aiRuntime.state === "ready" && `${aiRuntime.model} · ${aiRuntime.reasoningEffort} · 로컬 CLI`}
-        </span>
+        {runtime ? (
+          <details
+            className={`ai-config-badge${runtime.state !== "ready" ? " warning" : ""}`}
+            aria-live="polite"
+          >
+            <summary className="clickable">AI · {runtimeSummary}</summary>
+            <small>이 기기에서 실행 · {learnerModelLabel(runtime.model)} · 검토 깊이 {learnerEffortLabel(runtime.reasoningEffort)}</small>
+          </details>
+        ) : (
+          <span className="ai-config-badge" aria-live="polite">
+            {aiRuntime === null ? "AI 설정 확인 중…" : "AI 설정 확인 불가"}
+          </span>
+        )}
       </div>
       {chatMode === "materials" && readyMats.length > 0 && (
         <SourcePicker
@@ -164,10 +298,13 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
       )}
       <div className="chat-input-row">
         <textarea
+          ref={composerRef}
           className="chat-textarea"
+          name="chat-question"
+          autoComplete="off"
           placeholder={chatMode === "materials"
-            ? "질문을 입력하세요 (자료 기반 답변 · Enter 전송)"
-            : "질문을 입력하세요 (일반 지식 답변 · Enter 전송)"}
+            ? "예: 이 자료의 핵심 공식을 설명해 줘…"
+            : "예: 푸리에 변환을 쉽게 설명해 줘…"}
           value={chatInput}
           onChange={e => setChatInput(e.target.value)}
           onKeyDown={onChatKey}

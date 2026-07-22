@@ -116,7 +116,7 @@ describe("upload validation", () => {
       },
     } as unknown as File;
     await expect(validateUpload(oversizedPdf)).resolves.toEqual({
-      error: "파일은 200MB 이하만 지원합니다",
+      error: "파일은 200 MB 이하만 지원합니다",
     });
 
     const oversizedPng = new File(
@@ -125,7 +125,7 @@ describe("upload validation", () => {
       { type: "image/png" }
     );
     await expect(validateUpload(oversizedPng)).resolves.toEqual({
-      error: "이미지는 30MB 이하만 지원합니다",
+      error: "이미지는 30 MB 이하만 지원합니다",
     });
   });
 

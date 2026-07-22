@@ -26,13 +26,13 @@ subjects.post("/", async (c) => {
 subjects.delete("/:id", async (c) => {
   const id = c.req.param("id");
   cancelJob(`note:${id}`);
-  // 자료·문제집 파일은 rows 삭제 전에 지운다 (삭제 후엔 키를 알 수 없음)
+  cancelJob(`chat:${id}`);
+  // 삭제 대상 키는 DB 행이 사라지기 전에 읽고, 실제 파일은 DB batch 성공 뒤 정리한다.
   const { results: mats } = await c.env.DB.prepare(
     "SELECT id, r2_key FROM materials WHERE subject_id = ? AND r2_key IS NOT NULL"
   ).bind(id).all<{ id: number; r2_key: string }>();
   for (const m of mats) {
     cancelJob(`mat:${m.id}`);
-    await c.env.FILES.delete(m.r2_key);
   }
   const { results: bookFiles } = await c.env.DB.prepare(
     "SELECT id, book_id, r2_key FROM book_files WHERE book_id IN (SELECT id FROM books WHERE subject_id = ?)"
@@ -41,10 +41,7 @@ subjects.delete("/:id", async (c) => {
     cancelJob(`book-solutions:${bookId}`);
   }
   for (const f of bookFiles) {
-    clearBookExtractionCache(f.id);
     cancelJob(`book:${f.id}`);
-    await c.env.FILES.delete(f.r2_key);
-    await c.env.FILES.deletePrefix(`pages/${f.id}-`);
   }
   const { results: exams } = await c.env.DB.prepare(
     "SELECT id FROM exams WHERE subject_id = ?"
@@ -77,5 +74,13 @@ subjects.delete("/:id", async (c) => {
     c.env.DB.prepare("DELETE FROM ai_jobs WHERE subject_id = ?").bind(id),
     c.env.DB.prepare("DELETE FROM subjects WHERE id = ?").bind(id)
   ]);
+  for (const m of mats) {
+    await c.env.FILES.delete(m.r2_key).catch(() => {});
+  }
+  for (const f of bookFiles) {
+    clearBookExtractionCache(f.id);
+    await c.env.FILES.delete(f.r2_key).catch(() => {});
+    await c.env.FILES.deletePrefix(`pages/${f.id}-`).catch(() => {});
+  }
   return c.json({ ok: true });
 });

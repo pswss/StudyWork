@@ -264,9 +264,12 @@ export { detectImageMime } from "./upload";
 async function recordBookFailure(env: Env, bookId: number): Promise<void> {
   await env.DB.prepare(
     `UPDATE materials
-     SET book_retry_count = book_retry_count + 1,
+     SET book_retry_count = book_retry_count + CASE WHEN figure_backfill_pending = 1 THEN 0 ELSE 1 END,
          book_processing = 0,
-         pending_to_book = CASE WHEN book_retry_count + 1 < ? THEN 1 ELSE 0 END
+         pending_to_book = CASE
+           WHEN figure_backfill_pending = 1 THEN 1
+           WHEN book_retry_count + 1 < ? THEN 1 ELSE 0
+         END
      WHERE book_id = ?`
   ).bind(MAX_AUTO_BOOK_RETRIES, bookId).run();
 }
@@ -274,9 +277,12 @@ async function recordBookFailure(env: Env, bookId: number): Promise<void> {
 async function recordMaterialBookFailure(env: Env, materialId: number): Promise<void> {
   await env.DB.prepare(
     `UPDATE materials
-     SET book_retry_count = book_retry_count + 1,
+     SET book_retry_count = book_retry_count + CASE WHEN figure_backfill_pending = 1 THEN 0 ELSE 1 END,
          book_processing = 0,
-         pending_to_book = CASE WHEN book_retry_count + 1 < ? THEN 1 ELSE 0 END
+         pending_to_book = CASE
+           WHEN figure_backfill_pending = 1 THEN 1
+           WHEN book_retry_count + 1 < ? THEN 1 ELSE 0
+         END
      WHERE id = ?`
   ).bind(MAX_AUTO_BOOK_RETRIES, materialId).run();
 }
@@ -727,16 +733,16 @@ async function processFile(
       return env.DB.prepare(
         `INSERT INTO questions
            (subject_id, source, qtype, difficulty, question, choices, answer, explanation,
-            book_id, book_number, src_file_id, src_page, has_figure, figure_box,
+            book_id, book_number, src_file_id, src_page, has_figure, figure_description, figure_box,
             correct_count, wrong_count)
-         SELECT ?, 'uploaded', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         SELECT ?, 'uploaded', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
          WHERE EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'processing')`
       ).bind(
         subjectId, it.qtype, it.difficulty, it.question,
         it.choices ? JSON.stringify(it.choices) : null,
         answer, preservedExplanation || it.explanation,
         bookId, stats?.bookNumber ?? String(i + 1), fileId, it.page,
-        it.figure ? 1 : 0, it.box ? it.box.join(",") : null,
+        it.figure ? 1 : 0, it.figure_description, it.box ? it.box.join(",") : null,
         stats?.correct ?? 0, stats?.wrong ?? 0, fileId
       );
     });
@@ -753,7 +759,9 @@ async function processFile(
     // book_files를 ready로 바꾸기 전에 연결 자료의 재시도 상태를 먼저 정리한다.
     statements.push(
       env.DB.prepare(
-        `UPDATE materials SET pending_to_book = 0, book_retry_count = 0, book_processing = 0
+        `UPDATE materials
+         SET pending_to_book = 0, book_retry_count = 0, book_processing = 0,
+             figure_backfill_pending = 0
          WHERE book_id = ?
            AND EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'processing')`
       ).bind(bookId, fileId),
@@ -1012,7 +1020,9 @@ export async function startMaterialToBook(
 
     // 삭제와 경합해 연결이 실패하면 방금 만든 내부 컨테이너를 즉시 회수한다.
     const linkedMaterial = await env.DB.prepare(
-      `UPDATE materials SET pending_to_book = 0, book_id = ?
+      `UPDATE materials
+       SET pending_to_book = CASE WHEN figure_backfill_pending = 1 THEN 1 ELSE 0 END,
+           book_id = ?
        WHERE id = ? AND book_processing = 1 RETURNING id`
     ).bind(bookId, matId).first<{ id: number }>();
     if (!linkedMaterial) {
@@ -1038,10 +1048,22 @@ export async function startMaterialToBook(
  * 한도(429)면 이번 주기는 중단(다음 주기·내일 리셋 후 재시도), 영구 실패만 보류 해제.
  */
 export async function retryPendingToBook(env: Env): Promise<void> {
+  const activeBackfill = await env.DB.prepare(
+    `SELECT id FROM materials
+     WHERE figure_backfill_pending = 1 AND book_processing = 1 LIMIT 1`
+  ).first<{ id: number }>();
+  let backfillHandled = activeBackfill !== null;
   const { results } = await env.DB.prepare(
-    "SELECT id FROM materials WHERE pending_to_book = 1 AND status = 'ready' AND book_processing = 0 AND book_retry_count < ?"
-  ).bind(MAX_AUTO_BOOK_RETRIES).all<{ id: number }>();
+    `SELECT id, figure_backfill_pending FROM materials
+     WHERE pending_to_book = 1 AND status = 'ready' AND book_processing = 0
+       AND book_retry_count < ?
+     ORDER BY figure_backfill_pending DESC, id`
+  ).bind(MAX_AUTO_BOOK_RETRIES).all<{ id: number; figure_backfill_pending: number }>();
   for (const r of results) {
+    if (r.figure_backfill_pending === 1) {
+      if (backfillHandled) continue;
+      backfillHandled = true;
+    }
     const res = await startMaterialToBook(env, r.id).catch((e) => ({ error: publicBookError(e), code: 500 as const }));
     if (!("error" in res)) {
       console.log(`[문제 추출 재시도] 자료 ${r.id} 처리 시작 (book ${res.bookId})`);
@@ -1270,7 +1292,7 @@ bookRoutes.post("/subjects/:subjectId/books/:bookId/explanations", async (c) => 
     }
     const jobId = await createAIJob(c.env.DB, subjectId, "book-explanations");
     const job = startJob(`book-solutions:${bookId}`);
-    runAIJob(c.env.DB, jobId, async () => {
+    runAIJob(c.env.DB, jobId, job, async () => {
       let dir: string | undefined;
       try {
         dir = mkdtempSync(join(tmpdir(), "studywork-solutions-"));
@@ -1310,7 +1332,6 @@ bookRoutes.post("/subjects/:subjectId/books/:bookId/explanations", async (c) => 
       }
     }, "해설을 추가하지 못했습니다. 선택한 문제집과 해설지가 같은 책인지 확인해 주세요.", () => {
       activeSolutionBooks.delete(bookId);
-      finishJob(job);
     });
     backgroundStarted = true;
     return c.json({ jobId, status: "processing" as const }, 202);
@@ -1533,7 +1554,10 @@ bookRoutes.post("/book-files/:id/retry", async (c) => {
 
     await c.env.DB.batch([
       c.env.DB.prepare(
-        "UPDATE materials SET pending_to_book = 0, book_retry_count = 0 WHERE book_id = ?"
+        `UPDATE materials
+         SET pending_to_book = CASE WHEN figure_backfill_pending = 1 THEN 1 ELSE 0 END,
+             book_retry_count = CASE WHEN figure_backfill_pending = 1 THEN book_retry_count ELSE 0 END
+         WHERE book_id = ?`
       ).bind(f.book_id),
     ]);
 
@@ -1548,35 +1572,37 @@ bookRoutes.post("/book-files/:id/retry", async (c) => {
 // 파일 하나 삭제 — 이 파일에서 뽑은 문제도 함께 제거(문제가 곧 파일의 내용이다).
 bookRoutes.delete("/book-files/:id", async (c) => {
   const fileId = c.req.param("id");
-  clearBookExtractionCache(Number(fileId));
   cancelJob(`book:${fileId}`); // 진행 중이던 provider 호출까지 중지
   const f = await c.env.DB.prepare("SELECT book_id, r2_key FROM book_files WHERE id = ?")
     .bind(fileId)
     .first<{ book_id: number; r2_key: string }>();
   if (f) cancelJob(`book-solutions:${f.book_id}`);
-  if (f) await c.env.FILES.delete(f.r2_key);
-  await c.env.FILES.deletePrefix(`pages/${fileId}-`);
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM questions WHERE src_file_id = ?").bind(fileId),
     c.env.DB.prepare("DELETE FROM book_files WHERE id = ?").bind(fileId),
   ]);
+  clearBookExtractionCache(Number(fileId));
+  if (f) await c.env.FILES.delete(f.r2_key).catch(() => {});
+  await c.env.FILES.deletePrefix(`pages/${fileId}-`).catch(() => {});
   return c.json({ ok: true });
 });
 
 // 내부 book(문제 추출 컨테이너) 연쇄 삭제 — 파일·항목·자동 등록된 퀴즈 문제까지 정리.
 // 자료 삭제(materials.ts)와 DELETE /books/:id 라우트가 공유한다.
-export async function deleteBookCascade(env: Env, bookId: number): Promise<void> {
+export async function deleteBookCascade(
+  env: Env,
+  bookId: number,
+  extraStatements: ReturnType<Env["DB"]["prepare"]>[] = []
+): Promise<void> {
   cancelJob(`book-solutions:${bookId}`);
   const { results: files } = await env.DB.prepare("SELECT id, r2_key FROM book_files WHERE book_id = ?")
     .bind(bookId)
     .all<{ id: number; r2_key: string }>();
   for (const f of files) {
-    clearBookExtractionCache(f.id);
     cancelJob(`book:${f.id}`); // 진행 중이던 provider 호출까지 중지
-    await env.FILES.delete(f.r2_key);
-    await env.FILES.deletePrefix(`pages/${f.id}-`);
   }
   await env.DB.batch([
+    ...extraStatements,
     env.DB.prepare(
       "UPDATE materials SET book_id = NULL, book_processing = 0, pending_to_book = 0 WHERE book_id = ?"
     ).bind(bookId),
@@ -1585,6 +1611,11 @@ export async function deleteBookCascade(env: Env, bookId: number): Promise<void>
     env.DB.prepare("DELETE FROM questions WHERE book_id = ?").bind(bookId),
     env.DB.prepare("DELETE FROM books WHERE id = ?").bind(bookId),
   ]);
+  for (const f of files) {
+    clearBookExtractionCache(f.id);
+    await env.FILES.delete(f.r2_key).catch(() => {});
+    await env.FILES.deletePrefix(`pages/${f.id}-`).catch(() => {});
+  }
 }
 
 // ── DELETE /api/books/:id ─────────────────────────────────────────────────────
