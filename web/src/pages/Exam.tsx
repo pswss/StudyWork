@@ -345,7 +345,7 @@ export default function Exam({ subject, active = true }: Props) {
                 </div>
                 <div className="exam-card-right">
                   <div className="exam-progress-bar">
-                    <div className="exam-progress-fill" style={{ width: `${pct}%` }} />
+                    <div className="exam-progress-fill" style={{ transform: `scaleX(${pct / 100})` }} />
                   </div>
                   <div className="exam-progress-label">{done}/{total} ({pct}%)</div>
                 </div>

@@ -167,6 +167,9 @@ nav {
   display: inline-flex; align-items: center; gap: 8px;
 }
 .btn:hover { border-color: var(--ink); }
+.btn:hover:not(:disabled) { transform: translateY(-2px); }
+/* 누르는 순간은 즉시 눌리고(0s), 떼면 기존 transform 트랜지션으로 복귀 */
+.btn:active:not(:disabled) { transform: scale(.97); transition-duration: 0s; }
 .btn:disabled { opacity: .35; cursor: not-allowed; }
 .btn:disabled:hover { border-color: var(--line-strong); }
 .btn.primary {
@@ -470,7 +473,10 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   /* 대화가 길어지면 페이지가 늘어나는 대신 로그 내부 스크롤로 전환 */
   max-height: 62vh;
 }
-.chat-msg { display: flex; flex-direction: column; max-width: 82%; }
+.chat-msg {
+  display: flex; flex-direction: column; max-width: 82%;
+  animation: contentIn .24s var(--ease) both; /* 새 메시지 등장 페이드+상승 */
+}
 .chat-msg.user { align-self: flex-end; align-items: flex-end; }
 .chat-msg.assistant { align-self: flex-start; align-items: flex-start; }
 .msg-bubble {
@@ -909,6 +915,10 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
   display: flex; flex-direction: column; gap: 8px;
 }
+/* 접힘 → 펼침 패널 공용 등장 (즉시 스냅 방지) */
+.quiz-row-detail, .wrong-row-detail, .exam-card-detail, .wrong-analysis, .note-source-panel {
+  animation: contentIn .22s var(--ease) both;
+}
 .quiz-row-full-q { font-size: 14px; color: var(--ink); line-height: 1.6; }
 .quiz-row-choices { padding-left: 20px; font-size: 13.5px; color: var(--ink-2); line-height: 1.95; }
 .quiz-row-choices li::marker { color: var(--lime); }
@@ -931,7 +941,16 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .quiz-progress-bar {
   height: 2px; background: var(--line); margin-bottom: 26px; overflow: hidden;
 }
-.quiz-progress-fill { height: 100%; background: var(--lime); transition: width .4s var(--ease); }
+/* width 대신 transform(scaleX)으로 — 컴포지터 전용, 레이아웃 리플로 없음 */
+.quiz-progress-fill {
+  height: 100%; width: 100%; background: var(--lime);
+  transform-origin: 0 50%; transition: transform .4s var(--ease);
+}
+/* 문항 전환 프레임 — key 교체로 문항마다 페이드+12px 상승 */
+.quiz-question-frame {
+  display: flex; flex-direction: column;
+  animation: contentIn .3s var(--ease) both;
+}
 .quiz-chips { display: flex; gap: 8px; margin-bottom: 18px; }
 .quiz-question-text {
   font-family: var(--serif); font-weight: 800;
@@ -947,9 +966,11 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   border-radius: 6px; padding: 15px 18px;
   color: var(--ink-2); font-size: 14.5px; font-family: var(--body);
   text-align: left; cursor: pointer;
-  transition: border-color .2s var(--ease), color .2s var(--ease), background .2s var(--ease);
+  transition: border-color .2s var(--ease), color .2s var(--ease), background .2s var(--ease),
+              transform .15s var(--ease);
 }
 .choice-btn:hover { border-color: var(--line-strong); color: var(--ink); }
+button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-duration: 0s; }
 .choice-btn.selected { border-color: var(--lime); color: var(--ink); background: rgba(217,255,63,.05); }
 .choice-btn.correct-choice { border-color: var(--lime); color: var(--ink); background: rgba(217,255,63,.08); }
 .choice-btn.wrong-choice { border-color: var(--bad); color: var(--bad); }
@@ -968,15 +989,18 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   background: var(--panel-2); border: 1px solid var(--line);
   border-radius: 8px; font-family: var(--serif); font-weight: 800; letter-spacing: -.02em;
   font-size: 40px; color: var(--ink-2); cursor: pointer;
-  transition: border-color .2s var(--ease), color .2s var(--ease), background .2s var(--ease);
+  transition: border-color .2s var(--ease), color .2s var(--ease), background .2s var(--ease),
+              transform .15s var(--ease);
 }
 .ox-btn:hover { border-color: var(--line-strong); color: var(--ink); }
+.ox-btn:active:not(:disabled) { transform: scale(.97); transition-duration: 0s; }
 .ox-btn.selected { border-color: var(--lime); color: var(--lime); background: rgba(217,255,63,.06); }
 
-/* feedback */
+/* feedback — 채점 결과 리빌 */
 .quiz-feedback {
   margin-top: 22px; padding: 20px 22px; border-radius: 6px; border: 1px solid var(--line);
   display: flex; flex-direction: column; gap: 8px; background: var(--panel-2);
+  animation: contentIn .3s var(--ease) both;
 }
 .quiz-feedback.correct { border-color: var(--lime-dim); }
 .quiz-feedback.wrong { border-color: var(--bad-line); }
@@ -990,8 +1014,11 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .feedback-answer strong { color: var(--lime); }
 .feedback-explanation { font-size: 13px; color: var(--ink-2); line-height: 1.65; }
 
-/* result */
+/* result — 점수→오답→액션 순 스태거 등장 */
 .quiz-result { display: flex; flex-direction: column; align-items: flex-start; gap: 28px; padding: 12px 0; }
+.quiz-result > * { animation: contentIn .35s var(--ease) both; }
+.quiz-result > *:nth-child(2) { animation-delay: .07s; }
+.quiz-result > *:nth-child(3) { animation-delay: .14s; }
 .result-score { display: flex; align-items: baseline; gap: 12px; }
 .result-num {
   font-family: var(--disp); font-weight: 800; font-size: clamp(64px, 10vw, 108px);
@@ -1105,7 +1132,10 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .exam-card-scope { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
 .exam-card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
 .exam-progress-bar { width: 100px; height: 3px; background: var(--line); overflow: hidden; }
-.exam-progress-fill { height: 100%; background: var(--lime); transition: width .4s var(--ease); }
+.exam-progress-fill {
+  height: 100%; width: 100%; background: var(--lime);
+  transform-origin: 0 50%; transition: transform .4s var(--ease);
+}
 .exam-progress-label {
   font-family: var(--disp); font-size: 10.5px; font-weight: 600; letter-spacing: .06em;
   color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums;

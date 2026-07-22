@@ -605,8 +605,10 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
           <span className="quiz-progress-label">{play.index + 1} / {play.items.length}</span>
         </div>
         <div className="quiz-progress-bar">
-          <div className="quiz-progress-fill" style={{ width: `${progress}%` }} />
+          <div className="quiz-progress-fill" style={{ transform: `scaleX(${progress / 100})` }} />
         </div>
+        {/* key=index — 문항이 바뀔 때마다 프레임 재마운트로 전환 애니메이션 */}
+        <div className="quiz-question-frame" key={play.index}>
         <div className="quiz-chips">
           <span className={`q-chip diff-${item.difficulty}`}>{item.difficulty}</span>
           <span className="q-chip qtype">{qtypeLabel(item.qtype)}</span>
@@ -721,6 +723,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
             </button>
           </div>
         )}
+        </div>
       </div>
     );
   }
