@@ -32,7 +32,7 @@ export default function SourcePicker({
     <details className="note-source-picker">
       <summary>
         <span>{label}</span>
-        <strong>{selected}/{materials.length}개 선택</strong>
+        <strong aria-live="polite" aria-atomic="true">{selected}/{materials.length}개 선택</strong>
       </summary>
       <div className="note-source-panel">
         <input

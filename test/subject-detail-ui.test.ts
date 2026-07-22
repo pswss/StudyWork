@@ -58,4 +58,16 @@ describe("해설 탭 브라우저 경계", () => {
     expect(notes.match(/\{srcCount > 0 && \(/g)).toHaveLength(2);
     expect(notes).not.toContain("{srcCount > 1 && (");
   });
+
+  it("자료 선택을 유지하고 색 외의 체크 피드백을 제공한다", () => {
+    const quiz = readFileSync("web/src/pages/Quiz.tsx", "utf8");
+    const picker = readFileSync("web/src/pages/SourcePicker.tsx", "utf8");
+    const css = readFileSync("web/src/styles.css", "utf8");
+
+    expect(quiz).toContain("const [genExcluded, setGenExcluded]");
+    expect(quiz).not.toContain("readyMaterialKey");
+    expect(picker).toContain('aria-live="polite"');
+    expect(css).toContain('.note-source-row:has(input:checked)::before { content: "✓"');
+    expect(css).toContain("html { color-scheme: dark;");
+  });
 });

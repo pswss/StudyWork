@@ -372,10 +372,12 @@ export default function SubjectDetail({ subject, onBack, onTabChange }: Props) {
             <div className="quiz-view-row">
               <button
                 className={`mode-chip${quizView === "bank" ? " active" : ""}`}
+                aria-pressed={quizView === "bank"}
                 onClick={() => setQuizView("bank")}
               >문제 은행</button>
               <button
                 className={`mode-chip${quizView === "wrong" ? " active" : ""}`}
+                aria-pressed={quizView === "wrong"}
                 onClick={() => setQuizView("wrong")}
               >오답 노트</button>
             </div>

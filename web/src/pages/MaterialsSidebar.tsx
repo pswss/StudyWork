@@ -172,7 +172,7 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
                 <span className="mat-title" title={m.original_filename ?? m.title}>{m.title}</span>
                 {m.status === "processing" && (
                   <>
-                    <span className="status-dot processing" />
+                    <span className="status-dot processing" role="img" aria-label="자료 분석 중" />
                     <span className="quiz-status-msg">
                       {m.retry_chunk_count
                         ? `${m.progress}% · 오류·미완료 ${m.retry_chunk_count}개 청크만 재시도 중`
@@ -188,7 +188,7 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
                 )}
                 {m.status === "ready" && (
                   <>
-                    <span className="status-dot ready" />
+                    <span className="status-dot ready" role="img" aria-label="자료 준비됨" />
                     {m.book_status === "processing" && (
                       <>
                         <span className="quiz-status-msg" title="문제·해설을 뽑아 문제 칸에 등록 중">
@@ -217,7 +217,7 @@ export default function MaterialsSidebar({ subject, mats, reloadMats }: Props) {
                 )}
                 {m.status === "error" && (
                   <>
-                    <span className="status-dot error" />
+                    <span className="status-dot error" role="img" aria-label="자료 분석 오류" />
                     <button
                       className="retry-btn"
                       disabled={materialActionId !== null}

@@ -86,7 +86,6 @@ export default function App() {
           <Scene mood={mood} accent={accent} />
         </Suspense>
       </SceneBoundary>
-      <div className="grain" />
       <div className="vignette" aria-hidden />
       <Cursor />
 

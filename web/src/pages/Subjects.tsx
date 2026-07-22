@@ -64,8 +64,13 @@ export default function Subjects({ list, onOpen, onRefresh }: Props) {
           <div
             key={s.id}
             className="subj-card clickable"
-            onClick={() => onOpen(s)}
           >
+            <button
+              type="button"
+              className="subj-card-open"
+              aria-label={`${s.name} 과목 열기`}
+              onClick={() => onOpen(s)}
+            />
             <span className="subj-index">{String(i + 1).padStart(2, "0")}</span>
             <div className="subj-body">
               <div className="subj-name">{s.name}</div>
@@ -95,7 +100,13 @@ export default function Subjects({ list, onOpen, onRefresh }: Props) {
             </div>
           </div>
         ) : (
-          <div className="subj-card add clickable" onClick={startAdd}>
+          <div className="subj-card add clickable">
+            <button
+              type="button"
+              className="subj-card-open"
+              aria-label="과목 추가"
+              onClick={startAdd}
+            />
             <span className="subj-index accent">＋</span>
             <div className="subj-body">
               <div className="subj-name add-name">과목 추가</div>

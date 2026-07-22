@@ -123,10 +123,12 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
       <div className="chat-mode-row">
         <button
           className={`mode-chip${chatMode === "materials" ? " active" : ""}`}
+          aria-pressed={chatMode === "materials"}
           onClick={() => setChatMode("materials")}
         >자료 기반</button>
         <button
           className={`mode-chip${chatMode === "general" ? " active" : ""}`}
+          aria-pressed={chatMode === "general"}
           onClick={() => setChatMode("general")}
         >일반 질문</button>
         <span
@@ -169,10 +171,11 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
           value={chatInput}
           onChange={e => setChatInput(e.target.value)}
           onKeyDown={onChatKey}
+          aria-label="채팅 질문"
           rows={1}
           disabled={busy}
         />
-        <button className="send-btn" onClick={sendChat} disabled={busy || !chatInput.trim()}>↑</button>
+        <button className="send-btn" aria-label="질문 보내기" onClick={sendChat} disabled={busy || !chatInput.trim()}>↑</button>
       </div>
     </>
   );
