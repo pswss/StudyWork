@@ -717,7 +717,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
         {play.answered && play.result && (
           <div className={`quiz-feedback ${isCorrect ? "correct" : "wrong"}`}>
             <div className="feedback-label">{isCorrect ? "정답" : "오답"}</div>
-            <div className="feedback-answer">정답: <strong>{play.result.answer}</strong></div>
+            <div className="feedback-answer">정답: <strong><MdInline text={play.result.answer} /></strong></div>
             {play.result.explanation && (
               <Md className="feedback-explanation" text={play.result.explanation} />
             )}
@@ -767,8 +767,8 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
             <div className="result-wrong-title">틀린 문제</div>
             {wrong.map((s, i) => (
               <div key={i} className="result-wrong-item">
-                <span className="result-wrong-q">{s.question}</span>
-                <span className="result-wrong-a">정답: {s.answer}</span>
+                <span className="result-wrong-q"><MdInline text={s.question} /></span>
+                <span className="result-wrong-a">정답: <MdInline text={s.answer} /></span>
               </div>
             ))}
           </div>

@@ -293,7 +293,7 @@ nav {
 .subj-del {
   font-family: var(--disp); font-size: 11px; font-weight: 600; letter-spacing: .08em;
   text-transform: uppercase; background: none; border: none; cursor: pointer;
-  color: var(--ink-4); padding: 6px; opacity: 0; transition: opacity .3s, color .25s;
+  color: var(--ink-3); padding: 6px; opacity: 0; transition: opacity .3s, color .25s;
 }
 .subj-card:hover .subj-del { opacity: 1; }
 .subj-del:hover { color: var(--bad); }
@@ -334,7 +334,7 @@ nav {
 }
 
 /* sidebar */
-.sidebar { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 24px; }
+.sidebar { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 24px; min-width: 0; }
 .sidebar-panel { padding: 22px; }
 .sidebar-title {
   font-family: var(--disp); font-size: 10.5px; font-weight: 700;
@@ -379,8 +379,10 @@ nav {
 .mat-error { color: var(--bad); }
 .mat-warning { color: var(--warn); }
 .del-btn {
-  color: var(--ink-4); background: none; border: none; cursor: pointer;
-  font-size: 14px; flex-shrink: 0; transition: color .2s; padding: 2px 4px;
+  color: var(--ink-3); background: none; border: none; cursor: pointer;
+  font-size: 14px; flex-shrink: 0; transition: color .2s;
+  /* 히트 영역 ~34px — 네거티브 마진으로 기존(2px 4px) 레이아웃 유지 */
+  padding: 10px; margin: -8px -6px;
 }
 .del-btn:hover { color: var(--bad); }
 
@@ -890,9 +892,9 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .quiz-file-group { margin-top: 10px; }
 .quiz-file-head {
   display: flex; align-items: center; gap: 10px; width: 100%;
-  padding: 10px 12px; background: var(--surface-2, rgba(255,255,255,.03));
+  padding: 10px 12px; background: var(--panel-2);
   border: 1px solid var(--line); border-radius: 8px;
-  color: var(--ink-1);
+  color: var(--ink);
 }
 .quiz-file-head:hover { border-color: var(--lime); }
 .quiz-file-toggle {
@@ -931,6 +933,11 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   cursor: pointer; min-width: 0; transition: color .2s var(--ease);
 }
 .quiz-q-text:hover { color: var(--ink); }
+/* 한 줄 요약 행 안에선 $$ 블록 수식을 인라인으로 강등 — 3줄 가운데 블록으로 깨지는 것 방지
+   (KaTeX mathml 출력: .katex > math[display="block"], .katex-display 래퍼 없음) */
+.quiz-q-text math[display="block"], .wrong-q-text math[display="block"] {
+  display: inline; display: inline math; margin: 0;
+}
 .quiz-accuracy {
   font-family: var(--disp); font-size: 11px; color: var(--ink-3); flex-shrink: 0;
   min-width: 40px; text-align: right; font-variant-numeric: tabular-nums;
@@ -1272,7 +1279,11 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
   .exam-dday { font-size: 28px; }
   .detail-header { gap: 14px; }
   .detail-meta { margin-left: 0; width: 100%; }
-  .tab-word { font-size: 15px; }
+  /* 좁은 화면에선 탭이 세로로 깨지지 않게 — 번호 숨기고 가로 스크롤 */
+  .tabs { flex-wrap: nowrap; overflow-x: auto; }
+  .tab-index { flex: 1 0 auto; padding: 4px 10px 14px; }
+  .tab-word { font-size: 15px; white-space: nowrap; }
+  .tab-num { display: none; }
   .main-card { padding: 22px; min-height: 460px; }
   .chat-mode-row { flex-wrap: wrap; }
   .ai-config-badge { width: 100%; margin-left: 0; }
