@@ -930,7 +930,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                     aria-expanded={open}
                     title="클릭해서 이 파일의 문제 열기/닫기"
                   >
-                    <span className="quiz-file-chev">{open ? "▾" : "▸"}</span>
+                    <span className={`quiz-file-chev${open ? " open" : ""}`}>▾</span>
                     <span className="quiz-file-name">{g.label}</span>
                     <span className="quiz-file-count">{allInScope ? g.items.length : `${gsel}/${g.items.length}`}문제</span>
                   </button>

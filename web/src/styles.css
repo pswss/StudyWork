@@ -809,9 +809,10 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   background: var(--panel-2); border: 1px solid var(--line);
   border-radius: 6px; color: var(--ink); padding: 8px 12px;
   font-size: 12.5px; font-family: var(--body);
-  cursor: pointer; transition: border-color .2s var(--ease);
+  cursor: pointer; transition: border-color .2s var(--ease), transform .2s var(--ease);
 }
 .quiz-select:focus { border-color: var(--lime-dim); }
+.quiz-select:active { transform: scale(.98); transition-duration: 0s; }
 .quiz-count-input {
   width: 62px; background: var(--panel-2); border: 1px solid var(--line);
   border-radius: 6px; color: var(--ink); padding: 8px 10px;
@@ -853,7 +854,11 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   display: flex; align-items: center; gap: 7px;
   font-family: var(--disp); font-size: 11px; font-weight: 600; letter-spacing: .08em;
   text-transform: uppercase; color: var(--ink-2); cursor: pointer; user-select: none;
+  transition: transform .2s var(--ease), color .2s var(--ease);
 }
+.quiz-check-label:hover { color: var(--ink); }
+/* 체크박스만이 아니라 라벨(자료 칩) 전체가 눌리는 느낌 */
+.quiz-check-label:active { transform: scale(.97); transition-duration: 0s; }
 .quiz-check-label input[type="checkbox"] { accent-color: var(--lime); width: 14px; height: 14px; }
 
 /* 파일(자료)별 문제 그룹 — 드롭다운 헤더 */
@@ -869,8 +874,15 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   min-width: 0; flex: 1; display: flex; align-items: center; gap: 10px;
   padding: 0; border: 0; background: none; color: inherit; font: inherit;
   text-align: left; cursor: pointer;
+  transition: transform .2s var(--ease);
 }
-.quiz-file-chev { color: var(--lime); font-size: 12px; width: 12px; }
+.quiz-file-toggle:active { transform: scale(.985); transition-duration: 0s; }
+.quiz-file-chev {
+  color: var(--lime); font-size: 12px; width: 12px;
+  display: inline-block; transform: rotate(-90deg);
+  transition: transform .24s var(--ease);
+}
+.quiz-file-chev.open { transform: rotate(0deg); }
 .quiz-file-name {
   font-weight: 600; font-size: 14px; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
