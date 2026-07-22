@@ -250,4 +250,26 @@ describe("Codex CLI adapter", () => {
     await expect(pending).rejects.toMatchObject({ code: "cancelled" });
     expect(existsSync(workspace)).toBe(false);
   });
+
+  it("배치 작업이 몰려도 채팅용 예약 슬롯 하나는 남는다", async () => {
+    const fake = fakeSpawner({ hang: true });
+    const provider = new CodexCliProvider(config({ maxConcurrency: 2 }), fake.fn);
+    const controller = new AbortController();
+
+    // 배치(추출·단권화)는 limit-1 = 1개까지만 동시 실행 — 두 번째는 큐 대기
+    const batch1 = provider.complete({ operation: "material-extract", prompt: "배치 1", signal: controller.signal });
+    const batch2 = provider.complete({ operation: "consolidate-chunk", prompt: "배치 2", signal: controller.signal });
+    await vi.waitFor(() => expect(fake.calls).toHaveLength(1));
+    expect(fake.calls[0].input).toBe("배치 1");
+
+    // 채팅은 예약 슬롯으로 대기 중인 배치를 제치고 즉시 실행된다
+    const chatRequest = provider.complete({ operation: "chat", prompt: "채팅 질문", signal: controller.signal });
+    await vi.waitFor(() => expect(fake.calls).toHaveLength(2));
+    expect(fake.calls[1].input).toBe("채팅 질문");
+
+    controller.abort();
+    for (const pending of [batch1, batch2, chatRequest]) {
+      await expect(pending).rejects.toMatchObject({ code: "cancelled" });
+    }
+  });
 });

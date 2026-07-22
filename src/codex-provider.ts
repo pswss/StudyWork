@@ -153,25 +153,36 @@ export function loadCodexProviderConfig(
   };
 }
 
+// 배치 작업(추출·단권화 등)이 전 슬롯을 점유해 대화형 요청(채팅)이 굶지 않도록
+// limit>1이면 슬롯 하나를 대화형 전용으로 예약한다. 배치는 limit-1까지만 사용.
+// ponytail: 2단계(배치/대화형) 예약만 — 작업별 우선순위 큐가 필요해지면 그때 확장
 class Semaphore {
   private active = 0;
+  private readonly batchLimit: number;
   private readonly queue: Array<{
     resolve: (release: () => void) => void;
     reject: (error: Error) => void;
+    interactive: boolean;
     signal?: AbortSignal;
     abort?: () => void;
   }> = [];
 
-  constructor(private readonly limit: number) {}
+  constructor(private readonly limit: number) {
+    this.batchLimit = limit > 1 ? limit - 1 : limit;
+  }
 
-  acquire(signal?: AbortSignal): Promise<() => void> {
+  private capFor(interactive: boolean): number {
+    return interactive ? this.limit : this.batchLimit;
+  }
+
+  acquire(signal?: AbortSignal, interactive = false): Promise<() => void> {
     if (signal?.aborted) return Promise.reject(new AIProviderError("cancelled", "사용자 중단"));
-    if (this.active < this.limit) {
+    if (this.active < this.capFor(interactive)) {
       this.active++;
       return Promise.resolve(this.releaseOnce());
     }
     return new Promise((resolve, reject) => {
-      const queued = { resolve, reject, signal } as (typeof this.queue)[number];
+      const queued = { resolve, reject, interactive, signal } as (typeof this.queue)[number];
       if (signal) {
         queued.abort = () => {
           const index = this.queue.indexOf(queued);
@@ -190,10 +201,19 @@ class Semaphore {
       if (released) return;
       released = true;
       this.active--;
-      while (this.queue.length > 0) {
-        const next = this.queue.shift()!;
+      // 도착 순서를 지키되, 지금 슬롯을 쓸 수 있는 첫 대기자를 깨운다
+      // (배치 상한에 걸린 배치 작업 뒤에 대화형이 줄 서 있으면 대화형이 먼저 나간다)
+      for (let index = 0; index < this.queue.length; index++) {
+        const next = this.queue[index];
+        if (next.signal?.aborted) {
+          next.signal.removeEventListener("abort", next.abort!);
+          this.queue.splice(index, 1);
+          index--;
+          continue;
+        }
+        if (this.active >= this.capFor(next.interactive)) continue;
         next.signal?.removeEventListener("abort", next.abort!);
-        if (next.signal?.aborted) continue;
+        this.queue.splice(index, 1);
         this.active++;
         next.resolve(this.releaseOnce());
         break;
@@ -349,7 +369,8 @@ export class CodexCliProvider {
     }
     const model = normalizeModelId(request.model ?? this.config.model);
     const reasoningEffort = parseReasoningEffort(request.reasoningEffort ?? this.config.reasoningEffort);
-    const release = await this.semaphore.acquire(request.signal);
+    // 채팅은 대화형 — 배치가 못 쓰는 예약 슬롯까지 사용해 즉시성을 보장한다
+    const release = await this.semaphore.acquire(request.signal, request.operation === "chat");
     let workspace: string;
     try {
       workspace = mkdtempSync(join(tmpdir(), "studywork-codex-"));

@@ -89,7 +89,7 @@ STUDYWORK_AI_REASONING_EFFORT=high
 
 `STUDYWORK_AI_MODEL`과 `STUDYWORK_AI_REASONING_EFFORT`는 기존 설치의 최초 fallback이다. 설정 탭에서 저장한 DB 값이 있으면 그 값이 우선한다.
 
-- 기본 보호값은 타임아웃 300초, 동시 요청 4개다. Codex adapter 자체는 자동 재시도하지 않으며, 기존 문제 추출 작업의 제한된 재시도만 유지한다.
+- 기본 보호값은 타임아웃 300초, 동시 요청 4개다. 동시 슬롯 중 1개는 대화형(채팅) 전용 예약 — 추출·단권화 같은 배치 작업은 최대 3개까지만 점유하므로 채팅이 큐에서 굶지 않는다. Codex adapter 자체는 자동 재시도하지 않으며, 기존 문제 추출 작업의 제한된 재시도만 유지한다.
 - 각 호출은 `codex exec --ephemeral` 일회성 세션이다. 사용자 config/rules, 웹, 앱, 멀티에이전트, shell 도구를 끄고 구조화 응답은 기존 strict JSON Schema와 도메인 파서로 다시 검증한다.
 - 프롬프트는 stdin, 결과는 전용 출력 파일로만 전달한다. StudyWork 비밀번호·세션 키·API 키 환경변수는 child process에 넘기지 않는다.
 - 이미지는 opaque 임시 이름으로 복사한다. PDF는 기존 6쪽 구간을 `pdftoppm`으로 PNG화한 뒤 이미지로 첨부하며, 원본 경로를 모델 프롬프트에 넣지 않는다.
