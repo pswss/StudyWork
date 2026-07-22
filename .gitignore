@@ -5,3 +5,4 @@ web/dist/
 !web/dist/.gitkeep
 .env
 data/
+.gstack/
