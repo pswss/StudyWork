@@ -14,6 +14,7 @@ import {
   getCodexProvider,
   AI_MAX_FILE_BYTES,
   type AIJsonSchema,
+  type ReasoningEffort,
 } from "./codex-provider";
 import {
   ANSWER_KEY_PAGES_SCHEMA,
@@ -62,6 +63,7 @@ async function runAgent(
     fileKind?: "pdf" | "image";
     responseSchema?: AIJsonSchema;
     lane?: "explanation";
+    reasoningEffort?: ReasoningEffort;
   } = {}
 ): Promise<string> {
   const skillInstructions = getStudySkillRegistry().prompt();
@@ -100,7 +102,7 @@ async function runAgent(
     const result = await getCodexProvider(executionSettings).complete({
       operation,
       model: executionSettings.model,
-      reasoningEffort: executionSettings.reasoningEffort,
+      reasoningEffort: opts.reasoningEffort ?? executionSettings.reasoningEffort,
       prompt: scrubPromptPath("the attached file"),
       ...(combinedInstructions
         ? {
@@ -177,7 +179,7 @@ async function runAgent(
   options.systemPrompt = combinedInstructions;
   // 롤백 provider도 서버 설정만 사용한다. 클라이언트가 모델·추론 수준을 덮어쓰지 못하게 한다.
   options.model = process.env.STUDYWORK_CLAUDE_MODEL?.trim() || "opus";
-  options.effort = "xhigh";
+  options.effort = opts.reasoningEffort === "ultra" ? "max" : opts.reasoningEffort ?? "xhigh";
 
   try {
     const relativeReadHint = canonicalReadPath
@@ -1711,7 +1713,8 @@ export async function generateExplanationsForQuestions(
   subjectName: string,
   tasks: ExplanationTask[],
   signal?: AbortSignal,
-  lane?: "explanation"
+  lane?: "explanation",
+  reasoningEffort?: ReasoningEffort
 ): Promise<ExplanationItem[]> {
   if (tasks.length === 0) return [];
   const prompt =
@@ -1740,6 +1743,7 @@ export async function generateExplanationsForQuestions(
           maxTurns: 1,
           signal,
           lane,
+          reasoningEffort,
         }
       );
       return parseExplanationItems(result, tasks.map((task) => task.id));

@@ -155,7 +155,7 @@ export async function aiStatus(operation?: AIOperation): Promise<AIStatus> {
   return req<AIStatus>("GET", `/api/ai/status${query}`);
 }
 
-export type AIReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+export type AIReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
 export type AIOperation =
   | "study"
   | "material-extract"

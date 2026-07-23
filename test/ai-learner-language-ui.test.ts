@@ -16,6 +16,7 @@ describe("AI settings learner language", () => {
     expect(learnerEffortLabel("low")).toBe("빠름");
     expect(learnerEffortLabel("high")).toBe("균형");
     expect(learnerEffortLabel("max")).toBe("최대 정밀");
+    expect(learnerEffortLabel("ultra")).toBe("최고 정밀");
     expect(learnerModelLabel("unknown-model")).toBe("사용자 지정");
     expect(learnerEffortLabel("toString")).toBe("자동");
   });

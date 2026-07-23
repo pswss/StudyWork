@@ -4,8 +4,17 @@
 
 import { Hono } from "hono";
 import type { Env } from "./index";
-import { generateExplanationsForQuestions, mapPool, type ExplanationTask } from "./claude";
-import { EXPLANATION_PARALLELISM } from "./codex-provider";
+import {
+  generateExplanationsForQuestions,
+  mapPool,
+  type ExplanationItem,
+  type ExplanationTask,
+} from "./claude";
+import {
+  AIProviderError,
+  EXPLANATION_PARALLELISM,
+  type ReasoningEffort,
+} from "./codex-provider";
 import { checkAndIncrementUsage } from "./usage";
 import { createAIJob, readyAIJobStatement, runAIJob, setAIJobProgress } from "./ai-jobs";
 import { claimTarget, isCurrentJob, releaseTarget, startJob } from "./jobs";
@@ -25,6 +34,13 @@ interface MissingQuestion {
   answer: string;
 }
 
+export const EXPLANATION_EFFORT_LADDER = [
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+] as const satisfies readonly ReasoningEffort[];
+
 function parseStoredChoices(choicesJson: string | null): string[] | null {
   if (!choicesJson) return null;
   try {
@@ -33,6 +49,62 @@ function parseStoredChoices(choicesJson: string | null): string[] | null {
   } catch {
     return null;
   }
+}
+
+async function generateVerifiedExplanations(
+  subjectName: string,
+  questions: MissingQuestion[],
+  signal?: AbortSignal,
+  lane?: "explanation"
+): Promise<{ items: ExplanationItem[]; skippedIds: number[] }> {
+  let remaining = questions;
+  const accepted: ExplanationItem[] = [];
+  let lastError: unknown;
+  let receivedValidResponse = false;
+
+  for (const reasoningEffort of EXPLANATION_EFFORT_LADDER) {
+    if (remaining.length === 0) break;
+    const tasks: ExplanationTask[] = remaining.map((question) => ({
+      id: question.id,
+      qtype: question.qtype,
+      question: question.question,
+      choices: parseStoredChoices(question.choices),
+      answer: question.answer,
+    }));
+    try {
+      const items = await generateExplanationsForQuestions(
+        subjectName,
+        tasks,
+        signal,
+        lane,
+        reasoningEffort
+      );
+      receivedValidResponse = true;
+      const byId = new Map(remaining.map((question) => [question.id, question]));
+      const mismatched: MissingQuestion[] = [];
+      for (const item of items) {
+        const question = byId.get(item.id)!;
+        if (gradeAnswer(question.qtype, question.answer, item.derived_answer, question.choices)) {
+          accepted.push(item);
+        } else {
+          mismatched.push(question);
+        }
+      }
+      remaining = mismatched;
+    } catch (error) {
+      if (
+        signal?.aborted ||
+        (error instanceof AIProviderError &&
+          ["auth", "rate_limit", "invalid_config", "invalid_file", "cancelled"].includes(error.code))
+      ) {
+        throw error;
+      }
+      lastError = error;
+    }
+  }
+
+  if (!receivedValidResponse && lastError) throw lastError;
+  return { items: accepted, skippedIds: remaining.map((question) => question.id) };
 }
 
 // 삭제된 원본 파일의 문제는 퀴즈 은행과 동일하게 "직접 생성·기타" 그룹으로 합친다.
@@ -142,37 +214,25 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
         for (let start = 0; start < section.length; start += EXPLANATION_BATCH_SIZE) {
           if (!isCurrentJob(job)) throw new Error("사용자 중단");
           const batch = section.slice(start, start + EXPLANATION_BATCH_SIZE);
-          const tasks: ExplanationTask[] = batch.map((question) => ({
-            id: question.id,
-            qtype: question.qtype,
-            question: question.question,
-            choices: parseStoredChoices(question.choices),
-            answer: question.answer,
-          }));
-          const items = await generateExplanationsForQuestions(
+          const result = await generateVerifiedExplanations(
             subject.name,
-            tasks,
+            batch,
             job.signal,
             "explanation"
           );
           if (!isCurrentJob(job)) throw new Error("사용자 중단");
 
-          const byId = new Map(batch.map((question) => [question.id, question]));
           const writes = [];
-          for (const item of items) {
-            const question = byId.get(item.id)!;
-            if (gradeAnswer(question.qtype, question.answer, item.derived_answer, question.choices)) {
-              // trim(explanation)='' 가드: 그 사이 해설 업로드 등이 먼저 채웠으면 덮지 않는다.
-              writes.push(
-                c.env.DB.prepare(
-                  "UPDATE questions SET explanation = ? WHERE id = ? AND trim(explanation) = ''"
-                ).bind(item.explanation, item.id)
-              );
-              filled++;
-            } else {
-              skippedIds.push(item.id);
-            }
+          for (const item of result.items) {
+            // trim(explanation)='' 가드: 그 사이 해설 업로드 등이 먼저 채웠으면 덮지 않는다.
+            writes.push(
+              c.env.DB.prepare(
+                "UPDATE questions SET explanation = ? WHERE id = ? AND trim(explanation) = ''"
+              ).bind(item.explanation, item.id)
+            );
+            filled++;
           }
+          skippedIds.push(...result.skippedIds);
           // 배치 체크포인트 — 검산 통과분을 즉시 커밋한다. 이후 배치가 실패해도 여기까지는
           // 저장되고, 재실행 시 빈 해설 조회가 남은 문제만 다시 뽑아 자연히 이어서 진행된다.
           if (writes.length > 0) await c.env.DB.batch(writes);
@@ -220,16 +280,8 @@ explanationGenRoutes.post("/questions/:id/explanation/generate", async (c) => {
   }
 
   try {
-    const [item] = await generateExplanationsForQuestions(question.subject_name, [{
-      id: question.id,
-      qtype: question.qtype,
-      question: question.question,
-      choices: parseStoredChoices(question.choices),
-      answer: question.answer,
-    }]);
-    if (!gradeAnswer(question.qtype, question.answer, item.derived_answer, question.choices)) {
-      return c.json({ filled: false });
-    }
+    const { items: [item] } = await generateVerifiedExplanations(question.subject_name, [question]);
+    if (!item) return c.json({ filled: false });
     await c.env.DB.prepare(
       "UPDATE questions SET explanation = ? WHERE id = ? AND trim(explanation) = ''"
     ).bind(item.explanation, question.id).run();

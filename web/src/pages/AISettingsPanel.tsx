@@ -38,6 +38,7 @@ const AI_EFFORT_LABELS: Record<AIReasoningEffort, string> = {
   high: "균형",
   xhigh: "정밀",
   max: "최대 정밀",
+  ultra: "최고 정밀",
 };
 
 export function learnerModelLabel(model: string | null): string {

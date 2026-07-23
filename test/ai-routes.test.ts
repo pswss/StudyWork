@@ -95,7 +95,7 @@ describe("AI model settings API", () => {
   it.each([
     { default: { model: "../../secret", reasoningEffort: "high" } },
     { default: { model: "made-up-model", reasoningEffort: "high" } },
-    { default: { model: "gpt-5.6-sol", reasoningEffort: "ultra" } },
+    { default: { model: "gpt-5.6-sol", reasoningEffort: "extreme" } },
     { operations: { "unknown-operation": { model: "gpt-5.6-sol", reasoningEffort: "high" } } },
   ])("모델·effort·operation allowlist 밖 설정을 거부", async (body) => {
     const response = await call(env, "/api/ai/settings", {

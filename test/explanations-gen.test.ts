@@ -3,14 +3,16 @@
 
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import { makeEnv, call } from "./helpers";
-import { EXPLANATION_BATCH_SIZE } from "../src/explanations-gen";
+import { EXPLANATION_BATCH_SIZE, EXPLANATION_EFFORT_LADDER } from "../src/explanations-gen";
 import { EXPLANATION_PARALLELISM } from "../src/codex-provider";
 
 const explanationCalls = vi.hoisted(() => [] as number[][]);
+const explanationEfforts = vi.hoisted(() => [] as string[]);
 const control = vi.hoisted(() => ({
   callCount: 0,
-  failOnCall: null as number | null, // n번째 호출을 실패시킨다 (1-base)
+  failIds: new Set<number>(),        // 이 id가 포함된 호출은 모든 effort에서 실패한다
   mismatchIds: new Set<number>(),    // 이 id들은 틀린 derived_answer를 돌려준다
+  matchAtEffort: new Map<number, string>(),
   holdAll: null as Promise<void> | null, // 설정 시 모든 호출이 이 게이트를 기다린다 (동시성 테스트)
   holdCall: null as { number: number; wait: Promise<void> } | null,
 }));
@@ -19,16 +21,27 @@ vi.mock("../src/claude", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/claude")>()),
   generateExplanationsForQuestions: async (
     _subjectName: string,
-    tasks: { id: number; answer: string }[]
+    tasks: { id: number; answer: string }[],
+    _signal?: AbortSignal,
+    _lane?: "explanation",
+    reasoningEffort = "high"
   ) => {
     control.callCount++;
     explanationCalls.push(tasks.map((task) => task.id));
+    explanationEfforts.push(reasoningEffort);
     if (control.holdAll) await control.holdAll;
     if (control.holdCall?.number === control.callCount) await control.holdCall.wait;
-    if (control.failOnCall === control.callCount) throw new Error("모의 배치 실패");
+    if (tasks.some((task) => control.failIds.has(task.id))) throw new Error("모의 배치 실패");
     return tasks.map((task) => ({
       id: task.id,
-      derived_answer: control.mismatchIds.has(task.id) ? "완전히 다른 답" : task.answer,
+      derived_answer:
+        control.mismatchIds.has(task.id) ||
+        EXPLANATION_EFFORT_LADDER.indexOf(reasoningEffort as (typeof EXPLANATION_EFFORT_LADDER)[number]) <
+          EXPLANATION_EFFORT_LADDER.indexOf(
+            control.matchAtEffort.get(task.id) as (typeof EXPLANATION_EFFORT_LADDER)[number]
+          )
+          ? "완전히 다른 답"
+          : task.answer,
       explanation: `AI 해설 ${task.id}`,
     }));
   },
@@ -102,9 +115,11 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   explanationCalls.length = 0;
+  explanationEfforts.length = 0;
   control.callCount = 0;
-  control.failOnCall = null;
+  control.failIds.clear();
   control.mismatchIds.clear();
+  control.matchAtEffort.clear();
   control.holdAll = null;
   control.holdCall = null;
   await env.DB.prepare("DELETE FROM questions").run();
@@ -162,13 +177,47 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
     expect(await explanationOf(bad)).toBe(""); // 불일치 해설은 DB에 절대 들어가지 않는다
   });
 
+  it("불일치 문항만 high → xhigh → max → ultra로 올려 다시 푼다", async () => {
+    const high = await insertQuestion({ answer: "정답A" });
+    const xhigh = await insertQuestion({ answer: "정답B" });
+    const ultra = await insertQuestion({ answer: "정답C" });
+    for (let i = 0; i < EXPLANATION_PARALLELISM * 2 - 2; i++) {
+      await insertQuestion({ answer: `정답${i}` });
+    }
+    control.matchAtEffort.set(xhigh, "xhigh");
+    control.matchAtEffort.set(ultra, "ultra");
+
+    const res = await call(env, `/api/subjects/${subjectId}/explanations/generate`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const job = await waitAIJob(((await res.json()) as { jobId: number }).jobId);
+
+    expect(job.result).toEqual({
+      filled: EXPLANATION_PARALLELISM * 2 + 1,
+      skippedMismatch: 0,
+      skippedIds: [],
+    });
+    expect(explanationCalls.map((ids, index) => ({
+      ids,
+      effort: explanationEfforts[index],
+    })).filter(({ ids }) => ids.some((id) => id === high || id === xhigh || id === ultra))).toEqual([
+      { ids: [high, xhigh, ultra], effort: "high" },
+      { ids: [xhigh, ultra], effort: "xhigh" },
+      { ids: [ultra], effort: "max" },
+      { ids: [ultra], effort: "ultra" },
+    ]);
+  });
+
   it("한 섹션 실패 시 성공 섹션은 저장되고, 재실행은 실패 문항만 이어서 처리한다", async () => {
     const ids: number[] = [];
     for (let i = 0; i < EXPLANATION_PARALLELISM * EXPLANATION_BATCH_SIZE + 1; i++) {
       ids.push(await insertQuestion({ answer: `답${i}` }));
     }
-    // 첫 섹션의 20문항 체크포인트 뒤 남은 1문항 호출만 실패시킨다.
-    control.failOnCall = EXPLANATION_PARALLELISM + 1;
+    // 첫 섹션의 20문항 체크포인트 뒤 남은 1문항을 모든 effort에서 실패시킨다.
+    const failedIds = [ids[EXPLANATION_BATCH_SIZE]];
+    control.failIds.add(failedIds[0]);
 
     const first = await call(env, `/api/subjects/${subjectId}/explanations/generate`, {
       method: "POST",
@@ -177,13 +226,17 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
     });
     const firstJob = await waitAIJob(((await first.json()) as { jobId: number }).jobId);
     expect(firstJob.status).toBe("error");
-    expect(explanationCalls).toHaveLength(EXPLANATION_PARALLELISM + 1);
-    const failedIds = explanationCalls[EXPLANATION_PARALLELISM];
+    expect(explanationCalls).toHaveLength(EXPLANATION_PARALLELISM + EXPLANATION_EFFORT_LADDER.length);
+    expect(explanationCalls.slice(-EXPLANATION_EFFORT_LADDER.length)).toEqual(
+      EXPLANATION_EFFORT_LADDER.map(() => failedIds)
+    );
     for (const id of ids) {
       expect(await explanationOf(id)).toBe(failedIds.includes(id) ? "" : `AI 해설 ${id}`);
     }
 
     // 재실행 — 빈 해설 조회가 실패 섹션 문항만 뽑아 이어서 진행한다.
+    control.failIds.clear();
+    const callsBeforeRetry = explanationCalls.length;
     const second = await call(env, `/api/subjects/${subjectId}/explanations/generate`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
@@ -192,7 +245,7 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
     const secondJob = await waitAIJob(((await second.json()) as { jobId: number }).jobId);
     expect(secondJob.status).toBe("ready");
     expect(secondJob.result).toEqual({ filled: failedIds.length, skippedMismatch: 0, skippedIds: [] });
-    expect(explanationCalls.slice(EXPLANATION_PARALLELISM + 1).flat()).toEqual(failedIds);
+    expect(explanationCalls.slice(callsBeforeRetry).flat()).toEqual(failedIds);
     for (const id of ids) expect(await explanationOf(id)).toBe(`AI 해설 ${id}`);
   });
 
@@ -391,7 +444,7 @@ describe("POST /api/questions/:id/explanation/generate", () => {
     })).status).toBe(404);
 
     const id = await insertQuestion({});
-    control.failOnCall = 1;
+    control.failIds.add(id);
     expect((await call(env, `/api/questions/${id}/explanation/generate`, {
       method: "POST", headers: { cookie },
     })).status).toBe(502);

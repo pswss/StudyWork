@@ -31,7 +31,7 @@ export const ALLOWED_CODEX_MODELS = [
   "gpt-5.6-terra-fast",
 ] as const;
 export type CodexModelPreset = (typeof ALLOWED_CODEX_MODELS)[number];
-export const ALLOWED_REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+export const ALLOWED_REASONING_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"] as const;
 export type ReasoningEffort = (typeof ALLOWED_REASONING_EFFORTS)[number];
 export type AIFileInput = { path: string; kind: "pdf" | "image" };
 export type AIJsonSchema = {
