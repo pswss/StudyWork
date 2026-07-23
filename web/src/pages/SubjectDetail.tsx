@@ -421,7 +421,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
               (e.currentTarget.children[next] as HTMLElement | undefined)?.focus();
             }}
           >
-            {TAB_ORDER.map((t) => (
+            {TAB_ORDER.map((t, i) => (
               <button
                 key={t}
                 id={`subject-tab-${t}`}
@@ -432,6 +432,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
                 className={`tab-index${tab === t ? " active" : ""}`}
                 onClick={() => selectTab(t)}
               >
+                <span className="tab-num">{String(i + 1).padStart(2, "0")}</span>
                 <span className="tab-word">{TAB_LABELS[t]}</span>
               </button>
             ))}

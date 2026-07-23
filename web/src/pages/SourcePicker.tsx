@@ -109,7 +109,7 @@ export default function SourcePicker({
                 <strong>{material.title}</strong>
                 <small>
                   {material.kind === "pdf" ? "PDF" : material.kind === "image" ? "사진" : "텍스트"}
-                  {material.original_filename && material.original_filename !== material.title
+                  {material.original_filename && material.original_filename.normalize("NFC") !== material.title.normalize("NFC")
                     ? ` · ${material.original_filename}`
                     : ""}
                 </small>

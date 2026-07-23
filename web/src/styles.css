@@ -445,8 +445,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 }
 .tab-index {
   position: relative; background: none; border: none; cursor: pointer;
-  display: flex; align-items: baseline; justify-content: center;
-  flex: 1; /* 탭 바가 패널 전체 폭을 꽉 채우도록 균등 분배 */
+  display: flex; align-items: baseline; gap: 8px;
   min-height: 44px; padding: 4px 18px 16px; color: var(--ink-3);
   touch-action: manipulation;
   transition: color .3s var(--ease);
@@ -454,6 +453,11 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .tab-word {
   font-family: var(--serif); font-weight: 800; font-size: 17px; letter-spacing: .01em;
 }
+.tab-num {
+  font-family: var(--disp); font-weight: 700; font-size: 12px; letter-spacing: .04em;
+  color: var(--ink-4); font-variant-numeric: tabular-nums; transition: color .3s var(--ease);
+}
+.tab-index.active .tab-num { color: var(--lime); }
 .tab-index::after {
   content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
   background: var(--lime); transform: scaleX(0); transform-origin: 0 50%;
@@ -650,6 +654,10 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   font-family: var(--disp); font-size: 11px; font-weight: 600; letter-spacing: .1em;
   text-transform: uppercase; color: var(--ink-3);
 }
+.note-header .quiz-select {
+  padding: 6px 28px 6px 12px; background-color: transparent;
+  border-color: var(--line-strong); font-size: 12px;
+}
 .note-source-picker {
   width: min(100%, 680px); margin: 4px 0 16px;
   border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2);
@@ -677,6 +685,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .note-source-row {
   position: relative;
   display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 10px;
+  flex-shrink: 0;
   border: 1px solid transparent; border-radius: 6px;
   cursor: pointer; content-visibility: auto; contain-intrinsic-size: auto 48px;
   transition: background .18s var(--ease), color .18s var(--ease),
@@ -872,6 +881,9 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   border-radius: 6px; color: var(--ink); padding: 8px 12px;
   font-size: 12.5px; font-family: var(--body);
   cursor: pointer; transition: border-color .2s var(--ease), transform .2s var(--ease);
+  appearance: none; -webkit-appearance: none; padding-right: 32px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23EDEAE0' stroke-opacity='.5' stroke-width='1.2'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 10px 6px;
 }
 .quiz-select:focus-visible { border-color: var(--lime-dim); }
 .quiz-select:active { transform: scale(.98); transition-duration: 0s; }
@@ -1060,7 +1072,11 @@ a.q-chip:hover { color: var(--ink); border-color: var(--lime-dim); background: r
   display: flex; flex-direction: column; gap: 8px;
 }
 /* 접힘 → 펼침 패널 공용 등장 (즉시 스냅 방지) */
-.quiz-row-detail, .wrong-row-detail, .exam-card-detail, .wrong-analysis, .note-source-panel {
+.quiz-row-detail, .wrong-row-detail, .exam-card-detail, .wrong-analysis {
+  animation: contentIn .22s var(--ease) both;
+}
+.note-source-picker[open] > .note-source-panel,
+.quiz-generate-disclosure[open] > .quiz-add-row {
   animation: contentIn .22s var(--ease) both;
 }
 .quiz-row-full-q { font-size: 14px; color: var(--ink); line-height: 1.6; }
@@ -1417,6 +1433,7 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
   /* 좁은 화면에선 탭이 세로로 깨지지 않게 가로 스크롤 */
   .tabs { flex-wrap: nowrap; overflow-x: auto; }
   .tab-index { flex: 1 0 auto; padding: 4px 10px 14px; }
+  .tab-num { display: none; }
   .tab-word { font-size: 15px; white-space: nowrap; }
   .main-card { padding: 22px; min-height: 460px; }
   .chat-mode-row { flex-wrap: wrap; }

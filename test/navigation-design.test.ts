@@ -30,13 +30,11 @@ describe("상세 화면 주소와 디자인 계약", () => {
     expect(detail).toContain("분석 중단");
   });
 
-  it("번호 탭·커스텀 커서·지연 리빌을 다시 넣지 않는다", () => {
+  it("커스텀 커서·지연 리빌 AI 티는 다시 넣지 않는다", () => {
     const app = readFileSync("web/src/App.tsx", "utf8");
-    const detail = readFileSync("web/src/pages/SubjectDetail.tsx", "utf8");
     const css = readFileSync("web/src/styles.css", "utf8");
 
     expect(app).not.toContain("<Cursor");
-    expect(detail).not.toContain("tab-num");
     expect(css).not.toContain("revealUp");
     expect(css).not.toContain("has-custom-cursor");
   });
