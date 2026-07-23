@@ -458,7 +458,7 @@ export interface SubjectJob {
   target: string | null; // 중복 가드 대상 키 — 같은 target 버튼만 비활성화한다
   status: "processing" | "ready" | "error";
   elapsed_s: number; // 시작 후 경과 초 (서버 계산 — 클라이언트 시계와 무관)
-  progress: number | null; // 단권화만 % 제공
+  progress: number | null; // 퍼센트를 계산할 수 있는 작업만 제공
 }
 export async function subjectJobs(subjectId: number): Promise<SubjectJob[]> {
   return req<SubjectJob[]>("GET", `/api/subjects/${subjectId}/jobs`);

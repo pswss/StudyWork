@@ -100,7 +100,7 @@ describe("GET /api/subjects/:id/jobs", () => {
       label: "문제집.pdf",
       target: `file:${fileId}`,
       status: "processing",
-      progress: null,
+      progress: 0,
     });
     expect(typeof running!.elapsed_s).toBe("number");
     expect(running!.elapsed_s).toBeGreaterThanOrEqual(0);

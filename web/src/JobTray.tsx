@@ -49,7 +49,7 @@ export default function JobTray({ jobs, fetchedAt, cancellingIds, onCancel }: Pr
             <li className="job-tray-row" key={job.id ?? "consolidate"}>
               <span className="job-tray-kind">{jobKindLabel(job.kind)}</span>
               <span className="job-tray-label">{job.label ?? ""}</span>
-              {running && job.progress !== null && job.progress > 0 && (
+              {running && job.progress !== null && (
                 <span className="job-tray-progress">{job.progress}%</span>
               )}
               {running ? (

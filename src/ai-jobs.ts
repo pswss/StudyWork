@@ -8,20 +8,24 @@ const activeAIJobs = new Map<number, JobToken>();
 
 // 작업 표시용 메타(대상 라벨·대상 키) — DB 스키마 변경 없이 인메모리로만 유지한다.
 // 재시작 시 processing 작업은 recovery가 error로 정리하므로 메타 소실은 문제 없다.
-const aiJobMeta = new Map<number, { label: string; target: string }>();
+const aiJobMeta = new Map<number, { label: string; target: string; progress: number | null }>();
 
 export async function createAIJob(
   db: LocalDB,
   subjectId: string | number,
   kind: string,
-  meta?: { label: string; target?: string }
+  meta?: { label: string; target?: string; progress?: number }
 ): Promise<number> {
   const row = await db.prepare(
     "INSERT INTO ai_jobs (subject_id, kind) VALUES (?, ?) RETURNING id"
   ).bind(subjectId, kind).first<{ id: number }>();
   if (!row) throw new Error("AI 작업을 생성하지 못했습니다");
   if (meta) {
-    aiJobMeta.set(row.id, { label: meta.label, target: meta.target ?? "" });
+    aiJobMeta.set(row.id, {
+      label: meta.label,
+      target: meta.target ?? "",
+      progress: meta.progress ?? null,
+    });
     // ponytail: 단순 상한 정리 — Map 삽입 순서가 곧 생성 순서다
     if (aiJobMeta.size > 300) {
       const oldest = aiJobMeta.keys().next().value;
@@ -29,6 +33,12 @@ export async function createAIJob(
     }
   }
   return row.id;
+}
+
+export function setAIJobProgress(jobId: number, completed: number, total: number): void {
+  const meta = aiJobMeta.get(jobId);
+  if (!meta || total <= 0) return;
+  meta.progress = Math.max(0, Math.min(100, Math.round((completed / total) * 100)));
 }
 
 export interface AIJobCommit {
@@ -112,7 +122,7 @@ aiJobRoutes.get("/subjects/:id/jobs", async (c) => {
     target: aiJobMeta.get(row.id)?.target ?? null,
     status: row.status,
     elapsed_s: Math.max(0, row.elapsed_s),
-    progress: null,
+    progress: aiJobMeta.get(row.id)?.progress ?? null,
   }));
 
   const note = await c.env.DB.prepare(

@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import type { Env } from "./index";
 import { generateExplanationsForQuestions, type ExplanationTask } from "./claude";
 import { checkAndIncrementUsage } from "./usage";
-import { createAIJob, readyAIJobStatement, runAIJob } from "./ai-jobs";
+import { createAIJob, readyAIJobStatement, runAIJob, setAIJobProgress } from "./ai-jobs";
 import { claimTarget, isCurrentJob, releaseTarget, startJob } from "./jobs";
 import { gradeAnswer } from "./quiz";
 
@@ -120,7 +120,7 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
       ? (await c.env.DB.prepare("SELECT name FROM book_files WHERE id = ?")
           .bind(srcFileId).first<{ name: string }>())?.name ?? `파일 #${srcFileId}`
       : manualOnly ? "직접 생성·기타" : "전체";
-    const jobId = await createAIJob(c.env.DB, subjectId, "explanation-generate", { label, target });
+    const jobId = await createAIJob(c.env.DB, subjectId, "explanation-generate", { label, target, progress: 0 });
     const job = startJob(`explanation-job:${jobId}`);
     runAIJob(c.env.DB, jobId, job, async () => {
       let filled = 0;
@@ -159,6 +159,7 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
         // 배치 체크포인트 — 검산 통과분을 즉시 커밋한다. 이후 배치가 실패해도 여기까지는
         // 저장되고, 재실행 시 빈 해설 조회가 남은 문제만 다시 뽑아 자연히 이어서 진행된다.
         if (writes.length > 0) await c.env.DB.batch(writes);
+        setAIJobProgress(jobId, start + batch.length, missing.length);
       }
       return {
         writes: [],

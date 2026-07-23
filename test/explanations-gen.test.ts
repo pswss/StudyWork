@@ -11,6 +11,7 @@ const control = vi.hoisted(() => ({
   failOnCall: null as number | null, // n번째 호출을 실패시킨다 (1-base)
   mismatchIds: new Set<number>(),    // 이 id들은 틀린 derived_answer를 돌려준다
   holdAll: null as Promise<void> | null, // 설정 시 모든 호출이 이 게이트를 기다린다 (동시성 테스트)
+  holdCall: null as { number: number; wait: Promise<void> } | null,
 }));
 
 vi.mock("../src/claude", () => ({
@@ -21,6 +22,7 @@ vi.mock("../src/claude", () => ({
     control.callCount++;
     explanationCalls.push(tasks.map((task) => task.id));
     if (control.holdAll) await control.holdAll;
+    if (control.holdCall?.number === control.callCount) await control.holdCall.wait;
     if (control.failOnCall === control.callCount) throw new Error("모의 배치 실패");
     return tasks.map((task) => ({
       id: task.id,
@@ -102,6 +104,7 @@ beforeEach(async () => {
   control.failOnCall = null;
   control.mismatchIds.clear();
   control.holdAll = null;
+  control.holdCall = null;
   await env.DB.prepare("DELETE FROM questions").run();
 });
 
@@ -184,6 +187,35 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
     expect(secondJob.result).toEqual({ filled: 2, skippedMismatch: 0, skippedIds: [] });
     expect(explanationCalls[2]).toEqual(ids.slice(EXPLANATION_BATCH_SIZE));
     for (const id of ids) expect(await explanationOf(id)).toBe(`AI 해설 ${id}`);
+  });
+
+  it("완료한 배치 수를 작업 진행 퍼센트로 노출", async () => {
+    for (let i = 0; i < EXPLANATION_BATCH_SIZE + 1; i++) {
+      await insertQuestion({ answer: `답${i}` });
+    }
+    let release!: () => void;
+    const wait = new Promise<void>((resolve) => { release = resolve; });
+    control.holdCall = { number: 2, wait };
+    let jobId: number | null = null;
+    try {
+      const started = await call(env, `/api/subjects/${subjectId}/explanations/generate`, {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      jobId = ((await started.json()) as { jobId: number }).jobId;
+      for (let i = 0; i < 100 && control.callCount < 2; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 2));
+      }
+      const jobs = await call(env, `/api/subjects/${subjectId}/jobs`, { headers: { cookie } });
+      const current = ((await jobs.json()) as Array<{ id: number; progress: number | null }>)
+        .find((job) => job.id === jobId);
+      expect(current?.progress).toBe(95);
+    } finally {
+      release();
+      control.holdCall = null;
+      if (jobId !== null) await waitAIJob(jobId);
+    }
   });
 
   it("srcFileId 범위는 해당 파일 문제만, manual은 파일 없는 문제만 처리한다", async () => {
