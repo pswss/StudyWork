@@ -497,7 +497,7 @@ async function extractAllQuestions(
         } catch (e) {
           stopLaunching = true;
           terminalError = e;
-          console.error(`[문제추출] 청크 실패 (p.${s.from}~): ${e instanceof AIProviderError ? e.code : "unknown"}`);
+          console.error(`[문제추출] 청크 실패 (p.${s.from}~): ${e instanceof AIProviderError ? e.code : e instanceof Error ? e.message : String(e)}`);
           noteLimit(e);
           if (blocksAutomaticRetry(e)) autoRetryBlocked = true;
           return null;
