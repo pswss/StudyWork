@@ -14,7 +14,7 @@ vi.mock("../src/codex-provider", async (importOriginal) => {
   };
 });
 
-import { chat, extractQuestionsFromFile } from "../src/claude";
+import { chat, extractQuestionsFromFile, generateExplanationsForQuestions } from "../src/claude";
 import { resetStudySkillRegistryForTests } from "../src/skills";
 import { configureAISettings, updateAISettings } from "../src/ai-settings";
 import { makeEnv } from "./helpers";
@@ -73,6 +73,52 @@ describe("StudyWork Codex facade", () => {
     expect(request.instructions).toContain("developer-approved-skills");
     expect(request.instructions).toContain("learning-material-analysis");
     expect(request.instructions).toContain('top-level "items" field');
+  });
+
+  it("그림 해설 묶음을 PDF 첨부로 전달하고 task 라벨을 prompt에 연결", async () => {
+    const document = await PDFDocument.create();
+    document.addPage([100, 100]);
+    document.addPage([100, 100]);
+    const figures = join(dir, "해설 그림 묶음.pdf");
+    writeFileSync(figures, await document.save());
+    providerMock.complete.mockResolvedValueOnce({
+      text: JSON.stringify([{
+        id: 7,
+        derived_answer: "2",
+        explanation: "그림을 보면 답은 2입니다.",
+      }]),
+      provider: "codex-cli",
+      model: "gpt-5.6-sol",
+    });
+
+    await expect(generateExplanationsForQuestions(
+      "수학",
+      [{
+        id: 7,
+        qtype: "short",
+        question: "그림의 값은?",
+        choices: null,
+        answer: "2",
+        visual_ref: "QUESTION_ID 7",
+        figure_description: "점 A가 표시된 좌표평면",
+      }],
+      undefined,
+      "bulk",
+      "xhigh",
+      figures
+    )).resolves.toEqual([expect.objectContaining({ id: 7, derived_answer: "2" })]);
+
+    const request = providerMock.complete.mock.calls[0][0];
+    expect(request).toMatchObject({
+      operation: "question-generate",
+      lane: "bulk",
+      reasoningEffort: "xhigh",
+      file: { path: realpathSync(figures), kind: "pdf" },
+      schema: { name: "studywork_explanation_items", outputKey: "items" },
+    });
+    expect(request.prompt).toContain('"visual_ref":"QUESTION_ID 7"');
+    expect(request.prompt).toContain("mandatory primary evidence");
+    expect(request.prompt).not.toContain(figures);
   });
 
   it("업로드 자료와 대화는 developer instructions가 아니라 사용자 데이터로 유지", async () => {

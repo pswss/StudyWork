@@ -15,10 +15,16 @@ import {
   BULK_AI_PARALLELISM,
   type ReasoningEffort,
 } from "./codex-provider";
+import {
+  createFigureBundlePdf,
+  parseFigureBox,
+  type FigureBundleItem,
+} from "./book-page-image";
 import { checkAndIncrementUsage } from "./usage";
 import { createAIJob, readyAIJobStatement, runAIJob, setAIJobProgress } from "./ai-jobs";
 import { claimTarget, isCurrentJob, releaseTarget, startJob } from "./jobs";
 import { gradeAnswer } from "./quiz";
+import type { FileStore } from "./filestore";
 
 export const explanationGenRoutes = new Hono<{ Bindings: Env }>();
 
@@ -32,6 +38,13 @@ interface MissingQuestion {
   question: string;
   choices: string | null;
   answer: string;
+  src_file_id: number | null;
+  src_page: number | null;
+  has_figure: number;
+  figure_box: string | null;
+  figure_description: string | null;
+  source_r2_key: string | null;
+  source_mime: string | null;
 }
 
 export const EXPLANATION_EFFORT_LADDER = [
@@ -54,6 +67,7 @@ function parseStoredChoices(choicesJson: string | null): string[] | null {
 async function generateVerifiedExplanations(
   subjectName: string,
   questions: MissingQuestion[],
+  files: FileStore,
   signal?: AbortSignal,
   lane?: "bulk"
 ): Promise<{ items: ExplanationItem[]; skippedIds: number[] }> {
@@ -64,20 +78,47 @@ async function generateVerifiedExplanations(
 
   for (const reasoningEffort of EXPLANATION_EFFORT_LADDER) {
     if (remaining.length === 0) break;
+    const figureItems: FigureBundleItem[] = remaining
+      .filter((question) => question.has_figure === 1)
+      .map((question) => {
+        if (
+          question.src_file_id === null ||
+          question.src_page === null ||
+          !question.source_r2_key ||
+          !question.source_mime
+        ) {
+          throw new AIProviderError("invalid_file", "그림 문항의 원본 페이지를 찾을 수 없습니다");
+        }
+        return {
+          id: question.id,
+          source: {
+            id: question.src_file_id,
+            r2_key: question.source_r2_key,
+            mime: question.source_mime,
+          },
+          page: question.src_page,
+          box: parseFigureBox(question.figure_box),
+        };
+      });
     const tasks: ExplanationTask[] = remaining.map((question) => ({
       id: question.id,
       qtype: question.qtype,
       question: question.question,
       choices: parseStoredChoices(question.choices),
       answer: question.answer,
+      visual_ref: question.has_figure === 1 ? `QUESTION_ID ${question.id}` : null,
+      figure_description: question.has_figure === 1 ? question.figure_description : null,
     }));
+    let figures: Awaited<ReturnType<typeof createFigureBundlePdf>> = null;
     try {
+      figures = await createFigureBundlePdf(files, figureItems, signal);
       const items = await generateExplanationsForQuestions(
         subjectName,
         tasks,
         signal,
         lane,
-        reasoningEffort
+        reasoningEffort,
+        figures?.path
       );
       receivedValidResponse = true;
       const byId = new Map(remaining.map((question) => [question.id, question]));
@@ -95,11 +136,13 @@ async function generateVerifiedExplanations(
       if (
         signal?.aborted ||
         (error instanceof AIProviderError &&
-          ["auth", "rate_limit", "invalid_config", "invalid_file", "cancelled"].includes(error.code))
+          ["auth", "rate_limit", "invalid_config", "invalid_file", "file_too_large", "cancelled"].includes(error.code))
       ) {
         throw error;
       }
       lastError = error;
+    } finally {
+      figures?.cleanup();
     }
   }
 
@@ -138,8 +181,8 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
   }
   const subjectId = Number(rawSubjectId);
 
-  const body = await c.req.json<{ srcFileId?: unknown; manual?: unknown }>().catch(
-    () => ({}) as { srcFileId?: unknown; manual?: unknown }
+  const body = await c.req.json<{ srcFileId?: unknown; manual?: unknown; figureOnly?: unknown }>().catch(
+    () => ({}) as { srcFileId?: unknown; manual?: unknown; figureOnly?: unknown }
   );
   if (body.srcFileId !== undefined && body.manual !== undefined) {
     return c.json({ error: "srcFileId와 manual은 함께 지정할 수 없습니다" }, 400);
@@ -150,8 +193,12 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
   if (body.manual !== undefined && body.manual !== true) {
     return c.json({ error: "manual은 true만 지정할 수 있습니다" }, 400);
   }
+  if (body.figureOnly !== undefined && body.figureOnly !== true) {
+    return c.json({ error: "figureOnly는 true만 지정할 수 있습니다" }, 400);
+  }
   const srcFileId = body.srcFileId as number | undefined;
   const manualOnly = body.manual === true;
+  const figureOnly = body.figureOnly === true;
 
   const subject = await c.env.DB.prepare("SELECT name FROM subjects WHERE id = ?")
     .bind(subjectId)
@@ -166,9 +213,12 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
   } else if (manualOnly) {
     scopeSql = ` AND ${EFFECTIVE_SRC_FILE} IS NULL`;
   }
+  if (figureOnly) scopeSql += " AND q.has_figure = 1";
   const { results: missing } = await c.env.DB.prepare(
-    `SELECT q.id, q.qtype, q.question, q.choices, q.answer
-     FROM questions q
+    `SELECT q.id, q.qtype, q.question, q.choices, q.answer,
+            q.src_file_id, q.src_page, q.has_figure, q.figure_box, q.figure_description,
+            bf.r2_key AS source_r2_key, bf.mime AS source_mime
+     FROM questions q LEFT JOIN book_files bf ON bf.id = q.src_file_id
      WHERE q.subject_id = ? AND trim(q.explanation) = ''${scopeSql}
      ORDER BY q.id`
   ).bind(...params).all<MissingQuestion>();
@@ -179,7 +229,8 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
   // 대상 단위 중복 가드 — 같은 파일(또는 manual/전체) 범위만 막고, 다른 범위는 동시 허용.
   // "전체"와 개별 파일 범위가 겹쳐 동시에 돌면 같은 문항에 AI를 두 번 쓸 수는 있지만,
   // 저장은 trim(explanation)='' 가드로 한 번만 되므로 데이터는 안전하다.
-  const target = srcFileId !== undefined ? `file:${srcFileId}` : manualOnly ? "manual" : "all";
+  const baseTarget = srcFileId !== undefined ? `file:${srcFileId}` : manualOnly ? "manual" : "all";
+  const target = figureOnly ? `${baseTarget}:figures` : baseTarget;
   const targetKey = `expl:${subjectId}:${target}`;
   if (!claimTarget(targetKey)) {
     return c.json({ error: "이 범위의 AI 해설 생성이 이미 진행 중입니다" }, 409);
@@ -190,10 +241,11 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
       return c.json({ error: "오늘 사용량 한도 도달" }, 429);
     }
 
-    const label = srcFileId !== undefined
+    const baseLabel = srcFileId !== undefined
       ? (await c.env.DB.prepare("SELECT name FROM book_files WHERE id = ?")
           .bind(srcFileId).first<{ name: string }>())?.name ?? `파일 #${srcFileId}`
       : manualOnly ? "직접 생성·기타" : "전체";
+    const label = figureOnly ? `${baseLabel} · 그림 문항` : baseLabel;
     const jobId = await createAIJob(c.env.DB, subjectId, "explanation-generate", { label, target, progress: 0 });
     const job = startJob(`explanation-job:${jobId}`);
     runAIJob(c.env.DB, jobId, job, async () => {
@@ -217,6 +269,7 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
           const result = await generateVerifiedExplanations(
             subject.name,
             batch,
+            c.env.FILES,
             job.signal,
             "bulk"
           );
@@ -266,8 +319,12 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
 explanationGenRoutes.post("/questions/:id/explanation/generate", async (c) => {
   const id = c.req.param("id");
   const question = await c.env.DB.prepare(
-    `SELECT q.id, q.qtype, q.question, q.choices, q.answer, q.explanation, s.name AS subject_name
+    `SELECT q.id, q.qtype, q.question, q.choices, q.answer, q.explanation,
+            q.src_file_id, q.src_page, q.has_figure, q.figure_box, q.figure_description,
+            bf.r2_key AS source_r2_key, bf.mime AS source_mime,
+            s.name AS subject_name
      FROM questions q JOIN subjects s ON s.id = q.subject_id
+     LEFT JOIN book_files bf ON bf.id = q.src_file_id
      WHERE q.id = ?`
   ).bind(id).first<MissingQuestion & { explanation: string; subject_name: string }>();
   if (!question) return c.json({ error: "not found" }, 404);
@@ -280,7 +337,11 @@ explanationGenRoutes.post("/questions/:id/explanation/generate", async (c) => {
   }
 
   try {
-    const { items: [item] } = await generateVerifiedExplanations(question.subject_name, [question]);
+    const { items: [item] } = await generateVerifiedExplanations(
+      question.subject_name,
+      [question],
+      c.env.FILES
+    );
     if (!item) return c.json({ filled: false });
     await c.env.DB.prepare(
       "UPDATE questions SET explanation = ? WHERE id = ? AND trim(explanation) = ''"

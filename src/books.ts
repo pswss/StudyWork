@@ -1,9 +1,7 @@
 // 문제집 라우트 — 문제집/해설지 업로드 → AI가 개념·팁·문제·해설로 분류(백그라운드),
 // 문제+해설 번호가 짝지어지면 퀴즈 문제은행에 자동 등록한다.
 import { Hono } from "hono";
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { promisify } from "node:util";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -24,8 +22,11 @@ import {
 import { AIProviderError, AI_MAX_FILE_BYTES, BULK_AI_PARALLELISM } from "./codex-provider";
 import { createAIJob, readyAIJobStatement, runAIJob } from "./ai-jobs";
 import { gradeAnswer } from "./quiz";
-
-const execFileP = promisify(execFile);
+import {
+  BookPageNotFoundError,
+  parseFigureBox,
+  renderBookPageImage,
+} from "./book-page-image";
 
 export const bookRoutes = new Hono<{ Bindings: Env }>();
 
@@ -1613,58 +1614,21 @@ bookRoutes.get("/book-files/:id/page/:n/image", async (c) => {
     .bind(fileId).first<{ r2_key: string; mime: string }>();
   if (!f) return c.json({ error: "not found" }, 404);
 
-  // box="top,bottom" (페이지 높이 비율) — 페이지 전체 대신 항목 구간만 잘라 반환
-  let box: [number, number] | null = null;
-  const boxParam = c.req.query("box");
-  if (boxParam) {
-    const [t, b] = boxParam.split(",").map(Number);
-    if (Number.isFinite(t) && Number.isFinite(b) && t >= 0 && b <= 1 && t < b) box = [t, b];
+  let image: { bytes: Buffer; mime: string };
+  try {
+    image = await renderBookPageImage(
+      c.env.FILES,
+      { id: Number(fileId), ...f },
+      n,
+      parseFigureBox(c.req.query("box"))
+    );
+  } catch (error) {
+    if (error instanceof BookPageNotFoundError) return c.json({ error: error.message }, 404);
+    return c.json({ error: "페이지 렌더 실패" }, 500);
   }
-
-  const cacheKey = box ? `pages/${fileId}-${n}-${box[0]}-${box[1]}.png` : `pages/${fileId}-${n}.png`;
-  let png = await c.env.FILES.get(cacheKey);
-  if (!png) {
-    if (f.mime !== "application/pdf") {
-      // 이미지 파일은 원본이 곧 그림
-      if (n !== 1) return c.json({ error: "페이지 범위 초과" }, 404);
-      const buf = await c.env.FILES.get(f.r2_key);
-      if (!buf) return c.json({ error: "원본 파일이 없습니다" }, 404);
-      c.header("Content-Type", f.mime);
-      return c.body(new Uint8Array(buf));
-    }
-    const dir = mkdtempSync(join(tmpdir(), "studywork-page-"));
-    try {
-      const src = await PDFDocument.load(readFileSync(c.env.FILES.absolutePath(f.r2_key)), { ignoreEncryption: true });
-      if (n > src.getPageCount()) return c.json({ error: "페이지 범위 초과" }, 404);
-      const out = await PDFDocument.create();
-      const [p] = await out.copyPages(src, [n - 1]);
-      out.addPage(p);
-      const pdfPath = join(dir, "p.pdf");
-      writeFileSync(pdfPath, await out.save());
-      const pngPath = join(dir, "p.png");
-      await execFileP("sips", ["-s", "format", "png", "-Z", "1600", pdfPath, "--out", pngPath]);
-      if (box) {
-        const { stdout } = await execFileP("sips", ["-g", "pixelHeight", "-g", "pixelWidth", pngPath]);
-        const H = Number(/pixelHeight: (\d+)/.exec(stdout)?.[1]);
-        const W = Number(/pixelWidth: (\d+)/.exec(stdout)?.[1]);
-        // 위아래 2% 여유 — 추정 구간이 살짝 어긋나도 내용이 잘리지 않게
-        const top = Math.max(0, Math.floor((box[0] - 0.02) * H));
-        const bottom = Math.min(H, Math.ceil((box[1] + 0.02) * H));
-        if (H > 0 && W > 0 && bottom - top >= 40) {
-          await execFileP("sips", ["--cropOffset", String(top), "0", "-c", String(bottom - top), String(W), pngPath]);
-        }
-      }
-      png = readFileSync(pngPath);
-      await c.env.FILES.put(cacheKey, png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer);
-    } catch {
-      return c.json({ error: "페이지 렌더 실패" }, 500);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }
-  c.header("Content-Type", "image/png");
+  c.header("Content-Type", image.mime);
   c.header("Cache-Control", "private, max-age=86400");
-  return c.body(new Uint8Array(png));
+  return c.body(new Uint8Array(image.bytes));
 });
 
 // ── POST /api/book-files/:id/cancel ───────────────────────────────────────────

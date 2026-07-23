@@ -2,12 +2,20 @@
 // 배치 체크포인트 재개, 단일 문제 라우트를 검증한다. AI는 quiz.test.ts처럼 모듈 모킹.
 
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
+import { PDFDocument } from "pdf-lib";
 import { makeEnv, call } from "./helpers";
 import { EXPLANATION_BATCH_SIZE, EXPLANATION_EFFORT_LADDER } from "../src/explanations-gen";
 import { BULK_AI_PARALLELISM } from "../src/codex-provider";
+import { createFigureBundlePdf } from "../src/book-page-image";
 
 const explanationCalls = vi.hoisted(() => [] as number[][]);
 const explanationEfforts = vi.hoisted(() => [] as string[]);
+const figureCalls = vi.hoisted(() => [] as Array<{
+  tasks: Array<{ id: number; visual_ref: string | null; figure_description: string | null }>;
+  path: string;
+  pageCount: number;
+}>);
 const control = vi.hoisted(() => ({
   callCount: 0,
   failIds: new Set<number>(),        // 이 id가 포함된 호출은 모든 effort에서 실패한다
@@ -24,11 +32,28 @@ vi.mock("../src/claude", async (importOriginal) => ({
     tasks: { id: number; answer: string }[],
     _signal?: AbortSignal,
     _lane?: "bulk",
-    reasoningEffort = "high"
+    reasoningEffort = "high",
+    figureFilePath?: string
   ) => {
     control.callCount++;
     explanationCalls.push(tasks.map((task) => task.id));
     explanationEfforts.push(reasoningEffort);
+    if (figureFilePath) {
+      const document = await PDFDocument.load(readFileSync(figureFilePath));
+      figureCalls.push({
+        tasks: tasks.map((task) => ({
+          id: task.id,
+          visual_ref: "visual_ref" in task && typeof task.visual_ref === "string"
+            ? task.visual_ref
+            : null,
+          figure_description: "figure_description" in task && typeof task.figure_description === "string"
+            ? task.figure_description
+            : null,
+        })),
+        path: figureFilePath,
+        pageCount: document.getPageCount(),
+      });
+    }
     if (control.holdAll) await control.holdAll;
     if (control.holdCall?.number === control.callCount) await control.holdCall.wait;
     if (tasks.some((task) => control.failIds.has(task.id))) throw new Error("모의 배치 실패");
@@ -51,6 +76,7 @@ const env = makeEnv();
 let cookie: string;
 let subjectId: number;
 let fileId: number;
+let figureFileId: number;
 
 async function waitAIJob(jobId: number): Promise<{
   status: "processing" | "ready" | "error";
@@ -74,11 +100,26 @@ async function insertQuestion(opts: {
   answer?: string;
   explanation?: string;
   srcFileId?: number | null;
+  hasFigure?: boolean;
+  srcPage?: number | null;
+  figureBox?: string | null;
+  figureDescription?: string | null;
 }): Promise<number> {
   const row = await env.DB.prepare(
-    `INSERT INTO questions (subject_id, source, qtype, difficulty, question, choices, answer, explanation, src_file_id)
-     VALUES (?, 'uploaded', 'short', '중', '문제', NULL, ?, ?, ?) RETURNING id`
-  ).bind(subjectId, opts.answer ?? "42", opts.explanation ?? "", opts.srcFileId ?? null)
+    `INSERT INTO questions
+       (subject_id, source, qtype, difficulty, question, choices, answer, explanation,
+        src_file_id, src_page, has_figure, figure_box, figure_description)
+     VALUES (?, 'uploaded', 'short', '중', '문제', NULL, ?, ?, ?, ?, ?, ?, ?) RETURNING id`
+  ).bind(
+    subjectId,
+    opts.answer ?? "42",
+    opts.explanation ?? "",
+    opts.srcFileId ?? null,
+    opts.srcPage ?? null,
+    opts.hasFigure ? 1 : 0,
+    opts.figureBox ?? null,
+    opts.figureDescription ?? null
+  )
     .first<{ id: number }>();
   return row!.id;
 }
@@ -111,11 +152,24 @@ beforeAll(async () => {
     "INSERT INTO book_files (book_id, name, r2_key, mime, status) VALUES (?, '문제집.pdf', 'k', 'application/pdf', 'ready') RETURNING id"
   ).bind(book!.id).first<{ id: number }>();
   fileId = file!.id;
+
+  const figureFile = await env.DB.prepare(
+    "INSERT INTO book_files (book_id, name, r2_key, mime, status) VALUES (?, '그림.png', 'figure.png', 'image/png', 'ready') RETURNING id"
+  ).bind(book!.id).first<{ id: number }>();
+  figureFileId = figureFile!.id;
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    "base64"
+  );
+  const pngBuffer = png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer;
+  await env.FILES.put("figure.png", pngBuffer);
+  await env.FILES.put(`pages/${figureFileId}-1-0.1-0.9.png`, pngBuffer);
 });
 
 beforeEach(async () => {
   explanationCalls.length = 0;
   explanationEfforts.length = 0;
+  figureCalls.length = 0;
   control.callCount = 0;
   control.failIds.clear();
   control.mismatchIds.clear();
@@ -155,6 +209,29 @@ describe("GET /api/subjects/:id/explanations/missing", () => {
 });
 
 describe("POST /api/subjects/:id/explanations/generate", () => {
+  it("같은 원본 페이지의 서로 다른 crop을 별도 라벨 페이지로 묶는다", async () => {
+    const png = await env.FILES.get(`pages/${figureFileId}-1-0.1-0.9.png`);
+    if (!png) throw new Error("그림 fixture 없음");
+    await env.FILES.put(
+      `pages/${figureFileId}-1-0.1-0.4.png`,
+      png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer
+    );
+    await env.FILES.put(
+      `pages/${figureFileId}-1-0.6-0.9.png`,
+      png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer
+    );
+    const source = { id: figureFileId, r2_key: "없는-원본", mime: "image/png" };
+    const bundle = await createFigureBundlePdf(env.FILES, [
+      { id: 101, source, page: 1, box: [0.1, 0.4] },
+      { id: 102, source, page: 1, box: [0.6, 0.9] },
+    ]);
+    if (!bundle) throw new Error("그림 묶음 없음");
+
+    expect((await PDFDocument.load(readFileSync(bundle.path))).getPageCount()).toBe(2);
+    bundle.cleanup();
+    expect(existsSync(bundle.path)).toBe(false);
+  });
+
   it("작업을 만들고, 검산 일치분만 저장하며 불일치는 건너뛰어 카운트한다", async () => {
     const ok1 = await insertQuestion({ answer: "정답A" });
     const bad = await insertQuestion({ answer: "정답B" });
@@ -180,7 +257,14 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
   it("불일치 문항만 high → xhigh → max → ultra로 올려 다시 푼다", async () => {
     const high = await insertQuestion({ answer: "정답A" });
     const xhigh = await insertQuestion({ answer: "정답B" });
-    const ultra = await insertQuestion({ answer: "정답C" });
+    const ultra = await insertQuestion({
+      answer: "정답C",
+      srcFileId: figureFileId,
+      hasFigure: true,
+      srcPage: 1,
+      figureBox: "0.1,0.9",
+      figureDescription: "좌표평면의 그래프",
+    });
     for (let i = 0; i < BULK_AI_PARALLELISM * 2 - 2; i++) {
       await insertQuestion({ answer: `정답${i}` });
     }
@@ -208,6 +292,51 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
       { ids: [ultra], effort: "max" },
       { ids: [ultra], effort: "ultra" },
     ]);
+    expect(figureCalls).toHaveLength(EXPLANATION_EFFORT_LADDER.length);
+    expect(figureCalls.every((call) =>
+      call.pageCount === 1 &&
+      call.tasks.find((task) => task.id === ultra)?.visual_ref === `QUESTION_ID ${ultra}` &&
+      !existsSync(call.path)
+    )).toBe(true);
+  });
+
+  it("figureOnly는 그림 문항만 20개 섹션으로 처리하고 crop 묶음을 첨부", async () => {
+    const figureIds: number[] = [];
+    for (let i = 0; i < BULK_AI_PARALLELISM + 1; i++) {
+      figureIds.push(await insertQuestion({
+        answer: `그림답${i}`,
+        srcFileId: figureFileId,
+        hasFigure: true,
+        srcPage: 1,
+        figureBox: "0.1,0.9",
+        figureDescription: `그림 설명 ${i}`,
+      }));
+    }
+    const nonFigure = await insertQuestion({ answer: "일반답", srcFileId: figureFileId });
+
+    const res = await call(env, `/api/subjects/${subjectId}/explanations/generate`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ figureOnly: true }),
+    });
+    expect(res.status).toBe(202);
+    const job = await waitAIJob(((await res.json()) as { jobId: number }).jobId);
+
+    expect(job.result).toEqual({ filled: figureIds.length, skippedMismatch: 0, skippedIds: [] });
+    expect(await explanationOf(nonFigure)).toBe("");
+    expect(explanationCalls).toHaveLength(BULK_AI_PARALLELISM);
+    expect(figureCalls.map((call) => call.pageCount).sort((a, b) => a - b)).toEqual([
+      ...Array(BULK_AI_PARALLELISM - 1).fill(1),
+      2,
+    ]);
+    expect(figureCalls.flatMap((call) => call.tasks.map((task) => task.id)).sort((a, b) => a - b))
+      .toEqual([...figureIds].sort((a, b) => a - b));
+    expect(figureCalls.every((call) =>
+      call.tasks.every((task) =>
+        task.visual_ref === `QUESTION_ID ${task.id}` &&
+        task.figure_description?.startsWith("그림 설명")
+      ) && !existsSync(call.path)
+    )).toBe(true);
   });
 
   it("한 섹션 실패 시 성공 섹션은 저장되고, 재실행은 실패 문항만 이어서 처리한다", async () => {
@@ -400,6 +529,13 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
     });
     expect(badSrc.status).toBe(400);
 
+    const badFigureOnly = await call(env, `/api/subjects/${subjectId}/explanations/generate`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ figureOnly: false }),
+    });
+    expect(badFigureOnly.status).toBe(400);
+
     const bothScopes = await call(env, `/api/subjects/${subjectId}/explanations/generate`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
@@ -419,6 +555,47 @@ describe("POST /api/questions/:id/explanation/generate", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ filled: true, explanation: `AI 해설 ${id}` });
     expect(await explanationOf(id)).toBe(`AI 해설 ${id}`);
+  });
+
+  it("단일 그림 문항도 원본 crop을 첨부해 푼다", async () => {
+    const id = await insertQuestion({
+      answer: "정답",
+      srcFileId: figureFileId,
+      hasFigure: true,
+      srcPage: 1,
+      figureBox: "0.1,0.9",
+      figureDescription: "삼각형 ABC",
+    });
+    const res = await call(env, `/api/questions/${id}/explanation/generate`, {
+      method: "POST",
+      headers: { cookie },
+    });
+
+    expect(res.status).toBe(200);
+    expect(figureCalls).toHaveLength(1);
+    expect(figureCalls[0]).toMatchObject({
+      pageCount: 1,
+      tasks: [{ id, visual_ref: `QUESTION_ID ${id}`, figure_description: "삼각형 ABC" }],
+    });
+    expect(existsSync(figureCalls[0].path)).toBe(false);
+  });
+
+  it("그림 원본이 없으면 텍스트만으로 해설을 만들지 않는다", async () => {
+    const id = await insertQuestion({
+      answer: "정답",
+      srcFileId: 999_999,
+      hasFigure: true,
+      srcPage: 1,
+      figureBox: "0.1,0.9",
+    });
+    const res = await call(env, `/api/questions/${id}/explanation/generate`, {
+      method: "POST",
+      headers: { cookie },
+    });
+
+    expect(res.status).toBe(502);
+    expect(explanationCalls).toHaveLength(0);
+    expect(await explanationOf(id)).toBe("");
   });
 
   it("정답 불일치면 filled:false로 답하고 DB에 저장하지 않는다", async () => {

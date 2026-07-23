@@ -298,10 +298,10 @@ export async function missingExplanations(subjectId: number): Promise<MissingExp
   return req<MissingExplanationGroup[]>("GET", `/api/subjects/${subjectId}/explanations/missing`);
 }
 
-// scope 생략 = 과목 전체, srcFileId = 해당 파일 그룹, manual = 직접 생성·기타 그룹
+// scope 생략 = 과목 전체, srcFileId = 해당 파일 그룹, manual = 직접 생성·기타, figureOnly = 그림 문항만
 export async function generateExplanations(
   subjectId: number,
-  scope: { srcFileId?: number; manual?: boolean } = {}
+  scope: { srcFileId?: number; manual?: boolean; figureOnly?: true } = {}
 ): Promise<AIJobStart> {
   return req<AIJobStart>("POST", `/api/subjects/${subjectId}/explanations/generate`, scope);
 }
