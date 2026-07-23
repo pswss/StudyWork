@@ -249,6 +249,15 @@ nav {
 .subject-search-empty { padding: 28px 6px; border-bottom: 1px solid var(--line); color: var(--ink-2); }
 .subj-create-status { display: block; margin-top: 8px; color: var(--lime); font-size: 12px; }
 
+/* 과목 목록 복귀: 위계상 '위로 돌아오는' 방향 — 위에서 내려앉는 등장 */
+@keyframes pageBack {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.subjects-head { animation: pageBack .3s var(--ease) both; }
+.subject-search { animation: pageBack .3s var(--ease) .05s both; }
+.subj-list { animation: pageBack .35s var(--ease) .09s both; }
+
 .subj-list { margin-top: 8px; }
 .subj-card {
   position: relative;
@@ -257,6 +266,7 @@ nav {
   transition: background .4s var(--ease); content-visibility: auto; contain-intrinsic-size: auto 108px;
 }
 .subj-card.clickable { cursor: pointer; }
+.subj-card.clickable:active { transform: translateY(1px); transition-duration: 0s; }
 .subj-card-open {
   position: absolute; inset: 0; z-index: 0;
   border: 0; background: transparent; cursor: pointer;
@@ -316,9 +326,11 @@ nav {
 /* ============================================================================
    SUBJECT DETAIL — header, grid, sidebar, tabs
    ========================================================================== */
+/* 과목 진입: 위계상 '아래로 들어가는' 방향 — 아래서 떠오르는 등장 */
 .detail-header {
   display: flex; align-items: flex-end; gap: 24px; margin-bottom: 8px;
   flex-wrap: wrap;
+  animation: contentIn .3s var(--ease) both;
 }
 .back-btn {
   display: flex; align-items: center; gap: 8px;
@@ -348,6 +360,7 @@ nav {
   display: grid; grid-template-columns: 300px 1fr; gap: 40px;
   align-items: start; margin-top: 28px;
   border-top: 1px solid var(--line); padding-top: 28px;
+  animation: contentIn .35s var(--ease) .06s both;
 }
 .subject-guide { margin-top: 14px; }
 
