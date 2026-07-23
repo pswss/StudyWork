@@ -20,13 +20,14 @@ describe("상세 화면 주소와 디자인 계약", () => {
 
   it("장시간 작업마다 실제 중단 제어를 제공한다", () => {
     const chat = readFileSync("web/src/pages/ChatPanel.tsx", "utf8");
-    const quiz = readFileSync("web/src/pages/Quiz.tsx", "utf8");
-    const exam = readFileSync("web/src/pages/Exam.tsx", "utf8");
     const detail = readFileSync("web/src/pages/SubjectDetail.tsx", "utf8");
+    const tray = readFileSync("web/src/JobTray.tsx", "utf8");
 
     expect(chat).toContain("답변 중단");
-    expect(quiz).toContain("생성 중단");
-    expect(exam).toContain("생성 중단");
+    // 백그라운드 AI 작업(문제 생성·해설 생성·시험 계획)의 중단은 작업 트레이 한 곳으로 모았다
+    expect(tray).toContain("중단");
+    expect(tray).toContain("onCancel(job.id!)");
+    expect(detail).toContain("cancelTrayJob");
     expect(detail).toContain("분석 중단");
   });
 

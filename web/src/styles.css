@@ -650,6 +650,34 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .expl-gen-notice.warn { color: var(--warn); }
 .expl-gen-notice.bad { color: var(--bad); }
 
+/* 작업 트레이 — 탭 위 상시 노출, hairline 행. 라임 없음(정보 표시), 취소는 고스트 버튼 */
+.job-tray {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 12px 18px; margin-bottom: 18px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  animation: contentIn .3s var(--ease) both;
+}
+.job-tray-title {
+  font-family: var(--disp); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .3em; text-transform: uppercase; color: var(--ink-3);
+}
+.job-tray-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.job-tray-row {
+  display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 5px 0;
+  border-bottom: 1px solid var(--line); font-size: 13px;
+}
+.job-tray-row:last-child { border-bottom: 0; }
+.job-tray-kind { color: var(--ink-2); font-size: 12px; letter-spacing: .02em; white-space: nowrap; }
+.job-tray-label {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink); font-size: 13px;
+}
+.job-tray-progress, .job-tray-elapsed {
+  color: var(--ink-3); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.job-tray-state { color: var(--ink-2); font-size: 12px; white-space: nowrap; }
+.job-tray-state.bad { color: var(--bad); }
+
 /* AI 진행 표시 (공용) */
 .ai-pending {
   display: inline-flex; align-items: center; gap: 10px;

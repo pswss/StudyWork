@@ -135,7 +135,8 @@ describe("시험 계획 실패 복구", () => {
     await click(button(error, "다시 시도"));
 
     expect(api.replanExam).toHaveBeenCalledTimes(2);
-    expect(sessionStorage.getItem("studywork:exam-job:1")).toBe("44");
+    // 다중 작업 추적: 저장 형식이 단일 숫자 → [{id, examId}] 목록으로 바뀌었다
+    expect(sessionStorage.getItem("studywork:exam-job:1")).toBe(JSON.stringify([{ id: 44, examId: 9 }]));
     expect(container.querySelector(".exam-card")).not.toBeNull();
     expect(container.textContent).toContain("시험 학습 계획 생성 중");
   });

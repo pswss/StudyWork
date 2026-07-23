@@ -6,7 +6,6 @@ import {
   exams as apiExams,
   createExam as apiCreateExam,
   aiJob as apiAIJob,
-  cancelAIJob,
   togglePlanItem as apiToggleItem,
   replanExam as apiReplan,
   deleteExam as apiDeleteExam,
@@ -52,13 +51,39 @@ function formatExamDate(day: string): string {
   return EXAM_DATE_FORMATTER.format(new Date(day + "T00:00:00"));
 }
 
-function storedJobId(subjectId: number): number | null {
+// 동시 계획 생성 지원 — 저장 형식은 [{id, examId}] 목록 (examId=null이면 새 시험 생성).
+// 구버전 단일 숫자 문자열도 읽는다.
+interface TrackedPlanJob { id: number; examId: number | null }
+
+function planJobsKey(subjectId: number): string {
+  return `studywork:exam-job:${subjectId}`;
+}
+
+function storedPlanJobs(subjectId: number): TrackedPlanJob[] {
   try {
-    const id = Number(sessionStorage.getItem(`studywork:exam-job:${subjectId}`));
-    return Number.isSafeInteger(id) && id > 0 ? id : null;
+    const raw = sessionStorage.getItem(planJobsKey(subjectId));
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === "number") {
+      return Number.isSafeInteger(parsed) && parsed > 0 ? [{ id: parsed, examId: null }] : [];
+    }
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is TrackedPlanJob => {
+      if (typeof entry !== "object" || entry === null) return false;
+      const { id, examId } = entry as { id?: unknown; examId?: unknown };
+      return typeof id === "number" && Number.isSafeInteger(id) && id > 0
+        && (examId === null || (typeof examId === "number" && Number.isSafeInteger(examId)));
+    });
   } catch {
-    return null;
+    return [];
   }
+}
+
+function writeStoredPlanJobs(subjectId: number, jobs: TrackedPlanJob[]): void {
+  try {
+    if (jobs.length === 0) sessionStorage.removeItem(planJobsKey(subjectId));
+    else sessionStorage.setItem(planJobsKey(subjectId), JSON.stringify(jobs));
+  } catch {}
 }
 
 export default function Exam({ subject, active = true }: Props) {
@@ -74,8 +99,7 @@ export default function Exam({ subject, active = true }: Props) {
   const [loading, setLoading] = useState(false);
   const [jobErr, setJobErr] = useState("");
   const [jobNotice, setJobNotice] = useState("");
-  const [cancellingJob, setCancellingJob] = useState(false);
-  const [pendingJobId, setPendingJobId] = useState<number | null>(() => storedJobId(subject.id));
+  const [pendingJobs, setPendingJobs] = useState<TrackedPlanJob[]>(() => storedPlanJobs(subject.id));
 
   // 시험 추가 폼
   const [showForm, setShowForm] = useState(false);
@@ -112,90 +136,85 @@ export default function Exam({ subject, active = true }: Props) {
   }
 
   useEffect(() => { loadExams(); }, [subject.id]);
-  useEffect(() => { setPendingJobId(storedJobId(subject.id)); }, [subject.id]);
+  useEffect(() => { setPendingJobs(storedPlanJobs(subject.id)); }, [subject.id]);
   useEffect(() => {
     setActionErrors({});
     setToggleErrors({});
   }, [subject.id]);
 
-  // job ID는 sessionStorage에 남아 Exam 컴포넌트가 언마운트되어도 재진입 시 상태를 이어서 확인한다.
+  // job ID들은 sessionStorage에 남아 Exam 컴포넌트가 언마운트되어도 재진입 시 상태를 이어서 확인한다.
+  // 여러 작업을 한 주기에 모두 확인하고, 끝난 작업만 목록에서 제거한다.
   useEffect(() => {
-    if (pendingJobId === null) return;
+    if (pendingJobs.length === 0) return;
+    const polledSubjectId = subject.id;
+    const ids = pendingJobs.map((job) => job.id);
     let stopped = false;
-    const key = `studywork:exam-job:${subject.id}`;
 
-    async function checkJob() {
-      try {
-        const job = await apiAIJob<{ examId: number }>(pendingJobId!);
-        if (stopped) return;
-        if (job.subject_id !== subject.id) {
-          try { sessionStorage.removeItem(key); } catch {}
-          setPendingJobId(null);
-          setJobErr("이 과목의 시험 학습 계획 작업이 아닙니다. 다시 생성해 주세요.");
-          return;
-        }
-        if (job.status === "processing") {
-          setJobErr("");
-          return;
-        }
-        try { sessionStorage.removeItem(key); } catch {}
-        setPendingJobId(null);
-        if (job.status === "error") {
-          if (job.error === "사용자 중단") {
-            setJobErr("");
-            setJobNotice("시험 학습 계획 생성을 중단했습니다.");
-          } else {
-            setJobErr(job.error || "시험 학습 계획 생성에 실패했습니다.");
+    async function checkJobs() {
+      const finished: number[] = [];
+      let reload = false;
+      let expandId: number | null = null;
+      for (const jobId of ids) {
+        try {
+          const job = await apiAIJob<{ examId: number }>(jobId);
+          if (stopped) return;
+          if (job.subject_id !== polledSubjectId) {
+            finished.push(jobId);
+            setJobErr("이 과목의 시험 학습 계획 작업이 아닙니다. 다시 생성해 주세요.");
+            continue;
           }
-          return;
+          if (job.status === "processing") continue;
+          finished.push(jobId);
+          if (job.status === "error") {
+            if (job.error === "사용자 중단") setJobNotice("시험 학습 계획 생성을 중단했습니다.");
+            else setJobErr(job.error || "시험 학습 계획 생성에 실패했습니다.");
+          } else {
+            setJobErr("");
+            reload = true;
+            if (job.result?.examId) expandId = job.result.examId;
+          }
+        } catch (e) {
+          if (stopped) return;
+          if (e instanceof NotFoundError) {
+            finished.push(jobId);
+          }
+          setJobErr(e instanceof Error ? e.message : "계획 상태 확인 실패");
         }
-        setJobErr("");
-        setJobNotice("");
-        await loadExams(false);
-        if (!stopped && job.result?.examId) setExpandedId(job.result.examId);
-      } catch (e) {
-        if (stopped) return;
-        if (e instanceof NotFoundError) {
-          try { sessionStorage.removeItem(key); } catch {}
-          setPendingJobId(null);
+      }
+      if (finished.length > 0) {
+        writeStoredPlanJobs(polledSubjectId, storedPlanJobs(polledSubjectId).filter((job) => !finished.includes(job.id)));
+        if (!stopped && mountedRef.current) {
+          setPendingJobs((current) => current.filter((job) => !finished.includes(job.id)));
+          if (reload) {
+            await loadExams(false);
+            if (!stopped && expandId !== null) setExpandedId(expandId);
+          }
         }
-        setJobErr(e instanceof Error ? e.message : "계획 상태 확인 실패");
       }
     }
 
-    void checkJob();
-    const timer = setInterval(checkJob, 3000);
+    void checkJobs();
+    const timer = setInterval(checkJobs, 3000);
     return () => {
       stopped = true;
       clearInterval(timer);
     };
-  }, [pendingJobId, subject.id]);
+  }, [pendingJobs, subject.id]);
 
-  function rememberJob(jobId: number) {
-    try { sessionStorage.setItem(`studywork:exam-job:${subject.id}`, String(jobId)); } catch {}
+  function rememberJob(jobId: number, examId: number | null) {
+    writeStoredPlanJobs(subject.id, [
+      ...storedPlanJobs(subject.id).filter((job) => job.id !== jobId),
+      { id: jobId, examId },
+    ]);
     if (mountedRef.current) {
-      setPendingJobId(jobId);
+      setPendingJobs(storedPlanJobs(subject.id));
       setJobNotice("");
     }
   }
 
-  async function stopPlanning() {
-    if (pendingJobId === null || cancellingJob) return;
-    setCancellingJob(true);
-    setJobErr("");
-    try {
-      await cancelAIJob(pendingJobId);
-      setJobNotice("학습 계획 생성 중단 요청을 보냈습니다.");
-    } catch (error) {
-      setJobErr(error instanceof Error ? error.message : "학습 계획 생성을 중단하지 못했습니다.");
-    } finally {
-      if (mountedRef.current) setCancellingJob(false);
-    }
-  }
-
-  // 시험 생성
+  // 시험 생성 — 다른 계획 생성이 진행 중이어도 새 시험은 언제든 추가할 수 있다.
   async function doCreate() {
-    if (!formTitle.trim() || !formDate || pendingJobId !== null) return;
+    if (!formTitle.trim() || !formDate || creating) return;
     setCreating(true);
     setCreateErr("");
     try {
@@ -204,7 +223,7 @@ export default function Exam({ subject, active = true }: Props) {
         exam_date: formDate,
         scope: formScope.trim() || undefined,
       });
-      rememberJob(job.jobId);
+      rememberJob(job.jobId, null);
       if (!mountedRef.current) return;
       setFormTitle(""); setFormDate(""); setFormScope("");
       setShowForm(false);
@@ -245,15 +264,15 @@ export default function Exam({ subject, active = true }: Props) {
     }
   }
 
-  // 재계획
+  // 재계획 — 같은 시험의 재계획만 잠그고, 다른 시험은 동시에 조정할 수 있다.
   async function doReplan(examId: number) {
-    if (pendingJobId !== null) return;
+    if (pendingJobs.some((job) => job.examId === examId)) return;
     if (!confirm("남은 미완료 일정을 오늘 기준으로 재계획할까요? (완료된 항목은 유지됩니다)")) return;
     setActionErrors(prev => ({ ...prev, [examId]: undefined }));
     setReplanningId(examId);
     try {
       const job = await apiReplan(examId);
-      rememberJob(job.jobId);
+      rememberJob(job.jobId, examId);
       if (!mountedRef.current) return;
     } catch (e) {
       if (!mountedRef.current) return;
@@ -321,21 +340,19 @@ export default function Exam({ subject, active = true }: Props) {
       )}
       {jobErr && <div className="chat-err" role="alert" style={{ marginBottom: 12 }}>{jobErr}</div>}
       {jobNotice && <div className="quiz-status-msg" role="status" aria-live="polite" style={{ marginBottom: 12 }}>{jobNotice}</div>}
-      {pendingJobId !== null && (
+      {pendingJobs.length > 0 && (
         <div className="exam-creating-msg pending-action-row" style={{ marginBottom: 12 }}>
-          <AiPending label="시험 학습 계획 생성 중 — 다른 탭에서도 계속됩니다" />
-          <button type="button" className="btn sm" onClick={() => void stopPlanning()} disabled={cancellingJob}>
-            {cancellingJob ? "중단 중…" : "생성 중단"}
-          </button>
+          <AiPending
+            label={`시험 학습 계획 생성 중${pendingJobs.length > 1 ? ` ${pendingJobs.length}건` : ""} — 다른 탭에서도 계속됩니다. 중단은 위 작업 목록에서`}
+          />
         </div>
       )}
 
-      {/* 시험 추가 버튼 */}
+      {/* 시험 추가 버튼 — 다른 계획 생성이 진행 중이어도 새 시험 추가는 가능 */}
       <div className="exam-add-row">
         <button
           className={`btn sm${showForm ? "" : " primary"}`}
           onClick={() => setShowForm(v => !v)}
-          disabled={pendingJobId !== null}
           aria-expanded={showForm}
           aria-controls="exam-create-form"
         >
@@ -390,7 +407,7 @@ export default function Exam({ subject, active = true }: Props) {
             <button
               className="btn primary sm"
               onClick={doCreate}
-              disabled={!formTitle.trim() || !formDate || pendingJobId !== null}
+              disabled={!formTitle.trim() || !formDate}
             >
               계획 생성
             </button>
@@ -413,7 +430,7 @@ export default function Exam({ subject, active = true }: Props) {
           const done = ex.done_count ?? ex.items.filter(it => it.done === 1).length;
           const pct = total > 0 ? Math.round((done / total) * 100) : 0;
           const isExpanded = expandedId === ex.id;
-          const isReplanning = replanningId === ex.id;
+          const isReplanning = replanningId === ex.id || pendingJobs.some((job) => job.examId === ex.id);
           const actionError = actionErrors[ex.id];
           const grouped = isExpanded ? groupByDay(ex.items) : null;
 
@@ -519,7 +536,7 @@ export default function Exam({ subject, active = true }: Props) {
                         <button
                           className="btn sm"
                           onClick={() => doReplan(ex.id)}
-                          disabled={isEnd || pendingJobId !== null}
+                          disabled={isEnd || isReplanning}
                         >
                           계획 조정
                         </button>

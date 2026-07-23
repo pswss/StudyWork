@@ -449,6 +449,21 @@ export async function cancelAIJob(jobId: number): Promise<void> {
   await req<void>("POST", `/api/ai-jobs/${jobId}/cancel`);
 }
 
+// ===== 작업 트레이 =====
+// 과목의 진행 중 + 최근 AI 작업 목록. id=null이면 단권화(ai_jobs 밖에서 진행, 취소는 노트 탭).
+export interface SubjectJob {
+  id: number | null;
+  kind: string; // explanation-generate | question-generate | book-explanations | exam-plan | consolidate
+  label: string | null; // 대상 표시명 (서버 재시작 후 완료 행은 null일 수 있음)
+  target: string | null; // 중복 가드 대상 키 — 같은 target 버튼만 비활성화한다
+  status: "processing" | "ready" | "error";
+  elapsed_s: number; // 시작 후 경과 초 (서버 계산 — 클라이언트 시계와 무관)
+  progress: number | null; // 단권화만 % 제공
+}
+export async function subjectJobs(subjectId: number): Promise<SubjectJob[]> {
+  return req<SubjectJob[]>("GET", `/api/subjects/${subjectId}/jobs`);
+}
+
 export async function exams(subjectId: number): Promise<Exam[]> {
   return req<Exam[]>("GET", `/api/subjects/${subjectId}/exams`);
 }

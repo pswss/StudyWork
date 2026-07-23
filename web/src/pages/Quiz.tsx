@@ -6,7 +6,6 @@ import {
   questions as apiQuestions,
   generateQuestions as apiGenerate,
   aiJob as apiAIJob,
-  cancelAIJob,
   quiz as apiQuiz,
   answerQuestion as apiAnswer,
   deleteQuestion as apiDeleteQuestion,
@@ -89,14 +88,24 @@ function generationJobKey(subjectId: number): string {
   return `studywork:question-generation:${subjectId}`;
 }
 
-function storedGenerationJob(subjectId: number): number | null {
+// 동시 생성 지원 — 저장 형식은 job id 배열. 구버전 단일 숫자 문자열도 읽는다.
+function storedGenerationJobs(subjectId: number): number[] {
   try {
     const raw = sessionStorage.getItem(generationJobKey(subjectId));
-    const id = raw ? Number(raw) : NaN;
-    return Number.isSafeInteger(id) && id > 0 ? id : null;
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    const ids = Array.isArray(parsed) ? parsed : [parsed];
+    return ids.filter((id): id is number => typeof id === "number" && Number.isSafeInteger(id) && id > 0);
   } catch {
-    return null;
+    return [];
   }
+}
+
+function writeStoredGenerationJobs(subjectId: number, ids: number[]): void {
+  try {
+    if (ids.length === 0) sessionStorage.removeItem(generationJobKey(subjectId));
+    else sessionStorage.setItem(generationJobKey(subjectId), JSON.stringify(ids));
+  } catch {}
 }
 
 export function qtypeLabel(q: string) {
@@ -220,14 +229,13 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     window.history.replaceState(null, "", `${window.location.pathname}?${params}${window.location.hash}`);
   }, [startCount, startDiff, startSource, startWrong]);
 
-  // 은행 - AI 생성
+  // 은행 - AI 생성 (동시 여러 건 — 자료 선택이 완전히 같을 때만 서버가 409로 거른다)
   const [genCount, setGenCount] = useState(5);
   const [genDiff, setGenDiff] = useState("혼합");
-  const [generating, setGenerating] = useState(false);
-  const [cancellingGeneration, setCancellingGeneration] = useState(false);
-  const [genMsg, setGenMsg] = useState("");
-  const [generationJobId, setGenerationJobId] = useState<number | null>(() => storedGenerationJob(subject.id));
-  const [generationOpen, setGenerationOpen] = useState(() => storedGenerationJob(subject.id) !== null);
+  const [genStarting, setGenStarting] = useState(false);
+  const [genMsgs, setGenMsgs] = useState<string[]>([]);
+  const [generationJobIds, setGenerationJobIds] = useState<number[]>(() => storedGenerationJobs(subject.id));
+  const [generationOpen, setGenerationOpen] = useState(() => storedGenerationJobs(subject.id).length > 0);
   const readyMaterials = useMemo(() => materials.filter(m => m.status === "ready"), [materials]);
   // 제외 집합: 선택을 유지하면서 새 자료는 기본 포함한다 (Chat/Notes와 같은 계약).
   const [genExcluded, setGenExcluded] = useState<Set<number>>(new Set());
@@ -319,71 +327,69 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     setAllInScope(true);
     setOpenGroups(new Set());
     setGenExcluded(new Set());
-    const savedJobId = storedGenerationJob(subject.id);
-    setGenerationJobId(savedJobId);
-    setGenerationOpen(savedJobId !== null);
-    setGenerating(savedJobId !== null);
-    setGenMsg(savedJobId !== null ? "진행 중인 문제 생성을 이어서 확인합니다." : "");
+    const savedJobIds = storedGenerationJobs(subject.id);
+    setGenerationJobIds(savedJobIds);
+    setGenerationOpen(savedJobIds.length > 0);
+    setGenStarting(false);
+    setGenMsgs(savedJobIds.length > 0 ? ["진행 중인 문제 생성을 이어서 확인합니다."] : []);
     void loadBank();
   }, [subject.id]);
 
+  // 추적 중인 생성 작업 전부를 한 주기에 확인 — 끝난 작업만 제거하고 나머지는 계속 돈다.
   useEffect(() => {
-    if (generationJobId === null) return;
+    if (generationJobIds.length === 0) return;
     const polledSubjectId = subject.id;
+    const ids = [...generationJobIds];
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    setGenerating(true);
 
     const poll = async () => {
-      try {
-        const job = await apiAIJob<{ added: number }>(generationJobId);
-        if (stopped) return;
-        if (job.subject_id !== polledSubjectId) {
-          try { sessionStorage.removeItem(generationJobKey(polledSubjectId)); } catch {}
-          setGenerationJobId(null);
-          setGenerating(false);
-          setGenMsg("");
-          setBankErr("이 과목의 문제 생성 작업이 아닙니다. 다시 생성해 주세요.");
-          return;
-        }
-        if (job.status === "processing") {
-          timer = setTimeout(poll, 2500);
-          return;
-        }
-        try { sessionStorage.removeItem(generationJobKey(polledSubjectId)); } catch {}
-        setGenerationJobId(null);
-        setGenerating(false);
-        if (job.status === "error") {
-          if (job.error === "사용자 중단") {
-            setGenMsg("문제 생성을 중단했습니다.");
-            setBankErr("");
-          } else {
-            setGenMsg("");
-            setBankErr(job.error || "문제 생성에 실패했습니다.");
+      const finished: number[] = [];
+      const messages: string[] = [];
+      const errors: string[] = [];
+      let addedAny = false;
+      for (const jobId of ids) {
+        try {
+          const job = await apiAIJob<{ added: number }>(jobId);
+          if (stopped) return;
+          if (job.subject_id !== polledSubjectId) {
+            finished.push(jobId);
+            errors.push("이 과목의 문제 생성 작업이 아닙니다. 다시 생성해 주세요.");
+            continue;
           }
-          return;
+          if (job.status === "processing") continue;
+          finished.push(jobId);
+          if (job.status === "error") {
+            if (job.error === "사용자 중단") messages.push("문제 생성을 중단했습니다.");
+            else errors.push(job.error || "문제 생성에 실패했습니다.");
+          } else {
+            addedAny = true;
+            messages.push(`${job.result?.added ?? 0}문제 추가됨`);
+          }
+        } catch (error) {
+          if (stopped) return;
+          if (error instanceof NotFoundError) {
+            finished.push(jobId);
+            errors.push("이전 문제 생성 작업을 찾을 수 없습니다. 다시 생성해 주세요.");
+            continue;
+          }
+          // 일시적 오류 — 이 작업은 다음 주기에 다시 확인한다.
+          setBankErr(error instanceof Error ? `${error.message} · 작업 상태를 다시 확인합니다.` : "작업 상태 확인 실패 · 다시 확인합니다.");
         }
-        const added = job.result?.added ?? 0;
-        setBankErr("");
-        setGenMsg(`${added}문제 추가됨`);
-        await loadBank();
-        if (stopped) return;
-        timer = setTimeout(() => {
-          if (!stopped && subjectIdRef.current === polledSubjectId) setGenMsg("");
-        }, 3000);
-      } catch (error) {
-        if (stopped) return;
-        if (error instanceof NotFoundError) {
-          try { sessionStorage.removeItem(generationJobKey(polledSubjectId)); } catch {}
-          setGenerationJobId(null);
-          setGenerating(false);
-          setGenMsg("");
-          setBankErr("이전 문제 생성 작업을 찾을 수 없습니다. 다시 생성해 주세요.");
-          return;
-        }
-        setBankErr(error instanceof Error ? `${error.message} · 작업 상태를 다시 확인합니다.` : "작업 상태 확인 실패 · 다시 확인합니다.");
-        timer = setTimeout(poll, 5000);
       }
+      if (finished.length > 0) {
+        const remaining = storedGenerationJobs(polledSubjectId).filter((id) => !finished.includes(id));
+        writeStoredGenerationJobs(polledSubjectId, remaining);
+        if (!stopped && subjectIdRef.current === polledSubjectId) {
+          setGenerationJobIds((current) => current.filter((id) => !finished.includes(id)));
+          if (messages.length > 0) setGenMsgs((prev) => [...prev, ...messages].slice(-3));
+          if (errors.length > 0) setBankErr(errors[errors.length - 1]);
+          else if (addedAny) setBankErr("");
+          if (addedAny) await loadBank();
+        }
+      }
+      if (stopped) return;
+      timer = setTimeout(poll, 2500);
     };
 
     void poll();
@@ -391,7 +397,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       stopped = true;
       if (timer) clearTimeout(timer);
     };
-  }, [generationJobId, subject.id]);
+  }, [generationJobIds, subject.id]);
 
   // ── 파일(자료)별 그룹 — 드롭다운으로 접었다 폈다 ────────────────────────────────
   const groups = useMemo(() => {
@@ -473,41 +479,29 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     });
   }
 
-  // ── AI 생성 ───────────────────────────────────────────────────────────────────
+  // ── AI 생성 — 동시 여러 건 시작 가능. 같은 자료 선택 중복만 서버가 409로 알린다 ──
   async function doGenerate() {
+    if (genStarting) return;
     if (genMaterialIds.size === 0) {
       setBankErr("문제를 만들 기준 자료를 하나 이상 선택하세요.");
       return;
     }
-    setGenerating(true);
-    setGenMsg("");
+    setGenStarting(true);
     setBankErr("");
     const requestedSubjectId = subject.id;
     try {
       const { jobId } = await apiGenerate(requestedSubjectId, genCount, genDiff, [...genMaterialIds]);
-      try { sessionStorage.setItem(generationJobKey(requestedSubjectId), String(jobId)); } catch {}
+      writeStoredGenerationJobs(requestedSubjectId, [
+        ...storedGenerationJobs(requestedSubjectId).filter((id) => id !== jobId),
+        jobId,
+      ]);
       if (!mountedRef.current || subjectIdRef.current !== requestedSubjectId) return;
-      setGenerationJobId(jobId);
-      setGenMsg("서버에서 생성 중 · 다른 탭으로 이동해도 계속됩니다.");
+      setGenerationJobIds(storedGenerationJobs(requestedSubjectId));
     } catch (e) {
       if (!mountedRef.current || subjectIdRef.current !== requestedSubjectId) return;
-      setGenMsg("");
       setBankErr(e instanceof Error ? e.message : "생성 실패");
-      setGenerating(false);
-    }
-  }
-
-  async function stopGeneration() {
-    if (generationJobId === null || cancellingGeneration) return;
-    setCancellingGeneration(true);
-    setBankErr("");
-    try {
-      await cancelAIJob(generationJobId);
-      setGenMsg("문제 생성 중단 요청을 보냈습니다.");
-    } catch (error) {
-      setBankErr(error instanceof Error ? error.message : "문제 생성을 중단하지 못했습니다.");
     } finally {
-      if (mountedRef.current) setCancellingGeneration(false);
+      if (mountedRef.current) setGenStarting(false);
     }
   }
 
@@ -1068,7 +1062,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       >
         <summary>
           <span>문제 만들기</span>
-          <small>{generating ? "생성 중…" : "선택 자료로 새 문제 만들기"}</small>
+          <small>{generationJobIds.length > 0 ? `생성 중 ${generationJobIds.length}건…` : "선택 자료로 새 문제 만들기"}</small>
         </summary>
         <div className="quiz-add-row">
           <div className="quiz-add-section">
@@ -1099,12 +1093,11 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                 max={20}
                 value={genCount}
                 onChange={e => setGenCount(Math.max(1, Math.min(20, Number(e.target.value) || 5)))}
-                disabled={generating}
               />
             </label>
             <label className="quiz-control-field">
               <span>난이도</span>
-              <select className="quiz-select" value={genDiff} onChange={e => setGenDiff(e.target.value)} disabled={generating}>
+              <select className="quiz-select" value={genDiff} onChange={e => setGenDiff(e.target.value)}>
                 <option value="혼합">혼합</option>
                 <option value="하">하</option>
                 <option value="중">중</option>
@@ -1114,21 +1107,23 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
             <button
               className="btn sm"
               onClick={doGenerate}
-              disabled={generating || genMaterialIds.size === 0}
-            >문제 생성</button>
-            {generating && (
+              disabled={genStarting || genMaterialIds.size === 0}
+            >{genStarting ? "시작 중…" : "문제 생성"}</button>
+            {generationJobIds.length > 0 && (
               <div className="pending-action-row">
-                <AiPending label="문제 생성 중 · 다른 탭으로 이동해도 계속됩니다" />
-                {generationJobId !== null && (
-                  <button type="button" className="btn sm" onClick={() => void stopGeneration()} disabled={cancellingGeneration}>
-                    {cancellingGeneration ? "중단 중…" : "생성 중단"}
-                  </button>
-                )}
+                <AiPending
+                  label={`문제 생성 ${generationJobIds.length}건 진행 중 · 다른 탭으로 이동해도 계속됩니다. 중단은 위 작업 목록에서`}
+                />
               </div>
             )}
-            {genMsg && (
-              <span className={`quiz-status-msg${genMsg.includes("추가됨") ? " ok" : ""}`} role="status" aria-live="polite">{genMsg}</span>
-            )}
+            {genMsgs.map((msg, index) => (
+              <span
+                key={`${index}-${msg}`}
+                className={`quiz-status-msg${msg.includes("추가됨") ? " ok" : ""}`}
+                role="status"
+                aria-live="polite"
+              >{msg}</span>
+            ))}
           </div>
         </div>
       </details>
