@@ -12,8 +12,9 @@ import { gradeAnswer } from "./quiz";
 
 export const explanationGenRoutes = new Hono<{ Bindings: Env }>();
 
-// 한 모델 호출당 문항 수 — 5~8 사이. 6이면 밀도 높은 서술 해설도 출력 한도 안에 안전.
-export const EXPLANATION_BATCH_SIZE = 6;
+// 한 모델 호출당 문항 수 — 사용자 지정 20. 출력이 길어 잘리면 파서가 배치 실패로 잡고
+// 체크포인트가 저장분(이전 배치)을 보존하므로 안전하지만, 잘림이 잦으면 낮출 것.
+export const EXPLANATION_BATCH_SIZE = 20;
 
 interface MissingQuestion {
   id: number;
@@ -54,7 +55,7 @@ explanationGenRoutes.get("/subjects/:id/explanations/missing", async (c) => {
 });
 
 // ── POST /api/subjects/:id/explanations/generate ─────────────────────────────
-// {srcFileId?: number, manual?: true} → ai_jobs 생성 → 배치(6문항)로 해설 생성.
+// {srcFileId?: number, manual?: true} → ai_jobs 생성 → 배치(EXPLANATION_BATCH_SIZE문항)로 해설 생성.
 // 배치마다 검산 통과분을 즉시 저장(체크포인트) — 중단돼도 다음 실행이 남은(빈 해설) 문제만 처리한다.
 explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
   const rawSubjectId = c.req.param("id");

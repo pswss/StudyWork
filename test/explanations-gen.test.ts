@@ -3,6 +3,7 @@
 
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import { makeEnv, call } from "./helpers";
+import { EXPLANATION_BATCH_SIZE } from "../src/explanations-gen";
 
 const explanationCalls = vi.hoisted(() => [] as number[][]);
 const control = vi.hoisted(() => ({
@@ -158,8 +159,8 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
 
   it("배치 실패 시 앞 배치까지는 저장되고, 재실행은 남은 문제만 이어서 처리한다", async () => {
     const ids: number[] = [];
-    for (let i = 0; i < 8; i++) ids.push(await insertQuestion({ answer: `답${i}` }));
-    control.failOnCall = 2; // 1차 배치(6개) 저장 후 2차 배치에서 실패
+    for (let i = 0; i < EXPLANATION_BATCH_SIZE + 2; i++) ids.push(await insertQuestion({ answer: `답${i}` }));
+    control.failOnCall = 2; // 1차 배치 저장 후 2차 배치에서 실패
 
     const first = await call(env, `/api/subjects/${subjectId}/explanations/generate`, {
       method: "POST",
@@ -168,9 +169,9 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
     });
     const firstJob = await waitAIJob(((await first.json()) as { jobId: number }).jobId);
     expect(firstJob.status).toBe("error");
-    expect(explanationCalls).toEqual([ids.slice(0, 6), ids.slice(6)]);
-    for (const id of ids.slice(0, 6)) expect(await explanationOf(id)).toBe(`AI 해설 ${id}`); // 체크포인트
-    for (const id of ids.slice(6)) expect(await explanationOf(id)).toBe("");
+    expect(explanationCalls).toEqual([ids.slice(0, EXPLANATION_BATCH_SIZE), ids.slice(EXPLANATION_BATCH_SIZE)]);
+    for (const id of ids.slice(0, EXPLANATION_BATCH_SIZE)) expect(await explanationOf(id)).toBe(`AI 해설 ${id}`); // 체크포인트
+    for (const id of ids.slice(EXPLANATION_BATCH_SIZE)) expect(await explanationOf(id)).toBe("");
 
     // 재실행 — 빈 해설 조회가 남은 2문항만 뽑아 이어서 진행한다
     const second = await call(env, `/api/subjects/${subjectId}/explanations/generate`, {
@@ -181,7 +182,7 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
     const secondJob = await waitAIJob(((await second.json()) as { jobId: number }).jobId);
     expect(secondJob.status).toBe("ready");
     expect(secondJob.result).toEqual({ filled: 2, skippedMismatch: 0, skippedIds: [] });
-    expect(explanationCalls[2]).toEqual(ids.slice(6));
+    expect(explanationCalls[2]).toEqual(ids.slice(EXPLANATION_BATCH_SIZE));
     for (const id of ids) expect(await explanationOf(id)).toBe(`AI 해설 ${id}`);
   });
 
