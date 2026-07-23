@@ -662,12 +662,22 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 }
 .note-source-picker > summary {
   display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 11px 14px;
-  cursor: pointer; color: var(--ink-2); font-size: 13px; list-style: none;
+  cursor: pointer; color: var(--ink-2); list-style: none;
   touch-action: manipulation;
   transition: color .2s var(--ease), background .2s var(--ease);
 }
 .note-source-picker > summary::-webkit-details-marker { display: none; }
-.note-source-picker > summary strong { margin-left: auto; color: var(--lime); font-size: 12px; font-variant-numeric: tabular-nums; }
+/* 라벨은 마이크로 라벨 문법으로 (quiz-generation-label과 정렬) */
+.note-source-picker > summary > span {
+  font-family: var(--disp); font-size: 11px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase;
+}
+/* 정보용 카운트 — 라임이 아닌 잉크 톤, 0/N만 --bad로 경고 */
+.note-source-picker > summary strong {
+  margin-left: auto; color: var(--ink-2); font-size: 11px;
+  font-family: var(--disp); font-variant-numeric: tabular-nums; font-weight: 600;
+}
+.note-source-picker > summary strong.empty { color: var(--bad); }
 .note-source-picker > summary::after { content: "⌄" / ""; color: var(--ink-3); display: inline-block; transform: rotate(-90deg); transition: transform .22s var(--ease); }
 .note-source-picker > summary:hover { color: var(--ink); background: rgba(217, 255, 63, .03); }
 .note-source-picker > summary:active { background: rgba(217, 255, 63, .07); }
@@ -676,8 +686,11 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .note-source-panel { padding: 0 12px 12px; border-top: 1px solid var(--line); }
 .note-source-search { margin: 12px 0 8px; }
 .note-source-list {
-  max-height: 280px; overflow-y: auto; border-top: 1px solid var(--line);
+  max-height: min(280px, 45vh); overflow-y: auto; border-top: 1px solid var(--line);
   display: flex; flex-direction: column; gap: 2px; padding: 6px 2px 2px;
+  /* 스크롤 어포던스 — 하단 페이드로 잘린 행을 암시 (얇은 스크롤바 포함) */
+  scrollbar-width: thin;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
 }
 /* 옵션 행 — 체크 표식 + 옅은 틴트로 선택을 색 하나에 의존하지 않게 표시 */
 .note-source-row {
@@ -697,7 +710,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 }
 .note-source-row:hover { background: rgba(217, 255, 63, .025); border-color: var(--line); }
 .note-source-row:has(input:disabled) { opacity: .55; cursor: default; }
-.note-source-row:active { transform: scale(.97); transition-duration: 0s; }
+.note-source-row:active { transform: translateY(1px); transition-duration: 0s; }
 /* 실제 체크박스는 시맨틱용으로 DOM에 유지 — 시각만 숨김 (file-label 패턴) */
 .note-source-row input {
   position: absolute; inset: 0; width: 100%; height: 100%;
@@ -712,16 +725,23 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .note-source-row:has(input:checked) small { color: var(--ink-2); }
 /* 목록 내 선택 행은 옅은 틴트+✓만 — 전부 선택 시 라임 테두리 벽이 되지 않게 */
 .note-source-list .note-source-row:has(input:checked) { border-color: transparent; }
-/* 일부만 선택(전체 선택 행) — 라임 테두리 + 투명 배경 */
+/* 일부만 선택(전체 선택 행) — 라임 테두리 + 투명 배경, 표식은 라임 채움 상자+대시 */
 .note-source-row:has(input:indeterminate) {
   background: transparent; border-color: var(--lime-dim); box-shadow: none;
 }
-.note-source-row:has(input:indeterminate)::before { content: "−" / ""; border-color: var(--lime); color: var(--lime); }
+.note-source-row:has(input:indeterminate)::before {
+  content: ""; background: var(--lime); border-color: var(--lime);
+  background-image: linear-gradient(var(--bg), var(--bg));
+  background-size: 10px 2px; background-position: center; background-repeat: no-repeat;
+}
 .note-source-row:has(input:indeterminate) strong { color: var(--ink); }
 .note-source-all { margin-bottom: 6px; }
+/* 0개 선택 경고 — quiz-plan.empty와 같은 --bad */
+.note-source-all small.empty { color: var(--bad); }
 .note-source-row > span { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 3px; }
-.note-source-row strong { color: var(--ink-2); font-size: 13px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
-.note-source-row small { color: var(--ink-2); font-family: var(--disp); font-size: 11px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.note-source-row strong { color: var(--ink-2); font-size: 13px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+/* 메타·파일명은 본문 폰트 스택 — 라인 중간 폰트 전환(Bricolage↔Pretendard) 제거 */
+.note-source-row small { color: var(--ink-2); font-family: var(--body); font-size: 11px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .note-source-none { padding: 22px 4px; color: var(--ink-3); font-size: 13px; text-align: center; }
 .note-empty { color: var(--ink-3); font-size: 15px; text-align: center; margin: auto; font-family: var(--serif); }
 .note-spinning {
@@ -998,7 +1018,11 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .quiz-check-label:has(input:indeterminate) {
   background: transparent; border-color: var(--lime-dim); color: var(--ink); box-shadow: none;
 }
-.quiz-check-label:has(input:indeterminate)::before { content: "−" / ""; border-color: var(--lime); color: var(--lime); }
+.quiz-check-label:has(input:indeterminate)::before {
+  content: ""; background: var(--lime); border-color: var(--lime);
+  background-image: linear-gradient(var(--bg), var(--bg));
+  background-size: 9px 2px; background-position: center; background-repeat: no-repeat;
+}
 .quiz-check-label:has(input:focus-visible) { outline: 2px solid var(--lime); outline-offset: 2px; }
 /* 문제 행 선택용 — 히트 영역과 실제 체크 표식을 분리 */
 .quiz-check-box { width: 28px; height: 28px; padding: 4px; flex-shrink: 0; border-color: transparent; }
@@ -1006,8 +1030,8 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   background: transparent; border-color: transparent; box-shadow: none;
 }
 .quiz-check-box::before { width: 18px; height: 18px; flex-basis: 18px; }
-/* 문제 행 체크는 라임 ✓ 글리프만 — 채워진 사각형(칩)과 구분 */
-.quiz-check-box:has(input:checked)::before { background: transparent; border-color: var(--check-border); color: var(--lime); }
+/* 체크 문법 통일 — 앱 전역 라임 채움 ✓ 상자 (칩·행·문제 동일) */
+.quiz-check-box:has(input:checked)::before { background: var(--lime); border-color: var(--lime); color: var(--bg); }
 
 /* 파일(자료)별 문제 그룹 — 드롭다운 헤더 */
 .quiz-file-group { margin-top: 10px; }
@@ -1088,10 +1112,21 @@ a.q-chip:hover { color: var(--ink); border-color: var(--lime-dim); background: r
 .quiz-row-detail, .wrong-row-detail, .exam-card-detail, .wrong-analysis {
   animation: contentIn .22s var(--ease) both;
 }
+/* 열림 시 높이도 함께 자라게 — 콘텐츠를 즉시 밀어올리는 점프 대신 부드러운 확장 */
+@keyframes panelExpand {
+  from { opacity: 0; transform: translateY(-4px); max-height: 0; }
+  to   { opacity: 1; transform: translateY(0); max-height: 70vh; }
+}
 .note-source-picker[open] > .note-source-panel,
 .quiz-generate-disclosure[open] > .quiz-add-row {
-  animation: contentIn .22s var(--ease) both;
+  animation: panelExpand .2s var(--ease) both;
 }
+/* 펼침 → 접힘 공용 닫힘 (열림과 대칭, ease-in fade/collapse). details-close.ts가 재생 후 open 제거 */
+@keyframes contentOut {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-6px); }
+}
+details.details-closing { animation: contentOut .16s ease-in both; overflow: hidden; }
 .quiz-row-full-q { font-size: 14px; color: var(--ink); line-height: 1.6; }
 .quiz-row-choices { padding-left: 20px; font-size: 13.5px; color: var(--ink-2); line-height: 1.95; }
 .quiz-row-choices li::marker { color: var(--lime); }
@@ -1488,9 +1523,13 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
     display: grid; place-items: center; border: 1px solid var(--check-border); border-radius: 6px;
   }
   .quiz-check-box:has(input:checked)::before {
-    content: "✓" / ""; background: transparent; border-color: var(--line-strong); color: var(--lime); font-weight: 800;
+    content: "✓" / ""; background: var(--lime); border-color: var(--lime); color: var(--bg); font-weight: 800;
   }
-  .quiz-check-box:has(input:indeterminate)::before { content: "−" / ""; border-color: var(--lime); color: var(--lime); }
+  .quiz-check-box:has(input:indeterminate)::before {
+    content: "" / ""; background: var(--lime); border-color: var(--lime);
+    background-image: linear-gradient(var(--bg), var(--bg));
+    background-size: 11px 2px; background-position: center; background-repeat: no-repeat;
+  }
   .del-btn { min-width: 44px; min-height: 44px; margin: -13px -10px; }
   .subj-del { opacity: 1; }
 }
