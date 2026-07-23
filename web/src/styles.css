@@ -23,7 +23,7 @@
   --warn: #E0A336;          /* warn — used sparingly */
   --warn-line: rgba(224, 163, 54, .38);
   --warn-fill: rgba(224, 163, 54, .08);
-  --disp: "Bricolage Grotesque", system-ui, sans-serif;
+  --disp: "Bricolage Grotesque", "Pretendard Variable", Pretendard, system-ui, sans-serif;
   --serif: "Pretendard Variable", Pretendard, sans-serif; /* 한글 헤드: 세리프 대신 헤비 산세리프 (촌스러움 제거) */
   --body: "Pretendard Variable", Pretendard, system-ui, sans-serif;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -434,7 +434,7 @@ nav {
   min-height: 44px; font-size: 13.5px; font-family: var(--body);
   transition: border-color .3s var(--ease); width: 100%;
 }
-.text-input:focus-visible { border-color: var(--lime-dim); }
+.text-input:focus-visible { outline: 0; border-color: var(--lime); }
 .text-input::placeholder { color: var(--ink-3); }
 textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 
@@ -623,7 +623,9 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .solution-summary > div { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .solution-summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-size: 14px; }
 .solution-summary span { color: var(--ink-2); font-size: 12px; }
-.solution-summary progress { width: min(180px, 35%); height: 5px; accent-color: var(--lime); }
+.solution-summary progress { -webkit-appearance: none; appearance: none; width: min(180px, 35%); height: 3px; border: 0; background: var(--line); }
+.solution-summary progress::-webkit-progress-bar { background: var(--line); }
+.solution-summary progress::-webkit-progress-value { background: var(--lime); }
 .solution-upload.disabled { opacity: .5; cursor: wait; }
 .solution-status { color: var(--bad); font-size: 13px; line-height: 1.5; }
 .solution-status.ok { color: var(--lime); }
@@ -676,7 +678,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   transition: color .2s var(--ease), background .2s var(--ease);
 }
 .note-source-picker > summary::-webkit-details-marker { display: none; }
-.note-source-picker > summary strong { margin-left: auto; color: var(--lime); font-size: 12px; }
+.note-source-picker > summary strong { margin-left: auto; color: var(--lime); font-size: 12px; font-variant-numeric: tabular-nums; }
 .note-source-picker > summary::after { content: "⌄" / ""; color: var(--ink-3); display: inline-block; transform: rotate(-90deg); transition: transform .22s var(--ease); }
 .note-source-picker > summary:hover { color: var(--ink); background: rgba(217, 255, 63, .03); }
 .note-source-picker > summary:active { background: rgba(217, 255, 63, .07); }
@@ -705,6 +707,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   color: var(--bg); font-family: var(--disp); font-size: 11px; font-weight: 800;
 }
 .note-source-row:hover { background: rgba(217, 255, 63, .025); border-color: var(--line); }
+.note-source-row:has(input:disabled) { opacity: .55; cursor: default; }
 .note-source-row:active { transform: scale(.97); transition-duration: 0s; }
 /* 실제 체크박스는 시맨틱용으로 DOM에 유지 — 시각만 숨김 (file-label 패턴) */
 .note-source-row input {
@@ -728,8 +731,8 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .note-source-row:has(input:indeterminate) strong { color: var(--ink); }
 .note-source-all { margin-bottom: 6px; }
 .note-source-row > span { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 3px; }
-.note-source-row strong { color: var(--ink-2); font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
-.note-source-row small { color: var(--ink-2); font-family: var(--disp); font-size: 12px; overflow-wrap: anywhere; }
+.note-source-row strong { color: var(--ink-2); font-size: 13px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.note-source-row small { color: var(--ink-2); font-family: var(--disp); font-size: 11px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .note-source-none { padding: 22px 4px; color: var(--ink-3); font-size: 13px; text-align: center; }
 .note-empty { color: var(--ink-3); font-size: 15px; text-align: center; margin: auto; font-family: var(--serif); }
 .note-spinning {
@@ -804,7 +807,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .note-rendering { display: grid; min-height: 180px; place-items: center; }
 .note-render-progress {
   position: sticky; top: 0; z-index: 2; align-self: flex-start;
-  padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px;
+  padding: 6px 10px; border: 1px solid var(--line); border-radius: 4px;
   background: var(--panel); color: var(--ink-3); font-family: var(--disp); font-size: 11px;
 }
 .note-render-chunk {
@@ -883,7 +886,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .quiz-start-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
 .quiz-range-label {
   font-family: var(--disp); font-size: 11px; font-weight: 700; letter-spacing: .06em;
-  color: var(--lime); padding: 8px 10px; border: 1px solid var(--lime-dim); border-radius: 6px;
+  color: var(--ink-2); padding: 8px 0; font-variant-numeric: tabular-nums;
 }
 .quiz-select {
   background: var(--panel-2); border: 1px solid var(--line);
@@ -1047,7 +1050,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .quiz-file-count {
   margin-left: auto; flex-shrink: 0;
   font-family: var(--disp); font-size: 11px; font-weight: 600; letter-spacing: .06em;
-  color: var(--ink-2);
+  color: var(--ink-2); font-variant-numeric: tabular-nums;
 }
 .quiz-file-group > .quiz-row { margin-left: 12px; }
 .quiz-file-select { flex-shrink: 0; }
@@ -1449,6 +1452,10 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
   .quiz-add-section .quiz-select,
   .quiz-add-section .quiz-count-input { width: 100%; }
   .quiz-list-actions { width: 100%; margin-left: 0; }
+  .quiz-file-name {
+    white-space: normal; display: -webkit-box; -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2; overflow: hidden;
+  }
   .quiz-question-text { font-size: 20px; }
   .ox-btn { max-width: 100%; }
   .exam-card-header { flex-direction: column; align-items: flex-start; }
