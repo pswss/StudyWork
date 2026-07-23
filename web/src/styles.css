@@ -1146,7 +1146,10 @@ a.q-chip:hover { color: var(--ink); border-color: var(--lime-dim); background: r
   from { opacity: 1; transform: translateY(0); }
   to   { opacity: 0; transform: translateY(-4px); }
 }
-.panel-closing { animation: panelOut .16s ease-in both; overflow: hidden; }
+/* panelIn 규칙(0,3,0)보다 이겨야 닫힘이 재생된다 — [open] 조합 선택자를 명시(0,4,0) */
+.panel-closing,
+.note-source-picker[open] > .note-source-panel.panel-closing,
+.quiz-generate-disclosure[open] > .quiz-add-row.panel-closing { animation: panelOut .16s ease-in both; overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .note-source-picker[open] > .note-source-panel,
   .quiz-generate-disclosure[open] > .quiz-add-row { animation: none; }

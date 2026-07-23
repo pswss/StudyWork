@@ -31,7 +31,7 @@ export function closeDetails(details: HTMLDetailsElement, after?: () => void) {
   };
   const onEnd = (e: AnimationEvent) => { if (e.target === panel) finish(); };
   panel.addEventListener("animationend", onEnd);
-  const timer = setTimeout(finish, 240); // fallback (애니메이션 미발화 대비)
+  const timer = setTimeout(finish, 200); // fallback = 애니메이션 160ms + 40ms 여유 (animationend 미발화 대비)
 }
 
 // 문서 위임 — 열려 있는 <details>를 summary 클릭으로 닫을 때만 가로챈다.
