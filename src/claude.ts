@@ -1246,11 +1246,14 @@ export async function extractProblemsFromFile(
   const buildPrompt = (cont: string) =>
     `${readInstruction}\n\n${PERSONAL_USE_NOTE}` +
     `This file is a study workbook. Read all pages and transcribe EVERY problem you find as this strict JSON array:\n` +
+    `Workbooks may print the SAME question text under DIFFERENT problem numbers on one page (progress-mapping duplicates). Each printed number is a separate item — transcribe all of them; never merge or skip a duplicate.\n` +
     QUIZ_EXTRACT_SPEC + `\n` + pageRule + cont;
 
   const all: QuizItemEx[] = [];
   const seen = new Set<string>();
-  const keyOf = (q: QuizItemEx) => `${q.page ?? 0}|${q.question.replace(/\s+/g, "").slice(0, 60)}`;
+  // 같은 쪽에 같은 지문이 다른 번호로 중복 수록되는 문제집(진도교재 매핑)이 있어 번호가 키에 필수
+  const keyOf = (q: QuizItemEx) =>
+    `${q.page ?? 0}|${numericPrintedLocator(q.number) ?? (q.number ?? "").normalize("NFKC").replace(/\s+/g, "").toLowerCase()}|${q.question.replace(/\s+/g, "").slice(0, 60)}`;
   let cont = "";
   let complete = false;
   for (let round = 0; round < 6; round++) {

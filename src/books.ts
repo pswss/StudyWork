@@ -451,7 +451,8 @@ async function extractAllQuestions(
   const byKey = new Map<string, QuizItemEx>();
   const collect = (items: QuizItemEx[]) => {
     for (const it of items) {
-      const k = stableQuestionKey(it.page, it.question);
+      // 번호가 다르면 같은 쪽·같은 지문이라도 별개 문항(진도교재 매핑 중복 수록) — 키에 번호 포함
+      const k = `${stableQuestionKey(it.page, it.question)}|${numericPrintedLocator(it.number) ?? (it.number ?? "").normalize("NFKC").replace(/\s+/g, "").toLowerCase()}`;
       const prev = byKey.get(k);
       // 겹침 중복은 더 완전한 쪽(지문+해설 길이) 유지
       if (!prev || it.question.length + it.explanation.length > prev.question.length + prev.explanation.length) byKey.set(k, it);
@@ -785,12 +786,13 @@ async function processFile(
     }>();
     if (!isCurrentJob(job)) return;
 
-    const existingByKey = new Map<string, (typeof existing)[number]>();
+    const existingByKey = new Map<string, (typeof existing)[number] | null>();
     const existingByLocator = new Map<string, (typeof existing)[number] | null>();
     for (const q of existing) {
       const key = stableQuestionKey(q.src_page, q.question);
-      if (existingByKey.has(key)) throw new Error("기존 문제에 중복 안정키가 있어 재추출을 안전하게 적용할 수 없습니다");
-      existingByKey.set(key, q);
+      // 같은 쪽·같은 지문이 다른 번호로 중복 수록될 수 있음(진도교재 매핑) — 안정키가 겹치면
+      // 그 키는 모호 처리(null)하고 인쇄 번호 locator 매칭에 맡긴다. 중단하지 않는다.
+      existingByKey.set(key, existingByKey.has(key) ? null : q);
       const locatorKey = printedLocatorKey(
         q.src_page,
         numericPrintedLocator(q.printed_number) ?? printedLocatorFromQuestionPrefix(q.question)
@@ -805,7 +807,7 @@ async function processFile(
       if (key) freshLocatorCounts.set(key, (freshLocatorCounts.get(key) ?? 0) + 1);
     }
     const statements = items.map((it, i) => {
-      let previous = existingByKey.get(stableQuestionKey(it.page, it.question));
+      let previous = existingByKey.get(stableQuestionKey(it.page, it.question)) ?? undefined;
       const locatorKey = printedLocatorKey(it.page, numericPrintedLocator(it.number));
       if (!previous && locatorKey && freshLocatorCounts.get(locatorKey) === 1) {
         const candidate = existingByLocator.get(locatorKey);
