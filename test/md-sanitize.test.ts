@@ -139,6 +139,20 @@ describe("Markdown HTML sanitizing", () => {
     expect(root.querySelectorAll('.katex:has(> math[display="block"])')).toHaveLength(2);
   });
 
+  it("같은 줄 $$ 안의 여러 줄 수식을 화면과 인쇄에서 모두 렌더한다", () => {
+    const source = String.raw`계산하면
+$$\frac{f(3)}{g(3)}=2\Rightarrow g(3)=2,
+\qquad
+\frac{f(4)}{g(4)}=6\Rightarrow g(4)=3.$$
+이다.`;
+
+    for (const html of [mdHtml(source), mdInlineHtml(source)]) {
+      expect(html).not.toContain("$$");
+      expect(html.match(/<mfrac>/g)).toHaveLength(2);
+      expect(html).toContain('display="block"');
+    }
+  });
+
   it("앱과 HTML 저장이 실제 KaTeX 루트에 같은 공식 박스·간격 selector를 가진다", () => {
     const appCss = readFileSync("web/src/styles.css", "utf8");
     // 노트 HTML 다운로드 인라인 스타일은 NotesPanel(구 SubjectDetail)에 있다
