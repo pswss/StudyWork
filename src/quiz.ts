@@ -360,8 +360,13 @@ function parseChoices(choicesJson: string | null): string[] {
 
 function answerIndex(answer: string, choiceCount: number): number | null {
   const trimmed = answer.trim();
-  const circled = "①②③④⑤⑥⑦⑧⑨⑩".indexOf(trimmed);
+  const circled = "①②③④⑤⑥⑦⑧⑨⑩".indexOf(trimmed[0] ?? "");
   if (circled >= 0 && circled < choiceCount) return circled;
+  const labeled = /^(\d{1,2})[.)](?!\d)/.exec(trimmed);
+  if (labeled) {
+    const n = Number(labeled[1]);
+    if (n >= 1 && n <= choiceCount) return n - 1;
+  }
   if (!/^\d+$/.test(trimmed)) return null;
   const n = Number(trimmed);
   return n >= 1 && n <= choiceCount ? n - 1 : null;

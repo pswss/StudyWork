@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { makeEnv, call } from "./helpers";
-import { insertQuestions } from "../src/quiz";
+import { gradeAnswer, insertQuestions } from "../src/quiz";
 import type { QuizQuestion } from "../src/claude";
 
 const generationCalls = vi.hoisted(() => [] as unknown[][]);
@@ -342,6 +342,18 @@ describe("insertQuestions", () => {
   it("빈 배열은 DB 작업 없이 0을 반환", async () => {
     await expect(insertQuestions(env.DB, subjectId, "generated", [])).resolves.toBe(0);
   });
+});
+
+it.each([
+  ["③ $\\frac53$", "③ $\\frac{5}{3}$"],
+  ["3. $\\frac53$", "3) $\\frac{5}{3}$"],
+])("보기 번호 뒤 수식 표기가 달라도 같은 객관식 정답으로 판정", (stored, fresh) => {
+  expect(gradeAnswer(
+    "mcq",
+    stored,
+    fresh,
+    JSON.stringify(["① 첫째", "② 둘째", "③ 셋째"])
+  )).toBe(true);
 });
 
 // extract 라우트는 제거됨 — 파일에서의 문제 등록은 문제집화(to-book, books.test)가 담당한다

@@ -56,6 +56,11 @@ const AUTO_RETRY_BLOCKED_CODES: ReadonlySet<AIProviderError["code"]> = new Set([
   "cancelled",
 ]);
 
+class ProtectedQuestionConflictError extends Error {}
+
+const BACKFILL_CONFLICT_WARNING =
+  "자동 문제 보강 건너뜀: 학습 기록이 있는 기존 문항이 현재 추출 범위와 달라 기존 문제와 기록을 보존했습니다.";
+
 function blocksAutomaticRetry(error: unknown): boolean {
   return error instanceof AIProviderError && AUTO_RETRY_BLOCKED_CODES.has(error.code);
 }
@@ -64,6 +69,9 @@ function blocksAutomaticRetry(error: unknown): boolean {
 const activeBookUploads = new Set<string>();
 
 export function publicBookError(error: unknown): string {
+  if (error instanceof ProtectedQuestionConflictError) {
+    return `${error.message}. 기존 문제와 학습 기록은 그대로 보존했습니다.`;
+  }
   if (error instanceof AIProviderError) {
     const messages: Partial<Record<AIProviderError["code"], string>> = {
       invalid_config: "AI 설정이 올바르지 않습니다",
@@ -96,6 +104,52 @@ function publicSolutionError(error: unknown): string {
 
 function stableQuestionKey(page: number | null, question: string): string {
   return `${page ?? 0}|${question.normalize("NFKC").toLowerCase().replace(/\s+/g, "")}`;
+}
+
+function printedLocatorFromQuestionPrefix(question: string): number | null {
+  const match = /^\s*(\[\s*0*\d+\s*\]|\(\s*0*\d+\s*\)|(?:문제|q(?:uestion)?|#)\s*0*\d+(?:\s*번(?:\s*문제)?)?\s*[.)]?|0*\d+\s*(?:번(?:\s*문제)?|[.)]))(?!\d)/iu
+    .exec(question.normalize("NFKC"));
+  return numericPrintedLocator(match?.[1]);
+}
+
+function printedLocatorKey(page: number | null, locator: number | null): string | null {
+  return page === null || locator === null ? null : `${page}|${locator}`;
+}
+
+async function parkFigureBackfillConflict(
+  env: Env,
+  fileId: number,
+  bookId: number
+): Promise<boolean> {
+  const material = await env.DB.prepare(
+    "SELECT id FROM materials WHERE book_id = ? AND figure_backfill_pending = 1"
+  ).bind(bookId).first<{ id: number }>();
+  if (!material) return false;
+
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE materials
+       SET pending_to_book = 0, book_processing = 0,
+           integrity_warning = CASE
+             WHEN instr(COALESCE(integrity_warning, ''), ?) > 0 THEN integrity_warning
+             WHEN NULLIF(TRIM(integrity_warning), '') IS NULL THEN ?
+             ELSE ? || ' · ' || integrity_warning
+           END
+       WHERE id = ? AND figure_backfill_pending = 1`
+    ).bind(BACKFILL_CONFLICT_WARNING, BACKFILL_CONFLICT_WARNING, BACKFILL_CONFLICT_WARNING, material.id),
+    env.DB.prepare(
+      `UPDATE book_files
+       SET status = 'ready', error = NULL, progress = 100, retry_chunk_count = 0
+       WHERE id = ? AND status = 'processing'`
+    ).bind(fileId),
+    env.DB.prepare(
+      `DELETE FROM book_extraction_chunks
+       WHERE file_id = ?
+         AND EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'ready')`
+    ).bind(fileId, fileId),
+  ]);
+  clearBookExtractionCache(fileId);
+  return true;
 }
 
 // 마지막 청크에서 자동 탐지한 공식 정답·해설 쪽만 각 본문 조각 끝에 참고용으로 붙인다.
@@ -711,7 +765,7 @@ async function processFile(
     // 재추출 전 기존 문제는 계속 제공한다. 새 결과가 완성된 지금 안정키(페이지+정규화 지문)로
     // 같은 행을 갱신해야 question_attempts FK와 학습 이력이 유지된다.
     const { results: existing } = await env.DB.prepare(
-      `SELECT id, qtype, choices, answer, question, src_page, book_number,
+      `SELECT id, qtype, choices, answer, question, src_page, book_number, printed_number,
               correct_count, wrong_count, explanation,
               (SELECT COUNT(*) FROM question_attempts qa WHERE qa.question_id = questions.id) AS attempt_count
        FROM questions WHERE src_file_id = ?`
@@ -723,6 +777,7 @@ async function processFile(
       question: string;
       src_page: number | null;
       book_number: string | null;
+      printed_number: string | null;
       correct_count: number;
       wrong_count: number;
       explanation: string;
@@ -731,15 +786,31 @@ async function processFile(
     if (!isCurrentJob(job)) return;
 
     const existingByKey = new Map<string, (typeof existing)[number]>();
+    const existingByLocator = new Map<string, (typeof existing)[number] | null>();
     for (const q of existing) {
       const key = stableQuestionKey(q.src_page, q.question);
       if (existingByKey.has(key)) throw new Error("기존 문제에 중복 안정키가 있어 재추출을 안전하게 적용할 수 없습니다");
       existingByKey.set(key, q);
+      const locatorKey = printedLocatorKey(
+        q.src_page,
+        numericPrintedLocator(q.printed_number) ?? printedLocatorFromQuestionPrefix(q.question)
+      );
+      if (locatorKey) existingByLocator.set(locatorKey, existingByLocator.has(locatorKey) ? null : q);
     }
 
     const matchedIds = new Set<number>();
+    const freshLocatorCounts = new Map<string, number>();
+    for (const item of items) {
+      const key = printedLocatorKey(item.page, numericPrintedLocator(item.number));
+      if (key) freshLocatorCounts.set(key, (freshLocatorCounts.get(key) ?? 0) + 1);
+    }
     const statements = items.map((it, i) => {
-      const previous = existingByKey.get(stableQuestionKey(it.page, it.question));
+      let previous = existingByKey.get(stableQuestionKey(it.page, it.question));
+      const locatorKey = printedLocatorKey(it.page, numericPrintedLocator(it.number));
+      if (!previous && locatorKey && freshLocatorCounts.get(locatorKey) === 1) {
+        const candidate = existingByLocator.get(locatorKey);
+        if (candidate && !matchedIds.has(candidate.id)) previous = candidate;
+      }
       const answer = normalizeAnswer(it.answer);
       const answerCompatible = previous?.qtype === it.qtype
         && gradeAnswer(it.qtype, previous.answer, answer, previous.choices);
@@ -747,7 +818,9 @@ async function processFile(
         previous && (previous.correct_count > 0 || previous.wrong_count > 0 || previous.attempt_count > 0)
         && !answerCompatible
       ) {
-        throw new Error(`학습 이력이 있는 ${previous.book_number ?? previous.id}번 문항의 정답이 달라 재추출을 중단했습니다`);
+        throw new ProtectedQuestionConflictError(
+          `학습 이력이 있는 ${previous.book_number ?? previous.id}번 문항의 정답이 달라 재추출을 중단했습니다`
+        );
       }
       const preservedExplanation = previous?.explanation && answerCompatible
         ? previous.explanation
@@ -762,11 +835,15 @@ async function processFile(
            SET qtype = ?, difficulty = ?, question = ?, choices = ?, answer = ?, explanation = ?,
                book_number = ?, printed_number = ?, src_page = ?, has_figure = ?, figure_description = ?, figure_box = ?
            WHERE id = ?
+             AND (? = 1 OR (
+               correct_count = 0 AND wrong_count = 0
+               AND NOT EXISTS (SELECT 1 FROM question_attempts qa WHERE qa.question_id = questions.id)
+             ))
              AND EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'processing')`
         ).bind(
           it.qtype, it.difficulty, it.question, choices, answer, preservedExplanation || it.explanation,
           bookNumber, printedNumber, it.page, it.figure ? 1 : 0, it.figure_description, it.box ? it.box.join(",") : null,
-          previous.id, fileId
+          previous.id, answerCompatible ? 1 : 0, fileId
         );
       }
       return env.DB.prepare(
@@ -787,13 +864,17 @@ async function processFile(
       (question) => question.correct_count > 0 || question.wrong_count > 0 || question.attempt_count > 0
     );
     if (protectedUnmatched) {
-      throw new Error(`학습 이력이 있는 ${protectedUnmatched.book_number ?? protectedUnmatched.id}번 문항을 새 추출에서 찾지 못했습니다`);
+      throw new ProtectedQuestionConflictError(
+        `학습 이력이 있는 ${protectedUnmatched.book_number ?? protectedUnmatched.id}번 문항을 새 추출에서 찾지 못했습니다`
+      );
     }
     if (unmatched.length > 0) {
       const placeholders = unmatched.map(() => "?").join(",");
       statements.push(
         env.DB.prepare(
           `DELETE FROM questions WHERE id IN (${placeholders})
+           AND correct_count = 0 AND wrong_count = 0
+           AND NOT EXISTS (SELECT 1 FROM question_attempts qa WHERE qa.question_id = questions.id)
            AND EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'processing')`
         ).bind(...unmatched.map((q) => q.id), fileId)
       );
@@ -803,10 +884,16 @@ async function processFile(
       env.DB.prepare(
         `UPDATE materials
          SET pending_to_book = 0, book_retry_count = 0, book_processing = 0,
-             figure_backfill_pending = 0
+             figure_backfill_pending = 0,
+             integrity_warning = CASE
+               WHEN integrity_warning = ? THEN NULL
+               WHEN instr(COALESCE(integrity_warning, ''), ? || ' · ') = 1
+                 THEN substr(integrity_warning, length(?) + 4)
+               ELSE integrity_warning
+             END
          WHERE book_id = ?
            AND EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'processing')`
-      ).bind(bookId, fileId),
+      ).bind(BACKFILL_CONFLICT_WARNING, BACKFILL_CONFLICT_WARNING, BACKFILL_CONFLICT_WARNING, bookId, fileId),
       env.DB.prepare(
         `UPDATE book_files
          SET status = 'ready', error = NULL, progress = 100, retry_chunk_count = 0, chunk_total = ?
@@ -823,6 +910,10 @@ async function processFile(
     clearBookExtractionCache(fileId);
   } catch (e) {
     const cancelled = !isCurrentJob(job);
+    if (!cancelled && e instanceof ProtectedQuestionConflictError) {
+      console.warn(`[문제추출] file ${fileId}: ${e.message}`);
+      if (!claimedJob && await parkFigureBackfillConflict(env, fileId, bookId).catch(() => false)) return;
+    }
     const msg = cancelled ? "사용자 중단" : publicBookError(e);
     // 취소 뒤 새 세대가 시작됐다면 구 세대는 새 상태를 덮어쓰지 않는다.
     if (cancelled) {
@@ -833,8 +924,11 @@ async function processFile(
       await env.DB.prepare("UPDATE book_files SET status = 'error', error = ? WHERE id = ?")
         .bind(msg, fileId).run();
     }
+    if (!cancelled && claimedJob && e instanceof ProtectedQuestionConflictError) {
+      await env.DB.prepare("UPDATE materials SET pending_to_book = 0 WHERE book_id = ?")
+        .bind(bookId).run().catch(() => {});
     // 자료에서 온 자동 추출 실패는 최대 3회까지만 보류 재시도한다.
-    if (!cancelled && automaticLinkedRetryAllowed && !blocksAutomaticRetry(e) && !isUsageLimitText(String(e))) {
+    } else if (!cancelled && automaticLinkedRetryAllowed && !blocksAutomaticRetry(e) && !isUsageLimitText(String(e))) {
       await recordBookFailure(env, bookId).catch(() => {});
     }
   } finally {

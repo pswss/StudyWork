@@ -1273,6 +1273,98 @@ describe("문제 추출 라우트 (파일 → questions 직행)", () => {
     ).bind(target.id).first()).toEqual({ n: 1 });
   });
 
+  it("레거시 지문이 달라도 페이지와 실제 인쇄 번호가 같으면 학습 이력을 승계", async () => {
+    const fd = new FormData();
+    fd.append("title", `레거시-인쇄번호-${Date.now()}`);
+    fd.append("file", png("레거시-인쇄번호.png"));
+    const uploaded = await call(env, `/api/subjects/${subjectId}/books`, {
+      method: "POST",
+      headers: { cookie },
+      body: fd,
+    });
+    const target = await uploaded.json() as { id: number; files: number[] };
+    await waitBookReady(target.id);
+    const legacy = (await questionsOf(target.id)).find((question) => question.printed_number === "1");
+    await env.DB.prepare(
+      `UPDATE questions
+       SET question = '221. 레거시 OCR 지문', printed_number = NULL, book_number = '9999', wrong_count = 1
+       WHERE id = ?`
+    ).bind(legacy.id).run();
+    await env.DB.prepare(
+      "INSERT INTO question_attempts (question_id, attempt_id, correct) VALUES (?, ?, 0)"
+    ).bind(legacy.id, `레거시-인쇄번호-${Date.now()}`).run();
+
+    mockState.problemNumberOffset = 220;
+    try {
+      expect((await call(env, `/api/book-files/${target.files[0]}/retry`, {
+        method: "POST",
+        headers: { cookie },
+      })).status).toBe(200);
+      expect((await waitBookReady(target.id)).files[0].status).toBe("ready");
+      const preserved = (await questionsOf(target.id)).find((question) => question.id === legacy.id);
+      expect(preserved).toMatchObject({
+        book_number: "221",
+        printed_number: "221",
+        wrong_count: 1,
+      });
+      expect(preserved.question).toContain("꼭짓점");
+      expect(await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM question_attempts WHERE question_id = ?"
+      ).bind(legacy.id).first()).toEqual({ n: 1 });
+    } finally {
+      mockState.problemNumberOffset = 0;
+      await call(env, `/api/books/${target.id}`, { method: "DELETE", headers: { cookie } });
+    }
+  });
+
+  it("재추출 스냅샷 뒤 생긴 풀이 기록도 stale 문항과 함께 삭제하지 않음", async () => {
+    const fd = new FormData();
+    fd.append("title", `재추출-풀이경합-${Date.now()}`);
+    fd.append("file", png("재추출-풀이경합.png"));
+    const uploaded = await call(env, `/api/subjects/${subjectId}/books`, {
+      method: "POST",
+      headers: { cookie },
+      body: fd,
+    });
+    const target = await uploaded.json() as { id: number; files: number[] };
+    await waitBookReady(target.id);
+    const stale = (await questionsOf(target.id))[0];
+    await env.DB.prepare(
+      "UPDATE questions SET question = '[예1] 스냅샷 뒤 풀이할 문항', printed_number = NULL WHERE id = ?"
+    ).bind(stale.id).run();
+
+    const originalBatch = env.DB.batch.bind(env.DB);
+    let injected = false;
+    env.DB.batch = async (statements) => {
+      const isMerge = statements.some((statement) =>
+        String((statement as unknown as { sql: string }).sql).includes("DELETE FROM questions WHERE id IN")
+      );
+      if (isMerge && !injected) {
+        injected = true;
+        await env.DB.prepare("UPDATE questions SET wrong_count = 1 WHERE id = ?").bind(stale.id).run();
+        await env.DB.prepare(
+          "INSERT INTO question_attempts (question_id, attempt_id, correct) VALUES (?, ?, 0)"
+        ).bind(stale.id, `재추출-풀이경합-${Date.now()}`).run();
+      }
+      return originalBatch(statements);
+    };
+    try {
+      expect((await call(env, `/api/book-files/${target.files[0]}/retry`, {
+        method: "POST",
+        headers: { cookie },
+      })).status).toBe(200);
+      expect((await waitBookReady(target.id)).files[0].status).toBe("ready");
+      expect((await questionsOf(target.id)).find((question) => question.id === stale.id))
+        .toMatchObject({ wrong_count: 1 });
+      expect(await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM question_attempts WHERE question_id = ?"
+      ).bind(stale.id).first()).toEqual({ n: 1 });
+    } finally {
+      env.DB.batch = originalBatch;
+      await call(env, `/api/books/${target.id}`, { method: "DELETE", headers: { cookie } });
+    }
+  });
+
   it("재추출 지문이 같아도 정답이 바뀌면 기존 공식 해설을 승계하지 않음", async () => {
     const fd = new FormData();
     fd.append("title", `답변경-해설승계-${Date.now()}`);
@@ -1917,6 +2009,89 @@ describe("통합 업로드 라우팅 (자료 사이드바)", () => {
       mockState.failProblemProviderCode = null;
       await env.FILES.delete(first.key);
       await env.FILES.delete(second.key);
+    }
+  });
+
+  it("추출 범위에서 빠진 학습 문항은 자동 backfill을 비파괴 종료하고 반복하지 않음", async () => {
+    const material = await createReadyMaterial("학습문항-백필충돌");
+    try {
+      const started = await startMaterialToBook(env, material.id);
+      if ("error" in started) throw new Error(started.error);
+      await waitMatBook(material.id, "ready");
+      const protectedQuestion = (await questionsOf(started.bookId))[0];
+      await env.DB.prepare(
+        `UPDATE questions
+         SET question = '[예1] 기존 개념 예제', printed_number = NULL, book_number = '4', wrong_count = 1
+         WHERE id = ?`
+      ).bind(protectedQuestion.id).run();
+      await env.DB.prepare(
+        "INSERT INTO question_attempts (question_id, attempt_id, correct) VALUES (?, ?, 0)"
+      ).bind(protectedQuestion.id, `백필-보존-${Date.now()}`).run();
+      await env.DB.prepare(
+        `UPDATE materials
+         SET pending_to_book = 1, figure_backfill_pending = 1,
+             integrity_warning = '페이지 근거 불완전: 1/1쪽'
+         WHERE id = ?`
+      ).bind(material.id).run();
+
+      const callsBefore = mockState.problemCalls;
+      await retryPendingToBook(env);
+      let parked: Record<string, unknown> | null = null;
+      for (let i = 0; i < 200; i++) {
+        parked = await env.DB.prepare(
+          `SELECT m.pending_to_book, m.figure_backfill_pending, m.book_processing, m.integrity_warning,
+                  bf.status AS book_status, bf.error AS book_error
+           FROM materials m JOIN book_files bf ON bf.book_id = m.book_id
+           WHERE m.id = ?`
+        ).bind(material.id).first<Record<string, unknown>>();
+        if (parked?.pending_to_book === 0 && parked.book_processing === 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(parked).toMatchObject({
+        pending_to_book: 0,
+        figure_backfill_pending: 1,
+        book_processing: 0,
+        book_status: "ready",
+        book_error: null,
+      });
+      expect(String(parked?.integrity_warning)).toContain("자동 문제 보강 건너뜀");
+      expect(String(parked?.integrity_warning)).toContain("페이지 근거 불완전");
+      expect((await questionsOf(started.bookId)).find((question) => question.id === protectedQuestion.id))
+        .toMatchObject({ question: "[예1] 기존 개념 예제", wrong_count: 1 });
+      expect(await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM question_attempts WHERE question_id = ?"
+      ).bind(protectedQuestion.id).first()).toEqual({ n: 1 });
+
+      await retryPendingToBook(env);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(mockState.problemCalls).toBe(callsBefore + 1);
+
+      expect((await call(env, `/api/book-files/${started.fileId}/retry`, {
+        method: "POST",
+        headers: { cookie },
+      })).status).toBe(200);
+      const failed = await waitMatBook(material.id, "error");
+      expect(failed.book_error).toContain("학습 이력이 있는 4번 문항");
+      expect(failed.book_error).toContain("그대로 보존했습니다");
+      expect(await env.DB.prepare(
+        "SELECT pending_to_book FROM materials WHERE id = ?"
+      ).bind(material.id).first()).toEqual({ pending_to_book: 0 });
+
+      await env.DB.prepare(
+        "UPDATE questions SET question = ?, printed_number = '1', book_number = '1' WHERE id = ?"
+      ).bind(protectedQuestion.question, protectedQuestion.id).run();
+      expect((await call(env, `/api/book-files/${started.fileId}/retry`, {
+        method: "POST",
+        headers: { cookie },
+      })).status).toBe(200);
+      const recovered = await waitMatBook(material.id, "ready");
+      expect(recovered.integrity_warning).toBe("페이지 근거 불완전: 1/1쪽");
+      expect(await env.DB.prepare(
+        "SELECT pending_to_book, figure_backfill_pending FROM materials WHERE id = ?"
+      ).bind(material.id).first()).toEqual({ pending_to_book: 0, figure_backfill_pending: 0 });
+    } finally {
+      await call(env, `/api/materials/${material.id}`, { method: "DELETE", headers: { cookie } });
+      await env.FILES.delete(material.key);
     }
   });
 
