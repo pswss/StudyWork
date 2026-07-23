@@ -633,6 +633,23 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .solution-status.ok { color: var(--lime); }
 .solution-help { margin-top: auto; padding-top: 18px; border-top: 1px solid var(--line); }
 
+/* AI 해설 채우기 — 출처별 빈 해설 목록 (hairline 행 + 정보용 카운트, 라임 없음) */
+.expl-gen { display: flex; flex-direction: column; gap: 16px; padding-top: 20px; }
+.expl-gen-list { display: flex; flex-direction: column; }
+.expl-gen-row {
+  display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.expl-gen-row:last-child { border-bottom: 0; }
+.expl-gen-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-size: 14px; }
+.expl-gen-count { color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.expl-gen-empty { color: var(--ink-2); font-size: 13px; }
+/* 단일 문제 인라인 생성 (퀴즈 은행 상세) */
+.quiz-row-expl-gen { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+.expl-gen-notice { font-size: 12px; letter-spacing: .02em; }
+.expl-gen-notice.warn { color: var(--warn); }
+.expl-gen-notice.bad { color: var(--bad); }
+
 /* AI 진행 표시 (공용) */
 .ai-pending {
   display: inline-flex; align-items: center; gap: 10px;

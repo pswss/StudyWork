@@ -124,6 +124,21 @@ export const STUDY_PLAN_SCHEMA = arrayEnvelope(
   }
 );
 
+export const EXPLANATION_ITEMS_SCHEMA = arrayEnvelope(
+  "studywork_explanation_items",
+  "Independently derived answers and explanations for the requested question ids.",
+  {
+    type: "object",
+    properties: {
+      id: { type: "integer", minimum: 1 },
+      derived_answer: { type: "string" },
+      explanation: { type: "string" },
+    },
+    required: ["id", "derived_answer", "explanation"],
+    additionalProperties: false,
+  }
+);
+
 export const PAGE_EXTRACTIONS_SCHEMA: AIJsonSchema = {
   name: "studywork_page_extractions",
   description: "A complete, ordered transcription for every requested source page.",

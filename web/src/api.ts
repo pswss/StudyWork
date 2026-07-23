@@ -287,6 +287,35 @@ export async function deleteQuestion(id: number): Promise<void> {
   await req<void>("DELETE", `/api/questions/${id}`);
 }
 
+// ===== AI 해설 채우기 =====
+export interface MissingExplanationGroup {
+  src_file_id: number | null; // null = 직접 생성·기타 그룹
+  src_file_name: string | null;
+  missing: number; // 해설이 빈 문제 수
+}
+
+export async function missingExplanations(subjectId: number): Promise<MissingExplanationGroup[]> {
+  return req<MissingExplanationGroup[]>("GET", `/api/subjects/${subjectId}/explanations/missing`);
+}
+
+// scope 생략 = 과목 전체, srcFileId = 해당 파일 그룹, manual = 직접 생성·기타 그룹
+export async function generateExplanations(
+  subjectId: number,
+  scope: { srcFileId?: number; manual?: boolean } = {}
+): Promise<AIJobStart> {
+  return req<AIJobStart>("POST", `/api/subjects/${subjectId}/explanations/generate`, scope);
+}
+
+// 단일 문제 즉시 생성 — filled=false면 정답 불일치로 저장하지 않은 것
+export async function generateQuestionExplanation(
+  questionId: number
+): Promise<{ filled: boolean; explanation?: string }> {
+  return req<{ filled: boolean; explanation?: string }>(
+    "POST",
+    `/api/questions/${questionId}/explanation/generate`
+  );
+}
+
 // ===== books (문제집 — 개념·팁·문제·해설 분류) =====
 export type BookCategory = "개념" | "팁" | "문제" | "해설";
 

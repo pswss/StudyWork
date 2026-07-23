@@ -10,6 +10,7 @@ import {
   quiz as apiQuiz,
   answerQuestion as apiAnswer,
   deleteQuestion as apiDeleteQuestion,
+  generateQuestionExplanation as apiGenerateQuestionExplanation,
   bookFileUrl,
   pageImageUrl,
   NotFoundError,
@@ -624,6 +625,34 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     });
   }
 
+  // ── 단일 문제 AI 해설 생성 — 검산 일치 시에만 저장, 불일치는 경고로 표시 ────────
+  const [explGenBusy, setExplGenBusy] = useState<Set<number>>(new Set());
+  const [explGenNotice, setExplGenNotice] = useState<Map<number, { tone: "warn" | "bad"; text: string }>>(new Map());
+  async function generateExplanation(id: number) {
+    if (explGenBusy.has(id)) return;
+    setExplGenBusy(prev => new Set(prev).add(id));
+    setExplGenNotice(prev => { const next = new Map(prev); next.delete(id); return next; });
+    try {
+      const res = await apiGenerateQuestionExplanation(id);
+      if (!mountedRef.current) return;
+      if (res.filled && res.explanation) {
+        setBankQs(prev => prev.map(q => q.id === id ? { ...q, explanation: res.explanation! } : q));
+      } else {
+        setExplGenNotice(prev => new Map(prev).set(id, { tone: "warn", text: "정답 불일치 — 검토 필요" }));
+      }
+    } catch (e) {
+      if (!mountedRef.current) return;
+      setExplGenNotice(prev => new Map(prev).set(id, {
+        tone: "bad",
+        text: e instanceof Error ? e.message : "AI 해설 생성에 실패했습니다.",
+      }));
+    } finally {
+      if (mountedRef.current) {
+        setExplGenBusy(prev => { const next = new Set(prev); next.delete(id); return next; });
+      }
+    }
+  }
+
   // ── 인쇄 ──────────────────────────────────────────────────────────────────────
   function doPrint(type: "question" | "answer") {
     const targets = !allInScope
@@ -1202,7 +1231,26 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                           </ol>
                         )}
                         <div className="quiz-row-answer">정답: <strong><MdInline text={q.answer} /></strong></div>
-                        {q.explanation && <Md className="quiz-row-explanation" text={q.explanation} />}
+                        {q.explanation ? (
+                          <Md className="quiz-row-explanation" text={q.explanation} />
+                        ) : (
+                          <div className="quiz-row-expl-gen">
+                            {explGenBusy.has(q.id) ? (
+                              <AiPending label="AI 해설 생성 중" />
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn sm"
+                                onClick={() => void generateExplanation(q.id)}
+                              >AI 해설 생성</button>
+                            )}
+                            {explGenNotice.has(q.id) && (
+                              <span className={`expl-gen-notice ${explGenNotice.get(q.id)!.tone}`} role="status">
+                                {explGenNotice.get(q.id)!.text}
+                              </span>
+                            )}
+                          </div>
+                        )}
                         {q.src_file_id && q.has_figure === 1 && (
                           <img
                             className="quiz-figure compact"

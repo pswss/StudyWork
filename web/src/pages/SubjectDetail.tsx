@@ -8,6 +8,8 @@ import {
   messages as apiMessages,
   AIStatus, aiStatus as apiAIStatus,
   books as apiBooks, uploadBookExplanations, aiJob as apiAIJob, cancelAIJob, NotFoundError,
+  missingExplanations as apiMissingExplanations, generateExplanations as apiGenerateExplanations,
+  type MissingExplanationGroup,
 } from "../api";
 import Quiz from "./Quiz";
 import WrongPanel from "./Wrong";
@@ -48,6 +50,22 @@ export function storedSolutionJob(subjectId: number): number | null {
   }
 }
 
+// AI 해설 채우기 작업 추적 — 문제 생성과 같은 sessionStorage 복구 계약
+const explanationJobKey = (subjectId: number) => `studywork:explanation-gen:${subjectId}`;
+
+export function storedExplanationJob(subjectId: number): number | null {
+  try {
+    const id = Number(window.sessionStorage.getItem(explanationJobKey(subjectId)));
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+export function explanationGroupLabel(group: Pick<MissingExplanationGroup, "src_file_id" | "src_file_name">): string {
+  return group.src_file_id ? (group.src_file_name ?? `파일 #${group.src_file_id}`) : "직접 생성·기타";
+}
+
 export default function SubjectDetail({ subject, onBack, initialTab = "chat", onTabChange, onDirtyChange }: Props) {
   const [mats, setMats] = useState<Material[]>([]);
   const [msgs, setMsgs] = useState<Message[]>([]);
@@ -73,6 +91,16 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
   const [solutionStatus, setSolutionStatus] = useState("");
   const [solutionBooksLoading, setSolutionBooksLoading] = useState(false);
   const [solutionBooksError, setSolutionBooksError] = useState("");
+  // AI 해설 채우기 — 출처별 빈 해설 집계 + 벌크 작업 추적
+  const [missingGroups, setMissingGroups] = useState<MissingExplanationGroup[]>([]);
+  const [missingErr, setMissingErr] = useState("");
+  const [explJob, setExplJob] = useState<{ subjectId: number; id: number } | null>(() => {
+    const id = storedExplanationJob(subject.id);
+    return id === null ? null : { subjectId: subject.id, id };
+  });
+  const [explStatus, setExplStatus] = useState("");
+  const [explStarting, setExplStarting] = useState(false);
+  const [explCancelling, setExplCancelling] = useState(false);
 
   // 언마운트 후 setState 방지 가드
   const mountedRef = useRef(true);
@@ -80,7 +108,9 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
   const matsPendingRef = useRef<Map<number, Promise<void>>>(new Map());
   const booksRequestRef = useRef(0);
   const solutionUploadRequestRef = useRef(0);
+  const missingRequestRef = useRef(0);
   const solutionJobId = solutionJob?.subjectId === subject.id ? solutionJob.id : null;
+  const explJobId = explJob?.subjectId === subject.id ? explJob.id : null;
   useEffect(() => {
     mountedRef.current = true;
     return () => { mountedRef.current = false; };
@@ -110,8 +140,21 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
     setMessagesErr("");
     setSolutionUploading(false);
     setSolutionCancelling(false);
+    setMissingGroups([]);
+    setMissingErr("");
+    const storedExplId = storedExplanationJob(subject.id);
+    setExplJob((current) => {
+      if (storedExplId === null) return null;
+      return current?.subjectId === subject.id && current.id === storedExplId
+        ? current
+        : { subjectId: subject.id, id: storedExplId };
+    });
+    setExplStatus("");
+    setExplStarting(false);
+    setExplCancelling(false);
     booksRequestRef.current++;
     solutionUploadRequestRef.current++;
+    missingRequestRef.current++;
     void loadMats(subject.id);
   }, [subject.id]);
   useEffect(() => { void loadMsgs(subject.id); }, [subject.id]);
@@ -134,7 +177,10 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
     return () => clearInterval(t);
   }, [matsProcessing, subject.id]);
   useEffect(() => {
-    if (tab === "solution") void loadBooks(subject.id);
+    if (tab === "solution") {
+      void loadBooks(subject.id);
+      void loadMissing(subject.id);
+    }
   }, [tab, subject.id]);
 
   // 다른 브라우저 탭에서 시작한 작업도 같은 과목 화면에서 즉시 이어서 확인한다.
@@ -204,6 +250,62 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
       if (timer) window.clearTimeout(timer);
     };
   }, [solutionJob, subject.id]);
+
+  // AI 해설 채우기 작업 폴링 — 문제 생성과 같은 계약(주기 폴링 + 완료 시 저장 키 정리)
+  useEffect(() => {
+    if (explJob === null || explJob.subjectId !== subject.id) return;
+    const jobId = explJob.id;
+    const polledSubjectId = explJob.subjectId;
+    const key = explanationJobKey(polledSubjectId);
+    let stopped = false;
+    let timer: number | undefined;
+    const check = async () => {
+      try {
+        const job = await apiAIJob<{ filled: number; skippedMismatch: number; skippedIds: number[] }>(jobId);
+        if (stopped || !mountedRef.current) return;
+        if (job.subject_id !== polledSubjectId || job.kind !== "explanation-generate") {
+          try { window.sessionStorage.removeItem(key); } catch {}
+          setExplJob(null);
+          setExplStatus("이 과목의 해설 생성 작업이 아닙니다. 다시 시도해 주세요.");
+          return;
+        }
+        if (job.status === "processing") {
+          timer = window.setTimeout(check, 2500);
+          return;
+        }
+        try { window.sessionStorage.removeItem(key); } catch {}
+        setExplJob(null);
+        if (job.status === "ready") {
+          const filled = job.result?.filled ?? 0;
+          const skipped = job.result?.skippedMismatch ?? 0;
+          setExplStatus(
+            `해설 ${filled}개를 채웠습니다.${skipped > 0 ? ` 정답 불일치 ${skipped}개는 저장하지 않았습니다.` : ""}`
+          );
+          await loadMissing(polledSubjectId);
+          await loadBooks(polledSubjectId);
+        } else {
+          setExplStatus(job.error === "사용자 중단" ? "해설 생성을 중단했습니다." : job.error ?? "AI 해설 생성에 실패했습니다.");
+        }
+      } catch (error) {
+        if (stopped || !mountedRef.current) return;
+        if (error instanceof NotFoundError) {
+          try { window.sessionStorage.removeItem(key); } catch {}
+          setExplJob(null);
+          setExplStatus("이전 해설 생성 작업을 찾을 수 없습니다. 다시 시도해 주세요.");
+          return;
+        }
+        setExplStatus(error instanceof Error
+          ? `${error.message} · 작업 상태를 다시 확인합니다.`
+          : "해설 생성 상태를 확인하지 못했습니다. 다시 확인합니다.");
+        timer = window.setTimeout(check, 5000);
+      }
+    };
+    void check();
+    return () => {
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [explJob, subject.id]);
 
   // 탭 전환 시 3D 조형물에 활성 인덱스를 알린다.
   function selectTab(t: SubjectTab) {
@@ -277,6 +379,19 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
       ) setSolutionBooksLoading(false);
     }
   }
+  async function loadMissing(subjectId = subject.id) {
+    if (subjectIdRef.current !== subjectId) return;
+    const request = ++missingRequestRef.current;
+    try {
+      const groups = await apiMissingExplanations(subjectId);
+      if (!mountedRef.current || subjectIdRef.current !== subjectId || request !== missingRequestRef.current) return;
+      setMissingGroups(groups);
+      setMissingErr("");
+    } catch (error) {
+      if (!mountedRef.current || subjectIdRef.current !== subjectId || request !== missingRequestRef.current) return;
+      setMissingErr(error instanceof Error ? error.message : "해설 현황을 불러오지 못했습니다.");
+    }
+  }
   async function loadMsgs(subjectId = subject.id) {
     if (mountedRef.current && subjectIdRef.current === subjectId) setMessagesLoading(true);
     try {
@@ -336,6 +451,39 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
     }
   }
 
+  async function startExplanationFill(scope: { srcFileId?: number; manual?: boolean }) {
+    if (explStarting || explJobId !== null) return;
+    const requestedSubjectId = subject.id;
+    setExplStarting(true);
+    setExplStatus("");
+    try {
+      const job = await apiGenerateExplanations(requestedSubjectId, scope);
+      try { window.sessionStorage.setItem(explanationJobKey(requestedSubjectId), String(job.jobId)); } catch {}
+      if (!mountedRef.current || subjectIdRef.current !== requestedSubjectId) return;
+      setExplJob({ subjectId: requestedSubjectId, id: job.jobId });
+    } catch (error) {
+      if (mountedRef.current && subjectIdRef.current === requestedSubjectId) {
+        setExplStatus(error instanceof Error ? error.message : "AI 해설 생성을 시작하지 못했습니다.");
+      }
+    } finally {
+      if (mountedRef.current && subjectIdRef.current === requestedSubjectId) setExplStarting(false);
+    }
+  }
+
+  async function stopExplanationJob() {
+    if (explJobId === null || explCancelling) return;
+    setExplCancelling(true);
+    setExplStatus("");
+    try {
+      await cancelAIJob(explJobId);
+      setExplStatus("해설 생성 중단 요청을 보냈습니다.");
+    } catch (error) {
+      setExplStatus(error instanceof Error ? error.message : "해설 생성을 중단하지 못했습니다.");
+    } finally {
+      if (mountedRef.current) setExplCancelling(false);
+    }
+  }
+
   async function stopSolutionJob() {
     if (solutionJobId === null || solutionCancelling) return;
     setSolutionCancelling(true);
@@ -355,6 +503,8 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
   const msgCount = msgs.length;
   const solutionBooks = bookList.filter((book) => book.question_count > 0);
   const selectedSolutionBook = solutionBooks.find((book) => book.id === solutionBookId) ?? null;
+  const missingTotal = missingGroups.reduce((sum, group) => sum + group.missing, 0);
+  const explBusy = explStarting || explJobId !== null;
 
   return (
     <div className="page detail-page">
@@ -580,6 +730,68 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
                   {solutionStatus}
                 </p>
               )}
+
+              {/* AI 해설 채우기 — 해설 PDF가 없을 때 AI가 직접 풀어 검산 후 저장 */}
+              <div className="expl-gen">
+                <div className="solution-head">
+                  <h2>AI로 해설 채우기</h2>
+                  <p>해설이 빈 문제를 AI가 직접 풀고, 도출한 정답이 등록된 정답과 일치할 때만 저장합니다.</p>
+                </div>
+                {missingErr && (
+                  <p className="solution-status" role="alert">
+                    {missingErr} <button type="button" className="btn sm" onClick={() => void loadMissing()}>해설 현황 다시 불러오기</button>
+                  </p>
+                )}
+                {!missingErr && missingTotal === 0 && (
+                  <p className="expl-gen-empty">해설이 빈 문제가 없습니다.</p>
+                )}
+                {missingTotal > 0 && (
+                  <div className="expl-gen-list">
+                    {missingGroups.length > 1 && (
+                      <div className="expl-gen-row">
+                        <span className="expl-gen-name">전체</span>
+                        <span className="expl-gen-count">해설 없는 문제 {missingTotal}개</span>
+                        <button
+                          type="button"
+                          className="btn sm"
+                          disabled={explBusy}
+                          onClick={() => void startExplanationFill({})}
+                        >AI로 채우기</button>
+                      </div>
+                    )}
+                    {missingGroups.map((group) => (
+                      <div className="expl-gen-row" key={group.src_file_id ?? 0}>
+                        <span className="expl-gen-name">{explanationGroupLabel(group)}</span>
+                        <span className="expl-gen-count">해설 없는 문제 {group.missing}개</span>
+                        <button
+                          type="button"
+                          className="btn sm"
+                          disabled={explBusy}
+                          onClick={() => void startExplanationFill(
+                            group.src_file_id ? { srcFileId: group.src_file_id } : { manual: true }
+                          )}
+                        >AI로 채우기</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {explJobId !== null && (
+                  <div className="pending-action-row">
+                    <AiPending label="AI 해설 생성 중 · 새로고침하거나 다른 탭으로 이동해도 계속됩니다" />
+                    <button type="button" className="btn sm" onClick={() => void stopExplanationJob()} disabled={explCancelling}>
+                      {explCancelling ? "중단 중…" : "생성 중단"}
+                    </button>
+                  </div>
+                )}
+                {explStatus && (
+                  <p
+                    className={explStatus.includes("채웠습니다") ? "solution-status ok" : "solution-status"}
+                    role={explStatus.includes("채웠습니다") || explStatus.includes("중단했습니다") || explStatus.includes("요청을 보냈습니다") ? "status" : "alert"}
+                  >
+                    {explStatus}
+                  </p>
+                )}
+              </div>
           </div>
 
           <div
