@@ -548,10 +548,16 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .mode-chip.active { color: var(--bg); background: var(--lime); border-color: var(--lime); }
 .ai-config-badge {
   margin-left: auto; font-family: var(--disp); font-size: 11px; font-weight: 600;
-  letter-spacing: .03em; padding: 6px 9px; border-radius: 5px;
+  letter-spacing: .03em; padding: 6px 9px; border-radius: 6px;
   border: 1px solid var(--line); color: var(--ink-3); white-space: nowrap;
 }
-.ai-config-badge > summary { cursor: pointer; list-style-position: inside; }
+.ai-config-badge > summary { cursor: pointer; list-style: none; }
+.ai-config-badge > summary::-webkit-details-marker { display: none; }
+.ai-config-badge > summary::before {
+  content: "⌄" / ""; display: inline-block; margin-right: 6px; color: var(--ink-3);
+  transform: rotate(-90deg); transition: transform .22s var(--ease);
+}
+.ai-config-badge[open] > summary::before { transform: rotate(0deg); }
 .ai-config-badge > small {
   display: block; max-width: min(72vw, 520px); margin-top: 7px;
   color: var(--ink-3); white-space: normal; line-height: 1.5; overflow-wrap: anywhere;
@@ -908,7 +914,10 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .quiz-generate-disclosure > summary {
   display: flex; align-items: center; gap: 12px; min-height: 48px;
   color: var(--ink); cursor: pointer; list-style: none; font-size: 13px; font-weight: 700;
+  transition: color .2s var(--ease), background .2s var(--ease);
 }
+.quiz-generate-disclosure > summary:hover { background: rgba(217, 255, 63, .03); }
+.quiz-generate-disclosure > summary:active { background: rgba(217, 255, 63, .07); }
 .quiz-generate-disclosure > summary::-webkit-details-marker { display: none; }
 .quiz-generate-disclosure > summary small {
   margin-left: auto; color: var(--ink-3); font-size: 11px; font-weight: 500;
@@ -937,7 +946,13 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .context-help {
   color: var(--ink-3); font-size: 12px; line-height: 1.65;
 }
-.context-help > summary { width: fit-content; min-height: 36px; cursor: pointer; color: var(--ink-2); }
+.context-help > summary { width: fit-content; min-height: 36px; cursor: pointer; color: var(--ink-2); list-style: none; }
+.context-help > summary::-webkit-details-marker { display: none; }
+.context-help > summary::before {
+  content: "⌄" / ""; display: inline-block; margin-right: 8px; color: var(--ink-3);
+  transform: rotate(-90deg); transition: transform .22s var(--ease);
+}
+.context-help[open] > summary::before { transform: rotate(0deg); }
 .context-help > p { max-width: 68ch; padding: 4px 0 12px; }
 .quiz-help { margin-bottom: 14px; }
 .quiz-shortcut-hint { margin-top: 12px; color: var(--ink-3); font-size: 12px; }
@@ -1303,6 +1318,12 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
   width: 100%; border: 0; background: transparent; color: inherit; text-align: left; font: inherit;
 }
 .exam-card-header:hover { background: rgba(217,255,63,.03); }
+.exam-card-header::after {
+  content: "⌄" / ""; color: var(--ink-3); flex-shrink: 0; display: inline-block;
+  transform: rotate(-90deg); transition: transform .22s var(--ease);
+}
+.exam-card-header[aria-expanded="true"]::after { transform: rotate(0deg); }
+.exam-card-header:active { background: rgba(217, 255, 63, .06); }
 .exam-card-left { display: flex; align-items: center; gap: 20px; flex: 1; min-width: 0; }
 
 /* D-day — 대형 그로테스크 라임 (글로우 없음) */
