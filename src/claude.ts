@@ -11,6 +11,7 @@ import { PDFDocument } from "pdf-lib";
 import { getStudySkillRegistry } from "./skills";
 import {
   AIProviderError,
+  BULK_AI_PARALLELISM,
   getCodexProvider,
   AI_MAX_FILE_BYTES,
   type AIJsonSchema,
@@ -62,7 +63,7 @@ async function runAgent(
     operation?: AIOperation;
     fileKind?: "pdf" | "image";
     responseSchema?: AIJsonSchema;
-    lane?: "explanation";
+    lane?: "bulk";
     reasoningEffort?: ReasoningEffort;
   } = {}
 ): Promise<string> {
@@ -420,7 +421,7 @@ function formatPageExtractions(
 }
 
 // 이미지/PDF 파일을 Read 도구로 읽어 전체 내용을 전사한다.
-// 큰 PDF를 한 번에 출력시키면 출력 한도에서 잘리므로, 6쪽 청크로 나눠 동시 2개 병렬 추출한다.
+// 큰 PDF를 한 번에 출력시키면 출력 한도에서 잘리므로, 6쪽 청크로 나눠 최대 20개 병렬 추출한다.
 // onProgress(percent): 청크 완료마다 진행률(0~100) 통지.
 // isCancelled(): true를 반환하면 새 청크를 발사하지 않고 중단한다(진행 중이던 호출은 마저 끝남).
 export async function extractFromFile(
@@ -472,7 +473,7 @@ export async function extractFromFile(
         onProgress?.(Math.round((attempted.size / sliced.slices.length) * 100));
 
         const runIndexes = async (indexes: number[]) => {
-          await mapPool(indexes, 2, async (index) => {
+          await mapPool(indexes, BULK_AI_PARALLELISM, async (index) => {
             const s = sliced.slices[index];
             if (isCancelled?.() || signal?.aborted) throw new Error("사용자 중단");
             try {
@@ -490,6 +491,7 @@ export async function extractFromFile(
                 responseSchema: PAGE_EXTRACTIONS_SCHEMA,
                 maxTurns: 16,
                 signal,
+                lane: "bulk",
               });
               assertNotRefusal(out);
               const expected = pageRange(s.from, s.to);
@@ -563,6 +565,7 @@ export async function extractFromFile(
     responseSchema: PAGE_EXTRACTIONS_SCHEMA,
     maxTurns: 16,
     signal,
+    lane: "bulk",
   });
   assertNotRefusal(result);
   return formatPageExtractions(
@@ -652,7 +655,13 @@ export async function consolidate(
       .join("\n\n");
     const prompt = `${PERSONAL_USE_NOTE}Below are the materials for the subject "${subjectName}".\n\n${docs}\n\n${CONSOLIDATE_PROMPT}${extra}`;
     onProgress?.(50);
-    const note = await runAgent(prompt, { allowedTools: [], operation: "consolidate", maxTurns: 1, signal });
+    const note = await runAgent(prompt, {
+      allowedTools: [],
+      operation: "consolidate",
+      maxTurns: 1,
+      signal,
+      lane: "bulk",
+    });
     return normalizeMarkdownTableMath(note);
   }
 
@@ -675,8 +684,7 @@ export async function consolidate(
   let units = 0;
   const tick = () => onProgress?.(Math.min(99, Math.round((++units / totalUnits) * 100)));
 
-  // 전역 4슬롯 중 작업당 2개만 사용해 두 단권화가 함께 진행되게 한다.
-  const partials = await mapPool(chunks, 2, async (ch) => {
+  const partials = await mapPool(chunks, BULK_AI_PARALLELISM, async (ch) => {
     if (isCancelled?.() || signal?.aborted) throw new Error("사용자 중단"); // 새 청크 발사 중단
     try {
       return await runAgent(
@@ -686,7 +694,7 @@ export async function consolidate(
           CONSOLIDATE_COMPRESSION_RULES +
           CONSOLIDATE_READABILITY_RULES +
           `Write formulas in LaTeX ($...$). Write in Korean. Output only the body.`,
-        { allowedTools: [], operation: "consolidate-chunk", maxTurns: 1, signal }
+        { allowedTools: [], operation: "consolidate-chunk", maxTurns: 1, signal, lane: "bulk" }
       );
     } catch (e) {
       if (signal?.aborted) throw e;
@@ -1169,6 +1177,7 @@ export async function detectAnswerKeyPagesFromFile(
     responseSchema: ANSWER_KEY_PAGES_SCHEMA,
     maxTurns: 16,
     signal,
+    lane: "bulk",
   });
   return parseDetectedPages(result, "정답표", sliceBase, lastPage);
 }
@@ -1215,6 +1224,7 @@ export async function detectDetailedSolutionPagesFromFile(
     responseSchema: ANSWER_KEY_PAGES_SCHEMA,
     maxTurns: 16,
     signal,
+    lane: "bulk",
   });
   return parseDetectedPages(result, "상세 해설", sliceBase, lastPage);
 }
@@ -1271,6 +1281,7 @@ export async function extractProblemsFromFile(
       responseSchema: QUIZ_FILE_ITEMS_SCHEMA,
       maxTurns: 16,
       signal: opts?.signal,
+      lane: "bulk",
     });
     const truncated = looksTruncated(result);
     let parsedItems: QuizItemEx[];
@@ -1358,6 +1369,7 @@ export async function extractSolutionsFromFile(
     responseSchema: SOLUTION_FILE_ITEMS_SCHEMA,
     maxTurns: 16,
     signal: opts?.signal,
+    lane: "bulk",
   });
   let items: SolutionItem[];
   try {
@@ -1377,7 +1389,7 @@ export async function extractSolutionsFromFile(
 
 /**
  * 이미지/PDF 파일에서 문제를 추출한다.
- * PDF는 6쪽 청크로 물리 분할해 동시 2개 병렬 추출(출력 한도·진행률).
+ * PDF는 6쪽 청크로 물리 분할해 최대 20개 병렬 추출(출력 한도·진행률).
  * 정답·해설이 자료에 없으면 직접 풀어서 채운다.
  */
 export async function extractQuestionsFromFile(
@@ -1398,7 +1410,7 @@ export async function extractQuestionsFromFile(
     if (sliced) {
       try {
         let done = 0;
-        const parts = await mapPool(sliced.slices, 2, async (s) => {
+        const parts = await mapPool(sliced.slices, BULK_AI_PARALLELISM, async (s) => {
           if (taskSignal.aborted) throw new Error("사용자 중단");
           try {
             return await extractQuestionsOnce(s.path, "pdf", taskSignal);
@@ -1456,6 +1468,7 @@ async function extractQuestionsOnce(
     responseSchema: QUIZ_ITEMS_SCHEMA,
     maxTurns: 16,
     signal,
+    lane: "bulk",
   });
 
   return parseQuestionsJson(result);
@@ -1713,7 +1726,7 @@ export async function generateExplanationsForQuestions(
   subjectName: string,
   tasks: ExplanationTask[],
   signal?: AbortSignal,
-  lane?: "explanation",
+  lane?: "bulk",
   reasoningEffort?: ReasoningEffort
 ): Promise<ExplanationItem[]> {
   if (tasks.length === 0) return [];

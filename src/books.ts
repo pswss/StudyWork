@@ -21,7 +21,7 @@ import {
   activeBookMutations, activeSolutionBooks,
   cancelJob, finishJob, isCurrentJob, startJob, type JobToken,
 } from "./jobs";
-import { AIProviderError, AI_MAX_FILE_BYTES } from "./codex-provider";
+import { AIProviderError, AI_MAX_FILE_BYTES, BULK_AI_PARALLELISM } from "./codex-provider";
 import { createAIJob, readyAIJobStatement, runAIJob } from "./ai-jobs";
 import { gradeAnswer } from "./quiz";
 
@@ -33,7 +33,6 @@ export const bookRoutes = new Hono<{ Bindings: Env }>();
 
 const CHUNK = 20; // 사용자 설정: 20쪽씩, 경계 문제를 위해 1쪽 겹침
 const FALLBACK_CHUNK = 10; // 20쪽 응답이 구조 검증에 실패한 구간만 더 작게 재검증
-const CONCURRENCY = 4; // 동시 4청크
 const MAX_ANSWER_SCAN_CHUNKS = 3;
 const MAX_ANSWER_REFERENCE_PAGES = 8;
 export const MAX_AUTO_BOOK_RETRIES = 3;
@@ -430,7 +429,7 @@ async function resetBookChunkCache(env: Env, fileId: number, chunks: number): Pr
 /**
  * 파일의 모든 문제를 뽑는다 (분류 없이 '모든 문제만' — v2 방식 복원).
  * 한 번에 출력시키면 출력 한도에서 잘려 대부분 누락되므로 PDF는 20쪽 임시 파일로 물리 분할
- * (1쪽 겹침)해 동시 4개씩 병렬 추출한다. 겹침 중복은 (페이지, 지문)으로 제거.
+ * (1쪽 겹침)해 최대 20개씩 병렬 추출한다. 겹침 중복은 (페이지, 지문)으로 제거.
  */
 async function extractAllQuestions(
   env: Env,
@@ -479,7 +478,7 @@ async function extractAllQuestions(
       }
       await appendAnswerReferences(absPath, sliced.slices, answerKeyPages, signal, isCancelled);
       onProgress?.(Math.round((chunkCache.size / chunks) * 100));
-      const chunkResults = await mapPool(sliced.slices, CONCURRENCY, async (s, index) => {
+      const chunkResults = await mapPool(sliced.slices, BULK_AI_PARALLELISM, async (s, index) => {
         if (isCancelled?.()) throw new Error("사용자 중단"); // 새 청크 발사 중단 — mapPool 전체가 reject
         if (stopLaunching) return null;
         if (chunkCache.has(index)) {
@@ -571,7 +570,7 @@ async function detectDetailedSolutionPages(absPath: string, signal?: AbortSignal
   const scanned = await slicePdf(absPath, CHUNK, CHUNK);
   if (!scanned) return detectDetailedSolutionPagesFromFile(absPath, 1, signal);
   try {
-    const parts = await mapPool(scanned.slices, CONCURRENCY, async (slice) => {
+    const parts = await mapPool(scanned.slices, BULK_AI_PARALLELISM, async (slice) => {
       if (signal?.aborted) throw new Error("사용자 중단");
       return detectDetailedSolutionPagesFromFile(slice.path, slice.from, signal);
     });
@@ -602,7 +601,7 @@ async function extractAllSolutions(
     const selected = sliced.slices
       .map((slice, index) => ({ slice, index }))
       .filter(({ slice }) => detailedPages.some((page) => page >= slice.from && page <= slice.to));
-    const parts = await mapPool(selected, CONCURRENCY, async ({ slice, index }) => {
+    const parts = await mapPool(selected, BULK_AI_PARALLELISM, async ({ slice, index }) => {
       const items = await extractSolutionSlice(slice.path, slice.from, slice.to, signal);
       const nextFrom = sliced.slices[index + 1]?.from;
       // 각 청크는 앞 4쪽만 소유하고 뒤 2쪽은 경계 해설 완성을 위한 lookahead로만 읽는다.

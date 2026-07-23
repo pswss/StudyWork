@@ -40,6 +40,7 @@ import {
   extractQuestionsFromFile,
   generateQuestions,
 } from "../src/claude";
+import { BULK_AI_PARALLELISM } from "../src/codex-provider";
 
 let dir: string;
 const originalProvider = process.env.STUDYWORK_AI_PROVIDER;
@@ -137,7 +138,7 @@ describe("Agent 실행 경계", () => {
     }
   });
 
-  it("긴 단권화 하나가 AI 슬롯을 2개까지만 사용", async () => {
+  it("긴 단권화의 독립 청크는 20개, 의존 병합은 순차 실행", async () => {
     let active = 0;
     let peak = 0;
     mock.result = "## 정리\n\n핵심";
@@ -147,8 +148,8 @@ describe("Agent 실행 경계", () => {
       active--;
     };
 
-    await consolidate("수학", [{ title: "긴 자료", extracted_text: "개념".repeat(30_001) }]);
-    expect(peak).toBe(2);
+    await consolidate("수학", [{ title: "긴 자료", extracted_text: "개념".repeat(300_001) }]);
+    expect(peak).toBe(BULK_AI_PARALLELISM);
   });
 
   it("단권화 결과의 표 안 수식 파이프를 저장 전에 안전한 LaTeX로 바꾼다", async () => {
@@ -230,6 +231,23 @@ describe("Agent 실행 경계", () => {
     mock.failAt.add(2);
     mock.failAt.add(3); // 실패 청크 1회 자동 재시도도 실패
     await expect(extractFromFile(file, "pdf")).rejects.toThrow("페이지 구간 1/2개");
+  });
+
+  it("자료 PDF의 독립 전사 청크를 최대 20개 병렬 실행", async () => {
+    const pdf = await PDFDocument.create();
+    for (let i = 0; i < 121; i++) pdf.addPage();
+    const file = join(dir, "121쪽 자료.pdf");
+    writeFileSync(file, await pdf.save());
+    let active = 0;
+    let peak = 0;
+    mock.handler = async () => {
+      peak = Math.max(peak, ++active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active--;
+    };
+
+    await expect(extractFromFile(file, "pdf")).resolves.toContain("## 페이지 121");
+    expect(peak).toBe(BULK_AI_PARALLELISM);
   });
 
   it("자료 재시도는 영속 체크포인트의 성공 청크를 건너뛰고 실패 청크만 호출", async () => {

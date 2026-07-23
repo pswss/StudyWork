@@ -63,6 +63,7 @@ describe("StudyWork Codex facade", () => {
     const request = providerMock.complete.mock.calls[0][0];
     expect(request).toMatchObject({
       operation: "question-extract",
+      lane: "bulk",
       file: { path: realpathSync(image), kind: "image" },
       schema: { name: "studywork_quiz_items", outputKey: "items" },
     });
@@ -157,6 +158,7 @@ describe("StudyWork Codex facade", () => {
     expect(chunkRequests).toHaveLength(3);
     expect(new Set(chunkRequests.map(request => request.signal)).size).toBe(1);
     expect(chunkRequests.every(request => request.reasoningEffort === "high")).toBe(true);
+    expect(chunkRequests.every(request => request.lane === "bulk")).toBe(true);
 
     await chat("수학", [], [{ role: "user", content: "새 작업" }], true);
     expect(providerMock.complete.mock.calls.at(-1)?.[0].reasoningEffort).toBe("max");

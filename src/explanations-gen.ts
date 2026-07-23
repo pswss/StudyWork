@@ -12,7 +12,7 @@ import {
 } from "./claude";
 import {
   AIProviderError,
-  EXPLANATION_PARALLELISM,
+  BULK_AI_PARALLELISM,
   type ReasoningEffort,
 } from "./codex-provider";
 import { checkAndIncrementUsage } from "./usage";
@@ -55,7 +55,7 @@ async function generateVerifiedExplanations(
   subjectName: string,
   questions: MissingQuestion[],
   signal?: AbortSignal,
-  lane?: "explanation"
+  lane?: "bulk"
 ): Promise<{ items: ExplanationItem[]; skippedIds: number[] }> {
   let remaining = questions;
   const accepted: ExplanationItem[] = [];
@@ -197,7 +197,7 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
     const jobId = await createAIJob(c.env.DB, subjectId, "explanation-generate", { label, target, progress: 0 });
     const job = startJob(`explanation-job:${jobId}`);
     runAIJob(c.env.DB, jobId, job, async () => {
-      const sectionCount = Math.min(EXPLANATION_PARALLELISM, missing.length);
+      const sectionCount = Math.min(BULK_AI_PARALLELISM, missing.length);
       const baseSize = Math.floor(missing.length / sectionCount);
       const extra = missing.length % sectionCount;
       let offset = 0;
@@ -218,7 +218,7 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
             subject.name,
             batch,
             job.signal,
-            "explanation"
+            "bulk"
           );
           if (!isCurrentJob(job)) throw new Error("사용자 중단");
 

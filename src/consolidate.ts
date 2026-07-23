@@ -115,7 +115,7 @@ consolidateRoutes.post("/subjects/:id/consolidate", async (c) => {
           "INSERT INTO note_versions (subject_id, content) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM notes WHERE subject_id = ? AND status = 'processing')"
         ).bind(subjectId, content, subjectId),
         c.env.DB.prepare(
-          "UPDATE notes SET content = ?, status = 'ready', updated_at = datetime('now') WHERE subject_id = ? AND status = 'processing'"
+          "UPDATE notes SET content = ?, status = 'ready', progress = 100, updated_at = datetime('now') WHERE subject_id = ? AND status = 'processing'"
         ).bind(content, subjectId),
       ]);
     } catch {

@@ -14,9 +14,9 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
   AI_MAX_FILE_BYTES,
+  BULK_AI_PARALLELISM,
   CodexCliProvider,
   DEFAULT_CODEX_MODEL,
-  EXPLANATION_PARALLELISM,
   loadCodexProviderConfig,
   type CodexProviderConfig,
 } from "../src/codex-provider";
@@ -274,29 +274,34 @@ describe("Codex CLI adapter", () => {
     }
   });
 
-  it("해설 전용 lane은 일반 배치 상한과 분리해 20개를 동시에 실행", async () => {
+  it("공용 bulk lane은 작업 종류를 합쳐 20개로 제한하고 일반·채팅 lane과 분리", async () => {
     const fake = fakeSpawner({ hang: true });
     const provider = new CodexCliProvider(config({ maxConcurrency: 2 }), fake.fn);
     const controller = new AbortController();
     const pending = [
       provider.complete({ operation: "material-extract", prompt: "일반 배치", signal: controller.signal }),
-      ...Array.from({ length: EXPLANATION_PARALLELISM + 1 }, (_, index) =>
+      ...Array.from({ length: BULK_AI_PARALLELISM + 1 }, (_, index) =>
         provider.complete({
-          operation: "question-generate",
-          prompt: `해설 ${index + 1}`,
+          operation: ["question-generate", "material-extract", "problem-extract"][index % 3],
+          prompt: `bulk ${index + 1}`,
           signal: controller.signal,
-          lane: "explanation",
+          lane: "bulk",
         })
       ),
     ];
     const guarded = pending.map((promise) => promise.catch((error: unknown) => error));
 
-    await vi.waitFor(() => expect(fake.calls).toHaveLength(EXPLANATION_PARALLELISM + 1));
-    expect(fake.calls.filter((call) => call.input.startsWith("해설 "))).toHaveLength(EXPLANATION_PARALLELISM);
-    expect(fake.calls.map((call) => call.input)).not.toContain(`해설 ${EXPLANATION_PARALLELISM + 1}`);
+    await vi.waitFor(() => expect(fake.calls).toHaveLength(BULK_AI_PARALLELISM + 1));
+    expect(fake.calls.filter((call) => call.input.startsWith("bulk "))).toHaveLength(BULK_AI_PARALLELISM);
+    expect(fake.calls.map((call) => call.input)).not.toContain(`bulk ${BULK_AI_PARALLELISM + 1}`);
+
+    const chat = provider.complete({ operation: "chat", prompt: "채팅", signal: controller.signal })
+      .catch((error: unknown) => error);
+    await vi.waitFor(() => expect(fake.calls).toHaveLength(BULK_AI_PARALLELISM + 2));
+    expect(fake.calls.at(-1)?.input).toBe("채팅");
 
     controller.abort();
-    const errors = await Promise.all(guarded);
+    const errors = await Promise.all([...guarded, chat]);
     for (const error of errors) expect(error).toMatchObject({ code: "cancelled" });
   });
 });

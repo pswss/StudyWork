@@ -1187,8 +1187,8 @@ describe("문제 추출 라우트 (파일 → questions 직행)", () => {
       const book = await waitReady(body.id);
       expect(book.files[0].status).toBe("error");
       expect(book.files[0].error).toBe("문제 추출 실패: 페이지 구간 5/5개");
-      // 최초 병렬 4청크 실패 후 누락 청크만 자동 1회 재시도하고 멈춘다.
-      expect(mockState.problemCalls).toBe(8);
+      // 5청크를 한 번에 실행한 뒤 누락 청크만 자동 1회 재시도하고 멈춘다.
+      expect(mockState.problemCalls).toBe(10);
     } finally {
       mockState.failProblems = false;
       mockState.problemCalls = 0;

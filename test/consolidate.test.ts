@@ -58,11 +58,11 @@ beforeAll(async () => {
 });
 
 // 단권화는 백그라운드 처리 — note.status가 processing에서 벗어날 때까지 대기
-async function waitNote(sid: number): Promise<{ content: string; status: string }> {
+async function waitNote(sid: number): Promise<{ content: string; status: string; progress: number }> {
   for (let i = 0; i < 200; i++) {
     const res = await call(env, `/api/subjects/${sid}/note`, { headers: { cookie } });
     if (res.status === 200) {
-      const n = (await res.json()) as { content: string; status: string };
+      const n = (await res.json()) as { content: string; status: string; progress: number };
       if (n.status !== "processing") return n;
     }
     await new Promise((r) => setTimeout(r, 10));
@@ -80,6 +80,7 @@ describe("consolidate API", () => {
 
     const saved = await waitNote(subjectId);
     expect(saved.status).toBe("ready");
+    expect(saved.progress).toBe(100);
     expect(saved.content).toContain("단권화 노트");
   });
 
