@@ -279,6 +279,40 @@ describe("POST /api/subjects/:id/questions/generate", () => {
     expect(passedMaterials).toHaveLength(51);
   });
 
+  it("완전히 같은 자료 선택의 동시 생성만 409, 다른 선택은 함께 돈다", async () => {
+    let release!: () => void;
+    generationControl.nextGate = new Promise<void>((resolve) => { release = resolve; });
+
+    const startWith = (materialIds?: number[]) => call(env, `/api/subjects/${subjectId}/questions/generate`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ count: 2, difficulty: "혼합", ...(materialIds ? { materialIds } : {}) }),
+    });
+
+    const first = await startWith([materialId]);
+    expect(first.status).toBe(202);
+    const firstJobId = ((await first.json()) as { jobId: number }).jobId;
+
+    // 같은 자료 집합 → 409 (첫 작업은 게이트에 잡혀 아직 실행 중)
+    const dupe = await startWith([materialId]);
+    expect(dupe.status).toBe(409);
+    await expect(dupe.json()).resolves.toMatchObject({ error: expect.stringContaining("이미 진행 중") });
+
+    // 다른 선택(전체) → 동시 실행 허용
+    const second = await startWith();
+    expect(second.status).toBe(202);
+    const secondJobId = ((await second.json()) as { jobId: number }).jobId;
+
+    release();
+    await expect(waitAIJob(firstJobId)).resolves.toMatchObject({ status: "ready" });
+    await expect(waitAIJob(secondJobId)).resolves.toMatchObject({ status: "ready" });
+
+    // 대상이 풀리면 같은 선택도 다시 시작할 수 있다
+    const again = await startWith([materialId]);
+    expect(again.status).toBe(202);
+    await expect(waitAIJob(((await again.json()) as { jobId: number }).jobId)).resolves.toMatchObject({ status: "ready" });
+  });
+
   it("자료 없는 과목 → 400", async () => {
     const res = await call(env, `/api/subjects/${emptySubjectId}/questions/generate`, {
       method: "POST",

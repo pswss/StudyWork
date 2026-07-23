@@ -7,16 +7,13 @@ import type { Env } from "./index";
 import { generateExplanationsForQuestions, type ExplanationTask } from "./claude";
 import { checkAndIncrementUsage } from "./usage";
 import { createAIJob, readyAIJobStatement, runAIJob } from "./ai-jobs";
-import { isCurrentJob, startJob } from "./jobs";
+import { claimTarget, isCurrentJob, releaseTarget, startJob } from "./jobs";
 import { gradeAnswer } from "./quiz";
 
 export const explanationGenRoutes = new Hono<{ Bindings: Env }>();
 
 // 한 모델 호출당 문항 수 — 5~8 사이. 6이면 밀도 높은 서술 해설도 출력 한도 안에 안전.
 export const EXPLANATION_BATCH_SIZE = 6;
-
-// 과목당 동시 1개 벌크 작업 — 같은 문제를 두 작업이 이중 처리하지 않게 한다.
-const activeExplanationSubjects = new Set<number>();
 
 interface MissingQuestion {
   id: number;
@@ -104,17 +101,25 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
     return c.json({ error: "해설이 비어 있는 문제가 없습니다" }, 400);
   }
 
-  if (activeExplanationSubjects.has(subjectId)) {
-    return c.json({ error: "이 과목의 AI 해설 생성이 이미 진행 중입니다" }, 409);
+  // 대상 단위 중복 가드 — 같은 파일(또는 manual/전체) 범위만 막고, 다른 범위는 동시 허용.
+  // "전체"와 개별 파일 범위가 겹쳐 동시에 돌면 같은 문항에 AI를 두 번 쓸 수는 있지만,
+  // 저장은 trim(explanation)='' 가드로 한 번만 되므로 데이터는 안전하다.
+  const target = srcFileId !== undefined ? `file:${srcFileId}` : manualOnly ? "manual" : "all";
+  const targetKey = `expl:${subjectId}:${target}`;
+  if (!claimTarget(targetKey)) {
+    return c.json({ error: "이 범위의 AI 해설 생성이 이미 진행 중입니다" }, 409);
   }
-  if (!(await checkAndIncrementUsage(c.env.DB))) {
-    return c.json({ error: "오늘 사용량 한도 도달" }, 429);
-  }
-
-  activeExplanationSubjects.add(subjectId);
   let backgroundStarted = false;
   try {
-    const jobId = await createAIJob(c.env.DB, subjectId, "explanation-generate");
+    if (!(await checkAndIncrementUsage(c.env.DB))) {
+      return c.json({ error: "오늘 사용량 한도 도달" }, 429);
+    }
+
+    const label = srcFileId !== undefined
+      ? (await c.env.DB.prepare("SELECT name FROM book_files WHERE id = ?")
+          .bind(srcFileId).first<{ name: string }>())?.name ?? `파일 #${srcFileId}`
+      : manualOnly ? "직접 생성·기타" : "전체";
+    const jobId = await createAIJob(c.env.DB, subjectId, "explanation-generate", { label, target });
     const job = startJob(`explanation-job:${jobId}`);
     runAIJob(c.env.DB, jobId, job, async () => {
       let filled = 0;
@@ -160,11 +165,11 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
       };
     },
     "AI 해설 생성에 실패했습니다. 이미 저장된 해설은 유지되며, 다시 시도하면 남은 문제만 처리합니다.",
-    () => { activeExplanationSubjects.delete(subjectId); });
+    () => { releaseTarget(targetKey); });
     backgroundStarted = true;
     return c.json({ jobId, status: "processing" as const }, 202);
   } finally {
-    if (!backgroundStarted) activeExplanationSubjects.delete(subjectId);
+    if (!backgroundStarted) releaseTarget(targetKey);
   }
 });
 

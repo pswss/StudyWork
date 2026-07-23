@@ -4,7 +4,9 @@ import type { Env } from "./index";
 import { generateQuestions, type QuizQuestion } from "./claude";
 import { checkAndIncrementUsage } from "./usage";
 import { createAIJob, readyAIJobStatement, runAIJob } from "./ai-jobs";
-import { activeBookMutations, activeSolutionBooks, isCurrentJob, startJob } from "./jobs";
+import {
+  activeBookMutations, activeSolutionBooks, claimTarget, isCurrentJob, releaseTarget, startJob,
+} from "./jobs";
 
 export const quizRoutes = new Hono<{ Bindings: Env }>();
 
@@ -152,28 +154,45 @@ quizRoutes.post("/subjects/:id/questions/generate", async (c) => {
     return c.json({ error: "선택한 자료에 문제를 만들 수 있는 본문이 없습니다." }, 400);
   }
 
-  if (!(await checkAndIncrementUsage(c.env.DB))) {
-    return c.json({ error: "오늘 사용량 한도 도달" }, 429);
+  // 대상 단위 중복 가드 — 완전히 같은 자료 선택만 409, 다른 선택은 동시 생성 허용.
+  const target = materialIds ? `mats:${[...materialIds].sort((a, b) => a - b).join(",")}` : "all";
+  const targetKey = `qgen:${subjectId}:${target}`;
+  if (!claimTarget(targetKey)) {
+    return c.json({ error: "같은 자료 선택으로 문제 생성이 이미 진행 중입니다" }, 409);
   }
+  let backgroundStarted = false;
+  try {
+    if (!(await checkAndIncrementUsage(c.env.DB))) {
+      return c.json({ error: "오늘 사용량 한도 도달" }, 429);
+    }
 
-  const jobId = await createAIJob(c.env.DB, subjectId, "question-generate");
-  const job = startJob(`question-job:${jobId}`);
-  runAIJob(c.env.DB, jobId, job, async () => {
-    const questions = await generateQuestions(
-      subject.name,
-      mats,
-      count,
-      diff as "하" | "중" | "상" | "혼합",
-      job.signal
-    );
-    if (!isCurrentJob(job)) throw new Error("작업이 중단되었습니다");
-    return {
-      // plain VALUES + FK: 과목이 삭제된 경우 전체 batch가 실패하고 문항 일부도 남지 않는다.
-      writes: questionInsertStatements(c.env.DB, subjectId, "generated", questions, false, true),
-      completion: readyAIJobStatement(c.env.DB, jobId, { added: questions.length }),
-    };
-  }, "문제 생성에 실패했습니다. AI 설정과 선택 자료를 확인한 뒤 다시 시도해 주세요.");
-  return c.json({ jobId, status: "processing" as const }, 202);
+    const jobId = await createAIJob(c.env.DB, subjectId, "question-generate", {
+      label: `자료 ${mats.length}개 · ${count}문항 · ${diff}`,
+      target,
+    });
+    const job = startJob(`question-job:${jobId}`);
+    runAIJob(c.env.DB, jobId, job, async () => {
+      const questions = await generateQuestions(
+        subject.name,
+        mats,
+        count,
+        diff as "하" | "중" | "상" | "혼합",
+        job.signal
+      );
+      if (!isCurrentJob(job)) throw new Error("작업이 중단되었습니다");
+      return {
+        // plain VALUES + FK: 과목이 삭제된 경우 전체 batch가 실패하고 문항 일부도 남지 않는다.
+        writes: questionInsertStatements(c.env.DB, subjectId, "generated", questions, false, true),
+        completion: readyAIJobStatement(c.env.DB, jobId, { added: questions.length }),
+      };
+    },
+    "문제 생성에 실패했습니다. AI 설정과 선택 자료를 확인한 뒤 다시 시도해 주세요.",
+    () => { releaseTarget(targetKey); });
+    backgroundStarted = true;
+    return c.json({ jobId, status: "processing" as const }, 202);
+  } finally {
+    if (!backgroundStarted) releaseTarget(targetKey);
+  }
 });
 
 // ── GET /api/subjects/:id/quiz ───────────────────────────────────────────────

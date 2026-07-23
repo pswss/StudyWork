@@ -397,6 +397,34 @@ describe("POST /api/exams/:id/replan", () => {
     });
     expect(res.status).toBe(404);
   });
+
+  it("같은 시험 재계획 동시 요청만 409, 다른 시험은 함께 돈다", async () => {
+    const other = await createFinishedExam("다른 시험", FUTURE_DATE);
+    let release!: () => void;
+    planControl.nextGate = new Promise<void>((resolve) => { release = resolve; });
+
+    const first = await call(env, `/api/exams/${examId}/replan`, { method: "POST", headers: { cookie } });
+    expect(first.status).toBe(202);
+    const firstJobId = ((await first.json()) as { jobId: number }).jobId;
+
+    // 같은 시험 → 409 (첫 재계획은 게이트에 잡혀 아직 실행 중)
+    const dupe = await call(env, `/api/exams/${examId}/replan`, { method: "POST", headers: { cookie } });
+    expect(dupe.status).toBe(409);
+
+    // 다른 시험 → 동시 재계획 허용
+    const second = await call(env, `/api/exams/${other.id}/replan`, { method: "POST", headers: { cookie } });
+    expect(second.status).toBe(202);
+    const secondJobId = ((await second.json()) as { jobId: number }).jobId;
+
+    release();
+    await expect(waitForJob(firstJobId)).resolves.toMatchObject({ status: "ready" });
+    await expect(waitForJob(secondJobId)).resolves.toMatchObject({ status: "ready" });
+
+    // 작업이 끝나면 같은 시험도 다시 재계획할 수 있다
+    const again = await call(env, `/api/exams/${examId}/replan`, { method: "POST", headers: { cookie } });
+    expect(again.status).toBe(202);
+    await expect(waitForJob(((await again.json()) as { jobId: number }).jobId)).resolves.toMatchObject({ status: "ready" });
+  });
 });
 
 // ── DELETE /api/exams/:id ────────────────────────────────────────────────────

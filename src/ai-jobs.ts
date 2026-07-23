@@ -6,11 +6,28 @@ import { cancelJob, finishJob, isCurrentJob, type JobToken } from "./jobs";
 export const aiJobRoutes = new Hono<{ Bindings: Env }>();
 const activeAIJobs = new Map<number, JobToken>();
 
-export async function createAIJob(db: LocalDB, subjectId: string | number, kind: string): Promise<number> {
+// 작업 표시용 메타(대상 라벨·대상 키) — DB 스키마 변경 없이 인메모리로만 유지한다.
+// 재시작 시 processing 작업은 recovery가 error로 정리하므로 메타 소실은 문제 없다.
+const aiJobMeta = new Map<number, { label: string; target: string }>();
+
+export async function createAIJob(
+  db: LocalDB,
+  subjectId: string | number,
+  kind: string,
+  meta?: { label: string; target?: string }
+): Promise<number> {
   const row = await db.prepare(
     "INSERT INTO ai_jobs (subject_id, kind) VALUES (?, ?) RETURNING id"
   ).bind(subjectId, kind).first<{ id: number }>();
   if (!row) throw new Error("AI 작업을 생성하지 못했습니다");
+  if (meta) {
+    aiJobMeta.set(row.id, { label: meta.label, target: meta.target ?? "" });
+    // ponytail: 단순 상한 정리 — Map 삽입 순서가 곧 생성 순서다
+    if (aiJobMeta.size > 300) {
+      const oldest = aiJobMeta.keys().next().value;
+      if (oldest !== undefined) aiJobMeta.delete(oldest);
+    }
+  }
   return row.id;
 }
 
@@ -65,6 +82,57 @@ export function runAIJob(
     })();
   });
 }
+
+// ── GET /api/subjects/:id/jobs ───────────────────────────────────────────────
+// 과목의 진행 중 + 최근(5분) AI 작업 목록 — 작업 트레이가 폴링한다.
+// 단권화는 ai_jobs 밖(notes.status)에서 돌아가므로 합성 행으로 함께 노출한다.
+aiJobRoutes.get("/subjects/:id/jobs", async (c) => {
+  const subjectId = c.req.param("id");
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, kind, status,
+            CAST(strftime('%s','now') - strftime('%s', created_at) AS INTEGER) AS elapsed_s
+     FROM ai_jobs
+     WHERE subject_id = ?
+       AND (status = 'processing' OR updated_at >= datetime('now', '-5 minutes'))
+     ORDER BY id DESC LIMIT 20`
+  ).bind(subjectId).all<{ id: number; kind: string; status: "processing" | "ready" | "error"; elapsed_s: number }>();
+
+  const jobs: Array<{
+    id: number | null;
+    kind: string;
+    label: string | null;
+    target: string | null;
+    status: "processing" | "ready" | "error";
+    elapsed_s: number;
+    progress: number | null;
+  }> = results.map((row) => ({
+    id: row.id,
+    kind: row.kind,
+    label: aiJobMeta.get(row.id)?.label ?? null,
+    target: aiJobMeta.get(row.id)?.target ?? null,
+    status: row.status,
+    elapsed_s: Math.max(0, row.elapsed_s),
+    progress: null,
+  }));
+
+  const note = await c.env.DB.prepare(
+    `SELECT progress,
+            CAST(strftime('%s','now') - strftime('%s', updated_at) AS INTEGER) AS elapsed_s
+     FROM notes WHERE subject_id = ? AND status = 'processing'`
+  ).bind(subjectId).first<{ progress: number; elapsed_s: number }>();
+  if (note) {
+    jobs.unshift({
+      id: null,
+      kind: "consolidate",
+      label: "단권화 노트",
+      target: "note",
+      status: "processing",
+      elapsed_s: Math.max(0, note.elapsed_s),
+      progress: note.progress,
+    });
+  }
+  return c.json(jobs);
+});
 
 aiJobRoutes.get("/ai-jobs/:id", async (c) => {
   const rawId = c.req.param("id");

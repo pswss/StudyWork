@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   cancelJob,
+  claimTarget,
   finishJob,
   isCurrentJob,
+  releaseTarget,
   resetJobsForTest,
   startJob,
 } from "../src/jobs";
@@ -30,5 +32,17 @@ describe("background job identity", () => {
     expect(first.signal.aborted).toBe(true);
     expect(isCurrentJob(first)).toBe(false);
     expect(isCurrentJob(second)).toBe(true);
+  });
+});
+
+describe("target claim (대상 단위 중복 가드)", () => {
+  it("같은 대상 키는 해제 전까지 다시 점유할 수 없고, 다른 대상은 독립이다", () => {
+    expect(claimTarget("expl:1:file:3")).toBe(true);
+    expect(claimTarget("expl:1:file:3")).toBe(false);
+    expect(claimTarget("expl:1:file:4")).toBe(true);
+    expect(claimTarget("expl:2:file:3")).toBe(true);
+
+    releaseTarget("expl:1:file:3");
+    expect(claimTarget("expl:1:file:3")).toBe(true);
   });
 });

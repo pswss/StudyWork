@@ -1370,8 +1370,8 @@ bookRoutes.post("/subjects/:subjectId/books/:bookId/explanations", async (c) => 
   const bookId = Number(rawBookId);
 
   const book = await c.env.DB.prepare(
-    "SELECT id FROM books WHERE id = ? AND subject_id = ?"
-  ).bind(bookId, subjectId).first<{ id: number }>();
+    "SELECT id, title FROM books WHERE id = ? AND subject_id = ?"
+  ).bind(bookId, subjectId).first<{ id: number; title: string }>();
   if (!book) return c.json({ error: "문제집을 찾을 수 없습니다" }, 404);
 
   let form: FormData;
@@ -1447,7 +1447,10 @@ bookRoutes.post("/subjects/:subjectId/books/:bookId/explanations", async (c) => 
     if (!(await checkAndIncrementUsage(c.env.DB))) {
       return c.json({ error: "오늘 사용량 한도 도달" }, 429);
     }
-    const jobId = await createAIJob(c.env.DB, subjectId, "book-explanations");
+    const jobId = await createAIJob(c.env.DB, subjectId, "book-explanations", {
+      label: book.title,
+      target: `book:${bookId}`,
+    });
     const job = startJob(`book-solutions:${bookId}`);
     runAIJob(c.env.DB, jobId, job, async () => {
       let dir: string | undefined;

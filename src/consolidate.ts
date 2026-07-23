@@ -51,7 +51,7 @@ consolidateRoutes.post("/subjects/:id/consolidate", async (c) => {
   const claimed = await c.env.DB.prepare(
     `INSERT INTO notes (subject_id, content, status, progress, updated_at)
      VALUES (?, '', 'processing', 0, datetime('now'))
-     ON CONFLICT(subject_id) DO UPDATE SET status = 'processing', progress = 0
+     ON CONFLICT(subject_id) DO UPDATE SET status = 'processing', progress = 0, updated_at = datetime('now')
      WHERE notes.status != 'processing'
      RETURNING subject_id`
   ).bind(subjectId).first<{ subject_id: number }>();

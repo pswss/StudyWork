@@ -3,7 +3,7 @@ import type { Env } from "./index";
 import { generateStudyPlan } from "./claude";
 import { checkAndIncrementUsage } from "./usage";
 import { createAIJob, readyAIJobStatement, runAIJob } from "./ai-jobs";
-import { cancelJob, isCurrentJob, startJob } from "./jobs";
+import { cancelJob, claimTarget, isCurrentJob, releaseTarget, startJob } from "./jobs";
 
 export const examRoutes = new Hono<{ Bindings: Env }>();
 
@@ -68,7 +68,10 @@ examRoutes.post("/subjects/:id/exams", async (c) => {
     return c.json({ error: "오늘 사용량 한도 도달" }, 429);
   }
 
-  const jobId = await createAIJob(c.env.DB, Number(subjectId), "exam-plan");
+  // 새 시험 생성은 매번 새로운 대상 — 중복 가드 없이 동시 생성 허용.
+  const jobId = await createAIJob(c.env.DB, Number(subjectId), "exam-plan", {
+    label: body.title!.trim(),
+  });
   const job = startJob(`exam-job:${jobId}`);
   runAIJob(c.env.DB, jobId, job, async () => {
     const items = await generateStudyPlan(
@@ -202,11 +205,22 @@ examRoutes.post("/exams/:id/replan", async (c) => {
   const { materialTitles, wrongSummary } = await loadPlanContext(c.env.DB, exam.subject_id);
   const scopeWithDone = doneSummary ? `${exam.scope}\n${doneSummary} — 완료한 내용은 계획에서 제외하라` : exam.scope;
 
+  // 대상 단위 중복 가드 — 같은 시험의 재계획만 409, 다른 시험·새 시험 생성은 동시 허용.
+  // (이전에는 같은 키 startJob이 진행 중이던 재계획을 조용히 끊었다 — 이제 명시적으로 거부한다.)
+  const targetKey = `exam-replan:${exam.id}`;
+  if (!claimTarget(targetKey)) {
+    return c.json({ error: "이 시험의 재계획이 이미 진행 중입니다" }, 409);
+  }
+  let backgroundStarted = false;
+  try {
   if (!(await checkAndIncrementUsage(c.env.DB))) {
     return c.json({ error: "오늘 사용량 한도 도달" }, 429);
   }
 
-  const jobId = await createAIJob(c.env.DB, exam.subject_id, "exam-plan");
+  const jobId = await createAIJob(c.env.DB, exam.subject_id, "exam-plan", {
+    label: `${exam.title} 재계획`,
+    target: `replan:${exam.id}`,
+  });
   const job = startJob(`exam:${exam.id}`);
   runAIJob(c.env.DB, jobId, job, async () => {
     const newItems = await generateStudyPlan(
@@ -239,9 +253,14 @@ examRoutes.post("/exams/:id/replan", async (c) => {
         ],
         completion: readyAIJobStatement(c.env.DB, jobId, { examId: exam.id }),
     };
-  }, "시험 학습 계획을 조정하지 못했습니다.");
-
+  },
+  "시험 학습 계획을 조정하지 못했습니다.",
+  () => { releaseTarget(targetKey); });
+  backgroundStarted = true;
   return c.json({ jobId, status: "processing" }, 202);
+  } finally {
+    if (!backgroundStarted) releaseTarget(targetKey);
+  }
 });
 
 // ── DELETE /api/exams/:id ────────────────────────────────────────────────────

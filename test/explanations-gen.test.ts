@@ -9,6 +9,7 @@ const control = vi.hoisted(() => ({
   callCount: 0,
   failOnCall: null as number | null, // n번째 호출을 실패시킨다 (1-base)
   mismatchIds: new Set<number>(),    // 이 id들은 틀린 derived_answer를 돌려준다
+  holdAll: null as Promise<void> | null, // 설정 시 모든 호출이 이 게이트를 기다린다 (동시성 테스트)
 }));
 
 vi.mock("../src/claude", () => ({
@@ -18,6 +19,7 @@ vi.mock("../src/claude", () => ({
   ) => {
     control.callCount++;
     explanationCalls.push(tasks.map((task) => task.id));
+    if (control.holdAll) await control.holdAll;
     if (control.failOnCall === control.callCount) throw new Error("모의 배치 실패");
     return tasks.map((task) => ({
       id: task.id,
@@ -98,6 +100,7 @@ beforeEach(async () => {
   control.callCount = 0;
   control.failOnCall = null;
   control.mismatchIds.clear();
+  control.holdAll = null;
   await env.DB.prepare("DELETE FROM questions").run();
 });
 
@@ -203,6 +206,53 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
     expect((await waitAIJob(((await manualRun.json()) as { jobId: number }).jobId)).status).toBe("ready");
     expect(explanationCalls[1]).toEqual([manual]);
     expect(await explanationOf(manual)).toBe(`AI 해설 ${manual}`);
+  });
+
+  it("다른 파일 두 개는 동시에 돌고, 같은 파일 중복 요청만 409", async () => {
+    const book = await env.DB.prepare(
+      "INSERT INTO books (subject_id, title) VALUES (?, '문제집2') RETURNING id"
+    ).bind(subjectId).first<{ id: number }>();
+    const file2 = (await env.DB.prepare(
+      "INSERT INTO book_files (book_id, name, r2_key, mime, status) VALUES (?, '문제집2.pdf', 'k2', 'application/pdf', 'ready') RETURNING id"
+    ).bind(book!.id).first<{ id: number }>())!.id;
+    const q1 = await insertQuestion({ srcFileId: fileId, answer: "답1" });
+    const q2 = await insertQuestion({ srcFileId: file2, answer: "답2" });
+
+    let release!: () => void;
+    control.holdAll = new Promise<void>((resolve) => { release = resolve; });
+
+    const startFor = (srcFileId: number) => call(env, `/api/subjects/${subjectId}/explanations/generate`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ srcFileId }),
+    });
+
+    const first = await startFor(fileId);
+    expect(first.status).toBe(202);
+    const firstJobId = ((await first.json()) as { jobId: number }).jobId;
+
+    // 같은 파일 → 409, 다른 파일 → 202 (동시 실행)
+    expect((await startFor(fileId)).status).toBe(409);
+    const second = await startFor(file2);
+    expect(second.status).toBe(202);
+    const secondJobId = ((await second.json()) as { jobId: number }).jobId;
+
+    release();
+    control.holdAll = null;
+    const firstJob = await waitAIJob(firstJobId);
+    const secondJob = await waitAIJob(secondJobId);
+    expect(firstJob.status).toBe("ready");
+    expect(firstJob.result).toEqual({ filled: 1, skippedMismatch: 0, skippedIds: [] });
+    expect(secondJob.status).toBe("ready");
+    expect(secondJob.result).toEqual({ filled: 1, skippedMismatch: 0, skippedIds: [] });
+    expect(await explanationOf(q1)).toBe(`AI 해설 ${q1}`);
+    expect(await explanationOf(q2)).toBe(`AI 해설 ${q2}`);
+
+    // 작업이 끝나면 같은 파일 대상도 다시 시작할 수 있다
+    await insertQuestion({ srcFileId: fileId, answer: "답3" });
+    const again = await startFor(fileId);
+    expect(again.status).toBe(202);
+    expect((await waitAIJob(((await again.json()) as { jobId: number }).jobId)).status).toBe("ready");
   });
 
   it("빈 해설 문제가 없으면 400, 없는 과목은 404, 잘못된 본문은 400", async () => {
