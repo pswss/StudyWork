@@ -14,6 +14,7 @@
   --ink-4: rgba(237, 234, 224, .2);   /* faint */
   --line: rgba(237, 234, 224, .14);   /* thin rules */
   --line-strong: rgba(237, 234, 224, .28);
+  --check-border: rgba(237, 234, 224, .4);  /* 미선택 체크박스 테두리 — bg 대비 3.34:1 (WCAG 1.4.11) */
   --lime: #D9FF3F;          /* THE accent — acid lime, used sparingly */
   --lime-dim: rgba(217, 255, 63, .5);
   --bad: #F05D62;           /* error / wrong state — readable red */
@@ -700,7 +701,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 }
 .note-source-row::before {
   content: ""; width: 16px; height: 16px; margin-top: 1px; flex: 0 0 16px;
-  display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 4px;
+  display: grid; place-items: center; border: 1px solid var(--check-border); border-radius: 4px;
   color: var(--bg); font-family: var(--disp); font-size: 11px; font-weight: 800;
 }
 .note-source-row:hover { background: rgba(217, 255, 63, .025); border-color: var(--line); }
@@ -714,14 +715,16 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .note-source-row:has(input:checked) {
   background: rgba(217, 255, 63, .045); border-color: rgba(217, 255, 63, .28);
 }
-.note-source-row:has(input:checked)::before { content: "✓"; background: var(--lime); border-color: var(--lime); }
+.note-source-row:has(input:checked)::before { content: "✓" / ""; background: var(--lime); border-color: var(--lime); }
 .note-source-row:has(input:checked) strong { color: var(--ink); }
 .note-source-row:has(input:checked) small { color: var(--ink-2); }
+/* 목록 내 선택 행은 옅은 틴트+✓만 — 전부 선택 시 라임 테두리 벽이 되지 않게 */
+.note-source-list .note-source-row:has(input:checked) { border-color: transparent; }
 /* 일부만 선택(전체 선택 행) — 라임 테두리 + 투명 배경 */
 .note-source-row:has(input:indeterminate) {
-  background: transparent; border-color: var(--lime); box-shadow: none;
+  background: transparent; border-color: var(--lime-dim); box-shadow: none;
 }
-.note-source-row:has(input:indeterminate)::before { content: "−"; border-color: var(--lime); color: var(--lime); }
+.note-source-row:has(input:indeterminate)::before { content: "−" / ""; border-color: var(--lime); color: var(--lime); }
 .note-source-row:has(input:indeterminate) strong { color: var(--ink); }
 .note-source-all { margin-bottom: 6px; }
 .note-source-row > span { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 3px; }
@@ -981,7 +984,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 }
 .quiz-check-label::before {
   content: ""; width: 14px; height: 14px; flex: 0 0 14px;
-  display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 4px;
+  display: grid; place-items: center; border: 1px solid var(--check-border); border-radius: 4px;
   font-size: 10px; font-weight: 800;
 }
 .quiz-check-label:hover { color: var(--ink); border-color: var(--line-strong); }
@@ -993,17 +996,17 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   opacity: 0; margin: 0; cursor: pointer;
 }
 .quiz-check-label:has(input:checked) {
-  background: rgba(217, 255, 63, .07); border-color: var(--lime-dim); color: var(--ink);
+  background: rgba(217, 255, 63, .045); border-color: rgba(217, 255, 63, .28); color: var(--ink);
   box-shadow: none;
 }
 .quiz-check-label:has(input:checked)::before {
-  content: "✓"; background: var(--lime); border-color: var(--lime); color: var(--bg);
+  content: "✓" / ""; background: var(--lime); border-color: var(--lime); color: var(--bg);
 }
 /* 일부만 선택(indeterminate) — 라임 테두리 + 투명 배경 */
 .quiz-check-label:has(input:indeterminate) {
-  background: transparent; border-color: var(--lime); color: var(--ink); box-shadow: none;
+  background: transparent; border-color: var(--lime-dim); color: var(--ink); box-shadow: none;
 }
-.quiz-check-label:has(input:indeterminate)::before { content: "−"; border-color: var(--lime); color: var(--lime); }
+.quiz-check-label:has(input:indeterminate)::before { content: "−" / ""; border-color: var(--lime); color: var(--lime); }
 .quiz-check-label:has(input:focus-visible) { outline: 2px solid var(--lime); outline-offset: 2px; }
 /* 문제 행 선택용 — 히트 영역과 실제 체크 표식을 분리 */
 .quiz-check-box { width: 28px; height: 28px; padding: 4px; flex-shrink: 0; border-color: transparent; }
@@ -1011,6 +1014,8 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   background: transparent; border-color: transparent; box-shadow: none;
 }
 .quiz-check-box::before { width: 18px; height: 18px; flex-basis: 18px; }
+/* 문제 행 체크는 라임 ✓ 글리프만 — 채워진 사각형(칩)과 구분 */
+.quiz-check-box:has(input:checked)::before { background: transparent; border-color: var(--check-border); color: var(--lime); }
 
 /* 파일(자료)별 문제 그룹 — 드롭다운 헤더 */
 .quiz-file-group { margin-top: 10px; }
@@ -1018,10 +1023,10 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .quiz-file-head {
   display: flex; align-items: center; gap: 10px; width: 100%;
   padding: 10px 12px; background: var(--panel-2);
-  border: 1px solid var(--line); border-radius: 8px;
+  border: 1px solid var(--line); border-radius: 6px;
   color: var(--ink);
 }
-.quiz-file-head:hover { border-color: var(--lime); }
+.quiz-file-head:hover { border-color: var(--line-strong); background: rgba(217, 255, 63, .03); }
 .quiz-file-toggle {
   min-width: 0; flex: 1; display: flex; align-items: center; gap: 10px;
   padding: 0; border: 0; background: none; color: inherit; font: inherit;
@@ -1382,7 +1387,7 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
 }
 .exam-item-row::before {
   content: ""; width: 16px; height: 16px; margin-top: 2px; flex: 0 0 16px;
-  display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 4px;
+  display: grid; place-items: center; border: 1px solid var(--check-border); border-radius: 4px;
   color: var(--bg); font-family: var(--disp); font-size: 11px; font-weight: 800;
 }
 .exam-item-row:hover { background: rgba(217, 255, 63, .03); }
@@ -1395,7 +1400,7 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
 .exam-item-row:has(input:checked) {
   background: rgba(217, 255, 63, .045); border-color: rgba(217, 255, 63, .28);
 }
-.exam-item-row:has(input:checked)::before { content: "✓"; background: var(--lime); border-color: var(--lime); }
+.exam-item-row:has(input:checked)::before { content: "✓" / ""; background: var(--lime); border-color: var(--lime); }
 .exam-item-row:has(input:focus-visible) { outline: 2px solid var(--lime); outline-offset: 2px; }
 .exam-item-task { font-size: 14px; color: var(--ink-2); line-height: 1.55; }
 .exam-item-task.done { text-decoration: line-through; color: var(--ink-3); }
@@ -1484,12 +1489,12 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
   }
   .quiz-check-box::before {
     content: ""; width: 20px; height: 20px; flex: 0 0 20px;
-    display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 6px;
+    display: grid; place-items: center; border: 1px solid var(--check-border); border-radius: 6px;
   }
   .quiz-check-box:has(input:checked)::before {
-    content: "✓"; background: var(--lime); border-color: var(--lime); color: var(--bg); font-weight: 800;
+    content: "✓" / ""; background: transparent; border-color: var(--line-strong); color: var(--lime); font-weight: 800;
   }
-  .quiz-check-box:has(input:indeterminate)::before { content: "−"; border-color: var(--lime); color: var(--lime); }
+  .quiz-check-box:has(input:indeterminate)::before { content: "−" / ""; border-color: var(--lime); color: var(--lime); }
   .del-btn { min-width: 44px; min-height: 44px; margin: -13px -10px; }
   .subj-del { opacity: 1; }
 }
