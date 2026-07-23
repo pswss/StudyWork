@@ -364,6 +364,140 @@ describe("문제 추출 라우트 (파일 → questions 직행)", () => {
     expect(listed).toMatchObject({ question_count: 3, explained_count: 3 });
   });
 
+  it("단원마다 번호가 다시 시작하면 원문 순서·번호·정답을 전부 확인해 원자 연결", async () => {
+    const upload = new FormData();
+    upload.append("title", `반복 번호 해설 ${Date.now()}`);
+    upload.append("file", png("반복-번호-문제.png", pngBytes(725)));
+    const uploaded = await call(env, `/api/subjects/${subjectId}/books`, {
+      method: "POST",
+      headers: { cookie },
+      body: upload,
+    });
+    const target = await uploaded.json() as { id: number };
+    await waitReady(target.id);
+    const questions = (await questionsOf(target.id)).sort((a, b) => a.id - b.id);
+    await env.DB.batch(questions.map((question, index) => env.DB.prepare(
+      "UPDATE questions SET printed_number = ?, src_page = ?, explanation = '' WHERE id = ?"
+    ).bind(["1", "2", "1"][index], index + 1, question.id)));
+
+    try {
+      mockState.solutions = [
+        { number: "1", answer: "3", explanation: "다음 단원 1번 풀이", page: 3, complete: true },
+        { number: "1", answer: "3", explanation: "첫 단원 1번 풀이", page: 1, complete: true },
+        { number: "2", answer: "o", explanation: "첫 단원 2번 풀이", page: 2, complete: true },
+      ];
+      const success = new FormData();
+      success.append("file", png("반복-번호-해설.png", pngBytes(726)));
+      const accepted = await call(env, `/api/subjects/${subjectId}/books/${target.id}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: success,
+      });
+      expect(accepted.status).toBe(202);
+      const { jobId } = await accepted.json() as { jobId: number };
+      expect(await waitAIJob(jobId)).toMatchObject({
+        status: "ready",
+        result: { updated: 3, matched: 3 },
+      });
+      expect((await questionsOf(target.id)).sort((a, b) => a.id - b.id)
+        .map((question) => question.explanation)).toEqual([
+        "첫 단원 1번 풀이",
+        "첫 단원 2번 풀이",
+        "다음 단원 1번 풀이",
+      ]);
+
+      await env.DB.prepare("UPDATE questions SET explanation = '' WHERE book_id = ?").bind(target.id).run();
+      mockState.solutions = [
+        { number: "1", answer: "3", explanation: "저장되면 안 됨 1", page: 1, complete: true },
+        { number: "1", answer: "o", explanation: "저장되면 안 됨 2", page: 2, complete: true },
+        { number: "2", answer: "3", explanation: "저장되면 안 됨 3", page: 3, complete: true },
+      ];
+      const mismatch = new FormData();
+      mismatch.append("file", png("반복-번호-순서-오류.png", pngBytes(727)));
+      const rejected = await call(env, `/api/subjects/${subjectId}/books/${target.id}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: mismatch,
+      });
+      const failedJob = await rejected.json() as { jobId: number };
+      expect(await waitAIJob(failedJob.jobId)).toMatchObject({
+        status: "error",
+        error: expect.stringContaining("문제 번호 순서 불일치"),
+      });
+      expect((await questionsOf(target.id)).every((question) => question.explanation === "")).toBe(true);
+
+      mockState.solutions = [
+        { number: "1", answer: "3", explanation: "저장되면 안 됨 1", page: 1, complete: true },
+        { number: "2", answer: "x", explanation: "저장되면 안 됨 2", page: 2, complete: true },
+        { number: "1", answer: "3", explanation: "저장되면 안 됨 3", page: 3, complete: true },
+      ];
+      const wrongAnswer = new FormData();
+      wrongAnswer.append("file", png("반복-번호-정답-오류.png", pngBytes(728)));
+      const wrongAnswerAccepted = await call(env, `/api/subjects/${subjectId}/books/${target.id}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: wrongAnswer,
+      });
+      const wrongAnswerJob = await wrongAnswerAccepted.json() as { jobId: number };
+      expect(await waitAIJob(wrongAnswerJob.jobId)).toMatchObject({
+        status: "error",
+        error: expect.stringContaining("정답 불일치"),
+      });
+      expect((await questionsOf(target.id)).every((question) => question.explanation === "")).toBe(true);
+
+      await env.DB.prepare("UPDATE questions SET src_page = 1 WHERE id = ?").bind(questions[2].id).run();
+      const ambiguous = new FormData();
+      ambiguous.append("file", png("반복-번호-위치-모호.png", pngBytes(729)));
+      const blocked = await call(env, `/api/subjects/${subjectId}/books/${target.id}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: ambiguous,
+      });
+      expect(blocked.status).toBe(409);
+      expect(await blocked.json()).toEqual({
+        error: "반복되는 문제 번호의 원본 페이지 순서를 확인할 수 없습니다",
+      });
+    } finally {
+      mockState.solutions = [
+        { number: "①", answer: "3", explanation: "공식 해설 1", page: 1, complete: true },
+        { number: "２번", answer: "o", explanation: "공식 해설 2", page: 1, complete: true },
+        { number: "문제 3.", answer: "3", explanation: "공식 해설 3", page: 1, complete: true },
+      ];
+      await call(env, `/api/books/${target.id}`, { method: "DELETE", headers: { cookie } });
+    }
+  });
+
+  it("해설 분석 중인 문제집의 문항 삭제를 막아 스냅샷을 보존", async () => {
+    const target = (await questionsOf(bookId))[0];
+    let jobId: number | null = null;
+    mockState.solutionDelay = 50;
+    try {
+      const fd = new FormData();
+      fd.append("file", png("삭제-경합-해설.png", pngBytes(730)));
+      const accepted = await call(env, `/api/subjects/${subjectId}/books/${bookId}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: fd,
+      });
+      expect(accepted.status).toBe(202);
+      jobId = ((await accepted.json()) as { jobId: number }).jobId;
+
+      const blocked = await call(env, `/api/questions/${target.id}`, {
+        method: "DELETE",
+        headers: { cookie },
+      });
+      expect(blocked.status).toBe(409);
+      expect(await blocked.json()).toEqual({
+        error: "문제집 작업이 끝난 뒤 문제를 삭제해 주세요",
+      });
+      expect((await questionsOf(bookId)).some((question) => question.id === target.id)).toBe(true);
+      expect(await waitAIJob(jobId)).toMatchObject({ status: "ready" });
+    } finally {
+      mockState.solutionDelay = 0;
+      if (jobId !== null) await waitAIJob(jobId);
+    }
+  });
+
   it("정답-only 항목은 저장 수에 포함하지 않고 실제 해설만 채움", async () => {
     const upload = new FormData();
     upload.append("title", `정답-only 해설 ${Date.now()}`);

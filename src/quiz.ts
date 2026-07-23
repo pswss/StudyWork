@@ -4,7 +4,7 @@ import type { Env } from "./index";
 import { generateQuestions, type QuizQuestion } from "./claude";
 import { checkAndIncrementUsage } from "./usage";
 import { createAIJob, readyAIJobStatement, runAIJob } from "./ai-jobs";
-import { isCurrentJob, startJob } from "./jobs";
+import { activeBookMutations, activeSolutionBooks, isCurrentJob, startJob } from "./jobs";
 
 export const quizRoutes = new Hono<{ Bindings: Env }>();
 
@@ -332,8 +332,20 @@ quizRoutes.post("/questions/:id/answer", async (c) => {
 
 // ── DELETE /api/questions/:id ────────────────────────────────────────────────
 quizRoutes.delete("/questions/:id", async (c) => {
-  await c.env.DB.prepare("DELETE FROM questions WHERE id = ?").bind(c.req.param("id")).run();
-  return c.json({ ok: true });
+  const id = c.req.param("id");
+  const question = await c.env.DB.prepare("SELECT book_id FROM questions WHERE id = ?")
+    .bind(id).first<{ book_id: number | null }>();
+  const bookId = question?.book_id;
+  if (bookId && (activeSolutionBooks.has(bookId) || activeBookMutations.has(bookId))) {
+    return c.json({ error: "문제집 작업이 끝난 뒤 문제를 삭제해 주세요" }, 409);
+  }
+  if (bookId) activeBookMutations.add(bookId);
+  try {
+    await c.env.DB.prepare("DELETE FROM questions WHERE id = ?").bind(id).run();
+    return c.json({ ok: true });
+  } finally {
+    if (bookId) activeBookMutations.delete(bookId);
+  }
 });
 
 // ── 채점 로직 ────────────────────────────────────────────────────────────────

@@ -16,6 +16,8 @@ interface JobState {
 }
 
 const jobs = new Map<string, JobState>();
+export const activeSolutionBooks = new Set<number>();
+export const activeBookMutations = new Set<number>();
 
 export function startJob(key: string): JobToken {
   const previous = jobs.get(key);
@@ -47,4 +49,6 @@ export function finishJob(token: JobToken): void {
 export function resetJobsForTest(): void {
   for (const state of jobs.values()) state.controller.abort();
   jobs.clear();
+  activeSolutionBooks.clear();
+  activeBookMutations.clear();
 }

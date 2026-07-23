@@ -1333,6 +1333,7 @@ export async function extractSolutionsFromFile(
     `Rules:\n` +
     `- Emit entries only from the detailed official solution/explanation section. Never emit exercise/problem blocks.\n` +
     `- A page can have a compact quick-answer table above detailed solutions. Ignore the table rows but include the numbered worked-solution blocks.\n` +
+    `- If a later unit restarts the printed numbering, emit every repeated number again in document order. Never deduplicate across units.\n` +
     `- number: output only the visible printed problem number as ASCII digits, e.g. "17". Normalize Q17, [17], and 17번 문제 to "17". Never emit an unlabeled continuation or an item whose label is not visible.\n` +
     `- answer: the official final answer. Never solve or invent an answer.\n` +
     `- explanation: copy the complete official reasoning in Korean with formulas in LaTeX. Never summarize or invent steps. Use "" only when a labeled entry inside the detailed solution section genuinely prints an answer without any reasoning.\n` +

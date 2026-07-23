@@ -17,7 +17,10 @@ import {
 } from "./claude";
 import { checkAndIncrementUsage } from "./usage";
 import { detectImageMime, validateUpload, type ValidatedUpload } from "./upload";
-import { cancelJob, finishJob, isCurrentJob, startJob, type JobToken } from "./jobs";
+import {
+  activeBookMutations, activeSolutionBooks,
+  cancelJob, finishJob, isCurrentJob, startJob, type JobToken,
+} from "./jobs";
 import { AIProviderError, AI_MAX_FILE_BYTES } from "./codex-provider";
 import { createAIJob, readyAIJobStatement, runAIJob } from "./ai-jobs";
 import { gradeAnswer } from "./quiz";
@@ -38,9 +41,6 @@ export const MAX_AUTO_BOOK_RETRIES = 3;
 // 같은 fileId의 구 잡과 재시도 잡이 겹치면 취소 표식을 공유해 서로의 결과를 저장할 수 있다.
 // 프로세스 안에서 실행 중인 잡을 별도로 추적해, 완전히 끝나기 전 재시도를 막는다.
 const activeBookJobs = new Set<number>();
-const activeSolutionBooks = new Set<number>();
-// 기존 문제집에 파일을 추가하는 동안 같은 문제집의 해설 병합이 시작되는 틈을 막는다.
-const activeBookMutations = new Set<number>();
 const answerReferenceCache = new Map<number, number[]>();
 
 export function clearBookExtractionCache(fileId: number): void {
@@ -1402,9 +1402,9 @@ bookRoutes.post("/subjects/:subjectId/books/:bookId/explanations", async (c) => 
     if (processing) return c.json({ error: "문제 추출이 끝난 뒤 해설을 추가해 주세요" }, 409);
 
     const { results: questions } = await c.env.DB.prepare(
-      `SELECT id, qtype, choices, answer, explanation, book_number, printed_number, src_file_id
+      `SELECT id, qtype, choices, answer, explanation, book_number, printed_number, src_file_id, src_page
        FROM questions WHERE book_id = ?
-       ORDER BY CAST(book_number AS INTEGER), book_number, id`
+       ORDER BY COALESCE(src_page, 2147483647), id`
     ).bind(bookId).all<{
       id: number;
       qtype: string;
@@ -1414,18 +1414,32 @@ bookRoutes.post("/subjects/:subjectId/books/:bookId/explanations", async (c) => 
       book_number: string | null;
       printed_number: string | null;
       src_file_id: number | null;
+      src_page: number | null;
     }>();
     if (questions.length === 0) return c.json({ error: "먼저 문제 추출을 완료해 주세요" }, 409);
     if (questions[0].src_file_id === null || new Set(questions.map((question) => question.src_file_id)).size !== 1) {
       return c.json({ error: "여러 문제 파일을 합친 문제집은 아직 해설 자동 연결을 지원하지 않습니다" }, 409);
     }
     const questionsByLocator = new Map<number, (typeof questions)[number]>();
+    let hasDuplicateLocators = false;
     for (const question of questions) {
       const locator = numericPrintedLocator(question.printed_number);
-      if (locator === null || questionsByLocator.has(locator)) {
+      if (locator === null) {
         return c.json({ error: "문제 원본을 재추출해 실제 인쇄 번호를 확인한 뒤 해설을 추가해 주세요" }, 409);
       }
-      questionsByLocator.set(locator, question);
+      if (questionsByLocator.has(locator)) hasDuplicateLocators = true;
+      else questionsByLocator.set(locator, question);
+    }
+    if (hasDuplicateLocators) {
+      const positions = new Set<string>();
+      for (const question of questions) {
+        const locator = numericPrintedLocator(question.printed_number)!;
+        const position = question.src_page === null ? null : `${question.src_page}|${locator}`;
+        if (position === null || positions.has(position)) {
+          return c.json({ error: "반복되는 문제 번호의 원본 페이지 순서를 확인할 수 없습니다" }, 409);
+        }
+        positions.add(position);
+      }
     }
 
     if (!(await checkAndIncrementUsage(c.env.DB))) {
@@ -1445,30 +1459,59 @@ bookRoutes.post("/subjects/:subjectId/books/:bookId/explanations", async (c) => 
           job.signal
         );
         if (!isCurrentJob(job)) throw new Error("사용자 중단");
-        const solutionsByLocator = new Map<number, SolutionItem>();
-        for (const solution of solutions) {
-          const locator = numericPrintedLocator(solution.number);
-          if (locator === null) throw new Error(`문제 번호를 읽을 수 없습니다: ${solution.number}`);
-          const question = questionsByLocator.get(locator);
-          if (!question) throw new Error(`문제집에 없는 ${locator}번 해설이 포함되어 있습니다`);
-          if (!gradeAnswer(question.qtype, question.answer, solution.answer, question.choices)) {
-            throw new Error(`정답 불일치: ${locator}번 문항`);
+        if (solutions.length === 0) throw new Error("해설 항목을 찾지 못했습니다");
+        let matched: { question: (typeof questions)[number]; solution: SolutionItem }[];
+        if (hasDuplicateLocators) {
+          if (solutions.length !== questions.length) {
+            throw new Error(`문항 수 불일치: 문제 ${questions.length}개, 검증된 해설 ${solutions.length}개`);
           }
-          const previous = solutionsByLocator.get(locator);
-          if (!previous || solution.explanation.trim().length > previous.explanation.trim().length) {
-            solutionsByLocator.set(locator, solution);
+          const orderedSolutions = [...solutions].sort((a, b) => a.page - b.page);
+          const positions = new Set<string>();
+          matched = orderedSolutions.map((solution, index) => {
+            const locator = numericPrintedLocator(solution.number);
+            if (locator === null) throw new Error(`문제 번호를 읽을 수 없습니다: ${solution.number}`);
+            const position = `${solution.page}|${locator}`;
+            if (positions.has(position)) {
+              throw new Error(`문제 번호 위치가 모호합니다: 해설 ${solution.page}쪽 ${locator}번`);
+            }
+            positions.add(position);
+            const question = questions[index];
+            const expected = numericPrintedLocator(question.printed_number);
+            if (locator !== expected) {
+              throw new Error(`문제 번호 순서 불일치: ${index + 1}번째 해설은 ${expected}번이어야 합니다`);
+            }
+            if (!gradeAnswer(question.qtype, question.answer, solution.answer, question.choices)) {
+              throw new Error(`정답 불일치: ${index + 1}번째 ${locator}번 문항`);
+            }
+            return { question, solution };
+          });
+        } else {
+          const solutionsByLocator = new Map<number, SolutionItem>();
+          for (const solution of solutions) {
+            const locator = numericPrintedLocator(solution.number);
+            if (locator === null) throw new Error(`문제 번호를 읽을 수 없습니다: ${solution.number}`);
+            const question = questionsByLocator.get(locator);
+            if (!question) throw new Error(`문제집에 없는 ${locator}번 해설이 포함되어 있습니다`);
+            if (!gradeAnswer(question.qtype, question.answer, solution.answer, question.choices)) {
+              throw new Error(`정답 불일치: ${locator}번 문항`);
+            }
+            const previous = solutionsByLocator.get(locator);
+            if (!previous || solution.explanation.trim().length > previous.explanation.trim().length) {
+              solutionsByLocator.set(locator, solution);
+            }
           }
+          if (solutionsByLocator.size !== questions.length) {
+            throw new Error(`문항 수 불일치: 문제 ${questions.length}개, 검증된 해설 ${solutionsByLocator.size}개`);
+          }
+          matched = [...solutionsByLocator.entries()].map(([locator, solution]) => ({
+            question: questionsByLocator.get(locator)!,
+            solution,
+          }));
         }
-        if (solutionsByLocator.size === 0) throw new Error("해설 항목을 찾지 못했습니다");
-        if (solutionsByLocator.size !== questions.length) {
-          throw new Error(`문항 수 불일치: 문제 ${questions.length}개, 검증된 해설 ${solutionsByLocator.size}개`);
-        }
-        const detailed = [...solutionsByLocator.entries()]
-          .filter(([, solution]) => solution.explanation.trim());
+        const detailed = matched.filter(({ solution }) => solution.explanation.trim());
         if (detailed.length === 0) throw new Error("상세 해설 내용을 찾지 못했습니다");
 
-        const writes = detailed.flatMap(([locator, solution]) => {
-          const question = questionsByLocator.get(locator)!;
+        const writes = detailed.flatMap(({ question, solution }) => {
           return question.explanation.trim() ? [] : [
             c.env.DB.prepare(
               "UPDATE questions SET explanation = ? WHERE id = ? AND book_id = ? AND trim(explanation) = ''"
@@ -1479,8 +1522,8 @@ bookRoutes.post("/subjects/:subjectId/books/:bookId/explanations", async (c) => 
           writes,
           completion: readyAIJobStatement(c.env.DB, jobId, {
             updated: writes.length,
-            matched: solutionsByLocator.size,
-            answerOnly: solutionsByLocator.size - detailed.length,
+            matched: matched.length,
+            answerOnly: matched.length - detailed.length,
             bookId,
           }),
         };
