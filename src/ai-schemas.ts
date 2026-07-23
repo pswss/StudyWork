@@ -50,6 +50,7 @@ export const QUIZ_FILE_ITEMS_SCHEMA = arrayEnvelope(
     type: "object",
     properties: {
       ...(quizItem.properties as Record<string, unknown>),
+      number: { type: ["string", "null"] },
       choiceCount: { type: ["integer", "null"], minimum: 2, maximum: 10 },
       page: { type: ["integer", "null"] },
       figure: { type: "boolean" },
@@ -61,7 +62,7 @@ export const QUIZ_FILE_ITEMS_SCHEMA = arrayEnvelope(
         maxItems: 2,
       },
     },
-    required: [...(quizItem.required as string[]), "choiceCount", "page", "figure", "figure_description", "box"],
+    required: [...(quizItem.required as string[]), "number", "choiceCount", "page", "figure", "figure_description", "box"],
     additionalProperties: false,
   }
 );

@@ -23,6 +23,7 @@ const mockState = vi.hoisted(() => ({
   failProblemSliceBase: null as number | null,
   failProblemContentPageCount: null as number | null,
   changedAnswerMode: false,
+  problemNumberOffset: 0,
   failProblemProviderCode: null as "auth" | "invalid_config" | "invalid_file" | "file_too_large" | "rate_limit" | null,
   boundaryVariantMode: false,
   outerBoundaryVariantMode: false,
@@ -30,6 +31,8 @@ const mockState = vi.hoisted(() => ({
   problemCalls: 0,
   materialCalls: 0,
   answerDetectionCalls: 0,
+  detailedSolutionDetectionCalls: 0,
+  detailedSolutionPages: null as number[] | null,
   solutionCalls: 0,
   solutionDelay: 0,
   solutionBoundaryMode: false,
@@ -67,6 +70,14 @@ vi.mock("../src/claude", async (importOriginal) => {
     const pdf = await PDFDocument.load(readFileSync(path));
     const last = sliceBase + pdf.getPageCount() - 1;
     return last > sliceBase ? [last - 1, last] : [last];
+  },
+  detectDetailedSolutionPagesFromFile: async (path: string, sliceBase: number) => {
+    mockState.detailedSolutionDetectionCalls++;
+    const pdf = await PDFDocument.load(readFileSync(path));
+    const last = sliceBase + pdf.getPageCount() - 1;
+    const pages = mockState.detailedSolutionPages
+      ?? Array.from({ length: last - sliceBase + 1 }, (_, index) => sliceBase + index);
+    return pages.filter((page) => page >= sliceBase && page <= last);
   },
   extractSolutionsFromFile: async (
     _path: string,
@@ -160,9 +171,9 @@ vi.mock("../src/claude", async (importOriginal) => {
     }
     const suffix = opts?.sliceBase ? ` ${opts.sliceBase}` : "";
     return [
-      { qtype: "short", difficulty: "중", question: `y=2(x-3)^2+5 의 꼭짓점은?${suffix}`, choices: null, answer: mockState.changedAnswerMode ? "②" : "③", explanation: mockState.changedAnswerMode ? "" : "꼭짓점은 (3,5).", page: 2, figure: true, figure_description: "x축과 y축이 있는 좌표평면에 꼭짓점 (3, 5)인 위로 열린 포물선이 표시되어 있다.", box: [0.2, 0.5] },
-      { qtype: "ox", difficulty: "하", question: `a>0 이면 포물선은 위로 열린다.${suffix}`, choices: null, answer: "o", explanation: "", page: 2, figure: false, figure_description: null, box: null },
-      { qtype: "mcq", difficulty: "상", question: `다음 중 옳은 것은?${suffix}`, choices: ["①x", "②y", "③z"], answer: "③", explanation: "z가 옳다.", page: 3, figure: false, figure_description: null, box: null },
+      { number: String(mockState.problemNumberOffset + 1), qtype: "short", difficulty: "중", question: `y=2(x-3)^2+5 의 꼭짓점은?${suffix}`, choices: null, answer: mockState.changedAnswerMode ? "②" : "③", explanation: mockState.changedAnswerMode ? "" : "꼭짓점은 (3,5).", page: 2, figure: true, figure_description: "x축과 y축이 있는 좌표평면에 꼭짓점 (3, 5)인 위로 열린 포물선이 표시되어 있다.", box: [0.2, 0.5] },
+      { number: String(mockState.problemNumberOffset + 2), qtype: "ox", difficulty: "하", question: `a>0 이면 포물선은 위로 열린다.${suffix}`, choices: null, answer: "o", explanation: "", page: 2, figure: false, figure_description: null, box: null },
+      { number: String(mockState.problemNumberOffset + 3), qtype: "mcq", difficulty: "상", question: `다음 중 옳은 것은?${suffix}`, choices: ["①x", "②y", "③z"], answer: "③", explanation: "z가 옳다.", page: 3, figure: false, figure_description: null, box: null },
     ];
   },
   };
@@ -295,6 +306,33 @@ describe("문제 추출 라우트 (파일 → questions 직행)", () => {
     expect(quiz.some((q) => q.has_figure === true && q.figure_description.includes("좌표평면"))).toBe(true);
   });
 
+  it("추출한 실제 인쇄 번호를 합성 배열 순번 대신 저장", async () => {
+    mockState.problemNumberOffset = 10;
+    try {
+      const fd = new FormData();
+      fd.append("title", `인쇄 번호 ${Date.now()}`);
+      fd.append("file", png("인쇄-번호.png", pngBytes(713)));
+      const res = await call(env, `/api/subjects/${subjectId}/books`, {
+        method: "POST",
+        headers: { cookie },
+        body: fd,
+      });
+      const target = await res.json() as { id: number };
+      await waitReady(target.id);
+      expect((await questionsOf(target.id)).map((question) => ({
+        book: question.book_number,
+        printed: question.printed_number,
+      }))).toEqual([
+        { book: "11", printed: "11" },
+        { book: "12", printed: "12" },
+        { book: "13", printed: "13" },
+      ]);
+      await call(env, `/api/books/${target.id}`, { method: "DELETE", headers: { cookie } });
+    } finally {
+      mockState.problemNumberOffset = 0;
+    }
+  });
+
   it("선택한 기존 문제집에 공식 해설만 원자적으로 추가", async () => {
     const before = await questionsOf(bookId);
     await env.DB.prepare(
@@ -324,6 +362,147 @@ describe("문제 추출 라우트 (파일 → questions 직행)", () => {
     });
     const listed = (await getBooks()).find((book) => book.id === bookId);
     expect(listed).toMatchObject({ question_count: 3, explained_count: 3 });
+  });
+
+  it("정답-only 항목은 저장 수에 포함하지 않고 실제 해설만 채움", async () => {
+    const upload = new FormData();
+    upload.append("title", `정답-only 해설 ${Date.now()}`);
+    upload.append("file", png("정답-only-문제.png", pngBytes(719)));
+    const uploaded = await call(env, `/api/subjects/${subjectId}/books`, {
+      method: "POST",
+      headers: { cookie },
+      body: upload,
+    });
+    const target = await uploaded.json() as { id: number };
+    await waitReady(target.id);
+    await env.DB.prepare("UPDATE questions SET explanation = '' WHERE book_id = ?").bind(target.id).run();
+
+    mockState.solutions = [
+      { number: "1", answer: "3", explanation: "", page: 1, complete: true },
+      { number: "2", answer: "o", explanation: "공식 상세 풀이", page: 1, complete: true },
+      { number: "3", answer: "3", explanation: "", page: 1, complete: true },
+    ];
+    try {
+      const fd = new FormData();
+      fd.append("file", png("정답-only-해설.png", pngBytes(718)));
+      const res = await call(env, `/api/subjects/${subjectId}/books/${target.id}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: fd,
+      });
+      const { jobId } = await res.json() as { jobId: number };
+      expect(await waitAIJob(jobId)).toMatchObject({
+        status: "ready",
+        result: { updated: 1, matched: 3, answerOnly: 2 },
+      });
+      expect((await questionsOf(target.id)).map((question) => question.explanation)).toEqual([
+        "",
+        "공식 상세 풀이",
+        "",
+      ]);
+    } finally {
+      mockState.solutions = [
+        { number: "①", answer: "3", explanation: "공식 해설 1", page: 1, complete: true },
+        { number: "２번", answer: "o", explanation: "공식 해설 2", page: 1, complete: true },
+        { number: "문제 3.", answer: "3", explanation: "공식 해설 3", page: 1, complete: true },
+      ];
+      await call(env, `/api/books/${target.id}`, { method: "DELETE", headers: { cookie } });
+    }
+  });
+
+  it("정답-only 번호가 섞여도 번호 기준으로 밀림 없이 실제 해설만 연결", async () => {
+    const upload = new FormData();
+    upload.append("title", `부분 해설 ${Date.now()}`);
+    upload.append("file", png("부분-해설-문제.png", pngBytes(717)));
+    const uploaded = await call(env, `/api/subjects/${subjectId}/books`, {
+      method: "POST",
+      headers: { cookie },
+      body: upload,
+    });
+    const target = await uploaded.json() as { id: number };
+    await waitReady(target.id);
+    await env.DB.prepare("UPDATE questions SET explanation = '' WHERE book_id = ?").bind(target.id).run();
+
+    mockState.solutions = [
+      { number: "3", answer: "3", explanation: "3번 상세 풀이", page: 1, complete: true },
+      { number: "1", answer: "3", explanation: "", page: 1, complete: true },
+      { number: "2", answer: "o", explanation: "2번 상세 풀이", page: 1, complete: true },
+    ];
+    try {
+      const fd = new FormData();
+      fd.append("file", png("부분-해설.png", pngBytes(716)));
+      const res = await call(env, `/api/subjects/${subjectId}/books/${target.id}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: fd,
+      });
+      const { jobId } = await res.json() as { jobId: number };
+      expect(await waitAIJob(jobId)).toMatchObject({
+        status: "ready",
+        result: { updated: 2, matched: 3, answerOnly: 1 },
+      });
+      expect((await questionsOf(target.id)).map((question) => question.explanation)).toEqual([
+        "",
+        "2번 상세 풀이",
+        "3번 상세 풀이",
+      ]);
+    } finally {
+      mockState.solutions = [
+        { number: "①", answer: "3", explanation: "공식 해설 1", page: 1, complete: true },
+        { number: "２번", answer: "o", explanation: "공식 해설 2", page: 1, complete: true },
+        { number: "문제 3.", answer: "3", explanation: "공식 해설 3", page: 1, complete: true },
+      ];
+      await call(env, `/api/books/${target.id}`, { method: "DELETE", headers: { cookie } });
+    }
+  });
+
+  it("일부 번호·정답만 맞는 불완전 파일은 해설로 연결하지 않음", async () => {
+    const before = (await questionsOf(bookId)).map((question) => question.explanation);
+    mockState.solutions = [
+      { number: "2", answer: "o", explanation: "다른 책에서 우연히 맞은 풀이", page: 1, complete: true },
+    ];
+    try {
+      const fd = new FormData();
+      fd.append("file", png("부분-오탐-해설.png", pngBytes(714)));
+      const res = await call(env, `/api/subjects/${subjectId}/books/${bookId}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: fd,
+      });
+      const { jobId } = await res.json() as { jobId: number };
+      expect(await waitAIJob(jobId)).toMatchObject({
+        status: "error",
+        error: expect.stringContaining("문항 수 불일치"),
+      });
+      expect((await questionsOf(bookId)).map((question) => question.explanation)).toEqual(before);
+    } finally {
+      mockState.solutions = [
+        { number: "①", answer: "3", explanation: "공식 해설 1", page: 1, complete: true },
+        { number: "２번", answer: "o", explanation: "공식 해설 2", page: 1, complete: true },
+        { number: "문제 3.", answer: "3", explanation: "공식 해설 3", page: 1, complete: true },
+      ];
+    }
+  });
+
+  it("과거 합성 순번은 인쇄 번호 provenance로 신뢰하지 않음", async () => {
+    await env.DB.prepare("UPDATE questions SET printed_number = NULL WHERE book_id = ?").bind(bookId).run();
+    try {
+      const fd = new FormData();
+      fd.append("file", png("합성-순번-해설.png", pngBytes(712)));
+      const res = await call(env, `/api/subjects/${subjectId}/books/${bookId}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: fd,
+      });
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({
+        error: "문제 원본을 재추출해 실제 인쇄 번호를 확인한 뒤 해설을 추가해 주세요",
+      });
+    } finally {
+      await env.DB.prepare(
+        "UPDATE questions SET printed_number = book_number WHERE book_id = ?"
+      ).bind(bookId).run();
+    }
   });
 
   it("해설 수나 정답 순서가 다르면 기존 해설을 하나도 바꾸지 않음", async () => {
@@ -426,6 +605,69 @@ describe("문제 추출 라우트 (파일 → questions 직행)", () => {
       mockState.failedSolutionSliceBases.clear();
       mockState.solutionInputs = [];
       await call(env, `/api/books/${target.id}`, { method: "DELETE", headers: { cookie } });
+    }
+  });
+
+  it("문제+해설 합본 PDF는 실제 상세 해설이 있는 뒤쪽 구간만 분석", async () => {
+    const upload = new FormData();
+    upload.append("title", `합본 해설 대상 ${Date.now()}`);
+    upload.append("file", png("합본-문제.png", pngBytes(715)));
+    const uploaded = await call(env, `/api/subjects/${subjectId}/books`, {
+      method: "POST",
+      headers: { cookie },
+      body: upload,
+    });
+    const target = await uploaded.json() as { id: number };
+    await waitReady(target.id);
+
+    const pdf = await PDFDocument.create();
+    for (let page = 0; page < 30; page++) pdf.addPage([100, 100]);
+    const bytes = await pdf.save();
+    mockState.detailedSolutionPages = [25, 26, 27, 28, 29, 30];
+    mockState.solutionInputs = [];
+    try {
+      const fd = new FormData();
+      fd.append("file", new File([new Uint8Array(bytes).buffer], "문제와-해설-합본.pdf", { type: "application/pdf" }));
+      const res = await call(env, `/api/subjects/${subjectId}/books/${target.id}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: fd,
+      });
+      const { jobId } = await res.json() as { jobId: number };
+      expect(await waitAIJob(jobId)).toMatchObject({ status: "ready" });
+      expect(mockState.detailedSolutionDetectionCalls).toBeGreaterThan(0);
+      expect(mockState.solutionInputs.every((input) => input.sliceBase >= 21)).toBe(true);
+      expect(mockState.solutionInputs.map((input) => input.sliceBase)).toEqual([21, 25]);
+    } finally {
+      mockState.detailedSolutionPages = null;
+      mockState.solutionInputs = [];
+      await call(env, `/api/books/${target.id}`, { method: "DELETE", headers: { cookie } });
+    }
+  });
+
+  it("상세 풀이가 없는 PDF는 해설 AI 추출 없이 파일명과 원인을 알림", async () => {
+    const pdf = await PDFDocument.create();
+    for (let page = 0; page < 10; page++) pdf.addPage([100, 100]);
+    const bytes = await pdf.save();
+    mockState.detailedSolutionPages = [];
+    mockState.solutionCalls = 0;
+    try {
+      const fd = new FormData();
+      fd.append("file", new File([new Uint8Array(bytes).buffer], "빠른정답만.pdf", { type: "application/pdf" }));
+      const res = await call(env, `/api/subjects/${subjectId}/books/${bookId}/explanations`, {
+        method: "POST",
+        headers: { cookie },
+        body: fd,
+      });
+      const { jobId } = await res.json() as { jobId: number };
+      expect(await waitAIJob(jobId)).toMatchObject({
+        status: "error",
+        error: expect.stringContaining("빠른정답만.pdf: 상세 해설 페이지를 찾지 못했습니다"),
+      });
+      expect(mockState.solutionCalls).toBe(0);
+    } finally {
+      mockState.detailedSolutionPages = null;
+      mockState.solutionCalls = 0;
     }
   });
 
@@ -998,6 +1240,9 @@ describe("문제 추출 라우트 (파일 → questions 직행)", () => {
     const target = before.find((q) => q.question.includes("꼭짓점"));
     await env.DB.prepare("UPDATE questions SET correct_count = 4, wrong_count = 2 WHERE id = ?")
       .bind(target.id).run();
+    await env.DB.prepare(
+      "INSERT INTO question_attempts (question_id, attempt_id, correct) VALUES (?, ?, 1)"
+    ).bind(target.id, `재추출-ID-${Date.now()}`).run();
 
     mockState.failProblems = true;
     try {
@@ -1018,7 +1263,14 @@ describe("문제 추출 라우트 (파일 → questions 직행)", () => {
     expect(readyBook.files[0].status).toBe("ready");
     const afterSuccess = await questionsOf(bookId);
     expect(afterSuccess).toHaveLength(3);
-    expect(afterSuccess.find((q) => q.question === target.question)).toMatchObject({ correct_count: 4, wrong_count: 2 });
+    expect(afterSuccess.find((q) => q.question === target.question)).toMatchObject({
+      id: target.id,
+      correct_count: 4,
+      wrong_count: 2,
+    });
+    expect(await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM question_attempts WHERE question_id = ?"
+    ).bind(target.id).first()).toEqual({ n: 1 });
   });
 
   it("재추출 지문이 같아도 정답이 바뀌면 기존 공식 해설을 승계하지 않음", async () => {

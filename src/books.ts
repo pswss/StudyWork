@@ -10,8 +10,9 @@ import { dirname, join } from "node:path";
 import { PDFDocument } from "pdf-lib";
 import type { Env } from "./index";
 import {
-  detectAnswerKeyPagesFromFile, extractProblemsFromFile, extractSolutionsFromFile,
-  mapPool, slicePdf, isUsageLimitText,
+  detectAnswerKeyPagesFromFile, detectDetailedSolutionPagesFromFile,
+  extractProblemsFromFile, extractSolutionsFromFile,
+  mapPool, numericPrintedLocator, slicePdf, isUsageLimitText, validatePrintedQuestionSequence,
   ProblemChunkValidationError, type QuizItemEx, type SolutionItem,
 } from "./claude";
 import { checkAndIncrementUsage } from "./usage";
@@ -83,6 +84,14 @@ export function publicBookError(error: unknown): string {
   const chunk = /^(?:사용량 한도로 문제 추출이 중단됨|일부 구간 추출 실패|추출 실패) \(청크 (\d{1,4})\/(\d{1,4})(?: 실패)?\)/.exec(error.message);
   if (chunk) return `문제 추출 실패: 페이지 구간 ${chunk[1]}/${chunk[2]}개`;
   return "문제 추출에 실패했습니다. 재시도해 주세요";
+}
+
+function publicSolutionError(error: unknown): string {
+  if (error instanceof ProblemChunkValidationError) return error.message;
+  if (error instanceof Error && /^(?:상세 해설|문제집에 없는|문제 번호|문항 수|정답|해설 항목)/.test(error.message)) {
+    return error.message;
+  }
+  return publicBookError(error).replace("문제 추출", "해설 분석");
 }
 
 function stableQuestionKey(page: number | null, question: string): string {
@@ -463,18 +472,22 @@ async function extractAllQuestions(
     }
   }
 
-  return { items: [...byKey.values()], failed, chunks, limitHit, autoRetryBlocked, terminalError };
+  const items = [...byKey.values()];
+  if (failed === 0) {
+    try {
+      validatePrintedQuestionSequence(items);
+    } catch (error) {
+      await resetBookChunkCache(env, fileId, chunks);
+      throw new ProblemChunkValidationError(
+        error instanceof Error ? error.message : "인쇄 문제 번호 검증 실패"
+      );
+    }
+  }
+  return { items, failed, chunks, limitHit, autoRetryBlocked, terminalError };
 }
 
 const SOLUTION_OWNERSHIP_PAGES = 4;
 const SOLUTION_LOOKAHEAD_PAGES = 2;
-
-function numericSolutionLocator(value: string): number | null {
-  const match = /^(?:문제\s*)?0*(\d+)(?:\s*번)?\s*[.)]?$/u.exec(value.normalize("NFKC").trim());
-  if (!match) return null;
-  const number = Number(match[1]);
-  return Number.isSafeInteger(number) && number > 0 ? number : null;
-}
 
 async function extractSolutionSlice(
   path: string,
@@ -490,8 +503,26 @@ async function extractSolutionSlice(
         signal,
       });
     } catch (error) {
-      if (attempt >= 1 || signal?.aborted || blocksAutomaticRetry(error)) throw error;
+      if (attempt < 1 && !signal?.aborted && !blocksAutomaticRetry(error)) continue;
+      if (error instanceof ProblemChunkValidationError) {
+        throw new ProblemChunkValidationError(`해설 페이지 ${from}-${to}: ${error.message}`);
+      }
+      throw error;
     }
+  }
+}
+
+async function detectDetailedSolutionPages(absPath: string, signal?: AbortSignal): Promise<number[]> {
+  const scanned = await slicePdf(absPath, CHUNK, CHUNK);
+  if (!scanned) return detectDetailedSolutionPagesFromFile(absPath, 1, signal);
+  try {
+    const parts = await mapPool(scanned.slices, CONCURRENCY, async (slice) => {
+      if (signal?.aborted) throw new Error("사용자 중단");
+      return detectDetailedSolutionPagesFromFile(slice.path, slice.from, signal);
+    });
+    return [...new Set(parts.flat())].sort((a, b) => a - b);
+  } finally {
+    scanned.cleanup();
   }
 }
 
@@ -500,6 +531,10 @@ async function extractAllSolutions(
   isPdf: boolean,
   signal?: AbortSignal
 ): Promise<SolutionItem[]> {
+  const detailedPages = isPdf ? await detectDetailedSolutionPages(absPath, signal) : [];
+  if (isPdf && detailedPages.length === 0) {
+    throw new ProblemChunkValidationError("상세 해설 페이지를 찾지 못했습니다");
+  }
   const sliced = isPdf
     ? await slicePdf(
       absPath,
@@ -509,7 +544,10 @@ async function extractAllSolutions(
     : null;
   if (!sliced) return extractSolutionsFromFile(absPath, isPdf ? "pdf" : "image", { signal });
   try {
-    const parts = await mapPool(sliced.slices, CONCURRENCY, async (slice, index) => {
+    const selected = sliced.slices
+      .map((slice, index) => ({ slice, index }))
+      .filter(({ slice }) => detailedPages.some((page) => page >= slice.from && page <= slice.to));
+    const parts = await mapPool(selected, CONCURRENCY, async ({ slice, index }) => {
       const items = await extractSolutionSlice(slice.path, slice.from, slice.to, signal);
       const nextFrom = sliced.slices[index + 1]?.from;
       // 각 청크는 앞 4쪽만 소유하고 뒤 2쪽은 경계 해설 완성을 위한 lookahead로만 읽는다.
@@ -671,10 +709,11 @@ async function processFile(
     if (!isCurrentJob(job)) return;
 
     // 재추출 전 기존 문제는 계속 제공한다. 새 결과가 완성된 지금 안정키(페이지+정규화 지문)로
-    // 학습 통계를 승계한 뒤, insert→기존 id 삭제→ready 갱신을 한 트랜잭션으로 교체한다.
+    // 같은 행을 갱신해야 question_attempts FK와 학습 이력이 유지된다.
     const { results: existing } = await env.DB.prepare(
       `SELECT id, qtype, choices, answer, question, src_page, book_number,
-              correct_count, wrong_count, explanation
+              correct_count, wrong_count, explanation,
+              (SELECT COUNT(*) FROM question_attempts qa WHERE qa.question_id = questions.id) AS attempt_count
        FROM questions WHERE src_file_id = ?`
     ).bind(fileId).all<{
       id: number;
@@ -687,73 +726,76 @@ async function processFile(
       correct_count: number;
       wrong_count: number;
       explanation: string;
+      attempt_count: number;
     }>();
     if (!isCurrentJob(job)) return;
 
-    const preserved = new Map<string, {
-      correct: number;
-      wrong: number;
-      bookNumber: string | null;
-      explanation: string;
-      explanationQtype: string;
-      explanationAnswer: string;
-      explanationChoices: string | null;
-    }>();
+    const existingByKey = new Map<string, (typeof existing)[number]>();
     for (const q of existing) {
       const key = stableQuestionKey(q.src_page, q.question);
-      const prev = preserved.get(key) ?? {
-        correct: 0,
-        wrong: 0,
-        bookNumber: q.book_number,
-        explanation: "",
-        explanationQtype: q.qtype,
-        explanationAnswer: q.answer,
-        explanationChoices: q.choices,
-      };
-      prev.correct += q.correct_count;
-      prev.wrong += q.wrong_count;
-      prev.bookNumber ??= q.book_number;
-      if (!prev.explanation && q.explanation) {
-        prev.explanation = q.explanation;
-        prev.explanationQtype = q.qtype;
-        prev.explanationAnswer = q.answer;
-        prev.explanationChoices = q.choices;
-      }
-      preserved.set(key, prev);
+      if (existingByKey.has(key)) throw new Error("기존 문제에 중복 안정키가 있어 재추출을 안전하게 적용할 수 없습니다");
+      existingByKey.set(key, q);
     }
 
+    const matchedIds = new Set<number>();
     const statements = items.map((it, i) => {
-      const stats = preserved.get(stableQuestionKey(it.page, it.question));
+      const previous = existingByKey.get(stableQuestionKey(it.page, it.question));
       const answer = normalizeAnswer(it.answer);
-      const preservedExplanation = stats?.explanation
-        && stats.explanationQtype === it.qtype
-        && gradeAnswer(it.qtype, stats.explanationAnswer, answer, stats.explanationChoices)
-        ? stats.explanation
+      const answerCompatible = previous?.qtype === it.qtype
+        && gradeAnswer(it.qtype, previous.answer, answer, previous.choices);
+      if (
+        previous && (previous.correct_count > 0 || previous.wrong_count > 0 || previous.attempt_count > 0)
+        && !answerCompatible
+      ) {
+        throw new Error(`학습 이력이 있는 ${previous.book_number ?? previous.id}번 문항의 정답이 달라 재추출을 중단했습니다`);
+      }
+      const preservedExplanation = previous?.explanation && answerCompatible
+        ? previous.explanation
         : "";
+      const choices = it.choices ? JSON.stringify(it.choices) : null;
+      const printedNumber = numericPrintedLocator(it.number)?.toString() ?? null;
+      const bookNumber = printedNumber ?? previous?.book_number ?? String(i + 1);
+      if (previous) {
+        matchedIds.add(previous.id);
+        return env.DB.prepare(
+          `UPDATE questions
+           SET qtype = ?, difficulty = ?, question = ?, choices = ?, answer = ?, explanation = ?,
+               book_number = ?, printed_number = ?, src_page = ?, has_figure = ?, figure_description = ?, figure_box = ?
+           WHERE id = ?
+             AND EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'processing')`
+        ).bind(
+          it.qtype, it.difficulty, it.question, choices, answer, preservedExplanation || it.explanation,
+          bookNumber, printedNumber, it.page, it.figure ? 1 : 0, it.figure_description, it.box ? it.box.join(",") : null,
+          previous.id, fileId
+        );
+      }
       return env.DB.prepare(
         `INSERT INTO questions
            (subject_id, source, qtype, difficulty, question, choices, answer, explanation,
-            book_id, book_number, src_file_id, src_page, has_figure, figure_description, figure_box,
-            correct_count, wrong_count)
-         SELECT ?, 'uploaded', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            book_id, book_number, printed_number, src_file_id, src_page, has_figure, figure_description, figure_box)
+         SELECT ?, 'uploaded', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
          WHERE EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'processing')`
       ).bind(
-        subjectId, it.qtype, it.difficulty, it.question,
-        it.choices ? JSON.stringify(it.choices) : null,
-        answer, preservedExplanation || it.explanation,
-        bookId, stats?.bookNumber ?? String(i + 1), fileId, it.page,
-        it.figure ? 1 : 0, it.figure_description, it.box ? it.box.join(",") : null,
-        stats?.correct ?? 0, stats?.wrong ?? 0, fileId
+        subjectId, it.qtype, it.difficulty, it.question, choices, answer, it.explanation,
+        bookId, bookNumber, printedNumber, fileId, it.page,
+        it.figure ? 1 : 0, it.figure_description, it.box ? it.box.join(",") : null, fileId
       );
     });
 
-    if (existing.length > 0) {
-      const placeholders = existing.map(() => "?").join(",");
+    const unmatched = existing.filter((question) => !matchedIds.has(question.id));
+    const protectedUnmatched = unmatched.find(
+      (question) => question.correct_count > 0 || question.wrong_count > 0 || question.attempt_count > 0
+    );
+    if (protectedUnmatched) {
+      throw new Error(`학습 이력이 있는 ${protectedUnmatched.book_number ?? protectedUnmatched.id}번 문항을 새 추출에서 찾지 못했습니다`);
+    }
+    if (unmatched.length > 0) {
+      const placeholders = unmatched.map(() => "?").join(",");
       statements.push(
         env.DB.prepare(
           `DELETE FROM questions WHERE id IN (${placeholders})
            AND EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'processing')`
-        ).bind(...existing.map((q) => q.id), fileId)
+        ).bind(...unmatched.map((q) => q.id), fileId)
       );
     }
     // book_files를 ready로 바꾸기 전에 연결 자료의 재시도 상태를 먼저 정리한다.
@@ -1220,7 +1262,7 @@ bookRoutes.post("/subjects/:id/books", async (c) => {
 });
 
 // ── POST /api/subjects/:subjectId/books/:bookId/explanations ─────────────────
-// 문제집과 같은 순서의 공식 해설지 전체를 읽고, 모든 문항 수·정답이 맞을 때만 빈 해설을 채운다.
+// 공식 상세 해설을 인쇄 번호·정답으로 검증한 뒤 해당 번호의 빈 해설만 채운다.
 bookRoutes.post("/subjects/:subjectId/books/:bookId/explanations", async (c) => {
   const rawSubjectId = c.req.param("subjectId");
   const rawBookId = c.req.param("bookId");
@@ -1266,7 +1308,7 @@ bookRoutes.post("/subjects/:subjectId/books/:bookId/explanations", async (c) => 
     if (processing) return c.json({ error: "문제 추출이 끝난 뒤 해설을 추가해 주세요" }, 409);
 
     const { results: questions } = await c.env.DB.prepare(
-      `SELECT id, qtype, choices, answer, explanation, book_number, src_file_id
+      `SELECT id, qtype, choices, answer, explanation, book_number, printed_number, src_file_id
        FROM questions WHERE book_id = ?
        ORDER BY CAST(book_number AS INTEGER), book_number, id`
     ).bind(bookId).all<{
@@ -1276,15 +1318,20 @@ bookRoutes.post("/subjects/:subjectId/books/:bookId/explanations", async (c) => 
       answer: string;
       explanation: string;
       book_number: string | null;
+      printed_number: string | null;
       src_file_id: number | null;
     }>();
     if (questions.length === 0) return c.json({ error: "먼저 문제 추출을 완료해 주세요" }, 409);
     if (questions[0].src_file_id === null || new Set(questions.map((question) => question.src_file_id)).size !== 1) {
       return c.json({ error: "여러 문제 파일을 합친 문제집은 아직 해설 자동 연결을 지원하지 않습니다" }, 409);
     }
-    // ponytail: 인쇄 번호 locator가 아직 없으므로 검증 가능한 단일 원본·전체 순서 매칭만 허용한다.
-    if (questions.some((question, index) => question.book_number !== String(index + 1))) {
-      return c.json({ error: "문제 순서를 확인할 수 없어 해설을 안전하게 연결할 수 없습니다" }, 409);
+    const questionsByLocator = new Map<number, (typeof questions)[number]>();
+    for (const question of questions) {
+      const locator = numericPrintedLocator(question.printed_number);
+      if (locator === null || questionsByLocator.has(locator)) {
+        return c.json({ error: "문제 원본을 재추출해 실제 인쇄 번호를 확인한 뒤 해설을 추가해 주세요" }, 409);
+      }
+      questionsByLocator.set(locator, question);
     }
 
     if (!(await checkAndIncrementUsage(c.env.DB))) {
@@ -1304,33 +1351,49 @@ bookRoutes.post("/subjects/:subjectId/books/:bookId/explanations", async (c) => 
           job.signal
         );
         if (!isCurrentJob(job)) throw new Error("사용자 중단");
-        if (solutions.length !== questions.length) {
-          throw new Error(`문항 수 불일치: 문제 ${questions.length}개, 해설 ${solutions.length}개`);
+        const solutionsByLocator = new Map<number, SolutionItem>();
+        for (const solution of solutions) {
+          const locator = numericPrintedLocator(solution.number);
+          if (locator === null) throw new Error(`문제 번호를 읽을 수 없습니다: ${solution.number}`);
+          const question = questionsByLocator.get(locator);
+          if (!question) throw new Error(`문제집에 없는 ${locator}번 해설이 포함되어 있습니다`);
+          if (!gradeAnswer(question.qtype, question.answer, solution.answer, question.choices)) {
+            throw new Error(`정답 불일치: ${locator}번 문항`);
+          }
+          const previous = solutionsByLocator.get(locator);
+          if (!previous || solution.explanation.trim().length > previous.explanation.trim().length) {
+            solutionsByLocator.set(locator, solution);
+          }
         }
-        const locatorMismatch = solutions.findIndex(
-          (solution, index) => numericSolutionLocator(solution.number) !== index + 1
-        );
-        if (locatorMismatch >= 0) {
-          throw new Error(`문제 번호 순서 불일치: ${locatorMismatch + 1}번째 해설`);
+        if (solutionsByLocator.size === 0) throw new Error("해설 항목을 찾지 못했습니다");
+        if (solutionsByLocator.size !== questions.length) {
+          throw new Error(`문항 수 불일치: 문제 ${questions.length}개, 검증된 해설 ${solutionsByLocator.size}개`);
         }
-        const mismatch = questions.findIndex((question, index) =>
-          !gradeAnswer(question.qtype, question.answer, solutions[index].answer, question.choices)
-        );
-        if (mismatch >= 0) throw new Error(`정답 순서 불일치: ${mismatch + 1}번 문항`);
+        const detailed = [...solutionsByLocator.entries()]
+          .filter(([, solution]) => solution.explanation.trim());
+        if (detailed.length === 0) throw new Error("상세 해설 내용을 찾지 못했습니다");
 
-        const writes = questions.flatMap((question, index) => question.explanation.trim() ? [] : [
-          c.env.DB.prepare(
-            "UPDATE questions SET explanation = ? WHERE id = ? AND book_id = ? AND trim(explanation) = ''"
-          ).bind(solutions[index].explanation, question.id, bookId),
-        ]);
+        const writes = detailed.flatMap(([locator, solution]) => {
+          const question = questionsByLocator.get(locator)!;
+          return question.explanation.trim() ? [] : [
+            c.env.DB.prepare(
+              "UPDATE questions SET explanation = ? WHERE id = ? AND book_id = ? AND trim(explanation) = ''"
+            ).bind(solution.explanation.trim(), question.id, bookId),
+          ];
+        });
         return {
           writes,
-          completion: readyAIJobStatement(c.env.DB, jobId, { updated: writes.length, bookId }),
+          completion: readyAIJobStatement(c.env.DB, jobId, {
+            updated: writes.length,
+            matched: solutionsByLocator.size,
+            answerOnly: solutionsByLocator.size - detailed.length,
+            bookId,
+          }),
         };
       } finally {
         if (dir) rmSync(dir, { recursive: true, force: true });
       }
-    }, "해설을 추가하지 못했습니다. 선택한 문제집과 해설지가 같은 책인지 확인해 주세요.", () => {
+    }, (error) => `${file.name}: ${publicSolutionError(error)}`, () => {
       activeSolutionBooks.delete(bookId);
     });
     backgroundStarted = true;

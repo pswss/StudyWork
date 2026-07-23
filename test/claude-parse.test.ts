@@ -1,10 +1,12 @@
 // parseQuestionsJson 유닛 테스트 — vi.mock 없이 실제 구현을 테스트한다.
 import { describe, it, expect } from "vitest";
 import {
+  numericPrintedLocator,
   parsePageExtractions,
   parseQuestionsJson,
   parseQuizItemsEx,
   parseSolutionItems,
+  validatePrintedQuestionSequence,
   validateGeneratedQuestions,
 } from "../src/claude";
 
@@ -249,6 +251,7 @@ describe("validateGeneratedQuestions", () => {
 
 describe("parseQuizItemsEx", () => {
   const base = {
+    number: "7",
     qtype: "mcq",
     difficulty: "중",
     question: "옳은 것을 고르시오.",
@@ -263,7 +266,33 @@ describe("parseQuizItemsEx", () => {
   };
 
   it("객관식 번호 답을 실제 보기 문자열로 정규화", () => {
-    expect(parseQuizItemsEx(JSON.stringify([base]))[0].answer).toBe("③ 셋째");
+    expect(parseQuizItemsEx(JSON.stringify([base]))[0]).toMatchObject({ number: "7", answer: "③ 셋째" });
+  });
+
+  it("엄격히 증가하는 인쇄 번호 사이의 누락은 청크 전체를 거부", () => {
+    expect(() => parseQuizItemsEx(JSON.stringify([
+      { ...base, number: "1" },
+      { ...base, number: "2", question: "두 번째 문제" },
+      { ...base, number: "4", question: "네 번째 문제" },
+    ]))).toThrow("인쇄 문제 번호 3");
+  });
+
+  it.each([
+    ["17번 문제", 17],
+    ["[17]", 17],
+    ["Q17", 17],
+    ["⑰", 17],
+  ])("인쇄 번호 형식 %s를 숫자 locator로 정규화", (label, expected) => {
+    expect(numericPrintedLocator(label)).toBe(expected);
+  });
+
+  it("서로 다른 PDF 청크를 합친 뒤 생긴 번호 누락도 거부", () => {
+    expect(() => validatePrintedQuestionSequence([
+      { number: "209" },
+      { number: "210" },
+      { number: "212" },
+      { number: "213" },
+    ])).toThrow("인쇄 문제 번호 211");
   });
 
   it("오지선다 보기 5개를 순서대로 보존", () => {
@@ -317,6 +346,14 @@ describe("parseSolutionItems", () => {
     ]))).toEqual([
       { number: "1", answer: "③", explanation: "$x=3$을 대입한다.", page: 4, complete: true },
       { number: "2", answer: "5", explanation: "양변을 더하면 5이다.", page: 4, complete: true },
+    ]);
+  });
+
+  it("상세 해설 구간의 정답-only 항목은 빈 해설로 보존", () => {
+    expect(parseSolutionItems(JSON.stringify([
+      { number: "1", answer: "3", explanation: "", page: 5, complete: true },
+    ]))).toEqual([
+      { number: "1", answer: "3", explanation: "", page: 5, complete: true },
     ]);
   });
 

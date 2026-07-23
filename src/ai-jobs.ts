@@ -30,7 +30,7 @@ export function runAIJob(
   jobId: number,
   job: JobToken,
   task: () => Promise<AIJobCommit>,
-  publicError = "AI 작업에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+  publicError: string | ((error: unknown) => string) = "AI 작업에 실패했습니다. 잠시 후 다시 시도해 주세요.",
   onSettled?: () => void | Promise<void>
 ): void {
   activeAIJobs.set(jobId, job);
@@ -44,7 +44,9 @@ export function runAIJob(
       } catch (error: unknown) {
         console.error(`[AI 작업 ${jobId}] ${error instanceof Error ? error.message : "unknown error"}`);
         try {
-          const message = job.signal.aborted || !isCurrentJob(job) ? "사용자 중단" : publicError;
+          const message = job.signal.aborted || !isCurrentJob(job)
+            ? "사용자 중단"
+            : typeof publicError === "function" ? publicError(error) : publicError;
           await db.prepare(
             "UPDATE ai_jobs SET status = 'error', result = NULL, error = ?, updated_at = datetime('now') WHERE id = ?"
           ).bind(message, jobId).run();

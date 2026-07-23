@@ -933,6 +933,7 @@ export function validateGeneratedQuestions(
 // 파일의 모든 문제를 그대로 뽑아 정답·해설(없으면 AI가 풀어서)까지 채운다. 그림·페이지·
 // 이어받기(잘림 방지)는 유지.
 export interface QuizItemEx {
+  number: string | null;
   qtype: "mcq" | "short" | "ox";
   difficulty: "하" | "중" | "상";
   question: string;
@@ -954,6 +955,34 @@ export interface SolutionItem {
 }
 
 const CIRCLED_NUMBERS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳";
+
+export function numericPrintedLocator(value: string | null | undefined): number | null {
+  if (typeof value !== "string") return null;
+  const match = /^(?:(?:문제|q(?:uestion)?|#)\s*)?[[(]?\s*0*(\d+)\s*[\])]?\s*(?:번(?:\s*문제)?|문제)?\s*[.)]?$/iu
+    .exec(value.normalize("NFKC").trim());
+  if (!match) return null;
+  const number = Number(match[1]);
+  return Number.isSafeInteger(number) && number > 0 ? number : null;
+}
+
+export function validatePrintedQuestionSequence(items: Pick<QuizItemEx, "number">[]): void {
+  const validateSegment = (numbers: number[]) => {
+    if (numbers.length < 3 || !numbers.some((number, index) => index > 0 && number === numbers[index - 1] + 1)) return;
+    const gap = numbers.findIndex((number, index) => index > 0 && number > numbers[index - 1] + 1);
+    if (gap >= 0) throw new Error(`인쇄 문제 번호 ${numbers[gap - 1] + 1} 누락 가능성이 있습니다.`);
+  };
+  let segment: number[] = [];
+  for (const item of items) {
+    const number = numericPrintedLocator(item.number);
+    if (number === null || (segment.length > 0 && number <= segment[segment.length - 1])) {
+      validateSegment(segment);
+      segment = number === null ? [] : [number];
+    } else {
+      segment.push(number);
+    }
+  }
+  validateSegment(segment);
+}
 
 function normalizeChoiceText(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, " ");
@@ -998,7 +1027,7 @@ export function parseQuizItemsEx(text: string): QuizItemEx[] {
   const parsed = parseJsonArray(text);
   const QT = ["mcq", "short", "ox"] as const;
   const DF = ["하", "중", "상"] as const;
-  return parsed.map((raw, index) => {
+  const items = parsed.map((raw, index) => {
     if (typeof raw !== "object" || raw === null) {
       throw new Error(`항목 ${index}: 객체가 아닙니다.`);
     }
@@ -1011,6 +1040,11 @@ export function parseQuizItemsEx(text: string): QuizItemEx[] {
     }
     const question = typeof o.question === "string" ? o.question.trim() : "";
     if (!question) throw new Error(`항목 ${index}: question이 비어 있습니다.`);
+    const number = o.number === null || o.number === undefined
+      ? null
+      : typeof o.number === "string" && o.number.trim()
+        ? o.number.trim()
+        : (() => { throw new Error(`항목 ${index}: number가 유효하지 않습니다.`); })();
     const qtype = o.qtype as QuizItemEx["qtype"];
     const difficulty = o.difficulty as QuizItemEx["difficulty"];
     let answer = typeof o.answer === "string" ? o.answer.trim() : "";
@@ -1059,8 +1093,10 @@ export function parseQuizItemsEx(text: string): QuizItemEx[] {
       const b = Number(o.box[1]);
       if (Number.isFinite(t) && Number.isFinite(b) && t >= 0 && b <= 1 && t < b) box = [t, b];
     }
-    return { qtype, difficulty, question, choices, answer, explanation, page, figure, figure_description: figureDescription, box };
+    return { number, qtype, difficulty, question, choices, answer, explanation, page, figure, figure_description: figureDescription, box };
   });
+  validatePrintedQuestionSequence(items);
+  return items;
 }
 
 export function parseSolutionItems(text: string): SolutionItem[] {
@@ -1076,7 +1112,6 @@ export function parseSolutionItems(text: string): SolutionItem[] {
     const complete = item.complete;
     if (!number) throw new Error(`해설 ${index + 1}: 문제 번호가 비어 있습니다.`);
     if (!answer) throw new Error(`해설 ${index + 1}: 정답이 비어 있습니다.`);
-    if (!explanation) throw new Error(`해설 ${index + 1}: 내용이 비어 있습니다.`);
     if (!Number.isInteger(page) || page < 1) throw new Error(`해설 ${index + 1}: 페이지가 유효하지 않습니다.`);
     if (complete !== true) throw new Error(`해설 ${index + 1}: 청크 경계에서 내용이 잘렸습니다.`);
     return { number, answer, explanation, page, complete };
@@ -1091,9 +1126,10 @@ export const PROBLEM_SECTION_RULES =
   `- Skip covers, prefaces, tables of contents, introductions, publisher notices, ads, blank pages, and answer-key-only rows as question items. Read answer keys and use them to fill answer, but never emit an answer-key row as a problem.\n`;
 
 export const QUIZ_EXTRACT_SPEC =
-  `[{"qtype":"mcq|short|ox","difficulty":"하|중|상","question":"...","choices":["..."]|null,"choiceCount":5|null,"answer":"...","explanation":"...","page":3,"figure":false,"figure_description":null,"box":null}]\n\n` +
+  `[{"number":"17"|null,"qtype":"mcq|short|ox","difficulty":"하|중|상","question":"...","choices":["..."]|null,"choiceCount":5|null,"answer":"...","explanation":"...","page":3,"figure":false,"figure_description":null,"box":null}]\n\n` +
   `Rules:\n` +
   PROBLEM_SECTION_RULES +
+  `- number: output only the visible top-level printed problem number as ASCII digits, e.g. "17". Normalize labels such as Q17, [17], or 17번 문제 to "17". Use null only for a genuinely unlabeled standalone problem. Never use a page number, subsection number, source-exam year, or a circled subcase inside one problem\n` +
   `- qtype: mcq for choice problems, short for short-answer/서술형, ox for O/X\n` +
   `- Use ox ONLY when the source visibly asks for O/X, true/false, 참/거짓, or 맞다/틀리다 AND the answer is O or X. Otherwise use short or mcq\n` +
   `- Use mcq ONLY when the source has a visible answer-choice list. Numbered conditions, cases, or solution steps are not answer choices. If there is no answer-choice list, use short\n` +
@@ -1129,17 +1165,53 @@ export async function detectAnswerKeyPagesFromFile(
     maxTurns: 16,
     signal,
   });
+  return parseDetectedPages(result, "정답표", sliceBase, lastPage);
+}
+
+function parseDetectedPages(
+  result: string,
+  label: string,
+  sliceBase: number,
+  lastPage: number
+): number[] {
   const pages = parseJsonArray(result).map((raw, index) => {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-      throw new Error(`정답표 페이지 ${index + 1}: 객체가 아닙니다`);
+      throw new Error(`${label} 페이지 ${index + 1}: 객체가 아닙니다`);
     }
     const page = Number((raw as Record<string, unknown>).page);
     if (!Number.isInteger(page) || page < sliceBase || page > lastPage) {
-      throw new Error(`정답표 페이지 ${index + 1}: ${sliceBase}-${lastPage} 범위를 벗어났습니다`);
+      throw new Error(`${label} 페이지 ${index + 1}: ${sliceBase}-${lastPage} 범위를 벗어났습니다`);
     }
     return page;
   });
   return [...new Set(pages)].sort((a, b) => a - b);
+}
+
+export async function detectDetailedSolutionPagesFromFile(
+  absPath: string,
+  sliceBase: number,
+  signal?: AbortSignal
+): Promise<number[]> {
+  const pagesInFile = await pdfPageCount(absPath);
+  if (!pagesInFile) throw new AIProviderError("invalid_file", "상세 해설 검사 페이지 수를 확인할 수 없습니다");
+  const lastPage = sliceBase + pagesInFile - 1;
+  const prompt =
+    `Inspect every attached page. They are original PDF pages ${sliceBase}-${lastPage}. ` +
+    `Return every page that belongs to the book's dedicated official answer-and-explanation section, including pages whose numbered entries print only final answers and pages where a worked solution begins or continues. ` +
+    `A page may contain both a compact quick-answer table and detailed worked solutions; include that mixed page. ` +
+    `Do not mistake worked examples embedded in concept lessons or exercise pages for the official solution section. ` +
+    `Exclude problem-only pages, standalone compact quick-answer tables outside the answer-and-explanation section, covers, contents, ads, and blank pages. ` +
+    `Use original PDF page numbers. If none exist, return an empty array. Output only the requested structured data.`;
+  const result = await runAgent(prompt, {
+    allowedTools: ["Read"],
+    allowedReadPath: absPath,
+    fileKind: "pdf",
+    operation: "answer-key-detect",
+    responseSchema: ANSWER_KEY_PAGES_SCHEMA,
+    maxTurns: 16,
+    signal,
+  });
+  return parseDetectedPages(result, "상세 해설", sliceBase, lastPage);
 }
 
 // 한 파일(슬라이스)의 모든 문제를 뽑는다 — 잘리면 이어받기로 뒷 문제까지 마저.
@@ -1230,6 +1302,11 @@ export async function extractProblemsFromFile(
   if (!complete) {
     throw new ProblemChunkValidationError("문제 추출 실패: 응답이 6회 연속 출력 한도에서 잘렸습니다");
   }
+  try {
+    validatePrintedQuestionSequence(all);
+  } catch (error) {
+    throw new ProblemChunkValidationError(error instanceof Error ? error.message : "인쇄 문제 번호 검증 실패");
+  }
   return all;
 }
 
@@ -1251,13 +1328,14 @@ export async function extractSolutionsFromFile(
     : "Read the attached image.";
   const prompt =
     `${readInstruction}\n\n${PERSONAL_USE_NOTE}` +
-    `This is the official answer-and-explanation file for an already imported workbook. ` +
-    `Extract EVERY worked solution in document order as structured data.\n` +
+    `This attached range may come from either an answer-and-explanation file or a full workbook whose later pages contain solutions. ` +
+    `Extract official solution entries in document order as structured data.\n` +
     `Rules:\n` +
-    `- Return exactly one item per underlying workbook problem, in the same order as the document.\n` +
-    `- number: the visible printed problem label. Never emit an unlabeled continuation or an item whose label is not visible.\n` +
+    `- Emit entries only from the detailed official solution/explanation section. Never emit exercise/problem blocks.\n` +
+    `- A page can have a compact quick-answer table above detailed solutions. Ignore the table rows but include the numbered worked-solution blocks.\n` +
+    `- number: output only the visible printed problem number as ASCII digits, e.g. "17". Normalize Q17, [17], and 17번 문제 to "17". Never emit an unlabeled continuation or an item whose label is not visible.\n` +
     `- answer: the official final answer. Never solve or invent an answer.\n` +
-    `- explanation: copy the complete official reasoning in Korean with formulas in LaTeX. Never summarize or invent steps.\n` +
+    `- explanation: copy the complete official reasoning in Korean with formulas in LaTeX. Never summarize or invent steps. Use "" only when a labeled entry inside the detailed solution section genuinely prints an answer without any reasoning.\n` +
     `- Emit an item only when its printed problem label and start are visible in the attached pages; ignore continuation fragments that began before ${firstPage}.\n` +
     `- complete: true only when the full worked solution is visible through its final step and answer. Use false if it continues beyond page ${lastPage}.\n` +
     `- Ignore covers, contents, ads, and compact quick-answer tables that duplicate later worked solutions.\n` +
