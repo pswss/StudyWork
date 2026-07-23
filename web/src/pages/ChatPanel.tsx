@@ -5,7 +5,6 @@ import { Subject, Material, Message, AIStatus, chat, cancelChat, messages as api
 import { Md } from "../md";
 import { AiPending } from "../Pending";
 import SourcePicker from "./SourcePicker";
-import { learnerEffortLabel, learnerModelLabel } from "./AISettingsPanel";
 
 // 채팅 컨텍스트 자료 선택(제외 집합) 과목별 영속 — 서버 재시작·새로고침에도 유지
 const chatExclKey = (subjectId: number) => `studywork:chat-excl:${subjectId}`;
@@ -215,13 +214,6 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
   }
 
-  const runtime = aiRuntime !== null && aiRuntime !== "unavailable" ? aiRuntime : null;
-  const runtimeSummary = runtime?.state === "ready"
-    ? `${learnerModelLabel(runtime.model)} · ${learnerEffortLabel(runtime.reasoningEffort)}`
-    : runtime?.state === "rollback"
-      ? "이전 방식으로 실행 중"
-      : "설정 확인 필요";
-
   return (
     <>
       <div className="chat-log" role="log" aria-live="polite" aria-relevant="additions text">
@@ -265,19 +257,19 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
           aria-pressed={chatMode === "general"}
           onClick={() => setChatMode("general")}
         >일반 질문</button>
-        {runtime ? (
-          <details
-            className={`ai-config-badge${runtime.state !== "ready" ? " warning" : ""}`}
-            aria-live="polite"
-          >
-            <summary className="clickable">AI · {runtimeSummary}</summary>
-            <small>이 기기에서 실행 · {learnerModelLabel(runtime.model)} · 검토 깊이 {learnerEffortLabel(runtime.reasoningEffort)}</small>
-          </details>
-        ) : (
-          <span className="ai-config-badge" aria-live="polite">
-            {aiRuntime === null ? "AI 설정 확인 중…" : "AI 설정 확인 불가"}
-          </span>
-        )}
+        <span
+          className={`ai-config-badge${aiRuntime !== null && aiRuntime !== "unavailable" && aiRuntime.state !== "ready" ? " warning" : ""}`}
+          aria-live="polite"
+          title={aiRuntime !== null && aiRuntime !== "unavailable"
+            ? `서버 설정 · provider ${aiRuntime.provider} · effort ${aiRuntime.reasoningEffort ?? "해당 없음"}`
+            : undefined}
+        >
+          {aiRuntime === null && "AI 설정 확인 중"}
+          {aiRuntime === "unavailable" && "AI 설정 확인 불가"}
+          {aiRuntime !== null && aiRuntime !== "unavailable" && aiRuntime.state === "invalid" && "AI 설정 오류"}
+          {aiRuntime !== null && aiRuntime !== "unavailable" && aiRuntime.state === "rollback" && `${aiRuntime.model} · 롤백`}
+          {aiRuntime !== null && aiRuntime !== "unavailable" && aiRuntime.state === "ready" && `${aiRuntime.model} · ${aiRuntime.reasoningEffort} · 로컬 CLI`}
+        </span>
       </div>
       {chatMode === "materials" && readyMats.length > 0 && (
         <SourcePicker

@@ -552,17 +552,6 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   letter-spacing: .03em; padding: 6px 9px; border-radius: 6px;
   border: 1px solid var(--line); color: var(--ink-3); white-space: nowrap;
 }
-.ai-config-badge > summary { cursor: pointer; list-style: none; }
-.ai-config-badge > summary::-webkit-details-marker { display: none; }
-.ai-config-badge > summary::before {
-  content: "⌄" / ""; display: inline-block; margin-right: 6px; color: var(--ink-3);
-  transform: rotate(-90deg); transition: transform .22s var(--ease);
-}
-.ai-config-badge[open] > summary::before { transform: rotate(0deg); }
-.ai-config-badge > small {
-  display: block; max-width: min(72vw, 520px); margin-top: 7px;
-  color: var(--ink-3); white-space: normal; line-height: 1.5; overflow-wrap: anywhere;
-}
 .ai-config-badge.warning { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
 .msg-mode-badge {
   display: inline-block; margin-bottom: 6px; padding: 2px 8px; border-radius: 4px;
@@ -1481,7 +1470,7 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
 @media (pointer: coarse) {
   .btn, .mode-chip, .back-btn, .retry-btn, .subj-del, .quiz-select, .quiz-count-input,
   .undo-delete-bar button, .app-load-error button, .context-help > summary, .brand,
-  .ai-config-badge > summary, .wrong-file-label, .wrong-q-text, a.q-chip {
+  .wrong-file-label, .wrong-q-text, a.q-chip {
     min-height: 44px;
   }
   .chat-err button, .field input, .subject-search input, .exam-item-row { min-height: 44px; }
