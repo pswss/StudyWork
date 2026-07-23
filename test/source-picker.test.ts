@@ -64,9 +64,10 @@ describe("SourcePicker", () => {
     act(() => setInputValue("영어"));
 
     expect(container.querySelector(".note-source-all strong")?.textContent).toBe("검색 결과 전체");
-    // WCAG 2.5.3: 접근명은 보이는 라벨("검색 결과 전체")을 포함 + 상태 서술(액션 아님)
-    // "영어" 필터 → 보이는 1건이 모두 선택된 상태 = 전체 선택됨
-    expect(bulk.getAttribute("aria-label")).toBe("참고 자료 검색 결과 전체, 전체 선택됨");
+    // WCAG 2.5.3: 접근명 = 보이는 텍스트만(컨텍스트 접두 + 라벨 + 카운트) — "전체 선택됨" 같은
+    // 상태 서술은 이름에서 제거, 상태는 네이티브 checked/indeterminate(mixed)로만 전달
+    expect(bulk.getAttribute("aria-label")).toBe("참고 자료 검색 결과 전체, 1개 검색됨 · 1개 선택");
+    expect(bulk.checked).toBe(true);
     // 패널 카운트의 aria-live는 제거(요약 카운트만 알림) — 중복 알림 방지
     expect(status.getAttribute("aria-live")).toBe(null);
     expect(status.textContent).toContain("1개 검색됨 · 1개 선택");

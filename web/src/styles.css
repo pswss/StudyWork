@@ -689,13 +689,19 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .note-source-search { margin: 12px 0 8px; font-size: 13px; }
 .note-source-list {
   max-height: min(280px, 45vh); overflow-y: auto; border-top: 1px solid var(--line);
-  display: flex; flex-direction: column; gap: 2px; padding: 6px 2px 2px;
-  /* 스크롤 어포던스 — 하단 페이드로 잘린 행을 암시 (얇은 스크롤바 포함) */
+  display: flex; flex-direction: column; gap: 2px;
+  /* 패딩 6px ≥ 포커스 링 돌출 4px(outline 2 + offset 2) — 링이 잘리지 않게. scroll-padding으로 포커스 스크롤도 링까지 확보 */
+  padding: 6px; scroll-padding: 6px;
+  /* 스크롤 어포던스 — 잘린 방향에만 페이드 (JS가 at-start/at-end 토글, 스크롤 불가면 둘 다) */
   scrollbar-width: thin;
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 20px, #000 calc(100% - 20px), transparent);
 }
-/* 스크롤 끝에선 마스크 제거 — 가짜 "더 있음" 신호·마지막 행 흐림 방지 (JS가 .at-end 토글) */
-.note-source-list.at-end { mask-image: none; }
+/* 맨 위 — 상단 페이드 제거(헤어라인·첫 행 선명), 하단만 "더 있음" 신호 */
+.note-source-list.at-start { mask-image: linear-gradient(to bottom, #000 calc(100% - 20px), transparent); }
+/* 스크롤 끝 — 하단 페이드 제거(가짜 "더 있음" 신호·마지막 행 흐림 방지), 상단만 유지 */
+.note-source-list.at-end { mask-image: linear-gradient(to bottom, transparent, #000 20px, #000); }
+/* 스크롤 불가(양끝 동시) — 마스크 없음 */
+.note-source-list.at-start.at-end { mask-image: none; }
 /* 포커스된 하단 행은 마스크로 흐려지지 않게 — 포커스 링 가시성 보장 */
 .note-source-list:has(input:focus-visible) { mask-image: none; }
 /* 옵션 행 — 체크 표식 + 옅은 틴트로 선택을 색 하나에 의존하지 않게 표시 */

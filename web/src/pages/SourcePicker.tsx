@@ -34,9 +34,9 @@ export default function SourcePicker({
   const allVisibleSelected = visible.length > 0 && visibleSelected === visible.length;
   // 상태 기준 라벨 — 액션명("전체 선택/해제") 대신 개념명; 동작은 토글 표식으로 명시
   const selectAllLabel = needle ? "검색 결과 전체" : "전체 자료";
-  // 접근명은 보이는 라벨을 포함(WCAG 2.5.3) + 상태 서술(액션 아님)
-  const selectAllState = allVisibleSelected ? "전체 선택됨" : visibleSelected > 0 ? "일부 선택됨" : "전체 해제됨";
-  const selectAllAria = `${label} ${selectAllLabel}, ${selectAllState}`;
+  // 접근명 = 보이는 텍스트만(WCAG 2.5.3, 컨텍스트 접두 + 라벨 + 카운트) — 선택 상태는 네이티브 checked/mixed로만 전달
+  const selectAllCount = `${needle ? `${visible.length}개 검색됨` : `${visible.length}개 표시`} · ${visibleSelected}개 선택`;
+  const selectAllAria = `${label} ${selectAllLabel}, ${selectAllCount}`;
 
   function handleToggle(event: SyntheticEvent<HTMLDetailsElement>) {
     if (!event.currentTarget.open) {
@@ -52,27 +52,22 @@ export default function SourcePicker({
     requestAnimationFrame(() => requestAnimationFrame(revealPicker));
   }
 
-  // 열린 패널이 뷰포트(채팅 입력창이 있으면 그 위)를 넘치면 최소량만 스크롤
+  // 열린 패널이 뷰포트(채팅 입력창이 있으면 그 하단까지)를 넘치면 넘친 만큼만 스크롤
   function revealPicker() {
     const details = detailsRef.current;
-    const summary = summaryRef.current;
-    if (!details || !summary) return;
-    // 채팅 입력창이 뒤따르면 그 상단을 하한으로 — 입력창이 화면 밖으로 밀리지 않게
+    if (!details) return;
+    // 채팅 입력창이 뒤따르면 그 "하단"을 실측 기준으로 — 픽커 margin-bottom(16px)·행 margin까지 자동 포함
     const chatRow = details.parentElement?.querySelector<HTMLElement>(".chat-input-row");
-    const chatH = chatRow && chatRow.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_PRECEDING
-      ? chatRow.getBoundingClientRect().height + 16 // margin-top:16px
-      : 0;
-    const bottomLimit = window.innerHeight - chatH;
-    const panelBottom = details.getBoundingClientRect().bottom;
-    const overflow = panelBottom - bottomLimit;
+    const anchor = chatRow && chatRow.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_PRECEDING
+      ? chatRow
+      : details;
+    const overflow = anchor.getBoundingClientRect().bottom - window.innerHeight;
     if (overflow <= 0) return; // 이미 다 보임
-    // 패널 하단이 보이도록 내리되, summary 상단이 화면 위로 잘리지 않는 선까지만
-    const summaryTop = summary.getBoundingClientRect().top;
-    const by = Math.min(overflow, Math.max(0, summaryTop - 8));
-    if (by > 0) window.scrollBy({ top: by, behavior: "smooth" });
+    // 채팅 입력행 하단이 화면 안에 오는 것이 우선 — 소수점은 올림(정수 스크롤 양자화로 1px 미달 방지)
+    window.scrollBy({ top: Math.ceil(overflow), behavior: "smooth" });
   }
 
-  // 옵션 목록 화살표 이동 (roving) — 탭 리스트와 같은 접근
+  // 옵션 화살표 이동 (roving) — 전체 선택 행 + 목록 행을 하나의 순환으로 (패널에 위임)
   function handleListKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     const inputs = Array.from(
@@ -85,14 +80,13 @@ export default function SourcePicker({
     inputs[next]?.focus();
   }
 
-  // 검색창에서 ArrowDown → 첫 옵션 행으로 진입 (리스트 밖 요소라 handleListKeyDown이 못 잡음)
+  // 검색창에서 ArrowDown → 전체 선택 행(첫 체크박스)으로 진입, 이어서 목록 행
   function handleSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key !== "ArrowDown") return;
-    const first = detailsRef.current?.querySelector<HTMLInputElement>(
-      '.note-source-list input[type="checkbox"]'
-    );
+    const first = detailsRef.current?.querySelector<HTMLInputElement>('input[type="checkbox"]');
     if (!first) return;
     event.preventDefault();
+    event.stopPropagation(); // 패널 위임 핸들러가 포커스 이동 직후 한 칸 더 가지 않게
     first.focus();
   }
 
@@ -116,17 +110,30 @@ export default function SourcePicker({
     return () => document.removeEventListener("pointerdown", closeOutside);
   }, []);
 
-  // 하단 마스크는 더 스크롤할 게 있을 때만 — 스크롤 끝에선 가짜 "더 있음" 신호 제거
+  // 페이드 마스크는 잘린 방향에만 — 위/아래 끝(또는 스크롤 불가)에선 해당 페이드 제거 (CSS at-start/at-end)
   useEffect(() => {
-    const list = detailsRef.current?.querySelector<HTMLElement>(".note-source-list");
-    if (!list) return;
+    const details = detailsRef.current;
+    const list = details?.querySelector<HTMLElement>(".note-source-list");
+    if (!details || !list) return;
     const update = () => {
-      const atEnd = list.scrollTop >= list.scrollHeight - list.clientHeight - 1;
-      list.classList.toggle("at-end", atEnd);
+      const scrollable = list.scrollHeight > list.clientHeight;
+      list.classList.toggle("at-start", !scrollable || list.scrollTop <= 0);
+      list.classList.toggle("at-end", !scrollable || list.scrollTop >= list.scrollHeight - list.clientHeight - 1);
     };
     update();
+    // 닫힌 상태(지오메트리 0)로 계산된 값이 남지 않게 — 열림 토글 후 레이아웃이 잡히면 재계산
+    const onToggle = () => { if (details.open) requestAnimationFrame(update); };
     list.addEventListener("scroll", update, { passive: true });
-    return () => list.removeEventListener("scroll", update);
+    details.addEventListener("toggle", onToggle);
+    // 웹폰트 적용·컨테이너 크기 변화로 행 높이가 바뀌면 스크롤 가능 여부도 바뀐다 — 스테일 방지 (jsdom엔 RO 없음)
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    ro?.observe(list);
+    document.fonts?.ready.then(update);
+    return () => {
+      list.removeEventListener("scroll", update);
+      details.removeEventListener("toggle", onToggle);
+      ro?.disconnect();
+    };
   });
 
   return (
@@ -137,7 +144,7 @@ export default function SourcePicker({
           {selected}/{materials.length}개 선택
         </strong>
       </summary>
-      <div className="note-source-panel">
+      <div className="note-source-panel" onKeyDown={handleListKeyDown}>
         <input
           ref={searchRef}
           className="text-input note-source-search"
@@ -163,11 +170,11 @@ export default function SourcePicker({
           <span>
             <strong>{selectAllLabel}</strong>
             <small className={visibleSelected === 0 && visible.length > 0 ? "empty" : undefined}>
-              {needle ? `${visible.length}개 검색됨` : `${visible.length}개 표시`} · {visibleSelected}개 선택
+              {selectAllCount}
             </small>
           </span>
         </label>
-        <div className="note-source-list" role="group" aria-label={`${label}에 포함할 자료`} onKeyDown={handleListKeyDown}>
+        <div className="note-source-list" role="group" aria-label={`${label}에 포함할 자료`}>
           {visible.map((material) => (
             <label className="note-source-row" key={material.id}>
               <input
@@ -177,7 +184,8 @@ export default function SourcePicker({
                 aria-label={`${material.title} 포함`}
               />
               <span>
-                <strong>{material.title}</strong>
+                {/* 캡션이 유형(PDF/사진/텍스트)을 이미 보여주므로 제목의 확장자는 표시에서만 제거 */}
+                <strong>{material.title.replace(/\.(pdf|png|jpe?g|webp|gif|heic|txt|md)$/i, "")}</strong>
                 <small>
                   {material.kind === "pdf" ? "PDF" : material.kind === "image" ? "사진" : "텍스트"}
                   {material.original_filename && material.original_filename.normalize("NFC") !== material.title.normalize("NFC")
