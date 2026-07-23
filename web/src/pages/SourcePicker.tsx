@@ -20,6 +20,7 @@ export default function SourcePicker({
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const summaryRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const pointerOpenRef = useRef(false);
   const needle = query.trim().normalize("NFKC").toLowerCase();
   const visible = needle
     ? materials.filter((material) =>
@@ -30,16 +31,35 @@ export default function SourcePicker({
   const visibleIds = visible.map((material) => material.id);
   const visibleSelected = visible.reduce((count, material) => count + (excluded.has(material.id) ? 0 : 1), 0);
   const allVisibleSelected = visible.length > 0 && visibleSelected === visible.length;
-  const selectAllAction = allVisibleSelected ? "전체 해제" : "전체 선택";
-  const selectAllLabel = needle ? `검색 결과 ${selectAllAction}` : selectAllAction;
+  // 상태 기준 라벨 — 액션명("전체 선택/해제") 대신 개념명; 동작은 토글 표식으로 명시
+  const selectAllLabel = needle ? "검색 결과 전체" : "전체 자료";
+  const selectAllAria = `${label} ${allVisibleSelected ? "전체 해제" : "전체 선택"}${needle ? " (검색 결과)" : ""}`;
 
   function handleToggle(event: SyntheticEvent<HTMLDetailsElement>) {
     if (!event.currentTarget.open) {
       setQuery("");
+      pointerOpenRef.current = false;
       return;
     }
+    // 포인터로 열었을 때만 검색창 자동 포커스 — 키보드로 열면 summary 포커스 유지
     const finePointer = typeof window.matchMedia !== "function" || window.matchMedia("(pointer: fine)").matches;
-    if (finePointer) queueMicrotask(() => searchRef.current?.focus({ preventScroll: true }));
+    if (pointerOpenRef.current && finePointer) queueMicrotask(() => searchRef.current?.focus({ preventScroll: true }));
+    pointerOpenRef.current = false;
+    // 패널이 채팅 입력창을 밀어내지 않도록 열릴 때 화면에 보이게 스크롤
+    queueMicrotask(() => detailsRef.current?.scrollIntoView?.({ block: "nearest" }));
+  }
+
+  // 옵션 목록 화살표 이동 (roving) — 탭 리스트와 같은 접근
+  function handleListKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    const inputs = Array.from(
+      event.currentTarget.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
+    );
+    const current = inputs.indexOf(document.activeElement as HTMLInputElement);
+    if (current === -1) return;
+    event.preventDefault();
+    const next = (current + (event.key === "ArrowDown" ? 1 : -1) + inputs.length) % inputs.length;
+    inputs[next]?.focus();
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDetailsElement>) {
@@ -64,9 +84,11 @@ export default function SourcePicker({
 
   return (
     <details ref={detailsRef} className="note-source-picker" onToggle={handleToggle} onKeyDown={handleKeyDown}>
-      <summary ref={summaryRef}>
+      <summary ref={summaryRef} onPointerDown={() => { if (!detailsRef.current?.open) pointerOpenRef.current = true; }}>
         <span>{label}</span>
-        <strong aria-live="polite" aria-atomic="true">{selected}/{materials.length}개 선택</strong>
+        <strong className={selected === 0 ? "empty" : undefined} aria-live="polite" aria-atomic="true">
+          {selected}/{materials.length}개 선택
+        </strong>
       </summary>
       <div className="note-source-panel">
         <input
@@ -80,30 +102,31 @@ export default function SourcePicker({
           placeholder="예: 1학기 강의 노트…"
           aria-label={`${label} 검색`}
         />
-        {/* 전체 선택 토글 행 — 전부 선택되면 행이 라임으로 점등, 일부만이면 라임 테두리 */}
+        {/* 전체 선택 토글 행 — 상태 기준 라벨, 동작은 체크 표식으로 명시 */}
         <label className="note-source-row note-source-all">
           <input
             type="checkbox"
             checked={allVisibleSelected}
             ref={(el) => { if (el) el.indeterminate = !allVisibleSelected && visibleSelected > 0; }}
             onChange={() => onSetVisible(visibleIds, !allVisibleSelected)}
-            aria-label={`${label} ${selectAllLabel}`}
+            aria-label={selectAllAria}
             disabled={visible.length === 0}
           />
           <span>
             <strong>{selectAllLabel}</strong>
-            <small aria-live="polite" aria-atomic="true">
+            <small className={visibleSelected === 0 && visible.length > 0 ? "empty" : undefined}>
               {needle ? `${visible.length}개 검색됨` : `${visible.length}개 표시`} · {visibleSelected}개 선택
             </small>
           </span>
         </label>
-        <div className="note-source-list" role="group" aria-label={`${label}에 포함할 자료`}>
+        <div className="note-source-list" role="group" aria-label={`${label}에 포함할 자료`} onKeyDown={handleListKeyDown}>
           {visible.map((material) => (
             <label className="note-source-row" key={material.id}>
               <input
                 type="checkbox"
                 checked={!excluded.has(material.id)}
                 onChange={() => onToggle(material.id)}
+                aria-label={`${material.title} 포함`}
               />
               <span>
                 <strong>{material.title}</strong>

@@ -49,21 +49,24 @@ describe("SourcePicker", () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(search, value);
       search.dispatchEvent(new Event("input", { bubbles: true }));
     };
+    // 포인터로 열 때만 검색창 자동 포커스 — pointerdown으로 포인터 열림을 표시
     const clickSummary = async () => {
       await act(async () => {
+        summary.dispatchEvent(new Event("pointerdown", { bubbles: true }));
         summary.click();
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
     };
 
-    expect(container.querySelector(".note-source-all strong")?.textContent).toBe("전체 선택");
+    expect(container.querySelector(".note-source-all strong")?.textContent).toBe("전체 자료");
     await clickSummary();
     expect(document.activeElement).toBe(search);
     act(() => setInputValue("영어"));
 
-    expect(container.querySelector(".note-source-all strong")?.textContent).toBe("검색 결과 전체 해제");
-    expect(bulk.getAttribute("aria-label")).toBe("참고 자료 검색 결과 전체 해제");
-    expect(status.getAttribute("aria-live")).toBe("polite");
+    expect(container.querySelector(".note-source-all strong")?.textContent).toBe("검색 결과 전체");
+    expect(bulk.getAttribute("aria-label")).toBe("참고 자료 전체 해제 (검색 결과)");
+    // 패널 카운트의 aria-live는 제거(요약 카운트만 알림) — 중복 알림 방지
+    expect(status.getAttribute("aria-live")).toBe(null);
     expect(status.textContent).toContain("1개 검색됨 · 1개 선택");
 
     act(() => bulk.click());
