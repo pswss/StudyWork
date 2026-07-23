@@ -1142,6 +1142,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                       checked={gsel === g.items.length}
                       ref={el => { if (el) el.indeterminate = gsel > 0 && gsel < g.items.length; }}
                       onChange={() => toggleGroupSelection(g.items)}
+                      aria-label={`${g.label} 문제 전체 선택`}
                     />
                     <span>자료 전체</span>
                   </label>
@@ -1152,13 +1153,13 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                     aria-controls={`quiz-file-panel-${groupIndex}`}
                     title="클릭해서 이 파일의 문제 열기/닫기"
                   >
-                    <span className={`quiz-file-chev${open ? " open" : ""}`} aria-hidden="true">▾</span>
+                    <span className={`quiz-file-chev${open ? " open" : ""}`} aria-hidden="true">⌄</span>
                     <span className="quiz-file-name">{g.label}</span>
                     <span className="quiz-file-count">{allInScope ? g.items.length : `${gsel}/${g.items.length}`}문제</span>
                   </button>
                 </div>
 
-                <div id={`quiz-file-panel-${groupIndex}`} hidden={!open}>
+                <div id={`quiz-file-panel-${groupIndex}`} className="quiz-file-panel" hidden={!open}>
                 {open && g.items.map(q => (
                   <div key={q.id} className="quiz-row">
                     <label className="quiz-check-label quiz-check-box" title="이 문제 선택">
@@ -1166,7 +1167,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                         type="checkbox"
                         checked={allInScope || selected.has(q.id)}
                         onChange={() => toggleSelect(q.id)}
-                        aria-label="이 문제 선택"
+                        aria-label={`문제 선택: ${q.question.slice(0, 40)}`}
                       />
                     </label>
                     <span className={`q-chip qtype`}>{qtypeLabel(q.qtype)}</span>
@@ -1182,7 +1183,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                     <span className="quiz-accuracy">{accuracyLabel(q)}</span>
                     <button
                       className="del-btn"
-                      aria-label={pendingDelete?.key === `question:${q.id}` ? "이 문제 삭제 예정" : "이 문제 삭제"}
+                      aria-label={pendingDelete?.key === `question:${q.id}` ? "이 문제 삭제 예정" : `문제 삭제: ${q.question.slice(0, 40)}`}
                       disabled={pendingDelete !== null}
                       onClick={() => doDelete(q.id)}
                     >✕</button>

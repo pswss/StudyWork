@@ -670,11 +670,11 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 }
 .note-source-picker > summary::-webkit-details-marker { display: none; }
 .note-source-picker > summary strong { margin-left: auto; color: var(--lime); font-size: 12px; }
-.note-source-picker > summary::after { content: "⌄"; color: var(--ink-3); transition: transform .2s var(--ease); }
+.note-source-picker > summary::after { content: "⌄" / ""; color: var(--ink-3); display: inline-block; transform: rotate(-90deg); transition: transform .22s var(--ease); }
 .note-source-picker > summary:hover { color: var(--ink); background: rgba(217, 255, 63, .03); }
 .note-source-picker > summary:active { background: rgba(217, 255, 63, .07); }
 .note-source-picker[open] { border-color: var(--line-strong); }
-.note-source-picker[open] > summary::after { transform: rotate(180deg); }
+.note-source-picker[open] > summary::after { transform: rotate(0deg); }
 .note-source-panel { padding: 0 12px 12px; border-top: 1px solid var(--line); }
 .note-source-search { margin: 12px 0 8px; }
 .note-source-list {
@@ -914,9 +914,9 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   margin-left: auto; color: var(--ink-3); font-size: 11px; font-weight: 500;
 }
 .quiz-generate-disclosure > summary::after {
-  content: "⌄"; color: var(--ink-3); transition: transform .2s var(--ease);
+  content: "⌄" / ""; color: var(--ink-3); display: inline-block; transform: rotate(-90deg); transition: transform .22s var(--ease);
 }
-.quiz-generate-disclosure[open] > summary::after { transform: rotate(180deg); }
+.quiz-generate-disclosure[open] > summary::after { transform: rotate(0deg); }
 .quiz-add-row {
   display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
   padding: 4px 0 18px;
@@ -999,6 +999,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 
 /* 파일(자료)별 문제 그룹 — 드롭다운 헤더 */
 .quiz-file-group { margin-top: 10px; }
+.quiz-file-panel { animation: contentIn .22s var(--ease) both; }
 .quiz-file-head {
   display: flex; align-items: center; gap: 10px; width: 100%;
   padding: 10px 12px; background: var(--panel-2);
@@ -1014,9 +1015,9 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 }
 .quiz-file-toggle:active { transform: scale(.985); transition-duration: 0s; }
 .quiz-file-chev {
-  color: var(--lime); font-size: 12px; width: 12px;
+  color: var(--ink-3); font-size: 12px; width: 12px;
   display: inline-block; transform: rotate(-90deg);
-  transition: transform .24s var(--ease);
+  transition: transform .22s var(--ease);
 }
 .quiz-file-chev.open { transform: rotate(0deg); }
 .quiz-file-name {
