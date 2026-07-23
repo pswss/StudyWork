@@ -19,6 +19,7 @@ export const DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
 export const DEFAULT_REASONING_EFFORT = "high";
 export const DEFAULT_CODEX_TIMEOUT_MS = 5 * 60 * 1000;
 export const DEFAULT_CODEX_MAX_CONCURRENCY = 4;
+export const EXPLANATION_PARALLELISM = 20;
 export const AI_MAX_FILE_BYTES = 50 * 1024 * 1024;
 
 export const ALLOWED_CODEX_MODELS = [
@@ -49,6 +50,7 @@ export type AICompleteRequest = {
   model?: string;
   reasoningEffort?: ReasoningEffort;
   signal?: AbortSignal;
+  lane?: "explanation";
 };
 export type AICompleteResult = {
   text: string;
@@ -167,8 +169,8 @@ class Semaphore {
     abort?: () => void;
   }> = [];
 
-  constructor(private readonly limit: number) {
-    this.batchLimit = limit > 1 ? limit - 1 : limit;
+  constructor(private readonly limit: number, reserveInteractiveSlot = true) {
+    this.batchLimit = reserveInteractiveSlot && limit > 1 ? limit - 1 : limit;
   }
 
   private capFor(interactive: boolean): number {
@@ -358,9 +360,11 @@ function mapCodexFailure(error: unknown): AIProviderError {
 
 export class CodexCliProvider {
   private readonly semaphore: Semaphore;
+  private readonly explanationSemaphore: Semaphore;
 
   constructor(readonly config: CodexProviderConfig, private readonly spawnProcess: typeof spawn = spawn) {
     this.semaphore = new Semaphore(config.maxConcurrency);
+    this.explanationSemaphore = new Semaphore(EXPLANATION_PARALLELISM, false);
   }
 
   async complete(request: AICompleteRequest): Promise<AICompleteResult> {
@@ -370,7 +374,8 @@ export class CodexCliProvider {
     const model = normalizeModelId(request.model ?? this.config.model);
     const reasoningEffort = parseReasoningEffort(request.reasoningEffort ?? this.config.reasoningEffort);
     // 채팅은 대화형 — 배치가 못 쓰는 예약 슬롯까지 사용해 즉시성을 보장한다
-    const release = await this.semaphore.acquire(request.signal, request.operation === "chat");
+    const semaphore = request.lane === "explanation" ? this.explanationSemaphore : this.semaphore;
+    const release = await semaphore.acquire(request.signal, request.operation === "chat");
     let workspace: string;
     try {
       workspace = mkdtempSync(join(tmpdir(), "studywork-codex-"));

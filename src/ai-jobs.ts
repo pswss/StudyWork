@@ -38,7 +38,9 @@ export async function createAIJob(
 export function setAIJobProgress(jobId: number, completed: number, total: number): void {
   const meta = aiJobMeta.get(jobId);
   if (!meta || total <= 0) return;
-  meta.progress = Math.max(0, Math.min(100, Math.round((completed / total) * 100)));
+  meta.progress = completed >= total
+    ? 100
+    : Math.max(0, Math.floor((completed / total) * 100));
 }
 
 export interface AIJobCommit {

@@ -4,7 +4,8 @@
 
 import { Hono } from "hono";
 import type { Env } from "./index";
-import { generateExplanationsForQuestions, type ExplanationTask } from "./claude";
+import { generateExplanationsForQuestions, mapPool, type ExplanationTask } from "./claude";
+import { EXPLANATION_PARALLELISM } from "./codex-provider";
 import { checkAndIncrementUsage } from "./usage";
 import { createAIJob, readyAIJobStatement, runAIJob, setAIJobProgress } from "./ai-jobs";
 import { claimTarget, isCurrentJob, releaseTarget, startJob } from "./jobs";
@@ -55,7 +56,8 @@ explanationGenRoutes.get("/subjects/:id/explanations/missing", async (c) => {
 });
 
 // ── POST /api/subjects/:id/explanations/generate ─────────────────────────────
-// {srcFileId?: number, manual?: true} → ai_jobs 생성 → 배치(EXPLANATION_BATCH_SIZE문항)로 해설 생성.
+// {srcFileId?: number, manual?: true} → ai_jobs 생성 → 20개 균형 섹션을 병렬 처리한다.
+// 각 섹션 안에서는 EXPLANATION_BATCH_SIZE문항씩 호출해 출력 잘림 위험을 제한한다.
 // 배치마다 검산 통과분을 즉시 저장(체크포인트) — 중단돼도 다음 실행이 남은(빈 해설) 문제만 처리한다.
 explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
   const rawSubjectId = c.req.param("id");
@@ -123,47 +125,71 @@ explanationGenRoutes.post("/subjects/:id/explanations/generate", async (c) => {
     const jobId = await createAIJob(c.env.DB, subjectId, "explanation-generate", { label, target, progress: 0 });
     const job = startJob(`explanation-job:${jobId}`);
     runAIJob(c.env.DB, jobId, job, async () => {
-      let filled = 0;
-      let skippedMismatch = 0;
-      const skippedIds: number[] = [];
-      for (let start = 0; start < missing.length; start += EXPLANATION_BATCH_SIZE) {
-        if (!isCurrentJob(job)) throw new Error("사용자 중단");
-        const batch = missing.slice(start, start + EXPLANATION_BATCH_SIZE);
-        const tasks: ExplanationTask[] = batch.map((question) => ({
-          id: question.id,
-          qtype: question.qtype,
-          question: question.question,
-          choices: parseStoredChoices(question.choices),
-          answer: question.answer,
-        }));
-        const items = await generateExplanationsForQuestions(subject.name, tasks, job.signal);
-        if (!isCurrentJob(job)) throw new Error("사용자 중단");
+      const sectionCount = Math.min(EXPLANATION_PARALLELISM, missing.length);
+      const baseSize = Math.floor(missing.length / sectionCount);
+      const extra = missing.length % sectionCount;
+      let offset = 0;
+      const sections = Array.from({ length: sectionCount }, (_, index) => {
+        const size = baseSize + (index < extra ? 1 : 0);
+        const section = missing.slice(offset, offset + size);
+        offset += size;
+        return section;
+      });
+      let completed = 0;
+      const sectionResults = await mapPool(sections, sectionCount, async (section) => {
+        let filled = 0;
+        const skippedIds: number[] = [];
+        for (let start = 0; start < section.length; start += EXPLANATION_BATCH_SIZE) {
+          if (!isCurrentJob(job)) throw new Error("사용자 중단");
+          const batch = section.slice(start, start + EXPLANATION_BATCH_SIZE);
+          const tasks: ExplanationTask[] = batch.map((question) => ({
+            id: question.id,
+            qtype: question.qtype,
+            question: question.question,
+            choices: parseStoredChoices(question.choices),
+            answer: question.answer,
+          }));
+          const items = await generateExplanationsForQuestions(
+            subject.name,
+            tasks,
+            job.signal,
+            "explanation"
+          );
+          if (!isCurrentJob(job)) throw new Error("사용자 중단");
 
-        const byId = new Map(batch.map((question) => [question.id, question]));
-        const writes = [];
-        for (const item of items) {
-          const question = byId.get(item.id)!;
-          if (gradeAnswer(question.qtype, question.answer, item.derived_answer, question.choices)) {
-            // trim(explanation)='' 가드: 그 사이 해설 업로드 등이 먼저 채웠으면 덮지 않는다.
-            writes.push(
-              c.env.DB.prepare(
-                "UPDATE questions SET explanation = ? WHERE id = ? AND trim(explanation) = ''"
-              ).bind(item.explanation, item.id)
-            );
-            filled++;
-          } else {
-            skippedMismatch++;
-            skippedIds.push(item.id);
+          const byId = new Map(batch.map((question) => [question.id, question]));
+          const writes = [];
+          for (const item of items) {
+            const question = byId.get(item.id)!;
+            if (gradeAnswer(question.qtype, question.answer, item.derived_answer, question.choices)) {
+              // trim(explanation)='' 가드: 그 사이 해설 업로드 등이 먼저 채웠으면 덮지 않는다.
+              writes.push(
+                c.env.DB.prepare(
+                  "UPDATE questions SET explanation = ? WHERE id = ? AND trim(explanation) = ''"
+                ).bind(item.explanation, item.id)
+              );
+              filled++;
+            } else {
+              skippedIds.push(item.id);
+            }
           }
+          // 배치 체크포인트 — 검산 통과분을 즉시 커밋한다. 이후 배치가 실패해도 여기까지는
+          // 저장되고, 재실행 시 빈 해설 조회가 남은 문제만 다시 뽑아 자연히 이어서 진행된다.
+          if (writes.length > 0) await c.env.DB.batch(writes);
+          completed += batch.length;
+          setAIJobProgress(jobId, completed, missing.length);
         }
-        // 배치 체크포인트 — 검산 통과분을 즉시 커밋한다. 이후 배치가 실패해도 여기까지는
-        // 저장되고, 재실행 시 빈 해설 조회가 남은 문제만 다시 뽑아 자연히 이어서 진행된다.
-        if (writes.length > 0) await c.env.DB.batch(writes);
-        setAIJobProgress(jobId, start + batch.length, missing.length);
-      }
+        return { filled, skippedIds };
+      });
+      const filled = sectionResults.reduce((sum, result) => sum + result.filled, 0);
+      const skippedIds = sectionResults.flatMap((result) => result.skippedIds);
       return {
         writes: [],
-        completion: readyAIJobStatement(c.env.DB, jobId, { filled, skippedMismatch, skippedIds }),
+        completion: readyAIJobStatement(c.env.DB, jobId, {
+          filled,
+          skippedMismatch: skippedIds.length,
+          skippedIds,
+        }),
       };
     },
     "AI 해설 생성에 실패했습니다. 이미 저장된 해설은 유지되며, 다시 시도하면 남은 문제만 처리합니다.",

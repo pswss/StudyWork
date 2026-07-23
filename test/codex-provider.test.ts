@@ -16,6 +16,7 @@ import {
   AI_MAX_FILE_BYTES,
   CodexCliProvider,
   DEFAULT_CODEX_MODEL,
+  EXPLANATION_PARALLELISM,
   loadCodexProviderConfig,
   type CodexProviderConfig,
 } from "../src/codex-provider";
@@ -271,5 +272,31 @@ describe("Codex CLI adapter", () => {
     for (const pending of [batch1, batch2, chatRequest]) {
       await expect(pending).rejects.toMatchObject({ code: "cancelled" });
     }
+  });
+
+  it("해설 전용 lane은 일반 배치 상한과 분리해 20개를 동시에 실행", async () => {
+    const fake = fakeSpawner({ hang: true });
+    const provider = new CodexCliProvider(config({ maxConcurrency: 2 }), fake.fn);
+    const controller = new AbortController();
+    const pending = [
+      provider.complete({ operation: "material-extract", prompt: "일반 배치", signal: controller.signal }),
+      ...Array.from({ length: EXPLANATION_PARALLELISM + 1 }, (_, index) =>
+        provider.complete({
+          operation: "question-generate",
+          prompt: `해설 ${index + 1}`,
+          signal: controller.signal,
+          lane: "explanation",
+        })
+      ),
+    ];
+    const guarded = pending.map((promise) => promise.catch((error: unknown) => error));
+
+    await vi.waitFor(() => expect(fake.calls).toHaveLength(EXPLANATION_PARALLELISM + 1));
+    expect(fake.calls.filter((call) => call.input.startsWith("해설 "))).toHaveLength(EXPLANATION_PARALLELISM);
+    expect(fake.calls.map((call) => call.input)).not.toContain(`해설 ${EXPLANATION_PARALLELISM + 1}`);
+
+    controller.abort();
+    const errors = await Promise.all(guarded);
+    for (const error of errors) expect(error).toMatchObject({ code: "cancelled" });
   });
 });

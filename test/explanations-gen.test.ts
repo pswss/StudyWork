@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
 import { makeEnv, call } from "./helpers";
 import { EXPLANATION_BATCH_SIZE } from "../src/explanations-gen";
+import { EXPLANATION_PARALLELISM } from "../src/codex-provider";
 
 const explanationCalls = vi.hoisted(() => [] as number[][]);
 const control = vi.hoisted(() => ({
@@ -14,7 +15,8 @@ const control = vi.hoisted(() => ({
   holdCall: null as { number: number; wait: Promise<void> } | null,
 }));
 
-vi.mock("../src/claude", () => ({
+vi.mock("../src/claude", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/claude")>()),
   generateExplanationsForQuestions: async (
     _subjectName: string,
     tasks: { id: number; answer: string }[]
@@ -160,10 +162,13 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
     expect(await explanationOf(bad)).toBe(""); // 불일치 해설은 DB에 절대 들어가지 않는다
   });
 
-  it("배치 실패 시 앞 배치까지는 저장되고, 재실행은 남은 문제만 이어서 처리한다", async () => {
+  it("한 섹션 실패 시 성공 섹션은 저장되고, 재실행은 실패 문항만 이어서 처리한다", async () => {
     const ids: number[] = [];
-    for (let i = 0; i < EXPLANATION_BATCH_SIZE + 2; i++) ids.push(await insertQuestion({ answer: `답${i}` }));
-    control.failOnCall = 2; // 1차 배치 저장 후 2차 배치에서 실패
+    for (let i = 0; i < EXPLANATION_PARALLELISM * EXPLANATION_BATCH_SIZE + 1; i++) {
+      ids.push(await insertQuestion({ answer: `답${i}` }));
+    }
+    // 첫 섹션의 20문항 체크포인트 뒤 남은 1문항 호출만 실패시킨다.
+    control.failOnCall = EXPLANATION_PARALLELISM + 1;
 
     const first = await call(env, `/api/subjects/${subjectId}/explanations/generate`, {
       method: "POST",
@@ -172,11 +177,13 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
     });
     const firstJob = await waitAIJob(((await first.json()) as { jobId: number }).jobId);
     expect(firstJob.status).toBe("error");
-    expect(explanationCalls).toEqual([ids.slice(0, EXPLANATION_BATCH_SIZE), ids.slice(EXPLANATION_BATCH_SIZE)]);
-    for (const id of ids.slice(0, EXPLANATION_BATCH_SIZE)) expect(await explanationOf(id)).toBe(`AI 해설 ${id}`); // 체크포인트
-    for (const id of ids.slice(EXPLANATION_BATCH_SIZE)) expect(await explanationOf(id)).toBe("");
+    expect(explanationCalls).toHaveLength(EXPLANATION_PARALLELISM + 1);
+    const failedIds = explanationCalls[EXPLANATION_PARALLELISM];
+    for (const id of ids) {
+      expect(await explanationOf(id)).toBe(failedIds.includes(id) ? "" : `AI 해설 ${id}`);
+    }
 
-    // 재실행 — 빈 해설 조회가 남은 2문항만 뽑아 이어서 진행한다
+    // 재실행 — 빈 해설 조회가 실패 섹션 문항만 뽑아 이어서 진행한다.
     const second = await call(env, `/api/subjects/${subjectId}/explanations/generate`, {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
@@ -184,9 +191,37 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
     });
     const secondJob = await waitAIJob(((await second.json()) as { jobId: number }).jobId);
     expect(secondJob.status).toBe("ready");
-    expect(secondJob.result).toEqual({ filled: 2, skippedMismatch: 0, skippedIds: [] });
-    expect(explanationCalls[2]).toEqual(ids.slice(EXPLANATION_BATCH_SIZE));
+    expect(secondJob.result).toEqual({ filled: failedIds.length, skippedMismatch: 0, skippedIds: [] });
+    expect(explanationCalls.slice(EXPLANATION_PARALLELISM + 1).flat()).toEqual(failedIds);
     for (const id of ids) expect(await explanationOf(id)).toBe(`AI 해설 ${id}`);
+  });
+
+  it("전체 문항을 20개 균형 섹션으로 나눠 동시에 시작", async () => {
+    const ids: number[] = [];
+    for (let i = 0; i < EXPLANATION_PARALLELISM * 2 + 1; i++) {
+      ids.push(await insertQuestion({ answer: `답${i}` }));
+    }
+    let release!: () => void;
+    control.holdAll = new Promise<void>((resolve) => { release = resolve; });
+    let jobId: number | null = null;
+    try {
+      const started = await call(env, `/api/subjects/${subjectId}/explanations/generate`, {
+        method: "POST",
+        headers: { cookie, "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      jobId = ((await started.json()) as { jobId: number }).jobId;
+      await vi.waitFor(() => expect(control.callCount).toBe(EXPLANATION_PARALLELISM));
+      expect(explanationCalls.map((call) => call.length)).toEqual([
+        3,
+        ...Array(EXPLANATION_PARALLELISM - 1).fill(2),
+      ]);
+      expect(explanationCalls.flat()).toEqual(ids);
+    } finally {
+      release();
+      control.holdAll = null;
+      if (jobId !== null) await waitAIJob(jobId);
+    }
   });
 
   it("완료한 배치 수를 작업 진행 퍼센트로 노출", async () => {
@@ -204,13 +239,14 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
         body: JSON.stringify({}),
       });
       jobId = ((await started.json()) as { jobId: number }).jobId;
-      for (let i = 0; i < 100 && control.callCount < 2; i++) {
+      let progress: number | null | undefined;
+      for (let i = 0; i < 100 && progress !== 95; i++) {
+        const jobs = await call(env, `/api/subjects/${subjectId}/jobs`, { headers: { cookie } });
+        progress = ((await jobs.json()) as Array<{ id: number; progress: number | null }>)
+          .find((job) => job.id === jobId)?.progress;
         await new Promise((resolve) => setTimeout(resolve, 2));
       }
-      const jobs = await call(env, `/api/subjects/${subjectId}/jobs`, { headers: { cookie } });
-      const current = ((await jobs.json()) as Array<{ id: number; progress: number | null }>)
-        .find((job) => job.id === jobId);
-      expect(current?.progress).toBe(95);
+      expect(progress).toBe(95);
     } finally {
       release();
       control.holdCall = null;

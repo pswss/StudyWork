@@ -61,6 +61,7 @@ async function runAgent(
     operation?: AIOperation;
     fileKind?: "pdf" | "image";
     responseSchema?: AIJsonSchema;
+    lane?: "explanation";
   } = {}
 ): Promise<string> {
   const skillInstructions = getStudySkillRegistry().prompt();
@@ -120,6 +121,7 @@ async function runAgent(
         : {}),
       ...(opts.responseSchema ? { schema: opts.responseSchema } : {}),
       ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(opts.lane ? { lane: opts.lane } : {}),
     });
     return result.text;
   }
@@ -1708,7 +1710,8 @@ export function parseExplanationItems(text: string, expectedIds: number[]): Expl
 export async function generateExplanationsForQuestions(
   subjectName: string,
   tasks: ExplanationTask[],
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  lane?: "explanation"
 ): Promise<ExplanationItem[]> {
   if (tasks.length === 0) return [];
   const prompt =
@@ -1736,6 +1739,7 @@ export async function generateExplanationsForQuestions(
           responseSchema: EXPLANATION_ITEMS_SCHEMA,
           maxTurns: 1,
           signal,
+          lane,
         }
       );
       return parseExplanationItems(result, tasks.map((task) => task.id));

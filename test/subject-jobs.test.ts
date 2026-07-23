@@ -7,7 +7,8 @@ import { makeEnv, call } from "./helpers";
 
 const control = vi.hoisted(() => ({ hold: null as Promise<void> | null }));
 
-vi.mock("../src/claude", () => ({
+vi.mock("../src/claude", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/claude")>()),
   generateExplanationsForQuestions: async (
     _subjectName: string,
     tasks: { id: number; answer: string }[]
