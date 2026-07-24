@@ -4,7 +4,7 @@ import { buildSystemPrompt } from "../src/claude";
 describe("claude", () => {
   it("시스템 프롬프트는 튜터 역할(영어 지시)·한국어 출력 지시를 포함", () => {
     const p = buildSystemPrompt("수학", []);
-    expect(p).toContain("Remap");
+    expect(p).toContain("REMAP");
     expect(p).toContain("personal tutor");
     expect(p).toContain("respond in Korean");
   });

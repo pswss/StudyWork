@@ -124,7 +124,7 @@ export default function App() {
   useEffect(() => {
     if (loading) return;
     document.title = page === "detail" && openSubject
-      ? `${openSubject.name} — Remap`
+      ? `${openSubject.name} — REMAP`
       : page === "login" ? t("shell.title.login") : t("shell.title.subjects");
     if (page !== "login") document.getElementById("main-content")?.focus();
   }, [loading, locale, openSubject?.id, page, t]);
@@ -207,7 +207,7 @@ export default function App() {
             aria-label={t("shell.goToSubjects")}
           >
             <span className="brand-mark" translate="no">RM</span>
-            <span className="brand-name" translate="no">Re<em>map</em></span>
+            <span className="brand-name" translate="no"><em>RE</em>MAP</span>
           </a>
           <div className="nav-account">
             <span className="nav-label">{auth.username ?? t("shell.personalLibrary")}</span>

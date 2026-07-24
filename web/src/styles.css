@@ -1,5 +1,5 @@
 /* ============================================================================
-   Remap visual system
+   REMAP visual system
    warm near-black charcoal · bone/ivory text · one accent: acid lime
    one Pretendard family · weight and scale establish hierarchy
    ========================================================================== */
@@ -120,8 +120,8 @@ nav {
   font-family: var(--serif); font-size: 17px; font-weight: 800; letter-spacing: -.02em;
   color: var(--ink); transition: color .2s var(--ease);
 }
-.brand-name em { font-style: normal; color: var(--ink-2); }
-.brand:hover .brand-name { color: var(--lime); }
+.brand-name em { font-style: normal; color: var(--lime); }
+.brand:hover .brand-name { color: var(--ink-2); }
 .nav-label {
   max-width: min(28vw, 260px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-family: var(--disp); font-size: 12px; font-weight: 600;
