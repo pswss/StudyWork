@@ -57,9 +57,12 @@ const AUTO_RETRY_BLOCKED_CODES: ReadonlySet<AIProviderError["code"]> = new Set([
 ]);
 
 class ProtectedQuestionConflictError extends Error {}
+class FigureBackfillIncompleteError extends Error {}
 
 const BACKFILL_CONFLICT_WARNING =
   "자동 문제 보강 건너뜀: 학습 기록이 있는 기존 문항이 현재 추출 범위와 달라 기존 문제와 기록을 보존했습니다.";
+const BACKFILL_SIMILARITY_MIN = 0.84;
+const BACKFILL_SIMILARITY_MARGIN = 0.08;
 
 function blocksAutomaticRetry(error: unknown): boolean {
   return error instanceof AIProviderError && AUTO_RETRY_BLOCKED_CODES.has(error.code);
@@ -72,6 +75,7 @@ export function publicBookError(error: unknown): string {
   if (error instanceof ProtectedQuestionConflictError) {
     return `${error.message}. 기존 문제와 학습 기록은 그대로 보존했습니다.`;
   }
+  if (error instanceof FigureBackfillIncompleteError) return error.message;
   if (error instanceof AIProviderError) {
     const messages: Partial<Record<AIProviderError["code"], string>> = {
       invalid_config: "AI 설정이 올바르지 않습니다",
@@ -114,6 +118,42 @@ function printedLocatorFromQuestionPrefix(question: string): number | null {
 
 function printedLocatorKey(page: number | null, locator: number | null): string | null {
   return page === null || locator === null ? null : `${page}|${locator}`;
+}
+
+function normalizeBackfillQuestion(question: string): string {
+  return question.normalize("NFKC").toLowerCase()
+    .replace(/\\dfrac\b/g, "\\frac")
+    .replace(/\\(?:left|right|displaystyle)\b/g, "")
+    .replace(/\\(?:mathrm|operatorname|text)\s*\{([^{}]*)\}/g, "$1")
+    .replace(/[^\p{L}\p{N}+\-*/=<>^|()[\].,]+/gu, "");
+}
+
+function backfillQuestionSimilarity(left: string, right: string): number {
+  const a = normalizeBackfillQuestion(left);
+  const b = normalizeBackfillQuestion(right);
+  if (a === b && a.length >= 8) return 1;
+  if (Math.min(a.length, b.length) < 12 || Math.min(a.length, b.length) / Math.max(a.length, b.length) < 0.55) {
+    return 0;
+  }
+  const counts = new Map<string, number>();
+  for (let index = 0; index <= a.length - 3; index++) {
+    const gram = a.slice(index, index + 3);
+    counts.set(gram, (counts.get(gram) ?? 0) + 1);
+  }
+  let intersection = 0;
+  for (let index = 0; index <= b.length - 3; index++) {
+    const gram = b.slice(index, index + 3);
+    const count = counts.get(gram) ?? 0;
+    if (count > 0) {
+      intersection++;
+      counts.set(gram, count - 1);
+    }
+  }
+  const aCount = a.length - 2;
+  const bCount = b.length - 2;
+  const dice = (2 * intersection) / (aCount + bCount);
+  const containment = intersection / Math.min(aCount, bCount);
+  return (dice * 0.75) + (containment * 0.25);
 }
 
 async function parkFigureBackfillConflict(
@@ -770,7 +810,7 @@ async function processFile(
     // 같은 행을 갱신해야 question_attempts FK와 학습 이력이 유지된다.
     const { results: existing } = await env.DB.prepare(
       `SELECT id, qtype, choices, answer, question, src_page, book_number, printed_number,
-              correct_count, wrong_count, explanation,
+              correct_count, wrong_count, explanation, has_figure, figure_description,
               (SELECT COUNT(*) FROM question_attempts qa WHERE qa.question_id = questions.id) AS attempt_count
        FROM questions WHERE src_file_id = ?`
     ).bind(fileId).all<{
@@ -785,12 +825,15 @@ async function processFile(
       correct_count: number;
       wrong_count: number;
       explanation: string;
+      has_figure: number;
+      figure_description: string | null;
       attempt_count: number;
     }>();
     if (!isCurrentJob(job)) return;
 
     const existingByKey = new Map<string, (typeof existing)[number] | null>();
     const existingByLocator = new Map<string, (typeof existing)[number] | null>();
+    const figuresByPage = new Map<number, (typeof existing)[number][]>();
     for (const q of existing) {
       const key = stableQuestionKey(q.src_page, q.question);
       // 같은 쪽·같은 지문이 다른 번호로 중복 수록될 수 있음(진도교재 매핑) — 안정키가 겹치면
@@ -801,34 +844,78 @@ async function processFile(
         numericPrintedLocator(q.printed_number) ?? printedLocatorFromQuestionPrefix(q.question)
       );
       if (locatorKey) existingByLocator.set(locatorKey, existingByLocator.has(locatorKey) ? null : q);
+      if (q.src_page !== null && q.has_figure === 1) {
+        const figures = figuresByPage.get(q.src_page) ?? [];
+        figures.push(q);
+        figuresByPage.set(q.src_page, figures);
+      }
     }
 
     const matchedIds = new Set<number>();
+    const missingFigureCount = existing.filter(
+      (question) => question.has_figure === 1 && !question.figure_description?.trim()
+    ).length;
+    const backfillStats = { fallback: 0, unmatched: 0, answerMismatch: 0, figureFalse: 0 };
     const freshLocatorCounts = new Map<string, number>();
     for (const item of items) {
       const key = printedLocatorKey(item.page, numericPrintedLocator(item.number));
       if (key) freshLocatorCounts.set(key, (freshLocatorCounts.get(key) ?? 0) + 1);
     }
     const statements = items.map((it, i) => {
+      const answer = normalizeAnswer(it.answer);
       let previous = existingByKey.get(stableQuestionKey(it.page, it.question)) ?? undefined;
+      if (figureBackfill && previous && matchedIds.has(previous.id)) previous = undefined;
       const locatorKey = printedLocatorKey(it.page, numericPrintedLocator(it.number));
       if (!previous && locatorKey && freshLocatorCounts.get(locatorKey) === 1) {
         const candidate = existingByLocator.get(locatorKey);
         if (candidate && !matchedIds.has(candidate.id)) previous = candidate;
       }
-      const answer = normalizeAnswer(it.answer);
+      // 이전 추출본에 printed_number가 없고 LaTeX 표기만 달라진 경우를 위한 backfill 전용 fallback.
+      // 같은 페이지·문항형·정답을 모두 만족한 후보 중 텍스트가 충분히 닮은 단독 승자만 허용한다.
+      if (figureBackfill && !previous && it.figure && it.page !== null) {
+        const ranked = (figuresByPage.get(it.page) ?? [])
+          .filter((candidate) =>
+            !matchedIds.has(candidate.id)
+            && candidate.qtype === it.qtype
+            && gradeAnswer(it.qtype, candidate.answer, answer, candidate.choices)
+          )
+          .map((candidate) => ({
+            candidate,
+            score: backfillQuestionSimilarity(it.question, candidate.question),
+          }))
+          .sort((left, right) => right.score - left.score);
+        const best = ranked[0];
+        const runnerUp = ranked[1];
+        if (
+          best?.score >= BACKFILL_SIMILARITY_MIN
+          && (!runnerUp || best.score - runnerUp.score >= BACKFILL_SIMILARITY_MARGIN)
+        ) {
+          previous = best.candidate;
+          backfillStats.fallback++;
+        }
+      }
       const answerCompatible = previous?.qtype === it.qtype
         && gradeAnswer(it.qtype, previous.answer, answer, previous.choices);
       // 그림 설명 backfill은 기존 문제 집합을 절대 재구성하지 않는다.
       // AI 재추출은 문구·범위가 흔들릴 수 있으므로 안전하게 매칭된 행의 그림 근거만 보수적으로 병합한다.
       if (figureBackfill) {
-        if (!previous || !answerCompatible) return env.DB.prepare("SELECT 1");
+        if (!previous) {
+          if (it.figure) backfillStats.unmatched++;
+          else backfillStats.figureFalse++;
+          return env.DB.prepare("SELECT 1");
+        }
+        if (!answerCompatible) {
+          backfillStats.answerMismatch++;
+          return env.DB.prepare("SELECT 1");
+        }
         matchedIds.add(previous.id);
+        if (!it.figure) backfillStats.figureFalse++;
         return env.DB.prepare(
           `UPDATE questions
            SET has_figure = CASE WHEN ? = 1 THEN 1 ELSE has_figure END,
                figure_description = CASE
-                 WHEN ? = 1 AND length(trim(COALESCE(?, ''))) > 0 THEN ?
+                 WHEN length(trim(COALESCE(figure_description, ''))) = 0
+                   AND ? = 1 AND length(trim(COALESCE(?, ''))) > 0 THEN ?
                  ELSE figure_description
                END,
                figure_box = CASE WHEN ? = 1 AND ? IS NOT NULL THEN ? ELSE figure_box END
@@ -906,8 +993,9 @@ async function processFile(
         ).bind(...unmatched.map((q) => q.id), fileId)
       );
     }
-    // book_files를 ready로 바꾸기 전에 연결 자료의 재시도 상태를 먼저 정리한다.
-    statements.push(
+    // 실제 그림 설명 반영과 완료 표식은 분리한다. backfill은 하나라도 비어 있으면
+    // 캐시·재시도 표식을 보존한 채 실패해야 0건 반영을 성공으로 오인하지 않는다.
+    const completionStatements = [
       env.DB.prepare(
         `UPDATE materials
          SET pending_to_book = 0, book_retry_count = 0, book_processing = 0,
@@ -931,9 +1019,31 @@ async function processFile(
          WHERE file_id = ?
            AND EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'ready')`
       ).bind(fileId, fileId)
-    );
+    ];
     if (!isCurrentJob(job)) return;
-    await env.DB.batch(statements);
+    if (figureBackfill) {
+      await env.DB.batch(statements);
+      if (!isCurrentJob(job)) return;
+      const remaining = await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM questions
+         WHERE src_file_id = ? AND has_figure = 1
+           AND length(trim(COALESCE(figure_description, ''))) = 0`
+      ).bind(fileId).first<{ n: number }>();
+      const remainingCount = remaining?.n ?? missingFigureCount;
+      if (remainingCount > 0) {
+        const filled = Math.max(0, missingFigureCount - remainingCount);
+        throw new FigureBackfillIncompleteError(
+          `그림 설명 보강 미완료: ${filled}/${missingFigureCount}개 반영, ${remainingCount}개 남음`
+          + ` (유사도 매칭 ${backfillStats.fallback}, 미매칭 ${backfillStats.unmatched},`
+          + ` 정답 불일치 ${backfillStats.answerMismatch}, 그림 없음 ${backfillStats.figureFalse})`
+        );
+      }
+      if (!isCurrentJob(job)) return;
+      await env.DB.batch(completionStatements);
+    } else {
+      statements.push(...completionStatements);
+      await env.DB.batch(statements);
+    }
     clearBookExtractionCache(fileId);
   } catch (e) {
     const cancelled = !isCurrentJob(job);

@@ -36,6 +36,19 @@ const mockState = vi.hoisted(() => ({
   solutionCalls: 0,
   solutionDelay: 0,
   solutionBoundaryMode: false,
+  problemItemsOverride: null as null | {
+    number: string | null;
+    qtype: "mcq" | "short" | "ox";
+    difficulty: "하" | "중" | "상";
+    question: string;
+    choices: string[] | null;
+    answer: string;
+    explanation: string;
+    page: number | null;
+    figure: boolean;
+    figure_description: string | null;
+    box: [number, number] | null;
+  }[],
   failSolutionSliceBaseOnce: null as number | null,
   failedSolutionSliceBases: new Set<number>(),
   solutionInputs: [] as { sliceBase: number; contentPageCount: number }[],
@@ -169,6 +182,7 @@ vi.mock("../src/claude", async (importOriginal) => {
     if (mockState.outerBoundaryVariantMode && opts?.sliceBase === 20) {
       return [{ qtype: "short", difficulty: "중", question: "뒤 청크가 온전히 읽은 경계 문항", choices: null, answer: "1", explanation: "", page: 20, figure: false, figure_description: null, box: null }];
     }
+    if (mockState.problemItemsOverride) return mockState.problemItemsOverride;
     const suffix = opts?.sliceBase ? ` ${opts.sliceBase}` : "";
     return [
       { number: String(mockState.problemNumberOffset + 1), qtype: "short", difficulty: "중", question: `y=2(x-3)^2+5 의 꼭짓점은?${suffix}`, choices: null, answer: mockState.changedAnswerMode ? "②" : "③", explanation: mockState.changedAnswerMode ? "" : "꼭짓점은 (3,5).", page: 2, figure: true, figure_description: "x축과 y축이 있는 좌표평면에 꼭짓점 (3, 5)인 위로 열린 포물선이 표시되어 있다.", box: [0.2, 0.5] },
@@ -1757,6 +1771,26 @@ describe("통합 업로드 라우팅 (자료 사이드바)", () => {
     return { id: row!.id, key };
   }
 
+  async function createReadyBackfillBook(title: string) {
+    const material = await createReadyMaterial(title);
+    const started = await startMaterialToBook(env, material.id);
+    if ("error" in started) throw new Error(started.error);
+    await waitMatBook(material.id, "ready");
+    return { material, started, questions: await questionsOf(started.bookId) };
+  }
+
+  async function armFigureBackfill(materialId: number, fileId: number): Promise<void> {
+    await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE materials SET pending_to_book = 1, figure_backfill_pending = 1 WHERE id = ?"
+      ).bind(materialId),
+      env.DB.prepare(
+        `INSERT INTO book_extraction_chunks (file_id, chunk_index, payload)
+         VALUES (?, 0, '[]')`
+      ).bind(fileId),
+    ]);
+  }
+
   it("자료 업로드 → 파트 지도에 문제·해설이 있으면 모든 문제·그림이 자동으로 문제 칸에 등록된다", async () => {
     mockState.sections = [{ part: "개념", from: 1, to: 1 }, { part: "문제", from: 2, to: 3 }, { part: "해설", from: 10, to: 12 }];
     try {
@@ -2143,6 +2177,178 @@ describe("통합 업로드 라우팅 (자료 사이드바)", () => {
       mockState.failProblemProviderCode = null;
       await env.FILES.delete(first.key);
       await env.FILES.delete(second.key);
+    }
+  });
+
+  it("backfill은 번호가 없고 LaTeX 표기가 달라도 강한 단일 후보의 설명만 채운 뒤 완료", async () => {
+    const { material, started, questions } = await createReadyBackfillBook("그림백필-유사도단일");
+    const target = questions[0];
+    try {
+      await env.DB.prepare(
+        `UPDATE questions
+         SET question = ?, figure_description = NULL, printed_number = NULL, wrong_count = 1
+         WHERE id = ?`
+      ).bind(
+        "함수 y=2(x-3)^2+5의 그래프에서 포물선의 꼭짓점 좌표를 구하여라.",
+        target.id
+      ).run();
+      await env.DB.prepare(
+        "INSERT INTO question_attempts (question_id, attempt_id, correct) VALUES (?, ?, 0)"
+      ).bind(target.id, `백필-유사도-${Date.now()}`).run();
+      const before = await env.DB.prepare(
+        `SELECT question, qtype, choices, answer, explanation, correct_count, wrong_count
+         FROM questions WHERE id = ?`
+      ).bind(target.id).first<Record<string, unknown>>();
+      await armFigureBackfill(material.id, started.fileId);
+      mockState.problemItemsOverride = [{
+        number: "99",
+        qtype: "short",
+        difficulty: "상",
+        question: "$y = 2(x - 3)^2 + 5$의 그래프에서 꼭짓점 좌표를 구하여라.",
+        choices: null,
+        answer: "③",
+        explanation: "새 전사 해설",
+        page: 2,
+        figure: true,
+        figure_description: "좌표평면에 꼭짓점 (3, 5)인 위로 열린 포물선이 있다.",
+        box: [0.1, 0.6],
+      }];
+
+      await retryPendingToBook(env);
+      const completed = await waitMatBook(material.id, "ready");
+      const after = await env.DB.prepare(
+        `SELECT question, qtype, choices, answer, explanation, correct_count, wrong_count,
+                figure_description, figure_box
+         FROM questions WHERE id = ?`
+      ).bind(target.id).first<Record<string, unknown>>();
+      expect(before).not.toBeNull();
+      expect(after).toMatchObject({
+        ...before!,
+        figure_description: expect.stringContaining("꼭짓점 (3, 5)"),
+        figure_box: "0.1,0.6",
+      });
+      expect(completed.book_error).toBeNull();
+      expect(await env.DB.prepare(
+        "SELECT pending_to_book, figure_backfill_pending FROM materials WHERE id = ?"
+      ).bind(material.id).first()).toEqual({ pending_to_book: 0, figure_backfill_pending: 0 });
+      expect(await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM question_attempts WHERE question_id = ?"
+      ).bind(target.id).first()).toEqual({ n: 1 });
+      expect(await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM book_extraction_chunks WHERE file_id = ?"
+      ).bind(started.fileId).first()).toEqual({ n: 0 });
+    } finally {
+      mockState.problemItemsOverride = null;
+      await call(env, `/api/materials/${material.id}`, { method: "DELETE", headers: { cookie } });
+      await env.FILES.delete(material.key);
+    }
+  });
+
+  it("backfill 결과가 그림 없음이면 ready로 확정하지 않고 표식·청크·문항을 보존", async () => {
+    const { material, started, questions } = await createReadyBackfillBook("그림백필-그림없음");
+    const target = questions[0];
+    try {
+      await env.DB.prepare(
+        "UPDATE questions SET figure_description = NULL, printed_number = NULL WHERE id = ?"
+      ).bind(target.id).run();
+      const before = await env.DB.prepare(
+        `SELECT question, qtype, choices, answer, explanation, correct_count, wrong_count,
+                has_figure, figure_box
+         FROM questions WHERE id = ?`
+      ).bind(target.id).first<Record<string, unknown>>();
+      await armFigureBackfill(material.id, started.fileId);
+      mockState.problemItemsOverride = [{
+        number: "1",
+        qtype: "short",
+        difficulty: "중",
+        question: target.question,
+        choices: null,
+        answer: "③",
+        explanation: "",
+        page: 2,
+        figure: false,
+        figure_description: null,
+        box: null,
+      }];
+
+      await retryPendingToBook(env);
+      const failed = await waitMatBook(material.id, "error");
+      expect(failed.book_error).toContain("그림 설명 보강 미완료: 0/1개 반영, 1개 남음");
+      expect(failed.book_error).toContain("그림 없음 1");
+      expect(await env.DB.prepare(
+        `SELECT question, qtype, choices, answer, explanation, correct_count, wrong_count,
+                has_figure, figure_box
+         FROM questions WHERE id = ?`
+      ).bind(target.id).first()).toEqual(before);
+      expect(await env.DB.prepare(
+        "SELECT figure_description FROM questions WHERE id = ?"
+      ).bind(target.id).first()).toEqual({ figure_description: null });
+      expect(await env.DB.prepare(
+        `SELECT pending_to_book, figure_backfill_pending, book_retry_count, book_processing
+         FROM materials WHERE id = ?`
+      ).bind(material.id).first()).toEqual({
+        pending_to_book: 1,
+        figure_backfill_pending: 1,
+        book_retry_count: 0,
+        book_processing: 0,
+      });
+      expect(await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM book_extraction_chunks WHERE file_id = ?"
+      ).bind(started.fileId).first()).toEqual({ n: 1 });
+    } finally {
+      mockState.problemItemsOverride = null;
+      await call(env, `/api/materials/${material.id}`, { method: "DELETE", headers: { cookie } });
+      await env.FILES.delete(material.key);
+    }
+  });
+
+  it("backfill 유사도 후보가 같은 점수로 모호하면 어느 문항에도 오결합하지 않음", async () => {
+    const { material, started, questions } = await createReadyBackfillBook("그림백필-모호후보");
+    const target = questions[0];
+    try {
+      await env.DB.prepare(
+        "UPDATE questions SET figure_description = NULL, printed_number = NULL WHERE id = ?"
+      ).bind(target.id).run();
+      const duplicate = await env.DB.prepare(
+        `INSERT INTO questions
+           (subject_id, source, qtype, difficulty, question, choices, answer, explanation,
+            book_id, book_number, printed_number, src_file_id, src_page, has_figure, figure_box, figure_description)
+         SELECT subject_id, source, qtype, difficulty, question, choices, answer, explanation,
+                book_id, '모호', NULL, src_file_id, src_page, 1, figure_box, NULL
+         FROM questions WHERE id = ? RETURNING id`
+      ).bind(target.id).first<{ id: number }>();
+      await armFigureBackfill(material.id, started.fileId);
+      mockState.problemItemsOverride = [{
+        number: "99",
+        qtype: "short",
+        difficulty: "상",
+        question: "$y = 2(x - 3)^2 + 5$의 꼭짓점은?",
+        choices: null,
+        answer: "③",
+        explanation: "",
+        page: 2,
+        figure: true,
+        figure_description: "잘못 연결되면 안 되는 그림 설명",
+        box: [0.1, 0.6],
+      }];
+
+      await retryPendingToBook(env);
+      const failed = await waitMatBook(material.id, "error");
+      expect(failed.book_error).toContain("미매칭 1");
+      expect(await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM questions
+         WHERE id IN (?, ?) AND figure_description IS NOT NULL`
+      ).bind(target.id, duplicate!.id).first()).toEqual({ n: 0 });
+      expect(await env.DB.prepare(
+        "SELECT pending_to_book, figure_backfill_pending FROM materials WHERE id = ?"
+      ).bind(material.id).first()).toEqual({ pending_to_book: 1, figure_backfill_pending: 1 });
+      expect(await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM book_extraction_chunks WHERE file_id = ?"
+      ).bind(started.fileId).first()).toEqual({ n: 1 });
+    } finally {
+      mockState.problemItemsOverride = null;
+      await call(env, `/api/materials/${material.id}`, { method: "DELETE", headers: { cookie } });
+      await env.FILES.delete(material.key);
     }
   });
 
