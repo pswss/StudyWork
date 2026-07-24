@@ -78,47 +78,49 @@ async function generateVerifiedExplanations(
 
   for (const reasoningEffort of EXPLANATION_EFFORT_LADDER) {
     if (remaining.length === 0) break;
-    const figureItems: FigureBundleItem[] = remaining
-      .filter((question) => question.has_figure === 1)
-      .map((question) => {
-        if (
-          question.src_file_id === null ||
-          question.src_page === null ||
-          !question.source_r2_key ||
-          !question.source_mime
-        ) {
-          throw new AIProviderError("invalid_file", "그림 문항의 원본 페이지를 찾을 수 없습니다");
+    const evidenceItems: FigureBundleItem[] = remaining.flatMap((question) => {
+      if (
+        question.src_file_id === null ||
+        question.src_page === null ||
+        !question.source_r2_key ||
+        !question.source_mime
+      ) {
+        if (question.has_figure === 1) {
+          throw new AIProviderError("invalid_file", "문항의 원본 페이지를 찾을 수 없습니다");
         }
-        return {
-          id: question.id,
-          source: {
-            id: question.src_file_id,
-            r2_key: question.source_r2_key,
-            mime: question.source_mime,
-          },
-          page: question.src_page,
-          box: parseFigureBox(question.figure_box),
-        };
-      });
+        return [];
+      }
+      return [{
+        id: question.id,
+        source: {
+          id: question.src_file_id,
+          r2_key: question.source_r2_key,
+          mime: question.source_mime,
+        },
+        page: question.src_page,
+        box: parseFigureBox(question.figure_box),
+      }];
+    });
+    const evidenceIds = new Set(evidenceItems.map((item) => item.id));
     const tasks: ExplanationTask[] = remaining.map((question) => ({
       id: question.id,
       qtype: question.qtype,
       question: question.question,
       choices: parseStoredChoices(question.choices),
       answer: question.answer,
-      visual_ref: question.has_figure === 1 ? `QUESTION_ID ${question.id}` : null,
+      visual_ref: evidenceIds.has(question.id) ? `QUESTION_ID ${question.id}` : null,
       figure_description: question.has_figure === 1 ? question.figure_description : null,
     }));
-    let figures: Awaited<ReturnType<typeof createFigureBundlePdf>> = null;
+    let evidence: Awaited<ReturnType<typeof createFigureBundlePdf>> = null;
     try {
-      figures = await createFigureBundlePdf(files, figureItems, signal);
+      evidence = await createFigureBundlePdf(files, evidenceItems, signal);
       const items = await generateExplanationsForQuestions(
         subjectName,
         tasks,
         signal,
         lane,
         reasoningEffort,
-        figures?.path
+        evidence?.path
       );
       receivedValidResponse = true;
       const byId = new Map(remaining.map((question) => [question.id, question]));
@@ -142,7 +144,7 @@ async function generateVerifiedExplanations(
       }
       lastError = error;
     } finally {
-      figures?.cleanup();
+      evidence?.cleanup();
     }
   }
 

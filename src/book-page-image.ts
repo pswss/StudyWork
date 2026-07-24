@@ -122,7 +122,7 @@ export async function renderBookPageImage(
   }
 }
 
-/** 그림 task마다 QUESTION_ID 라벨과 crop 한 장을 넣은 단일 AI 첨부 PDF를 만든다. */
+/** 원본 근거 task마다 QUESTION_ID 라벨과 crop/페이지 한 장을 넣은 단일 AI 첨부 PDF를 만든다. */
 export async function createFigureBundlePdf(
   files: FileStore,
   items: FigureBundleItem[],
@@ -163,7 +163,7 @@ export async function createFigureBundlePdf(
     }
     const bytes = await document.save();
     if (bytes.byteLength > AI_MAX_FILE_BYTES) {
-      throw new AIProviderError("file_too_large", "그림 묶음이 AI 파일 입력 한도(50MB)를 초과했습니다");
+      throw new AIProviderError("file_too_large", "원본 근거 묶음이 AI 파일 입력 한도(50MB)를 초과했습니다");
     }
     throwIfAborted(signal);
     const path = join(dir, "figures.pdf");
@@ -172,6 +172,6 @@ export async function createFigureBundlePdf(
   } catch (error) {
     rmSync(dir, { recursive: true, force: true });
     if (error instanceof AIProviderError) throw error;
-    throw new AIProviderError("invalid_file", "그림 문항 원본을 준비할 수 없습니다");
+    throw new AIProviderError("invalid_file", "문항 원본을 준비할 수 없습니다");
   }
 }

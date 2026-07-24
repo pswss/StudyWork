@@ -115,7 +115,7 @@ async function insertQuestion(opts: {
     opts.answer ?? "42",
     opts.explanation ?? "",
     opts.srcFileId ?? null,
-    opts.srcPage ?? null,
+    opts.srcPage ?? (opts.srcFileId == null ? null : 1),
     opts.hasFigure ? 1 : 0,
     opts.figureBox ?? null,
     opts.figureDescription ?? null
@@ -152,6 +152,16 @@ beforeAll(async () => {
     "INSERT INTO book_files (book_id, name, r2_key, mime, status) VALUES (?, '문제집.pdf', 'k', 'application/pdf', 'ready') RETURNING id"
   ).bind(book!.id).first<{ id: number }>();
   fileId = file!.id;
+  const sourcePdf = await PDFDocument.create();
+  sourcePdf.addPage([100, 100]);
+  const sourcePdfBytes = await sourcePdf.save();
+  await env.FILES.put(
+    "k",
+    sourcePdfBytes.buffer.slice(
+      sourcePdfBytes.byteOffset,
+      sourcePdfBytes.byteOffset + sourcePdfBytes.byteLength
+    ) as ArrayBuffer
+  );
 
   const figureFile = await env.DB.prepare(
     "INSERT INTO book_files (book_id, name, r2_key, mime, status) VALUES (?, '그림.png', 'figure.png', 'image/png', 'ready') RETURNING id"
@@ -195,11 +205,20 @@ describe("GET /api/subjects/:id/explanations/missing", () => {
     ]);
   });
 
-  it("삭제된 원본 파일의 문제는 직접 생성·기타(null) 그룹으로 합친다", async () => {
-    await insertQuestion({ srcFileId: 999_999 });
+  it("삭제된 원본 파일의 일반 문제는 직접 생성·기타(null)로 합쳐 텍스트만으로 처리한다", async () => {
+    const id = await insertQuestion({ srcFileId: 999_999 });
     const res = await call(env, `/api/subjects/${subjectId}/explanations/missing`, { headers: { cookie } });
     const groups = await res.json() as { src_file_id: number | null; missing: number }[];
     expect(groups).toEqual([{ src_file_id: null, src_file_name: null, missing: 1 }]);
+
+    const generated = await call(env, `/api/subjects/${subjectId}/explanations/generate`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ manual: true }),
+    });
+    expect((await waitAIJob(((await generated.json()) as { jobId: number }).jobId)).status).toBe("ready");
+    expect(figureCalls).toHaveLength(0);
+    expect(await explanationOf(id)).toBe(`AI 해설 ${id}`);
   });
 
   it("인증 없이는 401", async () => {
@@ -447,6 +466,14 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
     });
     expect((await waitAIJob(((await scoped.json()) as { jobId: number }).jobId)).status).toBe("ready");
     expect(explanationCalls).toEqual([[fromFile]]);
+    expect(figureCalls).toEqual([expect.objectContaining({
+      pageCount: 1,
+      tasks: [{
+        id: fromFile,
+        visual_ref: `QUESTION_ID ${fromFile}`,
+        figure_description: null,
+      }],
+    })]);
     expect(await explanationOf(manual)).toBe("");
 
     const manualRun = await call(env, `/api/subjects/${subjectId}/explanations/generate`, {
@@ -466,6 +493,15 @@ describe("POST /api/subjects/:id/explanations/generate", () => {
     const file2 = (await env.DB.prepare(
       "INSERT INTO book_files (book_id, name, r2_key, mime, status) VALUES (?, '문제집2.pdf', 'k2', 'application/pdf', 'ready') RETURNING id"
     ).bind(book!.id).first<{ id: number }>())!.id;
+    const sourcePdfBytes = await env.FILES.get("k");
+    if (!sourcePdfBytes) throw new Error("원본 PDF fixture 없음");
+    await env.FILES.put(
+      "k2",
+      sourcePdfBytes.buffer.slice(
+        sourcePdfBytes.byteOffset,
+        sourcePdfBytes.byteOffset + sourcePdfBytes.byteLength
+      ) as ArrayBuffer
+    );
     const q1 = await insertQuestion({ srcFileId: fileId, answer: "답1" });
     const q2 = await insertQuestion({ srcFileId: file2, answer: "답2" });
 
