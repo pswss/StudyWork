@@ -1747,8 +1747,9 @@ export async function generateExplanationsForQuestions(
     `- id: copy the question's id unchanged. Return exactly one item per question, covering every id once.\n` +
     `- derived_answer: YOUR OWN final answer from solving. For mcq return the full text of the choice you derived; ` +
     `for ox return exactly O or X; otherwise return the short answer text. The provided "answer" field is the book's ` +
-    `official answer for cross-checking only — if your own result disagrees with it, still report your own result. ` +
-    `Never copy an answer you cannot derive.\n` +
+    `official answer for cross-checking only. If and only if your independently derived result is mathematically ` +
+    `equivalent, copy that answer field verbatim as derived_answer; if it disagrees, still report your own result. ` +
+    `Never copy an answer you cannot independently derive.\n` +
     `- explanation: a Korean step-by-step explanation that justifies derived_answer, with formulas in LaTeX ` +
     `($...$ inline, $$...$$ block). Show enough reasoning to audit the answer; never merely restate it.\n` +
     `Output ONLY the strict JSON array: [{"id":1,"derived_answer":"...","explanation":"..."}]`;

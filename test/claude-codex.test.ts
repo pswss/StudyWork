@@ -118,6 +118,7 @@ describe("StudyWork Codex facade", () => {
     });
     expect(request.prompt).toContain('"visual_ref":"QUESTION_ID 7"');
     expect(request.prompt).toContain("mandatory primary evidence");
+    expect(request.prompt).toContain("copy that answer field verbatim");
     expect(request.prompt).not.toContain(figures);
   });
 
