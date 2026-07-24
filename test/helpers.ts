@@ -17,7 +17,7 @@ export function makeEnv(): Env {
     DB: db,
     FILES: files,
     APP_PASSWORD: "test-password",
-    AUTH_SECRET: "test-secret",
+    AUTH_SECRET: "test-secret-that-is-at-least-32-bytes",
   };
 }
 

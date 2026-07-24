@@ -24,16 +24,24 @@ try {
 
 const PORT = Number(process.env.PORT ?? 8787);
 const DATA_DIR = resolve(process.env.DATA_DIR ?? "./data");
-const APP_PASSWORD = process.env.APP_PASSWORD;
+const APP_PASSWORD = process.env.APP_PASSWORD || undefined;
 const AUTH_SECRET = process.env.AUTH_SECRET;
+const HTTPS_ONLY = process.env.STUDYWORK_HTTPS_ONLY === "true";
 const OBSIDIAN_VAULT_PATH = process.env.OBSIDIAN_VAULT_PATH?.trim();
 const OBSIDIAN_WRITE_ENABLED = process.env.OBSIDIAN_WRITE_ENABLED === "true";
 
-if (!APP_PASSWORD || !AUTH_SECRET) {
+if (!AUTH_SECRET || Buffer.byteLength(AUTH_SECRET, "utf8") < 32) {
   console.error(
-    "환경변수 APP_PASSWORD, AUTH_SECRET 가 필요합니다.\n" +
-      ".env 파일을 만들어 주세요:  cp .env.example .env  후 값 입력"
+    "환경변수 AUTH_SECRET은 UTF-8 기준 32바이트 이상이어야 합니다.\n" +
+      ".env 파일을 만들어 주세요: cp .env.example .env 후 긴 임의 값을 입력"
   );
+  process.exit(1);
+}
+if (
+  APP_PASSWORD &&
+  ([...APP_PASSWORD].length < 10 || Buffer.byteLength(APP_PASSWORD, "utf8") < 10)
+) {
+  console.error("환경변수 APP_PASSWORD는 설정할 경우 10자·10바이트 이상이어야 합니다.");
   process.exit(1);
 }
 
@@ -41,6 +49,10 @@ if (!APP_PASSWORD || !AUTH_SECRET) {
 mkdirSync(DATA_DIR, { recursive: true });
 const migrationsDir = resolve(import.meta.dirname, "..", "migrations");
 const db = new LocalDB(join(DATA_DIR, "studywork.db"), { migrationsDir });
+const ownerConfigured = await db.prepare("SELECT id FROM users WHERE id = 1").first();
+if (!APP_PASSWORD && !ownerConfigured) {
+  console.warn("APP_PASSWORD가 없어 최초 소유자 계정 생성을 사용할 수 없습니다.");
+}
 const files = new FileStore(join(DATA_DIR, "files"));
 configureAISettings(db);
 
@@ -68,8 +80,9 @@ if (OBSIDIAN_VAULT_PATH) {
 const env: Env = {
   DB: db,
   FILES: files,
-  APP_PASSWORD,
+  ...(APP_PASSWORD ? { APP_PASSWORD } : {}),
   AUTH_SECRET,
+  HTTPS_ONLY,
   ...(obsidian ? { OBSIDIAN: obsidian } : {}),
   ...(obsidianError ? { OBSIDIAN_ERROR: obsidianError } : {}),
   OBSIDIAN_WRITE_ENABLED,
@@ -112,13 +125,18 @@ const server = serve(
     // nodeEnv(incoming 소켓)를 함께 넘겨 로그인 rate limit이 실제 IP를 보게 한다
     fetch: (req: Request, nodeEnv?: object) => app.fetch(req, { ...nodeEnv, ...env }),
     port: PORT,
-    hostname: "0.0.0.0", // 폰/아이패드 등 같은 네트워크에서 접근 가능하도록
+    hostname: HTTPS_ONLY ? "127.0.0.1" : "0.0.0.0",
   },
   () => {
     console.log(`\nStudyWork 서버 실행 중`);
-    console.log(`  로컬:  http://localhost:${PORT}`);
-    for (const ip of lanIPs()) {
-      console.log(`  LAN:   http://${ip}:${PORT}`);
+    if (HTTPS_ONLY) {
+      console.log(`  HTTPS 프록시 upstream: http://127.0.0.1:${PORT}`);
+      console.log("  직접 HTTP 인증/API 접속: 차단");
+    } else {
+      console.log(`  로컬:  http://localhost:${PORT}`);
+      for (const ip of lanIPs()) {
+        console.log(`  LAN:   http://${ip}:${PORT}`);
+      }
     }
     console.log(`  데이터: ${DATA_DIR}\n`);
   }
