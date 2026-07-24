@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import {
   numericPrintedLocator,
+  parseFigureDescriptionItems,
   parsePageExtractions,
   parseQuestionsJson,
   parseQuizItemsEx,
@@ -324,6 +325,23 @@ describe("parseQuizItemsEx", () => {
     expect(described.figure_description).toBe("x축의 2와 y축의 3을 지나는 점 A가 표시된 좌표평면.");
     expect(() => parseQuizItemsEx(JSON.stringify([{ ...base, figure: true, figure_description: "" }]))).toThrow("figure_description이 필수");
     expect(() => parseQuizItemsEx(JSON.stringify([{ ...base, figure_description: "불필요한 설명" }]))).toThrow("null이어야");
+  });
+
+  it("기존 문항 그림 설명은 요청한 id만 정확히 한 번 허용", () => {
+    expect(parseFigureDescriptionItems(JSON.stringify([
+      { id: 7, figure_present: true, figure_description: "  좌표평면에 점 A와 직선 l이 표시되어 있다.  " },
+      { id: 8, figure_present: false, figure_description: null },
+    ]), [7, 8])).toEqual([
+      { id: 7, figure_present: true, figure_description: "좌표평면에 점 A와 직선 l이 표시되어 있다." },
+      { id: 8, figure_present: false, figure_description: null },
+    ]);
+    expect(() => parseFigureDescriptionItems(JSON.stringify([
+      { id: 7, figure_present: true, figure_description: "QUESTION_ID 7의 그래프" },
+    ]), [7])).toThrow("내부 그림 참조");
+    expect(() => parseFigureDescriptionItems(JSON.stringify([
+      { id: 7, figure_present: true, figure_description: "그래프" },
+      { id: 7, figure_present: true, figure_description: "중복" },
+    ]), [7, 8])).toThrow("id가 요청과 일치하지 않습니다");
   });
 
   it.each([

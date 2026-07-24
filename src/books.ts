@@ -10,7 +10,8 @@ import type { Env } from "./index";
 import {
   detectAnswerKeyPagesFromFile, detectDetailedSolutionPagesFromFile,
   extractProblemsFromFile, extractSolutionsFromFile,
-  mapPool, numericPrintedLocator, slicePdf, isUsageLimitText, validatePrintedQuestionSequence,
+  generateFigureDescriptionsForQuestions, mapPool, numericPrintedLocator, slicePdf,
+  isUsageLimitText, validatePrintedQuestionSequence,
   ProblemChunkValidationError, type QuizItemEx, type SolutionItem,
 } from "./claude";
 import { checkAndIncrementUsage } from "./usage";
@@ -24,6 +25,7 @@ import { createAIJob, readyAIJobStatement, runAIJob } from "./ai-jobs";
 import { gradeAnswer } from "./quiz";
 import {
   BookPageNotFoundError,
+  createFigureBundlePdf,
   parseFigureBox,
   renderBookPageImage,
 } from "./book-page-image";
@@ -61,8 +63,6 @@ class FigureBackfillIncompleteError extends Error {}
 
 const BACKFILL_CONFLICT_WARNING =
   "자동 문제 보강 건너뜀: 학습 기록이 있는 기존 문항이 현재 추출 범위와 달라 기존 문제와 기록을 보존했습니다.";
-const BACKFILL_SIMILARITY_MIN = 0.84;
-const BACKFILL_SIMILARITY_MARGIN = 0.08;
 
 function blocksAutomaticRetry(error: unknown): boolean {
   return error instanceof AIProviderError && AUTO_RETRY_BLOCKED_CODES.has(error.code);
@@ -118,42 +118,6 @@ function printedLocatorFromQuestionPrefix(question: string): number | null {
 
 function printedLocatorKey(page: number | null, locator: number | null): string | null {
   return page === null || locator === null ? null : `${page}|${locator}`;
-}
-
-function normalizeBackfillQuestion(question: string): string {
-  return question.normalize("NFKC").toLowerCase()
-    .replace(/\\dfrac\b/g, "\\frac")
-    .replace(/\\(?:left|right|displaystyle)\b/g, "")
-    .replace(/\\(?:mathrm|operatorname|text)\s*\{([^{}]*)\}/g, "$1")
-    .replace(/[^\p{L}\p{N}+\-*/=<>^|()[\].,]+/gu, "");
-}
-
-function backfillQuestionSimilarity(left: string, right: string): number {
-  const a = normalizeBackfillQuestion(left);
-  const b = normalizeBackfillQuestion(right);
-  if (a === b && a.length >= 8) return 1;
-  if (Math.min(a.length, b.length) < 12 || Math.min(a.length, b.length) / Math.max(a.length, b.length) < 0.55) {
-    return 0;
-  }
-  const counts = new Map<string, number>();
-  for (let index = 0; index <= a.length - 3; index++) {
-    const gram = a.slice(index, index + 3);
-    counts.set(gram, (counts.get(gram) ?? 0) + 1);
-  }
-  let intersection = 0;
-  for (let index = 0; index <= b.length - 3; index++) {
-    const gram = b.slice(index, index + 3);
-    const count = counts.get(gram) ?? 0;
-    if (count > 0) {
-      intersection++;
-      counts.set(gram, count - 1);
-    }
-  }
-  const aCount = a.length - 2;
-  const bCount = b.length - 2;
-  const dice = (2 * intersection) / (aCount + bCount);
-  const containment = intersection / Math.min(aCount, bCount);
-  return (dice * 0.75) + (containment * 0.25);
 }
 
 async function parkFigureBackfillConflict(
@@ -716,6 +680,163 @@ function normalizeAnswer(a: string): string {
   return i >= 0 ? String(i + 1) : a;
 }
 
+type FigureBackfillTarget = {
+  id: number;
+  question: string;
+  src_page: number;
+  figure_box: string | null;
+};
+
+async function backfillFigureDescriptions(
+  env: Env,
+  materialId: number,
+  fileId: number,
+  bookId: number,
+  r2Key: string,
+  mime: string,
+  targets: FigureBackfillTarget[],
+  totalTargetCount: number,
+  missingSourceCount: number,
+  job: JobToken
+): Promise<void> {
+  const batches: FigureBackfillTarget[][] = [];
+  for (let index = 0; index < targets.length; index += 20) {
+    batches.push(targets.slice(index, index + 20));
+  }
+  if (!isCurrentJob(job)) throw new AIProviderError("cancelled", "사용자 중단");
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM book_extraction_chunks WHERE file_id = ?").bind(fileId),
+    env.DB.prepare(
+      `UPDATE book_files
+       SET error = NULL, progress = 0, retry_chunk_count = ?, chunk_total = ?
+       WHERE id = ? AND status = 'processing'`
+    ).bind(batches.length, batches.length, fileId),
+  ]);
+
+  let completedBatches = 0;
+  let missingVisuals = 0;
+  await mapPool(batches, BULK_AI_PARALLELISM, async (batch) => {
+    if (!isCurrentJob(job)) throw new AIProviderError("cancelled", "사용자 중단");
+    const evidence = await createFigureBundlePdf(
+      env.FILES,
+      batch.map((target) => ({
+        id: target.id,
+        source: { id: fileId, r2_key: r2Key, mime },
+        page: target.src_page,
+        box: parseFigureBox(target.figure_box),
+      })),
+      job.signal
+    );
+    if (!evidence) throw new AIProviderError("invalid_file", "문항의 원본 페이지를 찾을 수 없습니다");
+    try {
+      const tasks = batch.map((target) => ({
+        id: target.id,
+        question: target.question,
+        visual_ref: `QUESTION_ID ${target.id}`,
+      }));
+      let items = await generateFigureDescriptionsForQuestions(
+        tasks,
+        evidence.path,
+        job.signal,
+        "bulk"
+      );
+      const missingIds = new Set(items.filter((item) => !item.figure_present).map((item) => item.id));
+      if (missingIds.size > 0) {
+        const fallbackTargets = batch.filter((target) => missingIds.has(target.id));
+        const fullPages = await createFigureBundlePdf(
+          env.FILES,
+          fallbackTargets.map((target) => ({
+            id: target.id,
+            source: { id: fileId, r2_key: r2Key, mime },
+            page: target.src_page,
+            box: null,
+          })),
+          job.signal
+        );
+        if (!fullPages) throw new AIProviderError("invalid_file", "문항의 원본 페이지를 찾을 수 없습니다");
+        try {
+          const fallbackItems = await generateFigureDescriptionsForQuestions(
+            tasks.filter((task) => missingIds.has(task.id)),
+            fullPages.path,
+            job.signal,
+            "bulk"
+          );
+          const fallbackById = new Map(fallbackItems.map((item) => [item.id, item]));
+          items = items.map((item) => fallbackById.get(item.id) ?? item);
+        } finally {
+          fullPages.cleanup();
+        }
+      }
+      if (!isCurrentJob(job)) throw new AIProviderError("cancelled", "사용자 중단");
+      missingVisuals += items.filter((item) => !item.figure_present).length;
+      const updates = items.flatMap((item) =>
+        item.figure_present && item.figure_description
+          ? [env.DB.prepare(
+              `UPDATE questions SET figure_description = ?
+               WHERE id = ? AND src_file_id = ? AND has_figure = 1
+                 AND length(trim(COALESCE(figure_description, ''))) = 0
+                 AND EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'processing')`
+            ).bind(item.figure_description, item.id, fileId, fileId)]
+          : []
+      );
+      if (updates.length > 0) await env.DB.batch(updates);
+      const done = ++completedBatches;
+      await env.DB.prepare(
+        `UPDATE book_files
+         SET progress = MAX(progress, ?), retry_chunk_count = MIN(retry_chunk_count, ?)
+         WHERE id = ? AND status = 'processing'`
+      ).bind(
+        Math.min(99, Math.round((done / batches.length) * 100)),
+        batches.length - done,
+        fileId
+      ).run();
+    } finally {
+      evidence.cleanup();
+    }
+  });
+
+  if (!isCurrentJob(job)) throw new AIProviderError("cancelled", "사용자 중단");
+  const remaining = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM questions
+     WHERE book_id = ? AND has_figure = 1
+       AND length(trim(COALESCE(figure_description, ''))) = 0`
+  ).bind(bookId).first<{ n: number }>();
+  const remainingCount = remaining?.n ?? targets.length;
+  if (remainingCount > 0) {
+    throw new FigureBackfillIncompleteError(
+      `그림 설명 보강 미완료: ${Math.max(0, totalTargetCount - remainingCount)}/${totalTargetCount}개 반영, `
+      + `${remainingCount}개 남음 (원본 위치 없음 ${missingSourceCount}, 원본 그림 확인 실패 ${missingVisuals})`
+    );
+  }
+  if (!isCurrentJob(job)) throw new AIProviderError("cancelled", "사용자 중단");
+  await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE materials
+       SET pending_to_book = 0, book_retry_count = 0, book_processing = 0,
+           figure_backfill_pending = 0,
+           integrity_warning = CASE
+             WHEN integrity_warning = ? THEN NULL
+             WHEN instr(COALESCE(integrity_warning, ''), ? || ' · ') = 1
+               THEN substr(integrity_warning, length(?) + 4)
+             ELSE integrity_warning
+           END
+       WHERE id = ? AND figure_backfill_pending = 1
+         AND EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'processing')`
+    ).bind(BACKFILL_CONFLICT_WARNING, BACKFILL_CONFLICT_WARNING, BACKFILL_CONFLICT_WARNING, materialId, fileId),
+    env.DB.prepare(
+      `UPDATE book_files
+       SET status = 'ready', error = NULL, progress = 100, retry_chunk_count = 0, chunk_total = 0
+       WHERE id = ? AND status = 'processing'`
+    ).bind(fileId),
+    env.DB.prepare(
+      `DELETE FROM book_extraction_chunks
+       WHERE file_id = ?
+         AND EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'ready')`
+    ).bind(fileId, fileId),
+  ]);
+  clearBookExtractionCache(fileId);
+}
+
 // 백그라운드 잡: 파일에서 모든 문제 추출 → questions 직접 등록 → 상태 갱신.
 // 요청과 분리돼 실행되므로 탭을 떠나거나 브라우저를 닫아도 계속 진행된다.
 async function processFile(
@@ -735,7 +856,63 @@ async function processFile(
   activeBookJobs.add(fileId);
   const job = claimedJob ?? startJob(cancelKey);
   let automaticLinkedRetryAllowed = true;
+  let figureBackfillMaterialId: number | null = null;
   try {
+    const figureBackfillMaterial = await env.DB.prepare(
+      "SELECT id FROM materials WHERE book_id = ? AND figure_backfill_pending = 1"
+    ).bind(bookId).first<{ id: number }>();
+    figureBackfillMaterialId = figureBackfillMaterial?.id ?? null;
+    if (figureBackfillMaterial) {
+      const [existingCount, missingCount, source, missing] = await Promise.all([
+        env.DB.prepare("SELECT COUNT(*) AS n FROM questions WHERE src_file_id = ?")
+          .bind(fileId).first<{ n: number }>(),
+        env.DB.prepare(
+          `SELECT COUNT(*) AS n FROM questions
+           WHERE book_id = ? AND has_figure = 1
+             AND length(trim(COALESCE(figure_description, ''))) = 0`
+        ).bind(bookId).first<{ n: number }>(),
+        env.DB.prepare("SELECT mime, page_count FROM book_files WHERE id = ?")
+          .bind(fileId).first<{ mime: string; page_count: number | null }>(),
+        env.DB.prepare(
+          `SELECT id, question, src_page, figure_box FROM questions
+           WHERE src_file_id = ? AND has_figure = 1
+             AND length(trim(COALESCE(figure_description, ''))) = 0
+           ORDER BY id`
+        ).bind(fileId).all<{
+          id: number;
+          question: string;
+          src_page: number | null;
+          figure_box: string | null;
+        }>(),
+      ]);
+      const targets = missing.results;
+      const totalTargetCount = missingCount?.n ?? targets.length;
+      if (((existingCount?.n ?? 0) > 0 || totalTargetCount > 0) && !source) {
+        throw new AIProviderError("invalid_file", "문항의 원본 파일을 찾을 수 없습니다");
+      }
+      if (((existingCount?.n ?? 0) > 0 || totalTargetCount > 0) && source) {
+        const directTargets = targets.filter((target): target is FigureBackfillTarget =>
+          target.src_page !== null && Number.isInteger(target.src_page) && target.src_page > 0
+          && (source.page_count === null || target.src_page <= source.page_count)
+          && (source.mime === "application/pdf" || target.src_page === 1)
+        );
+        await backfillFigureDescriptions(
+          env,
+          figureBackfillMaterial.id,
+          fileId,
+          bookId,
+          r2Key,
+          source.mime,
+          directTargets,
+          totalTargetCount,
+          totalTargetCount - directTargets.length,
+          job
+        );
+        return;
+      }
+      // 기존 문항이 없으면 backfill 대상이 아니다. 일반 최초 추출로 이어간다.
+      figureBackfillMaterialId = null;
+    }
     // 진행률(%)은 청크(≈페이지) 완료 기준 — 폴링 UI가 book_files.progress를 읽는다
     const onProgress = (p: number) => {
       if (!isCurrentJob(job)) return;
@@ -802,15 +979,11 @@ async function processFile(
     if (!alive) return;
     // alive 조회를 기다리는 동안 취소가 들어올 수 있으므로 교체 직전에 다시 확인한다.
     if (!isCurrentJob(job)) return;
-    const figureBackfill = await env.DB.prepare(
-      "SELECT id FROM materials WHERE book_id = ? AND figure_backfill_pending = 1"
-    ).bind(bookId).first<{ id: number }>() !== null;
-
     // 재추출 전 기존 문제는 계속 제공한다. 새 결과가 완성된 지금 안정키(페이지+정규화 지문)로
     // 같은 행을 갱신해야 question_attempts FK와 학습 이력이 유지된다.
     const { results: existing } = await env.DB.prepare(
       `SELECT id, qtype, choices, answer, question, src_page, book_number, printed_number,
-              correct_count, wrong_count, explanation, has_figure, figure_description,
+              correct_count, wrong_count, explanation,
               (SELECT COUNT(*) FROM question_attempts qa WHERE qa.question_id = questions.id) AS attempt_count
        FROM questions WHERE src_file_id = ?`
     ).bind(fileId).all<{
@@ -825,15 +998,12 @@ async function processFile(
       correct_count: number;
       wrong_count: number;
       explanation: string;
-      has_figure: number;
-      figure_description: string | null;
       attempt_count: number;
     }>();
     if (!isCurrentJob(job)) return;
 
     const existingByKey = new Map<string, (typeof existing)[number] | null>();
     const existingByLocator = new Map<string, (typeof existing)[number] | null>();
-    const figuresByPage = new Map<number, (typeof existing)[number][]>();
     for (const q of existing) {
       const key = stableQuestionKey(q.src_page, q.question);
       // 같은 쪽·같은 지문이 다른 번호로 중복 수록될 수 있음(진도교재 매핑) — 안정키가 겹치면
@@ -844,18 +1014,9 @@ async function processFile(
         numericPrintedLocator(q.printed_number) ?? printedLocatorFromQuestionPrefix(q.question)
       );
       if (locatorKey) existingByLocator.set(locatorKey, existingByLocator.has(locatorKey) ? null : q);
-      if (q.src_page !== null && q.has_figure === 1) {
-        const figures = figuresByPage.get(q.src_page) ?? [];
-        figures.push(q);
-        figuresByPage.set(q.src_page, figures);
-      }
     }
 
     const matchedIds = new Set<number>();
-    const missingFigureCount = existing.filter(
-      (question) => question.has_figure === 1 && !question.figure_description?.trim()
-    ).length;
-    const backfillStats = { fallback: 0, unmatched: 0, answerMismatch: 0, figureFalse: 0 };
     const freshLocatorCounts = new Map<string, number>();
     for (const item of items) {
       const key = printedLocatorKey(item.page, numericPrintedLocator(item.number));
@@ -864,70 +1025,13 @@ async function processFile(
     const statements = items.map((it, i) => {
       const answer = normalizeAnswer(it.answer);
       let previous = existingByKey.get(stableQuestionKey(it.page, it.question)) ?? undefined;
-      if (figureBackfill && previous && matchedIds.has(previous.id)) previous = undefined;
       const locatorKey = printedLocatorKey(it.page, numericPrintedLocator(it.number));
       if (!previous && locatorKey && freshLocatorCounts.get(locatorKey) === 1) {
         const candidate = existingByLocator.get(locatorKey);
         if (candidate && !matchedIds.has(candidate.id)) previous = candidate;
       }
-      // 이전 추출본에 printed_number가 없고 LaTeX 표기만 달라진 경우를 위한 backfill 전용 fallback.
-      // 같은 페이지·문항형·정답을 모두 만족한 후보 중 텍스트가 충분히 닮은 단독 승자만 허용한다.
-      if (figureBackfill && !previous && it.figure && it.page !== null) {
-        const ranked = (figuresByPage.get(it.page) ?? [])
-          .filter((candidate) =>
-            !matchedIds.has(candidate.id)
-            && candidate.qtype === it.qtype
-            && gradeAnswer(it.qtype, candidate.answer, answer, candidate.choices)
-          )
-          .map((candidate) => ({
-            candidate,
-            score: backfillQuestionSimilarity(it.question, candidate.question),
-          }))
-          .sort((left, right) => right.score - left.score);
-        const best = ranked[0];
-        const runnerUp = ranked[1];
-        if (
-          best?.score >= BACKFILL_SIMILARITY_MIN
-          && (!runnerUp || best.score - runnerUp.score >= BACKFILL_SIMILARITY_MARGIN)
-        ) {
-          previous = best.candidate;
-          backfillStats.fallback++;
-        }
-      }
       const answerCompatible = previous?.qtype === it.qtype
         && gradeAnswer(it.qtype, previous.answer, answer, previous.choices);
-      // 그림 설명 backfill은 기존 문제 집합을 절대 재구성하지 않는다.
-      // AI 재추출은 문구·범위가 흔들릴 수 있으므로 안전하게 매칭된 행의 그림 근거만 보수적으로 병합한다.
-      if (figureBackfill) {
-        if (!previous) {
-          if (it.figure) backfillStats.unmatched++;
-          else backfillStats.figureFalse++;
-          return env.DB.prepare("SELECT 1");
-        }
-        if (!answerCompatible) {
-          backfillStats.answerMismatch++;
-          return env.DB.prepare("SELECT 1");
-        }
-        matchedIds.add(previous.id);
-        if (!it.figure) backfillStats.figureFalse++;
-        return env.DB.prepare(
-          `UPDATE questions
-           SET has_figure = CASE WHEN ? = 1 THEN 1 ELSE has_figure END,
-               figure_description = CASE
-                 WHEN length(trim(COALESCE(figure_description, ''))) = 0
-                   AND ? = 1 AND length(trim(COALESCE(?, ''))) > 0 THEN ?
-                 ELSE figure_description
-               END,
-               figure_box = CASE WHEN ? = 1 AND ? IS NOT NULL THEN ? ELSE figure_box END
-           WHERE id = ?
-             AND EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'processing')`
-        ).bind(
-          it.figure ? 1 : 0,
-          it.figure ? 1 : 0, it.figure_description, it.figure_description,
-          it.figure ? 1 : 0, it.box ? it.box.join(",") : null, it.box ? it.box.join(",") : null,
-          previous.id, fileId
-        );
-      }
       if (
         previous && (previous.correct_count > 0 || previous.wrong_count > 0 || previous.attempt_count > 0)
         && !answerCompatible
@@ -977,12 +1081,12 @@ async function processFile(
     const protectedUnmatched = unmatched.find(
       (question) => question.correct_count > 0 || question.wrong_count > 0 || question.attempt_count > 0
     );
-    if (protectedUnmatched && !figureBackfill) {
+    if (protectedUnmatched) {
       throw new ProtectedQuestionConflictError(
         `학습 이력이 있는 ${protectedUnmatched.book_number ?? protectedUnmatched.id}번 문항을 새 추출에서 찾지 못했습니다`
       );
     }
-    if (!figureBackfill && unmatched.length > 0) {
+    if (unmatched.length > 0) {
       const placeholders = unmatched.map(() => "?").join(",");
       statements.push(
         env.DB.prepare(
@@ -993,8 +1097,6 @@ async function processFile(
         ).bind(...unmatched.map((q) => q.id), fileId)
       );
     }
-    // 실제 그림 설명 반영과 완료 표식은 분리한다. backfill은 하나라도 비어 있으면
-    // 캐시·재시도 표식을 보존한 채 실패해야 0건 반영을 성공으로 오인하지 않는다.
     const completionStatements = [
       env.DB.prepare(
         `UPDATE materials
@@ -1021,29 +1123,8 @@ async function processFile(
       ).bind(fileId, fileId)
     ];
     if (!isCurrentJob(job)) return;
-    if (figureBackfill) {
-      await env.DB.batch(statements);
-      if (!isCurrentJob(job)) return;
-      const remaining = await env.DB.prepare(
-        `SELECT COUNT(*) AS n FROM questions
-         WHERE src_file_id = ? AND has_figure = 1
-           AND length(trim(COALESCE(figure_description, ''))) = 0`
-      ).bind(fileId).first<{ n: number }>();
-      const remainingCount = remaining?.n ?? missingFigureCount;
-      if (remainingCount > 0) {
-        const filled = Math.max(0, missingFigureCount - remainingCount);
-        throw new FigureBackfillIncompleteError(
-          `그림 설명 보강 미완료: ${filled}/${missingFigureCount}개 반영, ${remainingCount}개 남음`
-          + ` (유사도 매칭 ${backfillStats.fallback}, 미매칭 ${backfillStats.unmatched},`
-          + ` 정답 불일치 ${backfillStats.answerMismatch}, 그림 없음 ${backfillStats.figureFalse})`
-        );
-      }
-      if (!isCurrentJob(job)) return;
-      await env.DB.batch(completionStatements);
-    } else {
-      statements.push(...completionStatements);
-      await env.DB.batch(statements);
-    }
+    statements.push(...completionStatements);
+    await env.DB.batch(statements);
     clearBookExtractionCache(fileId);
   } catch (e) {
     const cancelled = !isCurrentJob(job);
@@ -1064,6 +1145,16 @@ async function processFile(
     if (!cancelled && claimedJob && e instanceof ProtectedQuestionConflictError) {
       await env.DB.prepare("UPDATE materials SET pending_to_book = 0 WHERE book_id = ?")
         .bind(bookId).run().catch(() => {});
+    } else if (!cancelled && e instanceof FigureBackfillIncompleteError && figureBackfillMaterialId !== null) {
+      // 자동 10분 재시도가 같은 원본 판정을 무한 반복하지 않게 멈춘다. UI 수동 재시도는 유지된다.
+      await env.DB.prepare("UPDATE materials SET pending_to_book = 0 WHERE id = ?")
+        .bind(figureBackfillMaterialId).run().catch(() => {});
+    } else if (
+      !cancelled && figureBackfillMaterialId !== null && e instanceof AIProviderError
+      && ["invalid_file", "file_too_large"].includes(e.code)
+    ) {
+      await env.DB.prepare("UPDATE materials SET pending_to_book = 0 WHERE id = ?")
+        .bind(figureBackfillMaterialId).run().catch(() => {});
     // 자료에서 온 자동 추출 실패는 최대 3회까지만 보류 재시도한다.
     } else if (!cancelled && automaticLinkedRetryAllowed && !blocksAutomaticRetry(e) && !isUsageLimitText(String(e))) {
       await recordBookFailure(env, bookId).catch(() => {});

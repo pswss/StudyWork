@@ -17,6 +17,7 @@ vi.mock("../src/codex-provider", async (importOriginal) => {
 import {
   chat,
   extractQuestionsFromFile,
+  generateFigureDescriptionsForQuestions,
   generateExplanationsForQuestions,
   parseExplanationItems,
 } from "../src/claude";
@@ -125,6 +126,41 @@ describe("StudyWork Codex facade", () => {
     expect(request.prompt).toContain("mandatory primary evidence");
     expect(request.prompt).toContain("verify the transcribed question against it");
     expect(request.prompt).toContain("copy that answer field verbatim");
+    expect(request.prompt).not.toContain(figures);
+  });
+
+  it("기존 문항 그림 설명을 exact id crop과 구조화 스키마로 요청", async () => {
+    const document = await PDFDocument.create();
+    document.addPage([100, 100]);
+    const figures = join(dir, "그림 설명 묶음.pdf");
+    writeFileSync(figures, await document.save());
+    providerMock.complete.mockResolvedValueOnce({
+      text: JSON.stringify([{
+        id: 12,
+        figure_present: true,
+        figure_description: "좌표평면에 점 A와 직선 l이 표시되어 있다.",
+      }]),
+      provider: "codex-cli",
+      model: "gpt-5.6-sol",
+    });
+
+    await expect(generateFigureDescriptionsForQuestions([{
+      id: 12,
+      question: "그림의 직선 l을 설명하여라.",
+      visual_ref: "QUESTION_ID 12",
+    }], figures, undefined, "bulk")).resolves.toEqual([
+      expect.objectContaining({ id: 12, figure_present: true }),
+    ]);
+
+    const request = providerMock.complete.mock.calls[0][0];
+    expect(request).toMatchObject({
+      operation: "question-generate",
+      lane: "bulk",
+      file: { path: realpathSync(figures), kind: "pdf" },
+      schema: { name: "studywork_figure_description_items", outputKey: "items" },
+    });
+    expect(request.prompt).toContain('"visual_ref":"QUESTION_ID 12"');
+    expect(request.prompt).toContain("Describe only what is visible");
     expect(request.prompt).not.toContain(figures);
   });
 

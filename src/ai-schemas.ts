@@ -139,6 +139,21 @@ export const EXPLANATION_ITEMS_SCHEMA = arrayEnvelope(
   }
 );
 
+export const FIGURE_DESCRIPTION_ITEMS_SCHEMA = arrayEnvelope(
+  "studywork_figure_description_items",
+  "Visible figure descriptions for the requested question ids.",
+  {
+    type: "object",
+    properties: {
+      id: { type: "integer", minimum: 1 },
+      figure_present: { type: "boolean" },
+      figure_description: { type: ["string", "null"] },
+    },
+    required: ["id", "figure_present", "figure_description"],
+    additionalProperties: false,
+  }
+);
+
 export const PAGE_EXTRACTIONS_SCHEMA: AIJsonSchema = {
   name: "studywork_page_extractions",
   description: "A complete, ordered transcription for every requested source page.",

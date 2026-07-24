@@ -29,6 +29,10 @@ const mockState = vi.hoisted(() => ({
   outerBoundaryVariantMode: false,
   failMap: false,
   problemCalls: 0,
+  figureDescriptionCalls: 0,
+  figureDescriptionPresent: true,
+  figureDescriptionPresentSequence: [] as boolean[],
+  figureBundleIds: [] as number[],
   materialCalls: 0,
   answerDetectionCalls: 0,
   detailedSolutionDetectionCalls: 0,
@@ -190,6 +194,28 @@ vi.mock("../src/claude", async (importOriginal) => {
       { number: String(mockState.problemNumberOffset + 3), qtype: "mcq", difficulty: "상", question: `다음 중 옳은 것은?${suffix}`, choices: ["①x", "②y", "③z"], answer: "③", explanation: "z가 옳다.", page: 3, figure: false, figure_description: null, box: null },
     ];
   },
+  generateFigureDescriptionsForQuestions: async (tasks: { id: number }[]) => {
+    mockState.figureDescriptionCalls++;
+    const present = mockState.figureDescriptionPresentSequence.shift() ?? mockState.figureDescriptionPresent;
+    return tasks.map((task) => ({
+      id: task.id,
+      figure_present: present,
+      figure_description: present
+        ? `문제 ${task.id}의 원본 좌표평면과 곡선이 표시되어 있다.`
+        : null,
+    }));
+  },
+  };
+});
+
+vi.mock("../src/book-page-image", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../src/book-page-image")>();
+  return {
+    ...original,
+    createFigureBundlePdf: async (_files: unknown, items: { id: number }[]) => {
+      mockState.figureBundleIds = items.map((item) => item.id);
+      return { path: "/private/tmp/studywork-test-figure-bundle.pdf", cleanup: () => {} };
+    },
   };
 });
 
@@ -1779,6 +1805,25 @@ describe("통합 업로드 라우팅 (자료 사이드바)", () => {
     return { material, started, questions: await questionsOf(started.bookId) };
   }
 
+  async function createReadyPdfBackfillBook(title: string) {
+    const document = await PDFDocument.create();
+    for (let page = 0; page < 3; page++) document.addPage([100, 100]);
+    const bytes = await document.save();
+    const key = `test/${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`;
+    await env.FILES.put(
+      key,
+      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+    );
+    const material = await env.DB.prepare(
+      `INSERT INTO materials (subject_id, kind, title, r2_key, extracted_text, status, page_count)
+       VALUES (?, 'pdf', ?, ?, '문제 본문', 'ready', 3) RETURNING id`
+    ).bind(subjectId, title, key).first<{ id: number }>();
+    const started = await startMaterialToBook(env, material!.id);
+    if ("error" in started) throw new Error(started.error);
+    await waitMatBook(material!.id, "ready");
+    return { material: { id: material!.id, key }, started, questions: await questionsOf(started.bookId) };
+  }
+
   async function armFigureBackfill(materialId: number, fileId: number): Promise<void> {
     await env.DB.batch([
       env.DB.prepare(
@@ -2180,72 +2225,64 @@ describe("통합 업로드 라우팅 (자료 사이드바)", () => {
     }
   });
 
-  it("backfill은 번호가 없고 LaTeX 표기가 달라도 강한 단일 후보의 설명만 채운 뒤 완료", async () => {
-    const { material, started, questions } = await createReadyBackfillBook("그림백필-유사도단일");
+  it("PDF 그림 backfill은 전체 재추출 없이 기존 id의 빈 설명만 원본 crop으로 채움", async () => {
+    const { material, started, questions } = await createReadyPdfBackfillBook("그림백필-ID직결");
     const target = questions[0];
     try {
       await env.DB.prepare(
-        `UPDATE questions
-         SET question = ?, figure_description = NULL, printed_number = NULL, wrong_count = 1
-         WHERE id = ?`
-      ).bind(
-        "함수 y=2(x-3)^2+5의 그래프에서 포물선의 꼭짓점 좌표를 구하여라.",
-        target.id
-      ).run();
+        "UPDATE questions SET figure_description = NULL, wrong_count = 1 WHERE id = ?"
+      ).bind(target.id).run();
       await env.DB.prepare(
         "INSERT INTO question_attempts (question_id, attempt_id, correct) VALUES (?, ?, 0)"
-      ).bind(target.id, `백필-유사도-${Date.now()}`).run();
+      ).bind(target.id, `백필-ID-${Date.now()}`).run();
       const before = await env.DB.prepare(
-        `SELECT question, qtype, choices, answer, explanation, correct_count, wrong_count
+        `SELECT id, qtype, difficulty, question, choices, answer, explanation, book_number,
+                printed_number, src_page, has_figure, figure_box, correct_count, wrong_count
          FROM questions WHERE id = ?`
       ).bind(target.id).first<Record<string, unknown>>();
+      const idsBefore = (await questionsOf(started.bookId)).map((question) => question.id);
       await armFigureBackfill(material.id, started.fileId);
-      mockState.problemItemsOverride = [{
-        number: "99",
-        qtype: "short",
-        difficulty: "상",
-        question: "$y = 2(x - 3)^2 + 5$의 그래프에서 꼭짓점 좌표를 구하여라.",
-        choices: null,
-        answer: "③",
-        explanation: "새 전사 해설",
-        page: 2,
-        figure: true,
-        figure_description: "좌표평면에 꼭짓점 (3, 5)인 위로 열린 포물선이 있다.",
-        box: [0.1, 0.6],
-      }];
+      const problemCallsBefore = mockState.problemCalls;
+      const descriptionCallsBefore = mockState.figureDescriptionCalls;
+      mockState.figureBundleIds = [];
+      mockState.figureDescriptionPresentSequence = [false, true];
 
       await retryPendingToBook(env);
       const completed = await waitMatBook(material.id, "ready");
       const after = await env.DB.prepare(
-        `SELECT question, qtype, choices, answer, explanation, correct_count, wrong_count,
-                figure_description, figure_box
+        `SELECT id, qtype, difficulty, question, choices, answer, explanation, book_number,
+                printed_number, src_page, has_figure, figure_box, correct_count, wrong_count,
+                figure_description
          FROM questions WHERE id = ?`
       ).bind(target.id).first<Record<string, unknown>>();
-      expect(before).not.toBeNull();
+
       expect(after).toMatchObject({
         ...before!,
-        figure_description: expect.stringContaining("꼭짓점 (3, 5)"),
-        figure_box: "0.1,0.6",
+        figure_description: `문제 ${target.id}의 원본 좌표평면과 곡선이 표시되어 있다.`,
       });
-      expect(completed.book_error).toBeNull();
+      expect((await questionsOf(started.bookId)).map((question) => question.id)).toEqual(idsBefore);
+      expect(await env.DB.prepare(
+        "SELECT COUNT(*) AS n FROM question_attempts WHERE question_id = ?"
+      ).bind(target.id).first()).toEqual({ n: 1 });
+      expect(mockState.problemCalls).toBe(problemCallsBefore);
+      expect(mockState.figureDescriptionCalls).toBe(descriptionCallsBefore + 2);
+      expect(mockState.figureBundleIds).toEqual([target.id]);
+      expect(completed).toMatchObject({ book_status: "ready", book_error: null });
       expect(await env.DB.prepare(
         "SELECT pending_to_book, figure_backfill_pending FROM materials WHERE id = ?"
       ).bind(material.id).first()).toEqual({ pending_to_book: 0, figure_backfill_pending: 0 });
       expect(await env.DB.prepare(
-        "SELECT COUNT(*) AS n FROM question_attempts WHERE question_id = ?"
-      ).bind(target.id).first()).toEqual({ n: 1 });
-      expect(await env.DB.prepare(
         "SELECT COUNT(*) AS n FROM book_extraction_chunks WHERE file_id = ?"
       ).bind(started.fileId).first()).toEqual({ n: 0 });
     } finally {
-      mockState.problemItemsOverride = null;
+      mockState.figureDescriptionPresentSequence = [];
       await call(env, `/api/materials/${material.id}`, { method: "DELETE", headers: { cookie } });
       await env.FILES.delete(material.key);
     }
   });
 
-  it("backfill 결과가 그림 없음이면 ready로 확정하지 않고 표식·청크·문항을 보존", async () => {
-    const { material, started, questions } = await createReadyBackfillBook("그림백필-그림없음");
+  it("PDF crop에 그림이 없으면 ready로 확정하지 않고 자동 재시도를 멈춤", async () => {
+    const { material, started, questions } = await createReadyPdfBackfillBook("그림백필-그림없음");
     const target = questions[0];
     try {
       await env.DB.prepare(
@@ -2257,24 +2294,12 @@ describe("통합 업로드 라우팅 (자료 사이드바)", () => {
          FROM questions WHERE id = ?`
       ).bind(target.id).first<Record<string, unknown>>();
       await armFigureBackfill(material.id, started.fileId);
-      mockState.problemItemsOverride = [{
-        number: "1",
-        qtype: "short",
-        difficulty: "중",
-        question: target.question,
-        choices: null,
-        answer: "③",
-        explanation: "",
-        page: 2,
-        figure: false,
-        figure_description: null,
-        box: null,
-      }];
+      mockState.figureDescriptionPresent = false;
 
       await retryPendingToBook(env);
       const failed = await waitMatBook(material.id, "error");
       expect(failed.book_error).toContain("그림 설명 보강 미완료: 0/1개 반영, 1개 남음");
-      expect(failed.book_error).toContain("그림 없음 1");
+      expect(failed.book_error).toContain("원본 그림 확인 실패 1");
       expect(await env.DB.prepare(
         `SELECT question, qtype, choices, answer, explanation, correct_count, wrong_count,
                 has_figure, figure_box
@@ -2287,66 +2312,56 @@ describe("통합 업로드 라우팅 (자료 사이드바)", () => {
         `SELECT pending_to_book, figure_backfill_pending, book_retry_count, book_processing
          FROM materials WHERE id = ?`
       ).bind(material.id).first()).toEqual({
-        pending_to_book: 1,
+        pending_to_book: 0,
         figure_backfill_pending: 1,
         book_retry_count: 0,
         book_processing: 0,
       });
       expect(await env.DB.prepare(
         "SELECT COUNT(*) AS n FROM book_extraction_chunks WHERE file_id = ?"
-      ).bind(started.fileId).first()).toEqual({ n: 1 });
+      ).bind(started.fileId).first()).toEqual({ n: 0 });
     } finally {
-      mockState.problemItemsOverride = null;
+      mockState.figureDescriptionPresent = true;
       await call(env, `/api/materials/${material.id}`, { method: "DELETE", headers: { cookie } });
       await env.FILES.delete(material.key);
     }
   });
 
-  it("backfill 유사도 후보가 같은 점수로 모호하면 어느 문항에도 오결합하지 않음", async () => {
-    const { material, started, questions } = await createReadyBackfillBook("그림백필-모호후보");
-    const target = questions[0];
+  it("다른 원본·범위 밖 페이지에 빈 그림 설명이 남으면 완료 표식을 해제하지 않음", async () => {
+    const { material, started, questions } = await createReadyPdfBackfillBook("그림백필-다른원본");
     try {
-      await env.DB.prepare(
-        "UPDATE questions SET figure_description = NULL, printed_number = NULL WHERE id = ?"
-      ).bind(target.id).run();
-      const duplicate = await env.DB.prepare(
-        `INSERT INTO questions
-           (subject_id, source, qtype, difficulty, question, choices, answer, explanation,
-            book_id, book_number, printed_number, src_file_id, src_page, has_figure, figure_box, figure_description)
-         SELECT subject_id, source, qtype, difficulty, question, choices, answer, explanation,
-                book_id, '모호', NULL, src_file_id, src_page, 1, figure_box, NULL
-         FROM questions WHERE id = ? RETURNING id`
-      ).bind(target.id).first<{ id: number }>();
+      await env.DB.batch([
+        env.DB.prepare(
+          `INSERT INTO questions
+             (subject_id, source, qtype, difficulty, question, choices, answer, explanation,
+              book_id, book_number, src_file_id, src_page, has_figure, figure_box, figure_description)
+           SELECT subject_id, source, qtype, difficulty, question || ' 다른 원본', choices, answer, explanation,
+                  book_id, '다른원본', NULL, NULL, 1, NULL, NULL
+           FROM questions WHERE id = ?`
+        ).bind(questions[0].id),
+        env.DB.prepare(
+          `INSERT INTO questions
+             (subject_id, source, qtype, difficulty, question, choices, answer, explanation,
+              book_id, book_number, src_file_id, src_page, has_figure, figure_box, figure_description)
+           SELECT subject_id, source, qtype, difficulty, question || ' 범위 밖 페이지', choices, answer, explanation,
+                  book_id, '범위밖', src_file_id, 99, 1, figure_box, NULL
+           FROM questions WHERE id = ?`
+        ).bind(questions[0].id),
+      ]);
       await armFigureBackfill(material.id, started.fileId);
-      mockState.problemItemsOverride = [{
-        number: "99",
-        qtype: "short",
-        difficulty: "상",
-        question: "$y = 2(x - 3)^2 + 5$의 꼭짓점은?",
-        choices: null,
-        answer: "③",
-        explanation: "",
-        page: 2,
-        figure: true,
-        figure_description: "잘못 연결되면 안 되는 그림 설명",
-        box: [0.1, 0.6],
-      }];
+      const problemCallsBefore = mockState.problemCalls;
+      const descriptionCallsBefore = mockState.figureDescriptionCalls;
 
       await retryPendingToBook(env);
       const failed = await waitMatBook(material.id, "error");
-      expect(failed.book_error).toContain("미매칭 1");
-      expect(await env.DB.prepare(
-        `SELECT COUNT(*) AS n FROM questions
-         WHERE id IN (?, ?) AND figure_description IS NOT NULL`
-      ).bind(target.id, duplicate!.id).first()).toEqual({ n: 0 });
+      expect(failed.book_error).toContain("그림 설명 보강 미완료: 0/2개 반영, 2개 남음");
+      expect(failed.book_error).toContain("원본 위치 없음 2");
+      expect(mockState.problemCalls).toBe(problemCallsBefore);
+      expect(mockState.figureDescriptionCalls).toBe(descriptionCallsBefore);
       expect(await env.DB.prepare(
         "SELECT pending_to_book, figure_backfill_pending FROM materials WHERE id = ?"
-      ).bind(material.id).first()).toEqual({ pending_to_book: 1, figure_backfill_pending: 1 });
-      expect(await env.DB.prepare(
-        "SELECT COUNT(*) AS n FROM book_extraction_chunks WHERE file_id = ?"
-      ).bind(started.fileId).first()).toEqual({ n: 1 });
+      ).bind(material.id).first()).toEqual({ pending_to_book: 0, figure_backfill_pending: 1 });
     } finally {
-      mockState.problemItemsOverride = null;
       await call(env, `/api/materials/${material.id}`, { method: "DELETE", headers: { cookie } });
       await env.FILES.delete(material.key);
     }
@@ -2371,7 +2386,7 @@ describe("통합 업로드 라우팅 (자료 사이드바)", () => {
         "UPDATE questions SET question = '[폐기] 이력 없는 구 문항', printed_number = NULL WHERE id = ?"
       ).bind(staleQuestion.id).run();
       await env.DB.prepare(
-        "UPDATE questions SET figure_description = NULL WHERE id = ?"
+        "UPDATE questions SET figure_description = NULL, src_page = 1 WHERE id = ?"
       ).bind(matchedQuestion.id).run();
       await env.DB.prepare(
         "INSERT INTO question_attempts (question_id, attempt_id, correct) VALUES (?, ?, 0)"
@@ -2384,6 +2399,7 @@ describe("통합 업로드 라우팅 (자료 사이드바)", () => {
       ).bind(material.id).run();
 
       const callsBefore = mockState.problemCalls;
+      const descriptionCallsBefore = mockState.figureDescriptionCalls;
       await retryPendingToBook(env);
       let completed: Record<string, unknown> | null = null;
       for (let i = 0; i < 200; i++) {
@@ -2433,46 +2449,9 @@ describe("통합 업로드 라우팅 (자료 사이드바)", () => {
          WHERE src_file_id = ? AND has_figure = 1
            AND length(trim(COALESCE(figure_description, ''))) = 0`
       ).bind(started.fileId).first()).toEqual({ n: 0 });
-      expect(mockState.problemCalls).toBe(callsBefore + 1);
-
-      // backfill 중 AI가 정답을 다르게 읽어도 기존 정답·학습 기록은 건드리지 않는다.
-      await env.DB.prepare("UPDATE questions SET wrong_count = 1 WHERE id = ?")
-        .bind(freshFigure.id).run();
-      await env.DB.prepare(
-        "UPDATE materials SET pending_to_book = 1, figure_backfill_pending = 1 WHERE id = ?"
-      ).bind(material.id).run();
-      mockState.changedAnswerMode = true;
-      await retryPendingToBook(env);
-      let rerun: Record<string, unknown> | null = null;
-      for (let i = 0; i < 200; i++) {
-        rerun = await env.DB.prepare(
-          `SELECT m.pending_to_book, m.figure_backfill_pending, m.book_processing, m.integrity_warning,
-                  bf.status AS book_status
-           FROM materials m JOIN book_files bf ON bf.book_id = m.book_id
-           WHERE m.id = ?`
-        ).bind(material.id).first<Record<string, unknown>>();
-        if (
-          rerun?.pending_to_book === 0
-          && rerun.figure_backfill_pending === 0
-          && rerun.book_processing === 0
-        ) break;
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      expect(rerun).toMatchObject({
-        pending_to_book: 0,
-        figure_backfill_pending: 0,
-        book_processing: 0,
-        book_status: "ready",
-      });
-      expect((await questionsOf(started.bookId)).find((question) => question.id === freshFigure.id))
-        .toMatchObject({ answer: "3", wrong_count: 1 });
-
-      const callsAfterConflict = mockState.problemCalls;
-      await retryPendingToBook(env);
-      await new Promise((resolve) => setTimeout(resolve, 30));
-      expect(mockState.problemCalls).toBe(callsAfterConflict);
+      expect(mockState.problemCalls).toBe(callsBefore);
+      expect(mockState.figureDescriptionCalls).toBe(descriptionCallsBefore + 1);
     } finally {
-      mockState.changedAnswerMode = false;
       await call(env, `/api/materials/${material.id}`, { method: "DELETE", headers: { cookie } });
       await env.FILES.delete(material.key);
     }
