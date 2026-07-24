@@ -13,7 +13,9 @@ import {
 import { mdHtml, splitMarkdownChunks, escapeHtmlText } from "../md";
 import { AiPending } from "../Pending";
 import SourcePicker from "./SourcePicker";
+import SingleSelectPicker from "./SingleSelectPicker";
 import { useUndoDelete } from "../UndoDelete";
+import { useI18n } from "../i18n";
 
 interface Props {
   subject: Subject;
@@ -24,6 +26,7 @@ interface Props {
 }
 
 export default function NotesPanel({ subject, readyMats, active, onBack, onDirtyChange }: Props) {
+  const { locale, t, formatDate, formatNumber } = useI18n();
   const [currentNote, setCurrentNote] = useState<Note | null | undefined>(undefined);
   const [instr, setInstr] = useState("");
   const [versions, setVersions] = useState<NoteVersion[]>([]);
@@ -48,7 +51,7 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
   const editDirty = Boolean(editMode && editText !== editBaseline);
 
   function closeEdit() {
-    if (editDirty && !confirm("저장하지 않은 수정 내용이 있습니다. 편집을 닫을까요?")) return;
+    if (editDirty && !confirm(t("learning.notes.unsavedConfirm"))) return;
     setEditMode(false);
   }
 
@@ -97,7 +100,7 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
 
   useEffect(() => {
     if (active && currentNote === undefined) void loadNote(subject.id);
-  }, [active, subject.id, currentNote]);
+  }, [active, subject.id, currentNote, locale]);
 
   // 단권화는 서버 백그라운드 — processing이면 5초마다 노트 상태 갱신
   const consolidating = currentNote?.status === "processing";
@@ -105,7 +108,7 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
     if (!consolidating) return;
     const t = setInterval(loadNote, 5000);
     return () => clearInterval(t);
-  }, [consolidating, subject.id]);
+  }, [consolidating, subject.id, locale]);
 
   async function loadNote(subjectId = subject.id) {
     const request = ++noteRequestRef.current;
@@ -127,7 +130,11 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
         mountedRef.current
         && subjectIdRef.current === subjectId
         && request === noteRequestRef.current
-      ) setNoteErr(`${err instanceof Error ? err.message : "노트 불러오기 실패"} · 현재 화면은 유지했습니다.`);
+      ) {
+        setNoteErr(t("learning.notes.loadPreserved", {
+          error: err instanceof Error ? err.message : t("learning.notes.loadFailed"),
+        }));
+      }
     }
   }
 
@@ -139,7 +146,9 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
       const v = await apiNoteVersion(Number(idStr));
       if (mountedRef.current) setViewVersion(v);
     } catch (err) {
-      setNoteErr(`${err instanceof Error ? err.message : "기록 불러오기 실패"} · 보던 노트는 유지했습니다.`);
+      setNoteErr(t("learning.notes.versionPreserved", {
+        error: err instanceof Error ? err.message : t("learning.notes.versionLoadFailed"),
+      }));
     }
   }
 
@@ -148,10 +157,10 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
     const content = viewVersion ? viewVersion.content : currentNote?.content;
     if (!content) return;
     const stamp = (viewVersion?.created_at ?? new Date().toISOString()).slice(0, 10);
-    const title = `${subject.name} 단권화 ${stamp}`;
+    const title = `${subject.name} ${t("learning.notes.exportName")} ${stamp}`;
     const htmlTitle = escapeHtmlText(title);
     const html =
-      `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${htmlTitle}</title>` +
+      `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${htmlTitle}</title>` +
       `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">` +
       `<style>:root{color-scheme:dark}body{max-width:72ch;margin:2rem auto;padding:0 1rem;background:#0e0e10;color:#edeae0;font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;font-size:16px;line-height:1.85}h1,h2,h3{color:#edeae0}h2{margin:34px 0 14px;padding-bottom:8px;border-bottom:1px solid rgba(237,234,224,.14)}h3{margin:30px 0 12px;padding-top:24px;border-top:1px solid rgba(237,234,224,.28)}p{margin:0 0 15px}.katex:has(>math[display="block"]){display:block;box-sizing:border-box;width:100%;margin:24px 0;padding:16px 24px;overflow-x:auto;text-align:center;border:1px solid rgba(237,234,224,.28);border-radius:4px;background:rgba(217,255,63,.035)}.katex:has(>math[display="block"])+.katex:has(>math[display="block"]){margin-top:32px}.katex:has(>math[display="block"])>math[display="block"]{margin:0 auto}a{color:#d9ff3f;text-decoration:underline;text-underline-offset:3px}a:hover{color:#edeae0}strong{color:#edeae0;font-weight:700}em{color:#d9ff3f;font-style:normal;font-weight:600}mark{padding:.05em .28em;border-radius:3px;background:#d9ff3f;color:#0e0e10;font-weight:700}blockquote{margin:18px 0;padding:13px 16px;border:1px solid rgba(224,163,54,.38);border-radius:6px;color:#edeae0;background:rgba(224,163,54,.08)}blockquote p:last-child{margin-bottom:0}table{display:block;max-width:100%;border-collapse:collapse;margin:18px 0;overflow-x:auto}td,th{border:1px solid rgba(237,234,224,.14);padding:9px 14px;text-align:left;font-size:13.5px;overflow-wrap:anywhere}th{color:#edeae0;background:#0b0b0d;font-weight:600}tbody tr:nth-child(even){background:rgba(217,255,63,.025)}ul,ol{padding-left:22px;margin-bottom:15px}li{margin-bottom:5px}li::marker{color:#d9ff3f}code,pre{background:#0b0b0d;border:1px solid rgba(237,234,224,.14);border-radius:4px}code{padding:1px 6px;color:#d9ff3f}pre{padding:16px 18px;overflow-x:auto}pre code{border:0;padding:0;color:rgba(237,234,224,.62)}hr{border:0;border-top:1px solid rgba(237,234,224,.14);margin:24px 0}</style>` +
       `<style>body,a{overflow-wrap:anywhere}</style>` +
@@ -186,7 +195,10 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
   }
 
   async function doConsolidate() {
-    if (selMatIds.length === 0) { setNoteErr("단권화할 자료를 하나 이상 선택하세요."); return; }
+    if (selMatIds.length === 0) {
+      setNoteErr(t("learning.notes.selectMaterial"));
+      return;
+    }
     setEditMode(false);
     setNoteErr("");
     try {
@@ -195,7 +207,9 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
       setInstr("");
       await loadNote(subject.id); // status=processing 반영 → 폴링 시작
     } catch (err) {
-      setNoteErr(`${err instanceof Error ? err.message : "단권화 실패"} · 자료 선택과 요청은 유지했습니다. 다시 실행해 주세요.`);
+      setNoteErr(t("learning.notes.consolidatePreserved", {
+        error: err instanceof Error ? err.message : t("learning.notes.consolidateFailed"),
+      }));
     }
   }
 
@@ -221,7 +235,9 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
       setEditMode(false);
       void loadNote(subject.id); // 기록 목록 갱신
     } catch (err) {
-      setNoteErr(`${err instanceof Error ? err.message : "저장 실패"} · 편집 내용은 유지했습니다. 다시 저장해 주세요.`);
+      setNoteErr(t("learning.notes.savePreserved", {
+        error: err instanceof Error ? err.message : t("learning.notes.saveFailed"),
+      }));
     } finally {
       if (mountedRef.current) setSavingNote(false);
     }
@@ -231,7 +247,7 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
     setNoteErr("");
     scheduleDelete({
       key: `note-version:${id}`,
-      label: "단권화 기록",
+      label: t("learning.notes.historyDeleteLabel"),
       commit: async () => {
         try {
           await apiDeleteNoteVersion(id);
@@ -244,11 +260,11 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
   }
 
   function deleteAllNotes() {
-    if (!confirm("현재 노트와 모든 단권화 기록을 삭제합니다. 계속할까요?")) return;
+    if (!confirm(t("learning.notes.deleteAllConfirm"))) return;
     setNoteErr("");
     scheduleDelete({
       key: `note:${subject.id}`,
-      label: `“${subject.name}” 노트`,
+      label: t("learning.notes.deleteLabel", { subject: subject.name }),
       commit: async () => {
         try {
           await apiDeleteNote(subject.id);
@@ -304,37 +320,45 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
       {noteErr && <div className="chat-err" role="alert" style={{ marginBottom: 12 }}>{noteErr}</div>}
       {currentNote === undefined ? (
         <div className="note-spinning" style={{ flex: 1, display: "grid", placeItems: "center" }}>
-          <AiPending label="노트 불러오는 중" />
+          <AiPending label={t("learning.notes.loading")} />
         </div>
       ) : consolidating ? (
         <div className="note-spinning" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, alignItems: "center", justifyContent: "center" }}>
-          <AiPending label={`단권화 진행 중 ${currentNote?.progress ?? 0}% · 이 화면을 나가도 계속됩니다`} />
+          <AiPending label={t("learning.notes.consolidating", {
+            progress: formatNumber(currentNote?.progress ?? 0),
+          })} />
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn sm primary" onClick={onBack}>다른 과목 선택</button>
+            <button className="btn sm primary" onClick={onBack}>
+              {t("learning.notes.chooseOtherSubject")}
+            </button>
             <button
               className="btn sm"
               onClick={async () => {
-                if (!confirm("단권화를 중단할까요?")) return;
+                if (!confirm(t("learning.notes.stopConfirm"))) return;
                 setNoteErr("");
                 try {
                   await apiCancelConsolidate(subject.id);
                   await loadNote(subject.id);
                 } catch (error) {
-                  setNoteErr(`${error instanceof Error ? error.message : "중단 실패"} · 단권화 상태를 다시 확인해 주세요.`);
+                  setNoteErr(t("learning.notes.stopCheck", {
+                    error: error instanceof Error ? error.message : t("learning.notes.stopFailed"),
+                  }));
                 }
               }}
-            >중단</button>
+            >{t("learning.common.stop")}</button>
           </div>
         </div>
       ) : editMode && currentNote ? (
         <>
           <div className="note-header">
-            <span className="note-updated">노트 수정 (마크다운)</span>
+            <span className="note-updated">{t("learning.notes.editTitle")}</span>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn sm primary" onClick={saveNote} disabled={savingNote || !editText.trim()}>
-                {savingNote ? "저장 중…" : "저장"}
+                {savingNote ? t("learning.common.saving") : t("learning.common.save")}
               </button>
-              <button className="btn sm" onClick={closeEdit} disabled={savingNote}>취소</button>
+              <button className="btn sm" onClick={closeEdit} disabled={savingNote}>
+                {t("learning.common.cancel")}
+              </button>
             </div>
           </div>
           <textarea
@@ -342,7 +366,7 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
             className="note-editor"
             name="note-content"
             autoComplete="off"
-            aria-label="노트 마크다운 내용"
+            aria-label={t("learning.notes.editorAria")}
             value={editText}
             onChange={e => setEditText(e.target.value)}
             spellCheck={false}
@@ -352,57 +376,74 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
         <>
           {currentNote.status === "error" && !viewVersion && (
             <div className="chat-err" role="alert" style={{ marginBottom: 10 }}>
-              단권화 실패 — “새로 단권화”로 재시도해 주세요
+              {t("learning.notes.consolidationError")}
             </div>
           )}
           <div className="note-header">
             <span className="note-updated">
               {viewVersion
-                ? `기록: ${new Date(viewVersion.created_at).toLocaleString("ko-KR")}`
-                : `업데이트: ${new Date(currentNote.updated_at).toLocaleString("ko-KR")}`}
+                ? t("learning.notes.historyDate", {
+                    date: formatDate(viewVersion.created_at, { dateStyle: "medium", timeStyle: "short" }),
+                  })
+                : t("learning.notes.updatedDate", {
+                    date: formatDate(currentNote.updated_at, { dateStyle: "medium", timeStyle: "short" }),
+                  })}
             </span>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {versions.length > 0 && (
-                <select
-                  className="quiz-select"
-                  aria-label="단권화 기록"
-                  value={viewVersion?.id ?? ""}
-                  onChange={e => selectVersion(e.target.value)}
-                >
-                  <option value="">현재 노트</option>
-                  {versions.map(v => (
-                    <option key={v.id} value={v.id}>
-                      {new Date(v.created_at).toLocaleString("ko-KR")} ({Math.round(v.len / 1000)}k자)
-                    </option>
-                  ))}
-                </select>
+                <SingleSelectPicker
+                  className="note-version-picker"
+                  label={t("learning.notes.historyPicker")}
+                  value={String(viewVersion?.id ?? "")}
+                  options={[
+                    { value: "", label: t("learning.notes.current") },
+                    ...versions.map(v => ({
+                      value: String(v.id),
+                      label: formatDate(v.created_at, { dateStyle: "medium", timeStyle: "short" }),
+                      description: t("learning.notes.versionLength", {
+                        count: formatNumber(Math.round(v.len / 1000)),
+                      }),
+                    })),
+                  ]}
+                  onChange={(value) => void selectVersion(value)}
+                />
               )}
-              <button className="btn sm" onClick={downloadHtml}>HTML 저장</button>
-              <button ref={editButtonRef} className="btn sm" onClick={startEdit}>수정</button>
+              <button className="btn sm" onClick={downloadHtml}>{t("learning.notes.saveHtml")}</button>
+              <button ref={editButtonRef} className="btn sm" onClick={startEdit}>
+                {t("learning.notes.edit")}
+              </button>
               <button
                 className="btn sm"
                 onClick={() => {
-                  if (confirm("새 기록으로 추가됩니다 (기존 기록은 보존). 단권화를 실행할까요?")) doConsolidate();
+                  if (confirm(t("learning.notes.reconsolidateConfirm"))) doConsolidate();
                 }}
-              >새로 단권화</button>
+              >{t("learning.notes.reconsolidate")}</button>
               {viewVersion ? (
                 <button
                   className="btn sm"
                   disabled={pendingDelete !== null}
                   onClick={() => deleteVersion(viewVersion.id)}
-                >{pendingDelete?.key === `note-version:${viewVersion.id}` ? "삭제 예정" : "기록 삭제"}</button>
+                >
+                  {pendingDelete?.key === `note-version:${viewVersion.id}`
+                    ? t("learning.common.deletePending")
+                    : t("learning.notes.deleteHistory")}
+                </button>
               ) : (
                 <button
                   className="btn sm"
                   disabled={pendingDelete !== null}
                   onClick={deleteAllNotes}
-                >{pendingDelete?.key === `note:${subject.id}` ? "삭제 예정" : "노트 삭제"}</button>
+                >
+                  {pendingDelete?.key === `note:${subject.id}`
+                    ? t("learning.common.deletePending")
+                    : t("learning.notes.deleteNote")}
+                </button>
               )}
             </div>
           </div>
           {srcCount > 0 && (
             <SourcePicker
-              label="단권화 소스"
+              label={t("learning.notes.sources")}
               materials={readyMats}
               excluded={exclMats}
               onToggle={toggleMat}
@@ -413,18 +454,21 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
             className="text-input instr-input"
             name="note-instruction"
             autoComplete="off"
-            aria-label="단권화 추가 요청"
-            placeholder="예: 공식 위주로 정리하고 3단원은 제외…"
+            aria-label={t("learning.notes.instructionsAria")}
+            placeholder={t("learning.notes.instructionsLong")}
             value={instr}
             onChange={e => setInstr(e.target.value)}
           />
           {noteRenderPending ? (
-            <div className="note-rendering"><AiPending label="노트 표시 준비 중" /></div>
+            <div className="note-rendering"><AiPending label={t("learning.notes.displayPreparing")} /></div>
           ) : (
             <>
               {!renderedNote.complete && (
                 <div className="note-render-progress" aria-live="polite">
-                  노트 표시 중 {renderedNote.chunks.length}/{renderedNote.total}
+                  {t("learning.notes.displayProgress", {
+                    done: formatNumber(renderedNote.chunks.length),
+                    total: formatNumber(renderedNote.total),
+                  })}
                 </div>
               )}
               <div className="note-content">
@@ -441,10 +485,10 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
         </>
       ) : (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16 }}>
-          <div className="note-empty">자료를 올리고 단권화를 실행하세요.</div>
+          <div className="note-empty">{t("learning.notes.empty")}</div>
           {srcCount > 0 && (
             <SourcePicker
-              label="단권화 소스"
+              label={t("learning.notes.sources")}
               materials={readyMats}
               excluded={exclMats}
               onToggle={toggleMat}
@@ -457,8 +501,8 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
             rows={2}
             name="note-instruction"
             autoComplete="off"
-            aria-label="단권화 추가 요청"
-            placeholder="예: 공식 위주로 정리…"
+            aria-label={t("learning.notes.instructionsAria")}
+            placeholder={t("learning.notes.instructionsShort")}
             value={instr}
             onChange={e => setInstr(e.target.value)}
           />
@@ -467,7 +511,7 @@ export default function NotesPanel({ subject, readyMats, active, onBack, onDirty
             onClick={doConsolidate}
             disabled={selMatIds.length === 0}
           >
-            단권화 실행
+            {t("learning.notes.run")}
           </button>
         </div>
       )}

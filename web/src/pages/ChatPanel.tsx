@@ -1,10 +1,17 @@
 // ChatPanel.tsx — 튜터 채팅 패널 (SubjectDetail에서 순수 이동)
 // 메시지 목록(msgs)은 헤더 카운트 표시 때문에 부모 소유, 입력·모드·컨텍스트 선택은 여기 소유.
 import { useState, useEffect, useRef, KeyboardEvent, Dispatch, SetStateAction } from "react";
-import { Subject, Material, Message, AIStatus, chat, cancelChat, messages as apiMessages } from "../api";
+import {
+  Subject, Material, Message, AIStatus, type AIModelSetting, type AIReasoningEffort, type AISettings,
+  chat, cancelChat, messages as apiMessages,
+  aiSettings as apiAISettings, updateAISettings as apiUpdateAISettings,
+} from "../api";
 import { Md } from "../md";
 import { AiPending } from "../Pending";
 import SourcePicker from "./SourcePicker";
+import SingleSelectPicker from "./SingleSelectPicker";
+import { learnerEffortLabel, learnerModelLabel } from "./AISettingsPanel";
+import { useI18n, type MessageKey } from "../i18n";
 
 // 채팅 컨텍스트 자료 선택(제외 집합) 과목별 영속 — 서버 재시작·새로고침에도 유지
 const chatExclKey = (subjectId: number) => `studywork:chat-excl:${subjectId}`;
@@ -47,9 +54,40 @@ interface Props {
   aiRuntime: AIStatus | "unavailable" | null;
   active: boolean;
   loading?: boolean;
+  onAISettingsSaved?: () => void;
 }
 
-export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime, active, loading = false }: Props) {
+const CHAT_MESSAGE_KEYS = {
+  recovered: "workspace.chat.recovered",
+  recoveryFailed: "workspace.chat.recoveryFailed",
+  recoveryRetrying: "workspace.chat.recoveryRetrying",
+  selectSource: "workspace.chat.selectSource",
+  error: "workspace.chat.error",
+  stopped: "workspace.chat.stopped",
+  stopFailed: "workspace.chat.stopFailed",
+  settingsLoadError: "workspace.chat.settingsLoadError",
+  settingsSaveError: "workspace.chat.settingsSaveError",
+  saved: "workspace.chat.saved",
+  inherited: "workspace.chat.inherited",
+} as const satisfies Record<string, MessageKey>;
+
+type ChatMessage = "" | keyof typeof CHAT_MESSAGE_KEYS;
+
+export default function ChatPanel({
+  subject,
+  msgs,
+  setMsgs,
+  readyMats,
+  aiRuntime,
+  active,
+  loading = false,
+  onAISettingsSaved,
+}: Props) {
+  const { t } = useI18n();
+  const modelLabel = (model: string | null) =>
+    model ? learnerModelLabel(model) : t("workspace.settings.defaultModel");
+  const effortLabel = (effort: string | null) =>
+    effort ? learnerEffortLabel(effort) : `effort ${t("workspace.settings.automatic")}`;
   const [chatInput, setChatInput] = useState("");
   const [chatMode, setChatMode] = useState<"materials" | "general">("materials");
   // 채팅 컨텍스트 자료 선택 — 제외 집합, 과목별 localStorage 영속 (기본 전체)
@@ -57,16 +95,27 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
   const [recoveringChat, setRecoveringChat] = useState<PendingChat | null>(() => storedPendingChat(subject.id));
   const [busy, setBusy] = useState(() => storedPendingChat(subject.id) !== null);
   const [cancelling, setCancelling] = useState(false);
-  const [chatErr, setChatErr] = useState("");
-  const [chatNotice, setChatNotice] = useState("");
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [chatErr, setChatErr] = useState<ChatMessage>("");
+  const [chatNotice, setChatNotice] = useState<ChatMessage>("");
+  const [chatAISettings, setChatAISettings] = useState<AISettings | null>(null);
+  const [chatAISettingsSaving, setChatAISettingsSaving] = useState(false);
+  const [chatAISettingsMessage, setChatAISettingsMessage] = useState<ChatMessage>("");
+  const [enteringMessageIds, setEnteringMessageIds] = useState<Set<number>>(new Set());
+  const chatLogRef = useRef<HTMLDivElement>(null);
+  const nearBottomRef = useRef(true);
+  const previousLogItemsRef = useRef(msgs.length + Number(busy));
+  const enterTimersRef = useRef<Set<number>>(new Set());
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const restoreComposerRef = useRef(false);
   const mountedRef = useRef(true);
   const cancelRequestedRef = useRef(false);
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+    return () => {
+      mountedRef.current = false;
+      for (const timer of enterTimersRef.current) window.clearTimeout(timer);
+      enterTimersRef.current.clear();
+    };
   }, []);
   useEffect(() => {
     if (busy || !active || !restoreComposerRef.current) return;
@@ -81,6 +130,9 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
     setBusy(pending !== null);
     setCancelling(false);
   }, [subject.id]);
+  useEffect(() => {
+    if (active) void loadChatAISettings();
+  }, [active]);
 
   useEffect(() => {
     if (!recoveringChat) return;
@@ -101,7 +153,7 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
           setRecoveringChat(null);
           setBusy(false);
           setChatErr("");
-          setChatNotice("새로고침 전 답변을 이어받았습니다.");
+          setChatNotice("recovered");
           return;
         }
         if (Date.now() - recoveringChat.startedAt > 10 * 60 * 1000) {
@@ -109,11 +161,11 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
           setRecoveringChat(null);
           setBusy(false);
           setChatInput(recoveringChat.message);
-          setChatErr("이전 답변 상태를 확인하지 못했습니다. 질문을 다시 보내 주세요.");
+          setChatErr("recoveryFailed");
           return;
         }
       } catch {
-        if (!stopped && mountedRef.current) setChatErr("이전 답변 상태를 다시 확인하고 있습니다.");
+        if (!stopped && mountedRef.current) setChatErr("recoveryRetrying");
       }
       timer = window.setTimeout(poll, 2500);
     };
@@ -124,12 +176,33 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
     };
   }, [recoveringChat, setMsgs, subject.id]);
 
-  // 보이는 채팅에서만 마지막 메시지로 이동한다. 모션 축소 설정이면 즉시 이동한다.
+  // 새 항목이 생겼고 사용자가 이미 하단을 보고 있을 때만 채팅 로그 내부를 이동한다.
+  // active를 의존성에서 제외해 다른 탭에서 돌아오는 동작 자체로는 스크롤하지 않는다.
   useEffect(() => {
+    const nextItems = msgs.length + Number(busy);
+    const added = nextItems > previousLogItemsRef.current;
+    previousLogItemsRef.current = nextItems;
+    if (!active || !added || !nearBottomRef.current) return;
+    const log = chatLogRef.current;
+    if (!log || typeof log.scrollTo !== "function") return;
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    log.scrollTo({ top: log.scrollHeight, behavior: reduceMotion ? "auto" : "smooth" });
+  }, [msgs.length, busy]);
+
+  function markMessageEntering(id: number) {
     if (!active) return;
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    chatEndRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" });
-  }, [msgs, busy, active]);
+    setEnteringMessageIds(current => new Set(current).add(id));
+    const timer = window.setTimeout(() => {
+      enterTimersRef.current.delete(timer);
+      setEnteringMessageIds(current => {
+        if (!current.has(id)) return current;
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+    }, 240);
+    enterTimersRef.current.add(timer);
+  }
 
   // 채팅 컨텍스트 선택 갱신 + 과목별 영속
   function updateChatExcl(update: (prev: Set<number>) => Set<number>) {
@@ -150,7 +223,7 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
       ? readyMats.filter(m => !chatExcl.has(m.id)).map(m => m.id)
       : undefined;
     if (someExcluded && chatMatIds!.length === 0) {
-      setChatErr("컨텍스트로 쓸 자료를 하나 이상 선택하세요.");
+      setChatErr("selectSource");
       return;
     }
     restoreComposerRef.current = Boolean((document.activeElement as HTMLElement | null)?.closest(".chat-input-row"));
@@ -165,6 +238,7 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
     };
     try { localStorage.setItem(pendingChatKey(subject.id), JSON.stringify(pending)); } catch {}
     const optimistic: Message = { id: Date.now(), role: "user", content: msg, mode: chatMode, created_at: new Date().toISOString() };
+    markMessageEntering(optimistic.id);
     setMsgs(prev => [...prev, optimistic]);
     setBusy(true);
     try {
@@ -172,13 +246,14 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
       try { localStorage.removeItem(pendingChatKey(subject.id)); } catch {}
       if (!mountedRef.current) return;
       const asst: Message = { id: Date.now() + 1, role: "assistant", content: reply, mode: chatMode, created_at: new Date().toISOString() };
+      markMessageEntering(asst.id);
       setMsgs(prev => [...prev, asst]);
     } catch (err) {
       if (!mountedRef.current) return;
       try { localStorage.removeItem(pendingChatKey(subject.id)); } catch {}
       setMsgs(prev => prev.filter(m => m.id !== optimistic.id));
       setChatInput(msg);
-      if (!cancelRequestedRef.current) setChatErr(err instanceof Error ? err.message : "오류 발생");
+      if (!cancelRequestedRef.current) setChatErr("error");
     } finally {
       cancelRequestedRef.current = false;
       if (mountedRef.current) { setBusy(false); setCancelling(false); }
@@ -192,7 +267,7 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
     setChatErr("");
     try {
       await cancelChat(subject.id);
-      setChatNotice("답변 생성을 중단했습니다.");
+      setChatNotice("stopped");
       if (recoveringChat) {
         try { localStorage.removeItem(pendingChatKey(subject.id)); } catch {}
         setChatInput(recoveringChat.message);
@@ -204,8 +279,58 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
       cancelRequestedRef.current = false;
       if (mountedRef.current) {
         setCancelling(false);
-        setChatErr(error instanceof Error ? error.message : "답변 생성을 중단하지 못했습니다.");
+        setChatErr("stopFailed");
       }
+    }
+  }
+
+  async function loadChatAISettings() {
+    setChatAISettingsMessage("");
+    try {
+      const settings = await apiAISettings();
+      if (mountedRef.current) setChatAISettings(settings);
+    } catch (error) {
+      if (mountedRef.current) {
+        setChatAISettingsMessage("settingsLoadError");
+      }
+    }
+  }
+
+  async function saveChatAISetting(next: AIModelSetting) {
+    if (chatAISettingsSaving) return;
+    setChatAISettingsSaving(true);
+    setChatAISettingsMessage("");
+    try {
+      const settings = await apiUpdateAISettings({ operations: { chat: next } });
+      if (!mountedRef.current) return;
+      setChatAISettings(settings);
+      setChatAISettingsMessage("saved");
+      onAISettingsSaved?.();
+    } catch (error) {
+      if (mountedRef.current) {
+        setChatAISettingsMessage("settingsSaveError");
+      }
+    } finally {
+      if (mountedRef.current) setChatAISettingsSaving(false);
+    }
+  }
+
+  async function inheritChatAISetting() {
+    if (chatAISettingsSaving) return;
+    setChatAISettingsSaving(true);
+    setChatAISettingsMessage("");
+    try {
+      const settings = await apiUpdateAISettings({ operations: { chat: null } });
+      if (!mountedRef.current) return;
+      setChatAISettings(settings);
+      setChatAISettingsMessage("inherited");
+      onAISettingsSaved?.();
+    } catch (error) {
+      if (mountedRef.current) {
+        setChatAISettingsMessage("settingsSaveError");
+      }
+    } finally {
+      if (mountedRef.current) setChatAISettingsSaving(false);
     }
   }
 
@@ -214,18 +339,48 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
   }
 
+  const chatAISetting = chatAISettings?.resolved.chat ?? null;
+  let chatAISettingsLabel = t("workspace.chat.checking");
+  if (aiRuntime === "unavailable") chatAISettingsLabel = t("workspace.chat.unavailable");
+  else if (aiRuntime?.state === "invalid") chatAISettingsLabel = t("workspace.chat.invalid");
+  else if (aiRuntime?.state === "rollback") {
+    chatAISettingsLabel = t("workspace.chat.rollback", {
+      model: modelLabel(aiRuntime.model),
+    });
+  }
+  else if (chatAISetting) {
+    chatAISettingsLabel = `${modelLabel(chatAISetting.model)} · ${effortLabel(chatAISetting.reasoningEffort)}`;
+  } else if (aiRuntime?.model) {
+    chatAISettingsLabel = `${modelLabel(aiRuntime.model)} · ${effortLabel(aiRuntime.reasoningEffort)}`;
+  }
+  const chatAISettingsWarning = Boolean(
+    chatAISettingsMessage === "settingsLoadError" || chatAISettingsMessage === "settingsSaveError"
+  )
+    || aiRuntime === "unavailable"
+    || aiRuntime !== null && aiRuntime.state !== "ready";
+
   return (
     <>
-      <div className="chat-log" role="log" aria-live="polite" aria-relevant="additions text">
+      <div
+        ref={chatLogRef}
+        className="chat-log"
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions text"
+        onScroll={event => {
+          const log = event.currentTarget;
+          nearBottomRef.current = log.scrollHeight - log.scrollTop - log.clientHeight <= 120;
+        }}
+      >
         {msgs.length === 0 && !busy && (loading
-          ? <AiPending label="대화 불러오는 중" />
-          : <div className="chat-empty">자료를 올리고 질문해 보세요.</div>)}
+          ? <AiPending label={t("workspace.chat.loading")} />
+          : <div className="chat-empty">{t("workspace.chat.empty")}</div>)}
         {msgs.map(m => (
-          <div key={m.id} className={`chat-msg ${m.role}`}>
+          <div key={m.id} className={`chat-msg ${m.role}${enteringMessageIds.has(m.id) ? " entering" : ""}`}>
             <div className="msg-bubble">
               {m.mode && m.role === "assistant" && (
                 <span className={`msg-mode-badge ${m.mode}`}>
-                  {m.mode === "materials" ? "자료 기반" : "일반"}
+                  {m.mode === "materials" ? t("workspace.chat.materialsMode") : t("workspace.chat.generalMode")}
                 </span>
               )}
               {m.role === "assistant" ? <Md text={m.content} /> : m.content}
@@ -235,45 +390,94 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
         {busy && (
           <div className="chat-msg assistant">
             <div className="msg-bubble">
-              <AiPending label="AI 답변 생성 중" />
+              <AiPending label={t("workspace.chat.generating")} />
               <button type="button" className="btn sm" onClick={() => void stopChat()} disabled={cancelling}>
-                {cancelling ? "중단 중…" : "답변 중단"}
+                {/* 기존 한국어 표시 계약: 답변 중단 */}
+                {cancelling ? t("workspace.chat.cancelling") : t("workspace.chat.stop")}
               </button>
             </div>
           </div>
         )}
-        {chatErr && <div className="chat-err" role="alert">{chatErr}</div>}
-        {chatNotice && <div className="quiz-status-msg" role="status" aria-live="polite">{chatNotice}</div>}
-        <div ref={chatEndRef} />
+        {chatErr && <div className="chat-err" role="alert">{t(CHAT_MESSAGE_KEYS[chatErr])}</div>}
+        {chatNotice && (
+          <div className="quiz-status-msg" role="status" aria-live="polite">
+            {t(CHAT_MESSAGE_KEYS[chatNotice])}
+          </div>
+        )}
       </div>
       <div className="chat-mode-row">
         <button
           className={`mode-chip${chatMode === "materials" ? " active" : ""}`}
           aria-pressed={chatMode === "materials"}
           onClick={() => setChatMode("materials")}
-        >자료 기반</button>
+        >{t("workspace.chat.materialsMode")}</button>
         <button
           className={`mode-chip${chatMode === "general" ? " active" : ""}`}
           aria-pressed={chatMode === "general"}
           onClick={() => setChatMode("general")}
-        >일반 질문</button>
-        <span
-          className={`ai-config-badge${aiRuntime !== null && aiRuntime !== "unavailable" && aiRuntime.state !== "ready" ? " warning" : ""}`}
-          aria-live="polite"
-          title={aiRuntime !== null && aiRuntime !== "unavailable"
-            ? `서버 설정 · provider ${aiRuntime.provider} · effort ${aiRuntime.reasoningEffort ?? "해당 없음"}`
-            : undefined}
-        >
-          {aiRuntime === null && "AI 설정 확인 중"}
-          {aiRuntime === "unavailable" && "AI 설정 확인 불가"}
-          {aiRuntime !== null && aiRuntime !== "unavailable" && aiRuntime.state === "invalid" && "AI 설정 오류"}
-          {aiRuntime !== null && aiRuntime !== "unavailable" && aiRuntime.state === "rollback" && `${aiRuntime.model} · 롤백`}
-          {aiRuntime !== null && aiRuntime !== "unavailable" && aiRuntime.state === "ready" && `${aiRuntime.model} · ${aiRuntime.reasoningEffort} · 로컬 CLI`}
-        </span>
+        >{t("workspace.chat.generalQuestion")}</button>
       </div>
+      <details className="chat-ai-settings">
+        <summary>
+          <span>{t("workspace.chat.settings")}</span>
+          <strong className={chatAISettingsWarning ? "warning" : undefined} aria-live="polite">
+            {chatAISettingsLabel}
+          </strong>
+        </summary>
+        <div className="chat-ai-settings-panel">
+          {chatAISettings ? (
+            <>
+              <div className="chat-ai-settings-controls">
+                <SingleSelectPicker
+                  label={t("workspace.chat.model")}
+                  value={chatAISetting!.model}
+                  disabled={chatAISettingsSaving}
+                  options={chatAISettings.allowedModels.map(model => ({
+                    value: model,
+                    label: modelLabel(model),
+                    description: model,
+                  }))}
+                  onChange={model => void saveChatAISetting({ ...chatAISetting!, model })}
+                />
+                <SingleSelectPicker
+                  label={t("workspace.chat.effort")}
+                  value={chatAISetting!.reasoningEffort}
+                  disabled={chatAISettingsSaving}
+                  options={chatAISettings.allowedEfforts.map((effort: AIReasoningEffort) => ({
+                    value: effort,
+                    label: effortLabel(effort),
+                  }))}
+                  onChange={reasoningEffort => void saveChatAISetting({
+                    ...chatAISetting!,
+                    reasoningEffort: reasoningEffort as AIReasoningEffort,
+                  })}
+                />
+              </div>
+              {chatAISettings.overrides.chat && (
+                <button className="btn sm" type="button" onClick={() => void inheritChatAISetting()} disabled={chatAISettingsSaving}>
+                  {t("workspace.chat.useCommon")}
+                </button>
+              )}
+            </>
+          ) : chatAISettingsMessage ? (
+            <button className="btn sm" type="button" onClick={() => void loadChatAISettings()}>
+              {t("workspace.chat.reloadSettings")}
+            </button>
+          ) : (
+            <AiPending label={t("workspace.chat.loadingSettings")} />
+          )}
+          {(chatAISettingsSaving || chatAISettingsMessage) && (
+            <p className={chatAISettingsWarning ? "chat-ai-settings-status warning" : "chat-ai-settings-status"} role={chatAISettingsWarning ? "alert" : "status"}>
+              {chatAISettingsSaving
+                ? t("workspace.chat.saving")
+                : chatAISettingsMessage ? t(CHAT_MESSAGE_KEYS[chatAISettingsMessage]) : ""}
+            </p>
+          )}
+        </div>
+      </details>
       {chatMode === "materials" && readyMats.length > 0 && (
         <SourcePicker
-          label="채팅 컨텍스트"
+          label={t("workspace.chat.context")}
           materials={readyMats}
           excluded={chatExcl}
           onToggle={(id) => updateChatExcl(prev => {
@@ -295,16 +499,21 @@ export default function ChatPanel({ subject, msgs, setMsgs, readyMats, aiRuntime
           name="chat-question"
           autoComplete="off"
           placeholder={chatMode === "materials"
-            ? "예: 이 자료의 핵심 공식을 설명해 줘…"
-            : "예: 푸리에 변환을 쉽게 설명해 줘…"}
+            ? t("workspace.chat.materialsPlaceholder")
+            : t("workspace.chat.generalPlaceholder")}
           value={chatInput}
           onChange={e => setChatInput(e.target.value)}
           onKeyDown={onChatKey}
-          aria-label="채팅 질문"
+          aria-label={t("workspace.chat.questionAria")}
           rows={1}
           disabled={busy}
         />
-        <button className="send-btn" aria-label="질문 보내기" onClick={sendChat} disabled={busy || !chatInput.trim()}>↑</button>
+        <button
+          className="send-btn"
+          aria-label={t("workspace.chat.sendAria")}
+          onClick={sendChat}
+          disabled={busy || !chatInput.trim()}
+        >↑</button>
       </div>
     </>
   );

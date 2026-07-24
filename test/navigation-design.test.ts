@@ -37,7 +37,8 @@ describe("상세 화면 주소와 디자인 계약", () => {
     const css = readFileSync("web/src/styles.css", "utf8");
 
     expect(app).not.toContain("<Cursor");
-    expect(chat).toContain("· 로컬 CLI");
+    expect(chat).toContain('className="chat-ai-settings"');
+    expect(chat).toContain("learnerEffortLabel");
     expect(chat).not.toContain('<summary className="clickable">AI ·');
     expect(css).not.toContain("revealUp");
     expect(css).not.toContain("has-custom-cursor");

@@ -99,6 +99,26 @@ afterEach(() => {
 });
 
 describe("시험 계획 실패 복구", () => {
+  it("접을 때 상세를 바로 없애지 않고 짧은 퇴장 뒤 숨긴다", async () => {
+    const container = await renderExam();
+    vi.useFakeTimers();
+
+    await click(container.querySelector(".exam-card-header")!);
+
+    const detail = container.querySelector(".exam-card-detail") as HTMLElement;
+    expect(detail.classList.contains("closing")).toBe(true);
+    expect(detail.hidden).toBe(false);
+    expect(container.querySelector(".exam-card-header")?.getAttribute("aria-expanded")).toBe("false");
+
+    await act(async () => {
+      vi.advanceTimersByTime(160);
+      await Promise.resolve();
+    });
+
+    expect(detail.hidden).toBe(true);
+    expect(detail.textContent).toBe("");
+  });
+
   it("체크 저장 실패를 롤백하고 같은 항목을 다시 시도한다", async () => {
     api.togglePlanItem
       .mockRejectedValueOnce(new Error("연결이 끊겼습니다"))

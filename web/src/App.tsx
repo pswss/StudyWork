@@ -1,28 +1,22 @@
-import { useState, useEffect, useCallback, Suspense, lazy, Component, ReactNode } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Login from "./pages/Login";
 import Subjects from "./pages/Subjects";
 import SubjectDetail, { type SubjectTab } from "./pages/SubjectDetail";
 import { useEscape } from "./escape";
-import { Subject, subjects as apiSubjects, AuthError } from "./api";
+import {
+  type AuthStatus,
+  AuthError,
+  authStatus as getAuthStatus,
+  logout as apiLogout,
+  Subject,
+  subjects as apiSubjects,
+} from "./api";
 import { UndoDeleteProvider } from "./UndoDelete";
 import { detailUrl, subjectsUrl } from "./route-url";
-
-const Scene = lazy(() => import("./Scene"));
-
-// WebGL을 못 만드는 환경(구형 iPad Safari, 저사양, 헤드리스)에서도
-// 앱이 정상 동작하도록 3D 캔버스를 에러 바운더리로 감싼다.
-// 실패 시 조용히 배경 없이(정적 차콜) 렌더링 계속.
-class SceneBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() { return { failed: true }; }
-  componentDidCatch() { /* 3D 실패는 치명적이지 않음 — 무시 */ }
-  render() {
-    if (this.state.failed) return null;
-    return this.props.children;
-  }
-}
+import { LocalePicker, useI18n } from "./i18n";
 
 type Page = "login" | "subjects" | "detail";
+type AppError = "" | "loadSubjects" | "logout";
 const DETAIL_TABS = new Set<SubjectTab>(["chat", "quiz", "solution", "exam", "note", "settings"]);
 
 export function parseStudyRoute(search: string): { subjectId: number; tab: SubjectTab } | null {
@@ -36,13 +30,20 @@ export function parseStudyRoute(search: string): { subjectId: number; tab: Subje
 }
 
 export default function App() {
+  const { locale, t } = useI18n();
   const [page, setPage] = useState<Page>("subjects");
   const [subjectList, setSubjectList] = useState<Subject[]>([]);
   const [openSubject, setOpenSubject] = useState<Subject | null>(null);
   const [loading, setLoading] = useState(true);
-  const [appErr, setAppErr] = useState("");
+  const [appErr, setAppErr] = useState<AppError>("");
   const [detailTab, setDetailTab] = useState<SubjectTab>("chat");
   const [detailDirty, setDetailDirty] = useState(false);
+  const [auth, setAuth] = useState<AuthStatus>({
+    ownerExists: true,
+    authenticated: false,
+    authKind: null,
+  });
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const applyRoute = useCallback((list: Subject[]) => {
     const route = parseStudyRoute(window.location.search);
@@ -64,13 +65,26 @@ export default function App() {
     setPage("subjects");
   }, []);
 
-  // probe auth on mount
+  // 공개 상태를 먼저 확인해 첫 실행은 가입, 이후는 로그인 화면으로 정확히 보낸다.
   useEffect(() => {
-    apiSubjects()
-      .then(list => { setSubjectList(list); applyRoute(list); setAppErr(""); })
+    getAuthStatus()
+      .then(async status => {
+        setAuth(status);
+        if (!status.authenticated) {
+          setPage("login");
+          return;
+        }
+        const list = await apiSubjects();
+        setSubjectList(list);
+        applyRoute(list);
+        setAppErr("");
+      })
       .catch(e => {
-        if (e instanceof AuthError) setPage("login");
-        else setAppErr(e instanceof Error ? e.message : "과목 목록을 불러오지 못했습니다");
+        if (e instanceof AuthError) {
+          setPage("login");
+          setAuth(current => ({ ...current, authenticated: false, authKind: null }));
+        }
+        else setAppErr("loadSubjects");
       })
       .finally(() => setLoading(false));
   }, [applyRoute]);
@@ -80,6 +94,8 @@ export default function App() {
     function onAuthExpired() {
       setOpenSubject(null);
       setPage("login");
+      setAuth(current => ({ ...current, authenticated: false, authKind: null }));
+      void getAuthStatus().then(setAuth).catch(() => {});
     }
     window.addEventListener("sw:auth-expired", onAuthExpired);
     return () => window.removeEventListener("sw:auth-expired", onAuthExpired);
@@ -93,7 +109,7 @@ export default function App() {
         && route?.subjectId === openSubject?.id
         && route?.tab === detailTab;
       if (page === "detail" && detailDirty && !staysInCurrentDetail) {
-        if (!confirm("저장하지 않은 노트 수정 내용이 있습니다. 과목 목록으로 이동할까요?")) {
+        if (!confirm(t("shell.unsaved.goSubjects"))) {
           window.history.pushState(null, "", detailUrl(openSubject!.id, detailTab));
           return;
         }
@@ -103,15 +119,15 @@ export default function App() {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [applyRoute, detailDirty, detailTab, openSubject, page, subjectList]);
+  }, [applyRoute, detailDirty, detailTab, openSubject, page, subjectList, t]);
 
   useEffect(() => {
     if (loading) return;
     document.title = page === "detail" && openSubject
       ? `${openSubject.name} — StudyWork`
-      : page === "login" ? "로그인 — StudyWork" : "과목 — StudyWork";
+      : page === "login" ? t("shell.title.login") : t("shell.title.subjects");
     if (page !== "login") document.getElementById("main-content")?.focus();
-  }, [loading, openSubject?.id, page]);
+  }, [loading, locale, openSubject?.id, page, t]);
 
   const loadSubjects = useCallback(async () => {
     try {
@@ -119,18 +135,38 @@ export default function App() {
       setSubjectList(list);
       setAppErr("");
     } catch (error) {
-      setAppErr(error instanceof Error ? error.message : "과목 목록을 불러오지 못했습니다");
+      setAppErr("loadSubjects");
     }
   }, []);
 
-  function onLogin() {
+  function onLogin(status: AuthStatus) {
+    setAuth(status);
     // 목록 로드가 실패해도 로그인은 성공한 상태 — 화면은 넘어가고 목록만 비워둔다
     apiSubjects()
       .then(list => { setSubjectList(list); applyRoute(list); setAppErr(""); })
-      .catch(error => setAppErr(error instanceof Error ? error.message : "과목 목록을 불러오지 못했습니다"))
+      .catch(() => setAppErr("loadSubjects"))
       .finally(() => {
         if (!parseStudyRoute(window.location.search)) setPage("subjects");
       });
+  }
+
+  async function doLogout() {
+    if (loggingOut) return;
+    if (detailDirty && !confirm(t("shell.unsaved.logout"))) return;
+    setLoggingOut(true);
+    setAppErr("");
+    try {
+      await apiLogout();
+      setDetailDirty(false);
+      setOpenSubject(null);
+      setAuth(current => ({ ...current, authenticated: false, authKind: null, username: undefined }));
+      setPage("login");
+      window.history.replaceState(null, "", subjectsUrl());
+    } catch (error) {
+      setAppErr("logout");
+    } finally {
+      setLoggingOut(false);
+    }
   }
 
   function openSubjectDetail(s: Subject) {
@@ -142,7 +178,7 @@ export default function App() {
   }
 
   function goHome() {
-    if (detailDirty && !confirm("저장하지 않은 노트 수정 내용이 있습니다. 과목 목록으로 이동할까요?")) return;
+    if (detailDirty && !confirm(t("shell.unsaved.goSubjects"))) return;
     setDetailDirty(false);
     setOpenSubject(null);
     setPage("subjects");
@@ -155,14 +191,7 @@ export default function App() {
 
   return (
     <UndoDeleteProvider>
-      <a className="skip-link" href="#main-content">본문으로 건너뛰기</a>
-      {page !== "detail" && (
-        <SceneBoundary>
-          <Suspense fallback={null}>
-            <Scene mood={page === "login" ? "login" : "subjects"} accent={0} />
-          </Suspense>
-        </SceneBoundary>
-      )}
+      <a className="skip-link" href="#main-content">{t("shell.skipToContent")}</a>
       <div className="vignette" aria-hidden />
 
       {!loading && page !== "login" && (
@@ -175,26 +204,32 @@ export default function App() {
               event.preventDefault();
               goHome();
             }}
-            aria-label="과목 목록으로 이동"
+            aria-label={t("shell.goToSubjects")}
           >
             <span className="brand-mark" translate="no">SW</span>
             <span className="brand-name" translate="no">Study<em>Work</em></span>
           </a>
-          <span className="nav-label">개인 학습 자료함</span>
+          <div className="nav-account">
+            <span className="nav-label">{auth.username ?? t("shell.personalLibrary")}</span>
+            <LocalePicker compact />
+            <button type="button" className="nav-logout" disabled={loggingOut} onClick={() => { void doLogout(); }}>
+              {loggingOut ? t("shell.loggingOut") : t("shell.logout")}
+            </button>
+          </div>
         </nav>
       )}
 
       <main id="main-content" tabIndex={-1}>
-        {loading && <div className="app-loading" role="status">StudyWork 불러오는 중…</div>}
+        {loading && <div className="app-loading" role="status">{t("shell.loadingApp")}</div>}
         {!loading && (
           <>
-            {page === "login" && <Login onLogin={onLogin} />}
+            {page === "login" && <Login ownerExists={auth.ownerExists} onLogin={onLogin} />}
             {page === "subjects" && (
               <>
                 {appErr && (
                   <div className="app-load-error" role="alert">
-                    <span>{appErr}</span>
-                    <button type="button" onClick={() => { void loadSubjects(); }}>다시 시도</button>
+                    <span>{t(appErr === "logout" ? "shell.logoutError" : "shell.loadSubjectsError")}</span>
+                    <button type="button" onClick={() => { void loadSubjects(); }}>{t("shell.retry")}</button>
                   </div>
                 )}
                 <Subjects list={subjectList} onOpen={openSubjectDetail} onRefresh={() => { void loadSubjects(); }} />

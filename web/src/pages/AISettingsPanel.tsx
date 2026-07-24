@@ -8,57 +8,45 @@ import {
   updateAISettings as apiUpdateAISettings,
 } from "../api";
 import { AiPending } from "../Pending";
+import SingleSelectPicker from "./SingleSelectPicker";
+import { useI18n, type MessageKey } from "../i18n";
 
 export const AI_SETTING_GROUPS = [
-  { id: "chat", label: "AI 질문", operations: ["chat"] },
-  { id: "materials", label: "자료 추출", operations: ["material-extract", "section-map"] },
-  { id: "workbook", label: "문제집 추출", operations: ["answer-key-detect", "problem-extract", "question-extract"] },
-  { id: "question", label: "문제 생성", operations: ["question-generate"] },
-  { id: "consolidate", label: "단권화", operations: ["consolidate", "consolidate-chunk", "consolidate-merge"] },
-  { id: "wrong", label: "오답 분석", operations: ["wrong-answer-analysis"] },
-  { id: "plan", label: "학습 계획", operations: ["study-plan"] },
+  { id: "materials", labelKey: "workspace.settings.group.materials", operations: ["material-extract", "section-map"] },
+  { id: "workbook", labelKey: "workspace.settings.group.workbook", operations: ["answer-key-detect", "problem-extract", "question-extract"] },
+  { id: "question", labelKey: "workspace.settings.group.question", operations: ["question-generate"] },
+  { id: "consolidate", labelKey: "workspace.settings.group.consolidate", operations: ["consolidate", "consolidate-chunk", "consolidate-merge"] },
+  { id: "wrong", labelKey: "workspace.settings.group.wrong", operations: ["wrong-answer-analysis"] },
+  { id: "plan", labelKey: "workspace.settings.group.plan", operations: ["study-plan"] },
 ] as const satisfies ReadonlyArray<{
   id: string;
-  label: string;
+  labelKey: MessageKey;
   operations: readonly AIOperation[];
 }>;
 
-const AI_MODEL_LABELS: Record<string, string> = {
-  "gpt-5.6-sol": "정밀",
-  "gpt-5.6-sol-fast": "정밀 · 빠른 응답",
-  "gpt-5.6-luna": "균형",
-  "gpt-5.6-luna-fast": "균형 · 빠른 응답",
-  "gpt-5.6-terra": "빠름",
-  "gpt-5.6-terra-fast": "가장 빠름",
-};
-
-const AI_EFFORT_LABELS: Record<AIReasoningEffort, string> = {
-  low: "빠름",
-  medium: "가볍게",
-  high: "균형",
-  xhigh: "정밀",
-  max: "최대 정밀",
-  ultra: "최고 정밀",
-};
-
 export function learnerModelLabel(model: string | null): string {
   if (!model) return "기본 모델";
-  return Object.hasOwn(AI_MODEL_LABELS, model) ? AI_MODEL_LABELS[model]! : "사용자 지정";
+  const matched = /^gpt-([0-9.]+)-(.+)$/i.exec(model);
+  return matched ? `GPT-${matched[1]} ${matched[2]}` : model;
 }
 
 export function learnerEffortLabel(effort: string | null): string {
-  return effort && Object.hasOwn(AI_EFFORT_LABELS, effort)
-    ? AI_EFFORT_LABELS[effort as AIReasoningEffort]
-    : "자동";
+  return `effort ${effort || "자동"}`;
 }
 
 type SettingTarget = "default" | (typeof AI_SETTING_GROUPS)[number]["id"];
+type SettingsMessage = "" | "loadError" | "saveError" | "saved" | "inherited";
 
 export default function AISettingsPanel({ onSaved }: { onSaved?: () => void }) {
+  const { t } = useI18n();
+  const modelLabel = (model: string | null) =>
+    model ? learnerModelLabel(model) : t("workspace.settings.defaultModel");
+  const effortLabel = (effort: string | null) =>
+    effort ? learnerEffortLabel(effort) : `effort ${t("workspace.settings.automatic")}`;
   const [settings, setSettings] = useState<AISettings | null>(null);
   const [target, setTarget] = useState<SettingTarget>("default");
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<SettingsMessage>("");
   const [loadAttempt, setLoadAttempt] = useState(0);
 
   useEffect(() => {
@@ -66,7 +54,7 @@ export default function AISettingsPanel({ onSaved }: { onSaved?: () => void }) {
     setMessage("");
     apiAISettings()
       .then(value => { if (active) setSettings(value); })
-      .catch(error => { if (active) setMessage(error instanceof Error ? error.message : "AI 설정을 불러오지 못했습니다"); });
+      .catch(() => { if (active) setMessage("loadError"); });
     return () => { active = false; };
   }, [loadAttempt]);
 
@@ -74,13 +62,16 @@ export default function AISettingsPanel({ onSaved }: { onSaved?: () => void }) {
     if (message) {
       return (
         <div className="chat-err" role="alert">
-          {message} <button type="button" onClick={() => setLoadAttempt(value => value + 1)}>설정 다시 불러오기</button>
+          {t("workspace.settings.loadError")}{" "}
+          <button type="button" onClick={() => setLoadAttempt(value => value + 1)}>
+            {t("workspace.settings.reload")}
+          </button>
         </div>
       );
     }
     return (
       <div className="ai-settings-loading" aria-live="polite">
-        <AiPending label="AI 설정 불러오는 중" />
+        <AiPending label={t("workspace.settings.loading")} />
       </div>
     );
   }
@@ -105,10 +96,10 @@ export default function AISettingsPanel({ onSaved }: { onSaved?: () => void }) {
         ? { operations: Object.fromEntries(operations.map(operation => [operation, next])) }
         : { default: next };
       setSettings(await apiUpdateAISettings(update));
-      setMessage("저장됨");
+      setMessage("saved");
       onSaved?.();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "AI 설정 저장 실패");
+      setMessage("saveError");
     } finally {
       setSaving(false);
     }
@@ -122,10 +113,10 @@ export default function AISettingsPanel({ onSaved }: { onSaved?: () => void }) {
       setSettings(await apiUpdateAISettings({
         operations: Object.fromEntries(operations.map(operation => [operation, null])),
       }));
-      setMessage("공통값 사용");
+      setMessage("inherited");
       onSaved?.();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "AI 설정 저장 실패");
+      setMessage("saveError");
     } finally {
       setSaving(false);
     }
@@ -134,71 +125,91 @@ export default function AISettingsPanel({ onSaved }: { onSaved?: () => void }) {
   return (
     <div className="ai-settings-panel">
       <div className="ai-settings-head">
-        <h2>AI 답변 방식</h2>
-        <p>작업마다 답변 속도와 검토 깊이를 고릅니다. 변경한 설정은 다음 작업부터 적용됩니다.</p>
+        <h2>{t("workspace.settings.heading")}</h2>
+        <p>{t("workspace.settings.intro")}</p>
       </div>
 
-      <label className="solution-field ai-settings-picker">
-        <span>설정할 학습 작업</span>
-        <select
-          className="quiz-select"
-          value={target}
-          disabled={saving}
-          onChange={event => { setTarget(event.target.value as SettingTarget); setMessage(""); }}
-        >
-          <option value="default">공통 기본</option>
-          {AI_SETTING_GROUPS.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}
-        </select>
-      </label>
+      <SingleSelectPicker
+        className="ai-settings-picker"
+        label={t("workspace.settings.scope")}
+        value={target}
+        disabled={saving}
+        options={[
+          { value: "default", label: t("workspace.settings.commonDefault") },
+          ...AI_SETTING_GROUPS.map(item => ({ value: item.id, label: t(item.labelKey) })),
+        ]}
+        onChange={value => { setTarget(value as SettingTarget); setMessage(""); }}
+      />
 
       <div className="ai-settings-current">
         <div>
-          <strong>{group?.label ?? "모든 작업의 공통 기본값"}</strong>
-          <span>{group ? (hasOverride ? "작업별 설정" : "공통값 사용 중") : "작업별 설정이 없을 때 적용"}</span>
-          {mixed && <span className="ai-settings-warning">이 기능에 서로 다른 설정이 적용돼 있습니다. 새로 고르면 하나로 맞춰집니다.</span>}
+          <strong>{group ? t(group.labelKey) : t("workspace.settings.allCommon")}</strong>
+          <span>{group
+            ? (hasOverride ? t("workspace.settings.taskOverride") : t("workspace.settings.commonInUse"))
+            : t("workspace.settings.defaultApplies")}</span>
+          {mixed && <span className="ai-settings-warning">{t("workspace.settings.mixedWarning")}</span>}
         </div>
         {group && hasOverride && (
-          <button className="btn sm" onClick={inheritDefault} disabled={saving}>공통값 사용</button>
+          <button className="btn sm" onClick={inheritDefault} disabled={saving}>
+            {t("workspace.settings.useCommon")}
+          </button>
         )}
       </div>
 
       <fieldset className="ai-settings-fieldset" disabled={saving}>
-        <legend>답변 모델</legend>
-        <p className="settings-help">정밀 모델은 긴 자료와 복잡한 풀이에, 빠른 모델은 짧은 질문과 반복 작업에 잘 맞습니다.</p>
-        <select
-          className="quiz-select ai-settings-select"
-          aria-label="답변 모델"
-          value={mixed ? "" : setting.model}
-          onChange={event => void save({ ...setting, model: event.target.value })}
-        >
-          {mixed && <option value="">서로 다른 설정</option>}
-          {settings.allowedModels.map(model => <option key={model} value={model}>{learnerModelLabel(model)}</option>)}
-        </select>
+        <legend>{t("workspace.settings.modelLegend")}</legend>
+        <p className="settings-help">{t("workspace.settings.modelHelp")}</p>
+        <SingleSelectPicker
+          className="ai-settings-select"
+          label={t("workspace.settings.model")}
+          value={setting.model}
+          disabled={saving}
+          options={settings.allowedModels.map(model => ({
+            value: model,
+            label: modelLabel(model),
+            description: model,
+          }))}
+          onChange={model => void save({ ...setting, model })}
+        />
       </fieldset>
 
       <fieldset className="ai-settings-fieldset" disabled={saving}>
-        <legend>사고 깊이</legend>
-        <p className="settings-help">깊게 생각할수록 복잡한 문제를 더 오래 검토하지만 답변이 늦어집니다. 간단한 질문은 빠름, 풀이 검증은 정밀이 잘 맞습니다.</p>
-        <select
-          className="quiz-select ai-settings-select"
-          aria-label="사고 깊이"
-          value={mixed ? "" : setting.reasoningEffort}
-          onChange={event => void save({ ...setting, reasoningEffort: event.target.value as AIReasoningEffort })}
-        >
-          {mixed && <option value="">서로 다른 설정</option>}
-          {settings.allowedEfforts.map((effort: AIReasoningEffort) => (
-            <option key={effort} value={effort}>{learnerEffortLabel(effort)}</option>
-          ))}
-        </select>
+        <legend>{t("workspace.settings.effortLegend")}</legend>
+        <p className="settings-help">{t("workspace.settings.effortHelp")}</p>
+        <SingleSelectPicker
+          className="ai-settings-select"
+          label={t("workspace.settings.effort")}
+          value={setting.reasoningEffort}
+          disabled={saving}
+          options={settings.allowedEfforts.map((effort: AIReasoningEffort) => ({
+            value: effort,
+            label: effortLabel(effort),
+          }))}
+          onChange={reasoningEffort => void save({ ...setting, reasoningEffort: reasoningEffort as AIReasoningEffort })}
+        />
       </fieldset>
 
-      <div className="ai-settings-status" aria-live="polite">
-        {saving ? "저장 중…" : message || `${learnerModelLabel(setting.model)} · ${learnerEffortLabel(setting.reasoningEffort)}`}
+      <div
+        className="ai-settings-status"
+        aria-live="polite"
+        role={message === "saveError" ? "alert" : "status"}
+      >
+        {saving
+          ? t("workspace.settings.saving")
+          : message
+            ? t(message === "saved"
+              ? "workspace.settings.saved"
+              : message === "inherited"
+                ? "workspace.settings.inherited"
+                : "workspace.settings.saveError")
+            : `${modelLabel(setting.model)} · ${effortLabel(setting.reasoningEffort)}`}
       </div>
 
       <details className="context-help">
-        <summary className="clickable">실행 정보</summary>
-        <p>이 기기에서 실행 · {learnerModelLabel(setting.model)} · 검토 깊이 {learnerEffortLabel(setting.reasoningEffort)}</p>
+        <summary className="clickable">{t("workspace.settings.executionInfo")}</summary>
+        <p>
+          {t("workspace.settings.thisDevice")} · {modelLabel(setting.model)} · {effortLabel(setting.reasoningEffort)}
+        </p>
       </details>
     </div>
   );

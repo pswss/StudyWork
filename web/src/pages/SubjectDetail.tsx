@@ -20,9 +20,17 @@ import AISettingsPanel from "./AISettingsPanel";
 import ChatPanel from "./ChatPanel";
 import MaterialsSidebar, { uploadValidationError } from "./MaterialsSidebar";
 import NotesPanel from "./NotesPanel";
+import SingleSelectPicker from "./SingleSelectPicker";
 import { Reveal } from "../motion";
 import { AiPending } from "../Pending";
 import { subjectsUrl } from "../route-url";
+import {
+  translate,
+  useI18n,
+  type MessageKey,
+  type MessageValues,
+  type Translate,
+} from "../i18n";
 
 export { uploadValidationError }; // 기존 테스트·소비처 호환 재수출
 
@@ -37,9 +45,15 @@ interface Props {
 export type SubjectTab = "chat" | "quiz" | "solution" | "exam" | "note" | "settings";
 
 const TAB_ORDER: SubjectTab[] = ["chat", "quiz", "solution", "exam", "note", "settings"];
-const TAB_LABELS: Record<SubjectTab, string> = {
-  chat: "채팅", quiz: "퀴즈", solution: "해설", exam: "시험", note: "노트", settings: "설정",
+const TAB_KEYS: Record<SubjectTab, MessageKey> = {
+  chat: "workspace.tabs.chat",
+  quiz: "workspace.tabs.problems",
+  solution: "workspace.tabs.solutions",
+  exam: "workspace.tabs.exam",
+  note: "workspace.tabs.notes",
+  settings: "workspace.tabs.settings",
 };
+// 기존 한국어 표시 계약: quiz: "문제"
 
 const solutionJobKey = (subjectId: number) => `studywork:solution-job:${subjectId}`;
 
@@ -88,14 +102,27 @@ function writeStoredExplanationJobs(subjectId: number, jobs: TrackedExplanationJ
   } catch {}
 }
 
-export function explanationGroupLabel(group: Pick<MissingExplanationGroup, "src_file_id" | "src_file_name">): string {
-  return group.src_file_id ? (group.src_file_name ?? `파일 #${group.src_file_id}`) : "직접 생성·기타";
+export function explanationGroupLabel(
+  group: Pick<MissingExplanationGroup, "src_file_id" | "src_file_name">,
+  t: Translate = (key, values) => translate("ko", key, values),
+): string {
+  return group.src_file_id
+    ? (group.src_file_name ?? t("workspace.solutions.fileFallback", { id: group.src_file_id }))
+    : t("workspace.solutions.manualGroup");
+}
+
+interface StatusMessage {
+  key: MessageKey;
+  values?: MessageValues;
+  tone: "ok" | "info" | "error";
 }
 
 export default function SubjectDetail({ subject, onBack, initialTab = "chat", onTabChange, onDirtyChange }: Props) {
+  const { t, formatNumber } = useI18n();
   const [mats, setMats] = useState<Material[]>([]);
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [tab, setTab] = useState<SubjectTab>(initialTab);
+  const [tabMotion, setTabMotion] = useState<"smooth" | "instant">("instant");
   const [materialsLoading, setMaterialsLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(true);
   // 퀴즈 탭 보조 뷰(문제 은행 / 오답 노트) + 오답 즉시 출제 트리거 카운터
@@ -104,8 +131,8 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
   );
   const [wrongKick, setWrongKick] = useState(0);
   const [aiRuntime, setAIRuntime] = useState<AIStatus | "unavailable" | null>(null);
-  const [materialsErr, setMaterialsErr] = useState("");
-  const [messagesErr, setMessagesErr] = useState("");
+  const [materialsErr, setMaterialsErr] = useState<MessageKey | "">("");
+  const [messagesErr, setMessagesErr] = useState<MessageKey | "">("");
   const [bookList, setBookList] = useState<Book[]>([]);
   const [solutionBookId, setSolutionBookId] = useState<number | null>(null);
   const [solutionUploading, setSolutionUploading] = useState(false);
@@ -114,14 +141,14 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
     const id = storedSolutionJob(subject.id);
     return id === null ? null : { subjectId: subject.id, id };
   });
-  const [solutionStatus, setSolutionStatus] = useState("");
+  const [solutionStatus, setSolutionStatus] = useState<StatusMessage | null>(null);
   const [solutionBooksLoading, setSolutionBooksLoading] = useState(false);
-  const [solutionBooksError, setSolutionBooksError] = useState("");
+  const [solutionBooksError, setSolutionBooksError] = useState<MessageKey | "">("");
   // AI 해설 채우기 — 출처별 빈 해설 집계 + 대상별 다중 작업 추적
   const [missingGroups, setMissingGroups] = useState<MissingExplanationGroup[]>([]);
-  const [missingErr, setMissingErr] = useState("");
+  const [missingErr, setMissingErr] = useState<MessageKey | "">("");
   const [explJobs, setExplJobs] = useState<TrackedExplanationJob[]>(() => storedExplanationJobs(subject.id));
-  const [explStatuses, setExplStatuses] = useState<string[]>([]);
+  const [explStatuses, setExplStatuses] = useState<StatusMessage[]>([]);
   const [explStartingTargets, setExplStartingTargets] = useState<Set<string>>(new Set());
   // 작업 트레이 — 과목 전체 진행 작업 목록 (탭과 무관하게 표시)
   const [trayJobs, setTrayJobs] = useState<SubjectJob[]>([]);
@@ -145,6 +172,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
   useEffect(() => {
     subjectIdRef.current = subject.id;
     setTab(initialTab);
+    setTabMotion("instant");
     setQuizView(new URLSearchParams(window.location.search).get("quizView") === "wrong" ? "wrong" : "bank");
     setMats([]);
     setMsgs([]);
@@ -159,7 +187,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
         ? current
         : { subjectId: subject.id, id: storedJobId };
     });
-    setSolutionStatus("");
+    setSolutionStatus(null);
     setSolutionBooksLoading(false);
     setSolutionBooksError("");
     setMaterialsErr("");
@@ -177,17 +205,27 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
     void loadMats(subject.id);
   }, [subject.id]);
   useEffect(() => { void loadMsgs(subject.id); }, [subject.id]);
-  useEffect(() => { setTab(initialTab); }, [initialTab]);
+  useEffect(() => {
+    setTab(initialTab);
+    setTabMotion("instant");
+  }, [initialTab]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (quizView === "wrong") params.set("quizView", "wrong"); else params.delete("quizView");
     window.history.replaceState(null, "", `${window.location.pathname}?${params}${window.location.hash}`);
   }, [quizView]);
   useEffect(() => {
-    apiAIStatus("chat")
-      .then((status) => { if (mountedRef.current) setAIRuntime(status); })
-      .catch(() => { if (mountedRef.current) setAIRuntime("unavailable"); });
+    void refreshChatAIStatus();
   }, []);
+
+  async function refreshChatAIStatus() {
+    try {
+      const status = await apiAIStatus("chat");
+      if (mountedRef.current) setAIRuntime(status);
+    } catch {
+      if (mountedRef.current) setAIRuntime("unavailable");
+    }
+  }
   // 추출은 서버 백그라운드에서 진행 — 자료 추출 중이거나 문제 추출 중이면 5초마다 상태 갱신
   const matsProcessing = mats.some(m => m.status === "processing" || m.book_status === "processing");
   useEffect(() => {
@@ -212,7 +250,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
         setSolutionJob((current) => current?.subjectId === subject.id && current.id === id
           ? current
           : { subjectId: subject.id, id });
-        setSolutionStatus("");
+        setSolutionStatus(null);
       }
     };
     window.addEventListener("storage", syncJob);
@@ -233,33 +271,40 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
         if (job.subject_id !== polledSubjectId || job.kind !== "book-explanations") {
           try { window.localStorage.removeItem(key); } catch {}
           setSolutionJob(null);
-          setSolutionStatus("이 과목의 해설 추가 작업이 아닙니다. 다시 업로드해 주세요.");
+          setSolutionStatus({ key: "workspace.solutions.wrongJob", tone: "error" });
           return;
         }
         if (job.status === "processing") {
-          setSolutionStatus("");
+          setSolutionStatus(null);
           timer = window.setTimeout(check, 2500);
           return;
         }
         try { window.localStorage.removeItem(key); } catch {}
         setSolutionJob(null);
         if (job.status === "ready") {
-          setSolutionStatus(`해설 ${job.result?.updated ?? 0}개를 추가했습니다.`);
+          setSolutionStatus({
+            key: "workspace.solutions.added",
+            values: { count: job.result?.updated ?? 0 },
+            tone: "ok",
+          });
           await loadBooks(polledSubjectId);
         } else {
-          setSolutionStatus(job.error === "사용자 중단" ? "해설 분석을 중단했습니다." : job.error ?? "해설 추가에 실패했습니다.");
+          setSolutionStatus({
+            key: job.error === "사용자 중단"
+              ? "workspace.solutions.analysisStopped"
+              : "workspace.solutions.addFailed",
+            tone: job.error === "사용자 중단" ? "info" : "error",
+          });
         }
       } catch (error) {
         if (stopped || !mountedRef.current) return;
         if (error instanceof NotFoundError) {
           try { window.localStorage.removeItem(key); } catch {}
           setSolutionJob(null);
-          setSolutionStatus("이전 해설 추가 작업을 찾을 수 없습니다. 다시 업로드해 주세요.");
+          setSolutionStatus({ key: "workspace.solutions.jobNotFound", tone: "error" });
           return;
         }
-        setSolutionStatus(error instanceof Error
-          ? `${error.message} · 작업 상태를 다시 확인합니다.`
-          : "해설 작업 상태를 확인하지 못했습니다. 다시 확인합니다.");
+        setSolutionStatus({ key: "workspace.solutions.statusRetry", tone: "error" });
         timer = window.setTimeout(check, 5000);
       }
     };
@@ -280,14 +325,14 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
     let timer: number | undefined;
     const check = async () => {
       const finished: number[] = [];
-      const messages: string[] = [];
+      const messages: StatusMessage[] = [];
       for (const jobId of ids) {
         try {
           const job = await apiAIJob<{ filled: number; skippedMismatch: number; skippedIds: number[] }>(jobId);
           if (stopped || !mountedRef.current) return;
           if (job.subject_id !== polledSubjectId || job.kind !== "explanation-generate") {
             finished.push(jobId);
-            messages.push("이 과목의 해설 생성 작업이 아닙니다. 다시 시도해 주세요.");
+            messages.push({ key: "workspace.solutions.wrongGenerationJob", tone: "error" });
             continue;
           }
           if (job.status === "processing") continue;
@@ -295,17 +340,26 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
           if (job.status === "ready") {
             const filled = job.result?.filled ?? 0;
             const skipped = job.result?.skippedMismatch ?? 0;
-            messages.push(
-              `해설 ${filled}개를 채웠습니다.${skipped > 0 ? ` 정답 불일치 ${skipped}개는 저장하지 않았습니다.` : ""}`
-            );
+            messages.push(skipped > 0
+              ? {
+                  key: "workspace.solutions.generatedWithMismatch",
+                  values: { filled, skipped },
+                  tone: "ok",
+                }
+              : { key: "workspace.solutions.generated", values: { count: filled }, tone: "ok" });
           } else {
-            messages.push(job.error === "사용자 중단" ? "해설 생성을 중단했습니다." : job.error ?? "AI 해설 생성에 실패했습니다.");
+            messages.push({
+              key: job.error === "사용자 중단"
+                ? "workspace.solutions.generationStopped"
+                : "workspace.solutions.generationFailed",
+              tone: job.error === "사용자 중단" ? "info" : "error",
+            });
           }
         } catch (error) {
           if (stopped || !mountedRef.current) return;
           if (error instanceof NotFoundError) {
             finished.push(jobId);
-            messages.push("이전 해설 생성 작업을 찾을 수 없습니다. 다시 시도해 주세요.");
+            messages.push({ key: "workspace.solutions.generationJobNotFound", tone: "error" });
           }
           // 일시적 네트워크 오류는 다음 주기에 다시 확인한다.
         }
@@ -339,8 +393,9 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
     return () => clearInterval(t);
   }, [subject.id]);
 
-  // 탭 전환 시 3D 조형물에 활성 인덱스를 알린다.
-  function selectTab(t: SubjectTab) {
+  // 포인터 전환만 부드럽게 움직이고 URL·뒤로가기는 즉시 복원한다.
+  function selectTab(t: SubjectTab, motion: "smooth" | "instant" = "smooth") {
+    setTabMotion(motion);
     setTab(t);
     onTabChange?.(t);
   }
@@ -362,7 +417,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
         }
       } catch (err) {
         if (mountedRef.current && subjectIdRef.current === subjectId) {
-          setMaterialsErr(err instanceof Error ? err.message : "자료 불러오기 실패");
+          setMaterialsErr("workspace.materialsLoadError");
         }
       } finally {
         if (mountedRef.current && subjectIdRef.current === subjectId) setMaterialsLoading(false);
@@ -401,7 +456,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
         && subjectIdRef.current === subjectId
         && request === booksRequestRef.current
       ) {
-        setSolutionBooksError(error instanceof Error ? error.message : "문제집을 불러오지 못했습니다.");
+        setSolutionBooksError("workspace.solutions.booksLoadError");
       }
     } finally {
       if (
@@ -453,7 +508,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
       setMissingErr("");
     } catch (error) {
       if (!mountedRef.current || subjectIdRef.current !== subjectId || request !== missingRequestRef.current) return;
-      setMissingErr(error instanceof Error ? error.message : "해설 현황을 불러오지 못했습니다.");
+      setMissingErr("workspace.solutions.missingLoadError");
     }
   }
   async function loadMsgs(subjectId = subject.id) {
@@ -464,9 +519,9 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
         setMsgs(m);
         setMessagesErr("");
       }
-    } catch (err) {
+    } catch {
       if (mountedRef.current && subjectIdRef.current === subjectId) {
-        setMessagesErr(err instanceof Error ? err.message : "대화 불러오기 실패");
+        setMessagesErr("workspace.messagesLoadError");
       }
     } finally {
       if (mountedRef.current && subjectIdRef.current === subjectId) setMessagesLoading(false);
@@ -479,14 +534,22 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
     if (!file || solutionBookId === null || solutionUploading || solutionJobId !== null) return;
     const validationError = uploadValidationError(file);
     if (validationError) {
-      setSolutionStatus(`${file.name}: ${validationError}`);
+      setSolutionStatus({
+        key: validationError.includes("200")
+          ? "workspace.solutions.pdfLimitFile"
+          : validationError.includes("30")
+            ? "workspace.solutions.imageLimitFile"
+            : "workspace.solutions.fileTypeFile",
+        values: { name: file.name },
+        tone: "error",
+      });
       return;
     }
     const requestedSubjectId = subject.id;
     const requestedBookId = solutionBookId;
     const request = ++solutionUploadRequestRef.current;
     setSolutionUploading(true);
-    setSolutionStatus("");
+    setSolutionStatus(null);
     try {
       const form = new FormData();
       form.append("file", file);
@@ -504,7 +567,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
         && subjectIdRef.current === requestedSubjectId
         && request === solutionUploadRequestRef.current
       ) {
-        setSolutionStatus(error instanceof Error ? error.message : "해설 업로드에 실패했습니다.");
+        setSolutionStatus({ key: "workspace.solutions.uploadError", tone: "error" });
       }
     } finally {
       if (
@@ -532,9 +595,13 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
       void loadJobs(requestedSubjectId);
     } catch (error) {
       if (mountedRef.current && subjectIdRef.current === requestedSubjectId) {
+        const failure: StatusMessage = {
+          key: "workspace.solutions.generationStartError",
+          tone: "error",
+        };
         setExplStatuses((prev) => [
           ...prev,
-          error instanceof Error ? error.message : "AI 해설 생성을 시작하지 못했습니다.",
+          failure,
         ].slice(-3));
       }
     } finally {
@@ -551,12 +618,12 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
   async function stopSolutionJob() {
     if (solutionJobId === null || solutionCancelling) return;
     setSolutionCancelling(true);
-    setSolutionStatus("");
+    setSolutionStatus(null);
     try {
       await cancelAIJob(solutionJobId);
-      setSolutionStatus("해설 분석 중단 요청을 보냈습니다.");
+      setSolutionStatus({ key: "workspace.solutions.stopRequested", tone: "info" });
     } catch (error) {
-      setSolutionStatus(error instanceof Error ? error.message : "해설 분석을 중단하지 못했습니다.");
+      setSolutionStatus({ key: "workspace.solutions.stopError", tone: "error" });
     } finally {
       if (mountedRef.current) setSolutionCancelling(false);
     }
@@ -568,6 +635,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
   const solutionBooks = bookList.filter((book) => book.question_count > 0);
   const selectedSolutionBook = solutionBooks.find((book) => book.id === solutionBookId) ?? null;
   const missingTotal = missingGroups.reduce((sum, group) => sum + group.missing, 0);
+  const mobileLearningFirst = mats.length > 0 || (materialsLoading && subject.material_count > 0);
   // 실행 중 대상 = 이 탭이 추적하는 작업 ∪ 서버 목록(다른 탭·창에서 시작한 작업 포함)
   const trayExplTargets = new Set(
     trayJobs
@@ -580,6 +648,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
       || trayExplTargets.has(target);
   }
   const explRunningCount = new Set([...explJobs.map((job) => job.target), ...trayExplTargets]).size;
+  const tabLabel = (tabId: SubjectTab) => t(TAB_KEYS[tabId]);
 
   return (
     <div className="page detail-page">
@@ -592,31 +661,38 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
             event.preventDefault();
             onBack();
           }}
-          aria-label="과목 목록으로 이동"
+          aria-label={t("workspace.backAria")}
         >
           <span className="back-arrow" aria-hidden="true">←</span>
-          <span className="back-word">과목 목록</span>
+          <span className="back-word">{t("workspace.back")}</span>
         </a>
         <div className="detail-head-main">
           <Reveal delay={0.1} as="h1" className="detail-title">{subject.name}</Reveal>
         </div>
-        <span className="detail-meta">자료 {matCount} · 대화 {msgCount}</span>
+        <span className="detail-meta">
+          {t("workspace.meta", {
+            materials: formatNumber(matCount),
+            messages: formatNumber(msgCount),
+          })}
+        </span>
       </div>
 
       {materialsErr && (
         <div className="chat-err" role="alert">
-          {materialsErr} <button type="button" onClick={() => void loadMats()}>자료 다시 불러오기</button>
+          {t(materialsErr)}{" "}
+          <button type="button" onClick={() => void loadMats()}>{t("workspace.materialsReload")}</button>
         </div>
       )}
       {messagesErr && (
         <div className="chat-err" role="alert">
-          {messagesErr} <button type="button" onClick={() => void loadMsgs()}>대화 다시 불러오기</button>
+          {t(messagesErr)}{" "}
+          <button type="button" onClick={() => void loadMsgs()}>{t("workspace.messagesReload")}</button>
         </div>
       )}
 
       <details className="context-help subject-guide">
-        <summary>처음 사용하는 분을 위한 순서</summary>
-        <p>자료를 먼저 추가한 뒤 채팅이나 퀴즈로 확인하고, 필요할 때 노트와 시험 계획을 만드세요. 해설 탭에서는 문제집과 같은 책의 공식 해설을 연결할 수 있습니다.</p>
+        <summary>{t("workspace.guideTitle")}</summary>
+        <p>{t("workspace.guideBody")}</p>
       </details>
 
       {/* 작업 트레이 — 어느 탭에 있어도 진행 중 AI 작업이 보인다 */}
@@ -627,7 +703,10 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
         onCancel={(jobId) => void cancelTrayJob(jobId)}
       />
 
-      <div className="detail-grid">
+      <div
+        className="detail-grid"
+        data-mobile-priority={mobileLearningFirst ? "learning" : "materials"}
+      >
         {/* ===== sidebar ===== */}
         <MaterialsSidebar
           subject={subject}
@@ -637,7 +716,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
         />
 
         {/* ===== main area ===== */}
-        <div className="main-panel">
+        <div className="main-panel" data-tab-motion={tabMotion}>
           <div
             className="tabs"
             role="tablist"
@@ -650,7 +729,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
                 : e.key === "End"
                   ? TAB_ORDER.length - 1
                   : (TAB_ORDER.indexOf(tab) + (e.key === "ArrowRight" ? 1 : -1) + TAB_ORDER.length) % TAB_ORDER.length;
-              selectTab(TAB_ORDER[next]);
+              selectTab(TAB_ORDER[next], "instant");
               (e.currentTarget.children[next] as HTMLElement | undefined)?.focus();
             }}
           >
@@ -665,8 +744,10 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
                 className={`tab-index${tab === t ? " active" : ""}`}
                 onClick={() => selectTab(t)}
               >
-                <span className="tab-num">{String(i + 1).padStart(2, "0")}</span>
-                <span className="tab-word">{TAB_LABELS[t]}</span>
+                <span className="tab-num">
+                  {formatNumber(i + 1, { minimumIntegerDigits: 2, useGrouping: false })}
+                </span>
+                <span className="tab-word">{tabLabel(t)}</span>
               </button>
             ))}
           </div>
@@ -687,6 +768,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
               aiRuntime={aiRuntime}
               active={tab === "chat"}
               loading={messagesLoading}
+              onAISettingsSaved={() => void refreshChatAIStatus()}
             />
           </div>
 
@@ -703,12 +785,12 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
                 className={`mode-chip${quizView === "bank" ? " active" : ""}`}
                 aria-pressed={quizView === "bank"}
                 onClick={() => setQuizView("bank")}
-              >문제 은행</button>
+              >{t("workspace.problemBank")}</button>
               <button
                 className={`mode-chip${quizView === "wrong" ? " active" : ""}`}
                 aria-pressed={quizView === "wrong"}
                 onClick={() => setQuizView("wrong")}
-              >오답 노트</button>
+              >{t("workspace.wrongNotes")}</button>
             </div>
             {/* Quiz는 은행·플레이 상태 유지를 위해 항상 마운트, 오답 뷰일 땐 숨긴다 */}
             <div className="quiz-subview" hidden={quizView !== "bank"}>
@@ -741,43 +823,53 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
             aria-hidden={tab !== "solution"}
           >
               <div className="solution-head">
-                <h2>기존 문제집에 해설 추가</h2>
-                <p>문제집을 고르고 같은 책의 공식 해설 PDF나 이미지를 올리세요.</p>
+                <h2>{t("workspace.solutions.heading")}</h2>
+                <p>{t("workspace.solutions.intro")}</p>
               </div>
               {solutionBooksError && (
                 <p className="solution-status" role="alert">
-                  {solutionBooksError} <button type="button" className="btn sm" onClick={() => void loadBooks()}>문제집 다시 불러오기</button>
+                  {t(solutionBooksError)}{" "}
+                  <button type="button" className="btn sm" onClick={() => void loadBooks()}>
+                    {t("workspace.solutions.reloadBooks")}
+                  </button>
                 </p>
               )}
               {solutionBooksLoading && solutionBooks.length === 0 ? (
-                <AiPending label="문제집 불러오는 중" />
+                <AiPending label={t("workspace.solutions.loadingBooks")} />
               ) : solutionBooks.length > 0 ? (
                 <>
-                  <label className="solution-field">
-                    <span>문제집</span>
-                    <select
-                      className="quiz-select"
-                      value={solutionBookId ?? ""}
-                      onChange={(event) => setSolutionBookId(Number(event.target.value))}
-                      disabled={solutionUploading || solutionJobId !== null}
-                    >
-                      {solutionBooks.map((book) => (
-                        <option key={book.id} value={book.id}>
-                          {book.title} · 해설 {book.explained_count}/{book.question_count}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <SingleSelectPicker
+                    className="solution-book-picker"
+                    label={t("workspace.solutions.book")}
+                    value={String(solutionBookId ?? "")}
+                    options={solutionBooks.map((book) => ({
+                      value: String(book.id),
+                      label: book.title,
+                      description: t("workspace.solutions.explanationProgress", {
+                        explained: formatNumber(book.explained_count),
+                        total: formatNumber(book.question_count),
+                      }),
+                    }))}
+                    onChange={(value) => setSolutionBookId(Number(value))}
+                    disabled={solutionUploading || solutionJobId !== null}
+                  />
                   {selectedSolutionBook && (
                     <div className="solution-summary">
                       <div>
                         <strong>{selectedSolutionBook.title}</strong>
-                        <span>{selectedSolutionBook.question_count}문제 중 {selectedSolutionBook.explained_count}문제 해설 있음</span>
+                        <span>{t("workspace.solutions.bookSummary", {
+                          total: formatNumber(selectedSolutionBook.question_count),
+                          explained: formatNumber(selectedSolutionBook.explained_count),
+                        })}</span>
                       </div>
                     </div>
                   )}
                   <label className={`file-label solution-upload${solutionJobId !== null ? " disabled" : ""}`}>
-                    {solutionUploading ? "업로드 중…" : solutionJobId !== null ? "해설 분석 중…" : "해설 파일 선택"}
+                    {solutionUploading
+                      ? t("workspace.solutions.uploading")
+                      : solutionJobId !== null
+                        ? t("workspace.solutions.analyzing")
+                        : t("workspace.solutions.selectFile")}
                     <input
                       type="file"
                       accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,application/pdf,image/jpeg,image/png,image/webp,image/gif"
@@ -786,55 +878,65 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
                     />
                   </label>
                   <p className="solution-help">
-                    문제집 문항 번호가 1번부터 빠짐없이 이어지고, 전체 해설지가 같은 순서로 모든 문항을 포함해야 합니다. 문항 수와 정답이 하나라도 다르면 기존 문제는 바꾸지 않습니다.
+                    {t("workspace.solutions.help")}
                   </p>
                 </>
               ) : !solutionBooksError ? (
-                <div className="quiz-empty">먼저 자료에서 문제 추출을 완료하세요.</div>
+                <div className="quiz-empty">{t("workspace.solutions.extractFirst")}</div>
               ) : null}
               {solutionJobId !== null && (
                 <div className="pending-action-row">
-                  <AiPending label="해설 분석 중 · 새로고침하거나 다른 탭으로 이동해도 계속됩니다" />
+                  <AiPending label={t("workspace.solutions.analysisContinues")} />
                   <button type="button" className="btn sm" onClick={() => void stopSolutionJob()} disabled={solutionCancelling}>
-                    {solutionCancelling ? "중단 중…" : "분석 중단"}
+                    {/* 기존 한국어 표시 계약: 분석 중단 */}
+                    {solutionCancelling
+                      ? t("workspace.solutions.cancelling")
+                      : t("workspace.solutions.stop")}
                   </button>
                 </div>
               )}
               {solutionStatus && (
                 <p
-                  className={solutionStatus.includes("추가했습니다") ? "solution-status ok" : "solution-status"}
-                  role={solutionStatus.includes("추가했습니다") || solutionStatus.includes("중단했습니다") || solutionStatus.includes("요청을 보냈습니다") ? "status" : "alert"}
+                  className={solutionStatus.tone === "ok" ? "solution-status ok" : "solution-status"}
+                  role={solutionStatus.tone === "error" ? "alert" : "status"}
                 >
-                  {solutionStatus}
+                  {t(solutionStatus.key, solutionStatus.values)}
                 </p>
               )}
 
               {/* AI 해설 채우기 — 해설 PDF가 없을 때 AI가 직접 풀어 검산 후 저장 */}
               <div className="expl-gen">
                 <div className="solution-head">
-                  <h2>AI로 해설 채우기</h2>
-                  <p>해설이 빈 문제를 AI가 직접 풀고, 도출한 정답이 등록된 정답과 일치할 때만 저장합니다.</p>
+                  <h2>{t("workspace.solutions.aiHeading")}</h2>
+                  <p>{t("workspace.solutions.aiIntro")}</p>
                 </div>
                 {missingErr && (
                   <p className="solution-status" role="alert">
-                    {missingErr} <button type="button" className="btn sm" onClick={() => void loadMissing()}>해설 현황 다시 불러오기</button>
+                    {t(missingErr)}{" "}
+                    <button type="button" className="btn sm" onClick={() => void loadMissing()}>
+                      {t("workspace.solutions.reloadMissing")}
+                    </button>
                   </p>
                 )}
                 {!missingErr && missingTotal === 0 && (
-                  <p className="expl-gen-empty">해설이 빈 문제가 없습니다.</p>
+                  <p className="expl-gen-empty">{t("workspace.solutions.noneMissing")}</p>
                 )}
                 {missingTotal > 0 && (
                   <div className="expl-gen-list">
                     {missingGroups.length > 1 && (
                       <div className="expl-gen-row">
-                        <span className="expl-gen-name">전체</span>
-                        <span className="expl-gen-count">해설 없는 문제 {missingTotal}개</span>
+                        <span className="expl-gen-name">{t("workspace.solutions.all")}</span>
+                        <span className="expl-gen-count">
+                          {t("workspace.solutions.missingCount", { count: formatNumber(missingTotal) })}
+                        </span>
                         <button
                           type="button"
                           className="btn sm"
                           disabled={explTargetBusy("all")}
                           onClick={() => void startExplanationFill({})}
-                        >{explTargetBusy("all") ? "생성 중…" : "AI로 채우기"}</button>
+                        >{explTargetBusy("all")
+                          ? t("workspace.solutions.generating")
+                          : t("workspace.solutions.fill")}</button>
                       </div>
                     )}
                     {missingGroups.map((group) => {
@@ -842,14 +944,18 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
                       const busy = explTargetBusy(explanationTargetOf(scope));
                       return (
                         <div className="expl-gen-row" key={group.src_file_id ?? 0}>
-                          <span className="expl-gen-name">{explanationGroupLabel(group)}</span>
-                          <span className="expl-gen-count">해설 없는 문제 {group.missing}개</span>
+                          <span className="expl-gen-name">{explanationGroupLabel(group, t)}</span>
+                          <span className="expl-gen-count">
+                            {t("workspace.solutions.missingCount", { count: formatNumber(group.missing) })}
+                          </span>
                           <button
                             type="button"
                             className="btn sm"
                             disabled={busy}
                             onClick={() => void startExplanationFill(scope)}
-                          >{busy ? "생성 중…" : "AI로 채우기"}</button>
+                          >{busy
+                            ? t("workspace.solutions.generating")
+                            : t("workspace.solutions.fill")}</button>
                         </div>
                       );
                     })}
@@ -857,16 +963,18 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
                 )}
                 {explRunningCount > 0 && (
                   <AiPending
-                    label={`AI 해설 생성 ${explRunningCount}건 진행 중 · 다른 탭으로 이동해도 계속됩니다. 중단은 위 작업 목록에서`}
+                    label={t("workspace.solutions.running", {
+                      count: formatNumber(explRunningCount),
+                    })}
                   />
                 )}
                 {explStatuses.map((status, index) => (
                   <p
-                    key={`${index}-${status}`}
-                    className={status.includes("채웠습니다") ? "solution-status ok" : "solution-status"}
-                    role={status.includes("채웠습니다") || status.includes("중단했습니다") ? "status" : "alert"}
+                    key={`${index}-${status.key}`}
+                    className={status.tone === "ok" ? "solution-status ok" : "solution-status"}
+                    role={status.tone === "error" ? "alert" : "status"}
                   >
-                    {status}
+                    {t(status.key, status.values)}
                   </p>
                 ))}
               </div>
@@ -908,13 +1016,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
             hidden={tab !== "settings"}
             aria-hidden={tab !== "settings"}
           >
-              <AISettingsPanel
-                onSaved={() => {
-                  apiAIStatus("chat")
-                    .then(status => { if (mountedRef.current) setAIRuntime(status); })
-                    .catch(() => { if (mountedRef.current) setAIRuntime("unavailable"); });
-                }}
-              />
+              <AISettingsPanel onSaved={() => void refreshChatAIStatus()} />
           </div>
         </div>
       </div>

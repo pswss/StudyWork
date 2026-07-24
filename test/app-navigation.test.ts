@@ -4,7 +4,6 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../web/src/Scene", () => ({ default: () => null }));
 
 import App from "../web/src/App";
 import { detailUrl, subjectsUrl } from "../web/src/route-url";
@@ -35,7 +34,11 @@ describe("앱 주소 이동", () => {
       value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
     });
     window.history.replaceState(null, "", "/?subject=7&tab=solution#main-content");
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 401 })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ownerExists: true,
+      authenticated: false,
+      authKind: null,
+    }), { status: 200, headers: { "content-type": "application/json" } })));
     const container = document.body.appendChild(document.createElement("div"));
     const root = createRoot(container);
 
@@ -43,11 +46,39 @@ describe("앱 주소 이동", () => {
       root.render(createElement(App));
       await new Promise(resolve => setTimeout(resolve, 0));
     });
-    expect(container.querySelector('input[type="password"]')).not.toBeNull();
+    expect(container.querySelector('input[name="username"]')).not.toBeNull();
+    expect(container.querySelector('input[name="password"]')).not.toBeNull();
+    expect(container.querySelector('input[name="current-password"]')).toBeNull();
 
     await act(async () => { window.dispatchEvent(new PopStateEvent("popstate")); });
-    expect(container.querySelector('input[type="password"]')).not.toBeNull();
+    expect(container.querySelector('input[name="username"]')).not.toBeNull();
+    expect(container.querySelector('input[name="password"]')).not.toBeNull();
     expect(container.textContent).not.toContain("과목 추가");
+
+    act(() => root.unmount());
+  });
+
+  it("첫 실행에는 로그인 대신 소유자 계정 생성 폼을 연다", async () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ownerExists: false,
+      authenticated: false,
+      authKind: null,
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+    const container = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(createElement(App));
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    expect(container.textContent).toContain("계정 만들기");
+    expect(container.querySelector('input[name="username"]')).not.toBeNull();
+    expect(container.querySelector('input[name="current-password"]')).not.toBeNull();
+    expect(container.querySelector('input[name="password-confirm"]')).not.toBeNull();
 
     act(() => root.unmount());
   });

@@ -1,7 +1,7 @@
 /* ============================================================================
    StudyWork visual system
    warm near-black charcoal · bone/ivory text · one accent: acid lime
-   editorial grotesque (Syne) display · Gowun Batang serif · Pretendard body
+   one Pretendard family · weight and scale establish hierarchy
    ========================================================================== */
 
 :root {
@@ -23,7 +23,7 @@
   --warn: #E0A336;          /* warn — used sparingly */
   --warn-line: rgba(224, 163, 54, .38);
   --warn-fill: rgba(224, 163, 54, .08);
-  --disp: "Bricolage Grotesque", "Pretendard Variable", Pretendard, system-ui, sans-serif;
+  --disp: "Pretendard Variable", Pretendard, system-ui, sans-serif;
   --serif: "Pretendard Variable", Pretendard, sans-serif; /* 한글 헤드: 세리프 대신 헤비 산세리프 (촌스러움 제거) */
   --body: "Pretendard Variable", Pretendard, system-ui, sans-serif;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -192,6 +192,7 @@ nav {
   text-wrap: pretty;
 }
 .login-form { margin-top: 44px; max-width: 400px; }
+.login-fields { display: grid; gap: 18px; }
 .field {
   display: flex; align-items: center; gap: 16px;
   border-bottom: 1px solid var(--line-strong); padding-bottom: 12px;
@@ -199,6 +200,7 @@ nav {
 }
 .field:focus-within { border-color: var(--lime); }
 .field-index {
+  flex: 0 0 100px;
   font-family: var(--disp); font-weight: 700; font-size: 13px;
   color: var(--lime); letter-spacing: .1em;
 }
@@ -208,8 +210,20 @@ nav {
   letter-spacing: .12em; padding: 4px 0;
 }
 .field input::placeholder { color: var(--ink-3); letter-spacing: .12em; }
+.field input[type="text"] { letter-spacing: .02em; }
 .login-btn { margin-top: 28px; padding: 14px 30px; font-size: 13px; }
 .err { color: var(--bad); font-size: 13px; margin-top: 14px; letter-spacing: .02em; }
+.nav-account { display: flex; align-items: center; gap: 14px; }
+.nav-logout {
+  min-height: 36px; padding: 7px 11px; border: 1px solid var(--line);
+  border-radius: 6px; background: transparent; color: var(--ink-2);
+  cursor: pointer; font: 600 11px var(--disp);
+  transition: color .2s var(--ease), border-color .2s var(--ease), background .2s var(--ease);
+}
+.nav-logout:hover:not(:disabled) {
+  color: var(--ink); border-color: var(--line-strong); background: rgba(237, 234, 224, .03);
+}
+.nav-logout:disabled { opacity: .45; cursor: wait; }
 
 /* ============================================================================
    SUBJECTS
@@ -486,15 +500,21 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 /* ===== main panel ===== */
 .main-card {
   padding: 30px; display: flex; flex-direction: column; min-height: 540px;
-  animation: contentIn .35s var(--ease) both;
 }
-/* 탭 전환: 콘텐츠 페이드 + 12px 상승 350ms (플레이북) */
+/* 포인터 탭 전환만 짧게 연결한다. 키보드 roving-tab 이동은 즉시 바뀐다. */
+.main-panel[data-tab-motion="smooth"] > .main-card:not([hidden]) {
+  animation: tabPanelIn .2s var(--ease) both;
+}
+@keyframes tabPanelIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 @keyframes contentIn {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .main-card { animation: none; }
+  .main-panel[data-tab-motion] > .main-card { animation: none; }
 }
 
 /* ============================================================================
@@ -508,8 +528,12 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 }
 .chat-msg {
   display: flex; flex-direction: column; max-width: 82%;
-  animation: contentIn .24s var(--ease) both; /* 새 메시지 등장 페이드+상승 */
   content-visibility: auto; contain-intrinsic-size: auto 96px;
+}
+.chat-msg.entering { animation: chatMessageIn .2s var(--ease) both; }
+@keyframes chatMessageIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 .chat-msg.user { align-self: flex-end; align-items: flex-end; }
 .chat-msg.assistant { align-self: flex-start; align-items: flex-start; }
@@ -566,6 +590,34 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   border: 1px solid var(--line); color: var(--ink-3); white-space: nowrap;
 }
 .ai-config-badge.warning { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.chat-ai-settings {
+  width: min(100%, 680px); margin: 0 0 12px;
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.chat-ai-settings > summary {
+  display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 0;
+  color: var(--ink-2); cursor: pointer; list-style: none;
+}
+.chat-ai-settings > summary::-webkit-details-marker { display: none; }
+.chat-ai-settings > summary > span {
+  font-family: var(--disp); font-size: 11px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.chat-ai-settings > summary > strong {
+  min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink-2); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.chat-ai-settings > summary > strong.warning { color: var(--warn); }
+.chat-ai-settings > summary::after {
+  content: "⌄" / ""; color: var(--ink-3); transform: rotate(-90deg);
+  transition: transform .22s var(--ease);
+}
+.chat-ai-settings[open] > summary::after { transform: rotate(0deg); }
+.chat-ai-settings-panel { padding: 4px 0 12px; border-top: 1px solid var(--line); }
+.chat-ai-settings-controls { display: flex; gap: 8px; flex-wrap: wrap; padding: 12px 0 10px; }
+.chat-ai-settings-controls .single-select-picker { flex: 1 1 240px; }
+.chat-ai-settings-status { margin-top: 10px; color: var(--lime); font-size: 12px; }
+.chat-ai-settings-status.warning { color: var(--bad); }
 .msg-mode-badge {
   display: inline-block; margin-bottom: 6px; padding: 2px 8px; border-radius: 4px;
   font-family: var(--disp); font-size: 9px; font-weight: 700; letter-spacing: .08em;
@@ -730,7 +782,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 /* 정보용 카운트 — 라임이 아닌 잉크 톤, 0/N만 --bad로 경고 */
 .note-source-picker > summary strong {
   margin-left: auto; color: var(--ink-2); font-size: 11px;
-  /* 본문 스택 하나로 — "9/12개 선택"에서 숫자(Bricolage)↔한글(Pretendard) 라인 중간 전환 제거 */
+  /* 본문 스택 하나로 숫자와 한글의 기준선·자폭을 일관되게 유지 */
   font-family: var(--body); font-variant-numeric: tabular-nums; font-weight: 700;
 }
 .note-source-picker > summary strong.empty { color: var(--bad); }
@@ -811,7 +863,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .note-source-all small.empty { color: var(--bad); }
 .note-source-row > span { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 3px; }
 .note-source-row strong { color: var(--ink-2); font-size: 13px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
-/* 메타·파일명은 본문 폰트 스택 — 라인 중간 폰트 전환(Bricolage↔Pretendard) 제거 */
+/* 메타·파일명은 본문 폰트 스택으로 기준선과 자폭을 일관되게 유지 */
 .note-source-row small { color: var(--ink-2); font-family: var(--body); font-size: 11px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .note-source-none { padding: 22px 4px; color: var(--ink-3); font-size: 13px; text-align: center; }
 /* 모바일 닫기 어포던스 — 마이크로 라벨 문법 재사용, 전체 폭 헤어라인 행. 데스크톱은 숨김 */
@@ -824,6 +876,79 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 }
 .note-source-close:hover, .note-source-close:focus-visible { color: var(--ink); }
 .note-source-close:focus-visible { outline: 2px solid var(--lime); outline-offset: -2px; }
+
+/* 검색 없는 단일 선택 — SourcePicker의 요약·선택 행 언어를 공용으로 사용 */
+.single-select-picker {
+  position: relative; min-width: 144px;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2);
+}
+.single-select-picker > summary {
+  display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 10px 12px;
+  color: var(--ink-2); cursor: pointer; list-style: none; user-select: none;
+  transition: color .2s var(--ease), background .2s var(--ease);
+}
+.single-select-picker > summary::-webkit-details-marker { display: none; }
+.single-select-picker > summary > span {
+  flex: 0 0 auto; font-family: var(--disp); font-size: 10.5px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3);
+}
+.single-select-picker > summary > strong {
+  min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink); font-family: var(--body); font-size: 12.5px; font-weight: 700;
+}
+.single-select-picker > summary::after {
+  content: "⌄" / ""; flex: 0 0 auto; color: var(--ink-3);
+  transform: rotate(-90deg); transition: transform .22s var(--ease);
+}
+.single-select-picker > summary:hover { color: var(--ink); background: rgba(217, 255, 63, .03); }
+.single-select-picker > summary:active { background: rgba(217, 255, 63, .07); }
+.single-select-picker[open] { z-index: 30; border-color: var(--line-strong); }
+.single-select-picker[open] > summary::after { transform: rotate(0deg); }
+.single-select-picker.disabled { opacity: .5; }
+.single-select-picker.disabled > summary { cursor: not-allowed; }
+.single-select-panel {
+  position: absolute; top: calc(100% + 4px); left: 0;
+  width: max(100%, 220px); max-width: min(420px, calc(100vw - 40px));
+  padding: 6px; border: 1px solid var(--line-strong); border-radius: 6px;
+  background: var(--panel); box-shadow: 0 6px 8px rgba(0, 0, 0, .28);
+}
+.single-select-list {
+  display: flex; flex-direction: column; gap: 2px; max-height: min(280px, 45vh);
+  overflow-y: auto; padding: 2px; scroll-padding: 2px; scrollbar-width: thin;
+}
+.single-select-option {
+  position: relative; width: 100%; min-height: 44px; padding: 9px 10px;
+  display: flex; align-items: flex-start; gap: 10px; flex: 0 0 auto;
+  border: 1px solid transparent; border-radius: 6px; background: transparent;
+  color: var(--ink-2); text-align: left; cursor: pointer; font-family: var(--body);
+  transition: background .18s var(--ease), border-color .18s var(--ease), transform .18s var(--ease);
+}
+.single-select-option::before {
+  content: ""; width: 16px; height: 16px; margin-top: 1px; flex: 0 0 16px;
+  display: grid; place-items: center; border: 1px solid var(--check-border); border-radius: 4px;
+  color: var(--bg); font-family: var(--disp); font-size: 11px; font-weight: 800;
+}
+.single-select-option:hover { background: rgba(217, 255, 63, .025); border-color: var(--line); }
+.single-select-option:active { transform: translateY(1px); transition-duration: 0s; }
+.single-select-option[aria-selected="true"] { background: rgba(217, 255, 63, .045); }
+.single-select-option[aria-selected="true"]::before {
+  content: "✓" / ""; background: var(--lime); border-color: var(--lime);
+}
+.single-select-option > span { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 3px; }
+.single-select-option strong {
+  overflow-wrap: anywhere; color: var(--ink-2); font-size: 13px; font-weight: 700; line-height: 1.35;
+}
+.single-select-option[aria-selected="true"] strong { color: var(--ink); }
+.single-select-option small {
+  color: var(--ink-2); font-size: 11px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.note-version-picker { width: min(100%, 310px); }
+.note-header .note-version-picker { flex: 1 1 260px; }
+.solution-book-picker { width: 100%; }
+.solution-book-picker > .single-select-panel { width: 100%; max-width: 100%; }
+.quiz-filter-picker { min-width: 136px; }
+.quiz-count-picker { min-width: 132px; }
+
 .note-empty { color: var(--ink-3); font-size: 15px; text-align: center; margin: auto; font-family: var(--serif); }
 .note-spinning {
   color: var(--lime); font-size: 13px; text-align: center; margin: auto;
@@ -1190,7 +1315,7 @@ a.q-chip:hover { color: var(--ink); border-color: var(--lime-dim); background: r
   display: flex; flex-direction: column; gap: 8px;
 }
 /* 접힘 → 펼침 패널 공용 등장 (즉시 스냅 방지) */
-.quiz-row-detail, .wrong-row-detail, .exam-card-detail, .wrong-analysis {
+.quiz-row-detail, .wrong-row-detail, .wrong-analysis {
   animation: contentIn .22s var(--ease) both;
 }
 /* 열림 등장 — 페이드+살짝 상승만 (max-height 확장은 이징을 왜곡·측정을 깨뜨려 제거). 위치는 JS 스크롤이 담당 */
@@ -1198,7 +1323,10 @@ a.q-chip:hover { color: var(--ink); border-color: var(--lime-dim); background: r
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+.exam-card-detail:not([hidden]) { animation: panelIn .2s var(--ease) both; }
 .note-source-picker[open] > .note-source-panel,
+.single-select-picker[open] > .single-select-panel,
+.chat-ai-settings[open] > .chat-ai-settings-panel,
 .quiz-generate-disclosure[open] > .quiz-add-row {
   animation: panelIn .2s var(--ease) both;
 }
@@ -1207,12 +1335,20 @@ a.q-chip:hover { color: var(--ink); border-color: var(--lime-dim); background: r
   from { opacity: 1; transform: translateY(0); }
   to   { opacity: 0; transform: translateY(-4px); }
 }
+.exam-card-detail.closing {
+  animation: panelOut .16s ease-in both;
+  pointer-events: none;
+}
 /* panelIn 규칙(0,3,0)보다 이겨야 닫힘이 재생된다 — [open] 조합 선택자를 명시(0,4,0) */
 .panel-closing,
 .note-source-picker[open] > .note-source-panel.panel-closing,
-.quiz-generate-disclosure[open] > .quiz-add-row.panel-closing { animation: panelOut .16s ease-in both; overflow: hidden; }
+.single-select-picker[open] > .single-select-panel.panel-closing,
+.chat-ai-settings[open] > .chat-ai-settings-panel.panel-closing,
+.quiz-generate-disclosure[open] > .quiz-add-row.panel-closing { animation: panelOut .16s var(--ease) both; overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .note-source-picker[open] > .note-source-panel,
+  .single-select-picker[open] > .single-select-panel,
+  .chat-ai-settings[open] > .chat-ai-settings-panel,
   .quiz-generate-disclosure[open] > .quiz-add-row { animation: none; }
 }
 .quiz-row-full-q { font-size: 14px; color: var(--ink); line-height: 1.6; }
@@ -1252,6 +1388,76 @@ a.q-chip:hover { color: var(--ink); border-color: var(--lime-dim); background: r
   font-family: var(--serif); font-weight: 800;
   font-size: clamp(22px, 3vw, 30px); line-height: 1.55; color: var(--ink);
   margin-bottom: 26px; letter-spacing: -.01em;
+}
+
+/* 문제별 임시 풀이판 — 실제 필기 캔버스라 미세 격자가 기능적 배경으로 쓰인다. */
+.quiz-scratchpad {
+  margin: 0 0 26px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel-2); overflow: hidden;
+}
+.quiz-scratchpad > summary {
+  min-height: 52px; padding: 0 16px; display: flex; align-items: center; gap: 10px;
+  list-style: none; cursor: pointer; color: var(--ink); user-select: none;
+  transition: background .18s var(--ease);
+}
+.quiz-scratchpad > summary::-webkit-details-marker { display: none; }
+.quiz-scratchpad > summary:hover { background: rgba(217, 255, 63, .03); }
+.quiz-scratchpad > summary::after {
+  content: "⌄" / ""; margin-left: auto; color: var(--ink-3);
+  transform: rotate(-90deg); transition: transform .2s var(--ease);
+}
+.quiz-scratchpad[open] > summary::after { transform: rotate(0deg); }
+.quiz-scratchpad-title { font-size: 13px; font-weight: 700; }
+.quiz-scratchpad-summary { color: var(--ink-3); font-size: 12px; }
+.quiz-scratchpad-panel {
+  padding: 12px; border-top: 1px solid var(--line);
+  animation: panelIn .2s var(--ease) both;
+}
+.quiz-scratchpad-toolbar {
+  min-height: 44px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+}
+.quiz-scratchpad-toolbar button {
+  min-height: 44px; padding: 0 13px; border: 1px solid var(--line);
+  border-radius: 6px; background: transparent; color: var(--ink-2);
+  font: 600 12px var(--body); cursor: pointer;
+  transition: color .18s var(--ease), border-color .18s var(--ease), background .18s var(--ease);
+}
+.quiz-scratchpad-toolbar button:hover:not(:disabled) { color: var(--ink); border-color: var(--line-strong); }
+.quiz-scratchpad-toolbar button:active:not(:disabled) { background: rgba(217, 255, 63, .08); }
+.quiz-scratchpad-toolbar button.active {
+  color: var(--bg); border-color: var(--lime); background: var(--lime);
+}
+.quiz-scratchpad-toolbar button:disabled { opacity: .35; cursor: not-allowed; }
+.quiz-scratchpad-toolbar-gap { flex: 1; }
+.quiz-scratchpad-help { margin: 0 2px 10px; color: var(--ink-3); font-size: 11.5px; line-height: 1.5; }
+.quiz-scratchpad-canvas {
+  display: block; width: 100%; height: clamp(260px, 36vw, 380px);
+  border: 1px solid rgba(32, 35, 39, .22); border-radius: 6px;
+  background-color: #f4f5ef;
+  background-image:
+    linear-gradient(rgba(32, 35, 39, .075) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(32, 35, 39, .075) 1px, transparent 1px);
+  background-size: 24px 24px;
+  cursor: crosshair; touch-action: none; user-select: none;
+}
+.quiz-scratchpad-canvas.erasing { cursor: cell; }
+.quiz-scratchpad-text { margin-top: 14px; }
+.quiz-scratchpad-text-label {
+  display: block; margin: 0 2px 7px; color: var(--ink-2);
+  font-size: 12px; font-weight: 700;
+}
+.quiz-scratchpad-textarea {
+  display: block; width: 100%; min-height: 104px; padding: 12px 13px;
+  resize: vertical; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--ink); font: 400 14px/1.65 var(--body);
+  transition: border-color .18s var(--ease), background .18s var(--ease);
+}
+.quiz-scratchpad-textarea::placeholder { color: var(--ink-3); }
+.quiz-scratchpad-textarea:focus-visible { border-color: var(--lime-dim); }
+.quiz-scratchpad-text .quiz-scratchpad-help { margin-top: 7px; margin-bottom: 0; }
+.quiz-scratchpad-status {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
 }
 
 /* choices */
@@ -1532,9 +1738,11 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
 }
 @media (max-width: 860px) {
   .detail-grid { grid-template-columns: 1fr; }
-  /* 첫 흐름과 안내가 일치하도록 자료 추가를 먼저 둔다. */
+  /* 빈 과목은 자료 추가부터, 자료가 있는 재방문 화면은 학습 본문부터 시작한다. */
   .sidebar { position: static; order: 0; }
   .main-panel { order: 1; }
+  .detail-grid[data-mobile-priority="learning"] .main-panel { order: 0; }
+  .detail-grid[data-mobile-priority="learning"] .sidebar { order: 1; }
 }
 @media (max-width: 720px) {
   .page { padding: 26px 20px 80px; }
@@ -1556,6 +1764,8 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
   .quiz-start-row > .btn.primary { grid-column: 1 / -1; width: 100%; }
   .quiz-start-row .quiz-control-field,
   .quiz-start-row .quiz-number-field { flex-direction: column; align-items: stretch; }
+  .quiz-start-row .single-select-picker { min-width: 0; width: 100%; }
+  .quiz-start-row .single-select-panel { width: 100%; max-width: 100%; }
   .quiz-start-row .quiz-select,
   .quiz-start-row .quiz-count-input { width: 100%; }
   .quiz-add-row { gap: 6px; }
@@ -1569,6 +1779,9 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
     -webkit-line-clamp: 2; overflow: hidden;
   }
   .quiz-question-text { font-size: 20px; }
+  .quiz-scratchpad-toolbar { flex-wrap: wrap; }
+  .quiz-scratchpad-toolbar-gap { display: none; }
+  .quiz-scratchpad-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ox-btn { max-width: 100%; }
   .exam-card-header { flex-direction: column; align-items: flex-start; }
   .exam-card-right { align-items: flex-start; width: 100%; }
@@ -1591,7 +1804,7 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
 }
 
 @media (pointer: coarse) {
-  .btn, .mode-chip, .back-btn, .retry-btn, .subj-del, .quiz-select, .quiz-count-input,
+  .btn, .mode-chip, .back-btn, .retry-btn, .subj-del, .nav-logout, .quiz-select, .quiz-count-input,
   .undo-delete-bar button, .app-load-error button, .context-help > summary, .brand,
   .wrong-file-label, .wrong-q-text, a.q-chip {
     min-height: 44px;

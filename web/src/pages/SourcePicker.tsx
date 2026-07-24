@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type SyntheticEvent } from "react";
 import { Material } from "../api";
 import { closeDetails } from "../details-close";
+import { useI18n } from "../i18n";
 
 export default function SourcePicker({
   label,
@@ -17,15 +18,16 @@ export default function SourcePicker({
   onToggle: (id: number) => void;
   onSetVisible: (ids: number[], included: boolean) => void;
 }) {
+  const { locale, t, formatNumber } = useI18n();
   const [query, setQuery] = useState("");
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const summaryRef = useRef<HTMLElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const pointerOpenRef = useRef(false);
-  const needle = query.trim().normalize("NFKC").toLowerCase();
+  const needle = query.trim().normalize("NFKC").toLocaleLowerCase(locale);
   const visible = needle
     ? materials.filter((material) =>
-        `${material.title} ${material.original_filename ?? ""}`.normalize("NFKC").toLowerCase().includes(needle)
+        `${material.title} ${material.original_filename ?? ""}`.normalize("NFKC").toLocaleLowerCase(locale).includes(needle)
       )
     : materials;
   const selected = materials.reduce((count, material) => count + (excluded.has(material.id) ? 0 : 1), 0);
@@ -33,10 +35,18 @@ export default function SourcePicker({
   const visibleSelected = visible.reduce((count, material) => count + (excluded.has(material.id) ? 0 : 1), 0);
   const allVisibleSelected = visible.length > 0 && visibleSelected === visible.length;
   // 상태 기준 라벨 — 액션명("전체 선택/해제") 대신 개념명; 동작은 토글 표식으로 명시
-  const selectAllLabel = needle ? "검색 결과 전체" : "전체 자료";
+  const selectAllLabel = t(needle ? "shell.sources.searchAll" : "shell.sources.all");
   // 접근명 = 보이는 텍스트만(WCAG 2.5.3, 컨텍스트 접두 + 라벨 + 카운트) — 선택 상태는 네이티브 checked/mixed로만 전달
-  const selectAllCount = `${needle ? `${visible.length}개 검색됨` : `${visible.length}개 표시`} · ${visibleSelected}개 선택`;
-  const selectAllAria = `${label} ${selectAllLabel}, ${selectAllCount}`;
+  const visibleCount = t(needle ? "shell.sources.searchedCount" : "shell.sources.shownCount", {
+    count: formatNumber(visible.length),
+  });
+  const selectedCount = t("shell.sources.selectedCount", { count: formatNumber(visibleSelected) });
+  const selectAllCount = t("shell.sources.countPair", { visible: visibleCount, selected: selectedCount });
+  const selectAllAria = t("shell.sources.selectAllAria", {
+    label,
+    scope: selectAllLabel,
+    count: selectAllCount,
+  });
 
   function handleToggle(event: SyntheticEvent<HTMLDetailsElement>) {
     if (!event.currentTarget.open) {
@@ -141,7 +151,10 @@ export default function SourcePicker({
       <summary ref={summaryRef} onPointerDown={() => { if (!detailsRef.current?.open) pointerOpenRef.current = true; }}>
         <span>{label}</span>
         <strong className={selected === 0 ? "empty" : undefined} aria-live="polite" aria-atomic="true">
-          {selected}/{materials.length}개 선택
+          {t("shell.sources.countSummary", {
+            selected: formatNumber(selected),
+            total: formatNumber(materials.length),
+          })}
         </strong>
       </summary>
       <div className="note-source-panel" onKeyDown={handleListKeyDown}>
@@ -154,8 +167,8 @@ export default function SourcePicker({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={handleSearchKeyDown}
-          placeholder="예: 1학기 강의 노트…"
-          aria-label={`${label} 검색`}
+          placeholder={t("shell.sources.searchPlaceholder")}
+          aria-label={t("shell.sources.searchAria", { label })}
         />
         {/* 전체 선택 토글 행 — 상태 기준 라벨, 동작은 체크 표식으로 명시 */}
         <label className="note-source-row note-source-all">
@@ -174,20 +187,24 @@ export default function SourcePicker({
             </small>
           </span>
         </label>
-        <div className="note-source-list" role="group" aria-label={`${label}에 포함할 자료`}>
+        <div className="note-source-list" role="group" aria-label={t("shell.sources.includeGroupAria", { label })}>
           {visible.map((material) => (
             <label className="note-source-row" key={material.id}>
               <input
                 type="checkbox"
                 checked={!excluded.has(material.id)}
                 onChange={() => onToggle(material.id)}
-                aria-label={`${material.title} 포함`}
+                aria-label={t("shell.sources.includeAria", { title: material.title })}
               />
               <span>
                 {/* 캡션이 유형(PDF/사진/텍스트)을 이미 보여주므로 제목의 확장자는 표시에서만 제거 */}
                 <strong>{material.title.replace(/\.(pdf|png|jpe?g|webp|gif|heic|txt|md)$/i, "")}</strong>
                 <small>
-                  {material.kind === "pdf" ? "PDF" : material.kind === "image" ? "사진" : "텍스트"}
+                  {material.kind === "pdf"
+                    ? t("shell.sources.kind.pdf")
+                    : material.kind === "image"
+                      ? t("shell.sources.kind.photo")
+                      : t("shell.sources.kind.text")}
                   {material.original_filename && material.original_filename.normalize("NFC") !== material.title.normalize("NFC")
                     ? ` · ${material.original_filename}`
                     : ""}
@@ -195,7 +212,7 @@ export default function SourcePicker({
               </span>
             </label>
           ))}
-          {visible.length === 0 && <p className="note-source-none">일치하는 소스가 없습니다.</p>}
+          {visible.length === 0 && <p className="note-source-none">{t("shell.sources.none")}</p>}
         </div>
         {/* 모바일: 패널 하단 닫기 어포던스 (마이크로 라벨 재사용) — 데스크톱은 CSS로 숨김 */}
         <button
@@ -203,7 +220,7 @@ export default function SourcePicker({
           className="note-source-close"
           onClick={() => detailsRef.current && closeDetails(detailsRef.current, () => summaryRef.current?.focus())}
         >
-          닫기
+          {t("common.close")}
         </button>
       </div>
     </details>

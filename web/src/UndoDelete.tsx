@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useI18n, type Translate } from "./i18n";
 
 export const UNDO_DELETE_DELAY_MS = 5000;
 
@@ -38,11 +39,12 @@ export function useUndoDelete(): UndoDeleteValue {
   return value;
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "삭제하지 못했습니다";
+function errorMessage(error: unknown, t: Translate): string {
+  return error instanceof Error ? error.message : t("shell.undo.deleteFailed");
 }
 
 export function UndoDeleteProvider({ children }: { children: ReactNode }) {
+  const { t, formatNumber } = useI18n();
   const [state, setState] = useState<DeleteState | null>(null);
   const activeRef = useRef<DeleteRequest | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -62,9 +64,9 @@ export function UndoDeleteProvider({ children }: { children: ReactNode }) {
       committedRef.current = true;
       setState(null);
     } catch (error) {
-      setState({ request, phase: "failed", error: errorMessage(error) });
+      setState({ request, phase: "failed", error: errorMessage(error, t) });
     }
-  }, []);
+  }, [t]);
 
   const schedule = useCallback((request: DeleteRequest) => {
     if (activeRef.current) return false;
@@ -118,9 +120,15 @@ export function UndoDeleteProvider({ children }: { children: ReactNode }) {
       {state && (
         <div className={`undo-delete-bar ${state.phase}`} role={state.phase === "failed" ? "alert" : "status"}>
           <span>
-            {state.phase === "waiting" && `${state.request.label} · 5초 뒤 삭제`}
-            {state.phase === "committing" && `${state.request.label} · 삭제 중`}
-            {state.phase === "failed" && `${state.request.label} · ${state.error}`}
+            {state.phase === "waiting" && t("shell.undo.waiting", {
+              label: state.request.label,
+              seconds: formatNumber(UNDO_DELETE_DELAY_MS / 1000),
+            })}
+            {state.phase === "committing" && t("shell.undo.committing", { label: state.request.label })}
+            {state.phase === "failed" && t("shell.undo.failed", {
+              label: state.request.label,
+              error: state.error ?? t("shell.undo.deleteFailed"),
+            })}
           </span>
           {state.phase !== "failed" && (
             <button
@@ -128,12 +136,12 @@ export function UndoDeleteProvider({ children }: { children: ReactNode }) {
               type="button"
               onClick={undo}
               aria-disabled={state.phase === "committing"}
-            >{state.phase === "waiting" ? "실행 취소" : "삭제 중…"}</button>
+            >{state.phase === "waiting" ? t("shell.undo.cancel") : t("shell.undo.deleting")}</button>
           )}
           {state.phase === "failed" && (
             <>
-              <button ref={actionButtonRef} type="button" onClick={() => { void commitActive(); }}>다시 시도</button>
-              <button type="button" onClick={dismiss}>닫기</button>
+              <button ref={actionButtonRef} type="button" onClick={() => { void commitActive(); }}>{t("shell.undo.retry")}</button>
+              <button type="button" onClick={dismiss}>{t("shell.undo.close")}</button>
             </>
           )}
         </div>

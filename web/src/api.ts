@@ -1,14 +1,39 @@
 // API wrapper — all calls use same-origin cookie auth (sw_token)
+import { detectLocale, translate, type MessageKey } from "./i18n";
 
 export class AuthError extends Error {}
 
 export class NotFoundError extends Error {}
 
-function httpErrorMessage(status: number): string {
-  if (status === 429) return "요청이 많습니다. 잠시 뒤 다시 시도해 주세요.";
-  if (status === 403) return "이 작업을 할 권한이 없습니다.";
-  if (status >= 500) return "서버가 요청을 처리하지 못했습니다. 잠시 뒤 다시 시도해 주세요.";
-  return "요청을 완료하지 못했습니다. 입력 내용을 확인하고 다시 시도해 주세요.";
+export class ApiError extends Error {}
+
+const SERVER_ERROR_KEYS: Record<string, MessageKey> = {
+  "HTTPS 연결이 필요합니다": "api.error.httpsRequired",
+  "허용되지 않은 요청 출처입니다": "api.error.originForbidden",
+  "인증 요청이 너무 큽니다": "api.error.authBodyTooLarge",
+  "가입 시도 초과 — 잠시 후 다시 시도해 주세요": "api.error.signupRate",
+  "이미 소유자 계정이 설정되었습니다": "api.error.ownerExists",
+  "최초 계정 생성용 서버 설정이 필요합니다": "api.error.bootstrapMissing",
+  "계정 생성 정보를 확인해 주세요": "api.error.signupInvalid",
+  "아이디는 한글·영문·숫자·점·밑줄·하이픈으로 3~64자여야 합니다": "api.error.usernameInvalid",
+  "비밀번호는 10~128자로 입력해 주세요": "api.error.passwordInvalid",
+  "로그인 시도 초과 — 잠시 후 다시 시도해 주세요": "api.error.loginRate",
+  "아이디 또는 비밀번호가 올바르지 않습니다": "api.error.credentialsInvalid",
+};
+
+function httpErrorKey(status: number): MessageKey {
+  if (status === 429) return "api.error.tooMany";
+  if (status === 403) return "api.error.forbidden";
+  if (status >= 500) return "api.error.server";
+  return "api.error.invalid";
+}
+
+function localizedError(status: number, serverMessage?: string): string {
+  const locale = detectLocale();
+  if (locale === "ko" && serverMessage) return serverMessage;
+  const key = serverMessage ? SERVER_ERROR_KEYS[serverMessage] : undefined;
+  // ponytail: 서버에 안정된 error code가 생기기 전까지 미등록 한국어 상세는 상태별 안전 문구로 숨긴다.
+  return translate(locale, key ?? httpErrorKey(status));
 }
 
 async function req<T>(
@@ -25,27 +50,48 @@ async function req<T>(
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(path, opts);
-  if (res.status === 401) {
-    // 세션 만료를 앱 전역에 알려 로그인 화면으로 돌아가게 한다.
+  if (
+    res.status === 401
+    && !["/api/login", "/api/signup", "/api/auth/status"].includes(path)
+  ) {
     window.dispatchEvent(new Event("sw:auth-expired"));
-    throw new AuthError("로그인이 필요합니다.");
+    throw new AuthError(translate(detectLocale(), "api.error.loginRequired"));
   }
-  if (res.status === 404) throw new NotFoundError("요청한 항목을 찾을 수 없습니다.");
+  if (res.status === 404) {
+    throw new NotFoundError(translate(detectLocale(), "api.error.notFound"));
+  }
   if (!res.ok) {
-    let msg = httpErrorMessage(res.status);
+    let serverMessage: string | undefined;
     try {
       const j = await res.json() as { error?: string };
-      if (j.error) msg = j.error;
+      if (j.error) serverMessage = j.error;
     } catch {}
-    throw new Error(msg);
+    throw new ApiError(localizedError(res.status, serverMessage));
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
 // ===== auth =====
-export async function login(password: string): Promise<void> {
-  await req<void>("POST", "/api/login", { password });
+export interface AuthStatus {
+  ownerExists: boolean;
+  authenticated: boolean;
+  authKind: "legacy" | "owner" | null;
+  username?: string;
+}
+export async function authStatus(): Promise<AuthStatus> {
+  return req<AuthStatus>("GET", "/api/auth/status");
+}
+export async function signup(username: string, password: string, currentPassword: string): Promise<AuthStatus> {
+  return req<AuthStatus>("POST", "/api/signup", { username, password, currentPassword });
+}
+export async function login(username: string, password?: string): Promise<AuthStatus> {
+  return password === undefined
+    ? req<AuthStatus>("POST", "/api/login", { password: username })
+    : req<AuthStatus>("POST", "/api/login", { username, password });
+}
+export async function logout(): Promise<void> {
+  await req<{ ok: true }>("POST", "/api/logout");
 }
 
 // ===== subjects =====

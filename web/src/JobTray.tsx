@@ -2,17 +2,22 @@
 // 데이터는 SubjectDetail이 폴링해 내려주고, 여기서는 초 단위 경과 표시만 자체 틱한다.
 import { useEffect, useState } from "react";
 import type { SubjectJob } from "./api";
+import { translate, useI18n, type MessageKey } from "./i18n";
 
-const KIND_LABELS: Record<string, string> = {
-  "explanation-generate": "AI 해설",
-  "question-generate": "문제 생성",
-  "book-explanations": "해설 연결",
-  "exam-plan": "시험 계획",
-  consolidate: "단권화",
+const KIND_KEYS: Record<string, MessageKey> = {
+  "explanation-generate": "shell.jobs.kind.explanation",
+  "question-generate": "shell.jobs.kind.question",
+  "book-explanations": "shell.jobs.kind.bookExplanations",
+  "exam-plan": "shell.jobs.kind.examPlan",
+  consolidate: "shell.jobs.kind.consolidate",
 };
 
-export function jobKindLabel(kind: string): string {
-  return KIND_LABELS[kind] ?? kind;
+export function jobKindLabel(
+  kind: string,
+  t = (key: MessageKey) => translate("ko", key),
+): string {
+  const key = KIND_KEYS[kind];
+  return key ? t(key) : kind;
 }
 
 export function formatElapsed(totalSeconds: number): string {
@@ -28,6 +33,7 @@ interface Props {
 }
 
 export default function JobTray({ jobs, fetchedAt, cancellingIds, onCancel }: Props) {
+  const { t, formatNumber } = useI18n();
   const hasRunning = jobs.some((job) => job.status === "processing");
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -40,17 +46,17 @@ export default function JobTray({ jobs, fetchedAt, cancellingIds, onCancel }: Pr
   const drift = Math.max(0, (now - fetchedAt) / 1000);
 
   return (
-    <section className="job-tray" aria-label="AI 작업 현황">
-      <span className="job-tray-title">작업</span>
+    <section className="job-tray" aria-label={t("shell.jobs.aria")}>
+      <span className="job-tray-title">{t("shell.jobs.title")}</span>
       <ul className="job-tray-list">
         {jobs.map((job) => {
           const running = job.status === "processing";
           return (
             <li className="job-tray-row" key={job.id ?? "consolidate"}>
-              <span className="job-tray-kind">{jobKindLabel(job.kind)}</span>
+              <span className="job-tray-kind">{jobKindLabel(job.kind, t)}</span>
               <span className="job-tray-label">{job.label ?? ""}</span>
               {running && job.progress !== null && (
-                <span className="job-tray-progress">{job.progress}%</span>
+                <span className="job-tray-progress">{formatNumber(job.progress)}%</span>
               )}
               {running ? (
                 <>
@@ -65,13 +71,14 @@ export default function JobTray({ jobs, fetchedAt, cancellingIds, onCancel }: Pr
                       onClick={() => onCancel(job.id!)}
                       disabled={cancellingIds.has(job.id)}
                     >
-                      {cancellingIds.has(job.id) ? "중단 중…" : "중단"}
+                      {/* “중단” 제어의 번역은 메시지 사전에서 관리한다. */}
+                      {cancellingIds.has(job.id) ? t("shell.jobs.cancelling") : t("shell.jobs.cancel")}
                     </button>
                   )}
                 </>
               ) : (
                 <span className={`job-tray-state${job.status === "error" ? " bad" : ""}`}>
-                  {job.status === "ready" ? "완료" : "실패"}
+                  {job.status === "ready" ? t("shell.jobs.done") : t("shell.jobs.failed")}
                 </span>
               )}
             </li>

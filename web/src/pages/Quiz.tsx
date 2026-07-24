@@ -15,7 +15,10 @@ import {
   NotFoundError,
 } from "../api";
 import { escapeHtmlText, Md, MdInline, MdInlineText, mdInlineHtml } from "../md";
+import { useI18n, type Locale, type MessageKey, type Translate } from "../i18n";
 import SourcePicker from "./SourcePicker";
+import SingleSelectPicker from "./SingleSelectPicker";
+import QuizScratchpad from "./QuizScratchpad";
 import { AiPending } from "../Pending";
 import { getAnswerAttempt, type AnswerAttempt } from "../answer-attempt";
 import { useUndoDelete } from "../UndoDelete";
@@ -61,6 +64,14 @@ interface QuizFilters {
   count: number;
   wrong: boolean;
 }
+
+interface GenerationNotice {
+  key: MessageKey;
+  count?: number;
+  ok?: boolean;
+}
+
+type NumberFormatter = (value: number, options?: Intl.NumberFormatOptions) => string;
 
 export function parseQuizFilters(search: string): QuizFilters {
   const params = new URLSearchParams(search);
@@ -108,8 +119,19 @@ function writeStoredGenerationJobs(subjectId: number, ids: number[]): void {
   } catch {}
 }
 
-export function qtypeLabel(q: string) {
-  return q === "mcq" ? "객관식" : q === "short" ? "단답" : "OX";
+export function qtypeLabel(q: string, t?: Translate) {
+  if (!t) return q === "mcq" ? "객관식" : q === "short" ? "단답" : "OX";
+  return q === "mcq"
+    ? t("problems.qtype.mcq")
+    : q === "short" ? t("problems.qtype.short") : t("problems.qtype.ox");
+}
+
+export function difficultyLabel(difficulty: string, t?: Translate): string {
+  if (!t) return difficulty;
+  if (difficulty === "하") return t("problems.difficulty.low");
+  if (difficulty === "중") return t("problems.difficulty.medium");
+  if (difficulty === "상") return t("problems.difficulty.high");
+  return difficulty === "혼합" ? t("problems.difficulty.mixed") : difficulty;
 }
 
 export function quizShortcutChoice(item: Pick<QuizItem, "qtype" | "choices">, key: string): string | null {
@@ -118,18 +140,43 @@ export function quizShortcutChoice(item: Pick<QuizItem, "qtype" | "choices">, ke
   return item.choices[Number(key) - 1] ?? null;
 }
 
-function accuracyLabel(q: Question): string {
-  const total = q.correct_count + q.wrong_count;
-  if (total === 0) return "기록 없음";
-  return `정답 ${q.correct_count}/${total}`;
+function problemCountLabel(count: number, t: Translate, formatNumber: NumberFormatter): string {
+  return t(count === 1 ? "problems.count.one" : "problems.count.many", {
+    count: formatNumber(count),
+  });
 }
 
-export function figureAlt(description: string | null, page: number | null, number?: number): string {
-  return description?.trim() || `${number ? `${number}번 ` : ""}문제 풀이에 필요한 원본 도형 또는 그림 — p.${page ?? 1}`;
+function accuracyLabel(q: Question, t: Translate, formatNumber: NumberFormatter): string {
+  const total = q.correct_count + q.wrong_count;
+  if (total === 0) return t("problems.accuracy.none");
+  return t("problems.accuracy.correct", {
+    correct: formatNumber(q.correct_count),
+    total: formatNumber(total),
+  });
+}
+
+export function figureAlt(
+  description: string | null,
+  page: number | null,
+  number?: number,
+  t?: Translate,
+  formatNumber: NumberFormatter = String,
+): string {
+  if (description?.trim()) return description;
+  if (!t) return `${number ? `${number}번 ` : ""}문제 풀이에 필요한 원본 도형 또는 그림 — p.${page ?? 1}`;
+  const values = { number: formatNumber(number ?? 1), page: formatNumber(page ?? 1) };
+  return t(number === undefined ? "problems.figure.alt" : "problems.figure.altNumbered", values);
 }
 
 // ── 인쇄 헬퍼 ──────────────────────────────────────────────────────────────────
-function printQuestions(subjectName: string, qs: Question[], type: "question" | "answer"): string | null {
+function printQuestions(
+  subjectName: string,
+  qs: Question[],
+  type: "question" | "answer",
+  locale: Locale,
+  t: Translate,
+  formatNumber: NumberFormatter,
+): string | null {
   let win: Window | null;
   try {
     win = window.open("", "_blank");
@@ -137,22 +184,24 @@ function printQuestions(subjectName: string, qs: Question[], type: "question" | 
     win = null;
   }
   if (!win) {
-    return "인쇄 창이 차단됐습니다. 이 사이트의 팝업을 허용한 뒤 다시 인쇄해 주세요.";
+    return t("problems.print.blocked");
   }
   try {
     win.opener = null;
   } catch {
     // 일부 브라우저는 opener 쓰기를 막는다. 출력 자체는 계속 가능하다.
   }
-  const title = `${escapeHtmlText(subjectName)} ${type === "question" ? "문제지" : "정답지"}`;
+  const title = `${escapeHtmlText(subjectName)} ${escapeHtmlText(t(
+    type === "question" ? "problems.print.questionSheet" : "problems.print.answerSheet",
+  ))}`;
   const body = qs
     .map((q, i) => {
-      const num = i + 1;
+      const num = formatNumber(i + 1);
       if (type === "question") {
         let html = `<div class="q-block"><p class="q-num">${num}.</p><p class="q-text">${mdInlineHtml(q.question)}</p>`;
         if (q.src_file_id && q.has_figure) {
           const src = escapeHtmlText(new URL(pageImageUrl(q.src_file_id, q.src_page, q.figure_box), window.location.origin).href);
-          const alt = escapeHtmlText(figureAlt(q.figure_description, q.src_page, num));
+          const alt = escapeHtmlText(figureAlt(q.figure_description, q.src_page, i + 1, t, formatNumber));
           html += `<img class="q-figure" width="1200" height="900" src="${src}" alt="${alt}">`;
         }
         if (q.qtype === "mcq" && q.choices) {
@@ -171,7 +220,7 @@ function printQuestions(subjectName: string, qs: Question[], type: "question" | 
     })
     .join("");
 
-  win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>${title}</title>
+  win.document.write(`<!DOCTYPE html><html lang="${locale}"><head><meta charset="UTF-8"><title>${title}</title>
 <style>
   body{font-family:"Nanum Myeongjo","Batang",serif;background:#fff;color:#111;padding:40px;max-width:800px;margin:0 auto;}
   h1{font-size:22px;margin-bottom:28px;border-bottom:2px solid #111;padding-bottom:8px;}
@@ -193,9 +242,14 @@ function printQuestions(subjectName: string, qs: Question[], type: "question" | 
 
 // ── 메인 컴포넌트 ──────────────────────────────────────────────────────────────
 export default function Quiz({ subject, materials, active = true, kickWrongQuiz }: Props) {
+  const { locale, t, formatNumber } = useI18n();
   const { pending: pendingDelete, schedule: scheduleDelete } = useUndoDelete();
   const autoFocusInput = typeof window.matchMedia !== "function" || window.matchMedia("(pointer: fine)").matches;
   const initialFilters = useMemo(() => parseQuizFilters(window.location.search), []);
+  const quizCountOptions = useMemo(() => Array.from({ length: 50 }, (_, index) => ({
+    value: String(index + 1),
+    label: problemCountLabel(index + 1, t, formatNumber),
+  })), [formatNumber, t]);
   const mountedRef = useRef(true);
   const subjectIdRef = useRef(subject.id);
   const bankRequestRef = useRef(0);
@@ -233,7 +287,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   const [genCount, setGenCount] = useState(5);
   const [genDiff, setGenDiff] = useState("혼합");
   const [genStarting, setGenStarting] = useState(false);
-  const [genMsgs, setGenMsgs] = useState<string[]>([]);
+  const [genMsgs, setGenMsgs] = useState<GenerationNotice[]>([]);
   const [generationJobIds, setGenerationJobIds] = useState<number[]>(() => storedGenerationJobs(subject.id));
   const [generationOpen, setGenerationOpen] = useState(() => storedGenerationJobs(subject.id).length > 0);
   const readyMaterials = useMemo(() => materials.filter(m => m.status === "ready"), [materials]);
@@ -312,7 +366,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       setBankQs(qs);
     } catch (e) {
       if (!mountedRef.current || request !== bankRequestRef.current) return;
-      setLoadErr(e instanceof Error ? e.message : "문제 불러오기 실패");
+      setLoadErr(locale === "ko" && e instanceof Error ? e.message : t("problems.bank.loadFailed"));
     } finally {
       if (mountedRef.current && request === bankRequestRef.current) setLoading(false);
     }
@@ -331,7 +385,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     setGenerationJobIds(savedJobIds);
     setGenerationOpen(savedJobIds.length > 0);
     setGenStarting(false);
-    setGenMsgs(savedJobIds.length > 0 ? ["진행 중인 문제 생성을 이어서 확인합니다."] : []);
+    setGenMsgs(savedJobIds.length > 0 ? [{ key: "problems.generation.resume" }] : []);
     void loadBank();
   }, [subject.id]);
 
@@ -345,7 +399,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
 
     const poll = async () => {
       const finished: number[] = [];
-      const messages: string[] = [];
+      const messages: GenerationNotice[] = [];
       const errors: string[] = [];
       let addedAny = false;
       for (const jobId of ids) {
@@ -354,27 +408,29 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
           if (stopped) return;
           if (job.subject_id !== polledSubjectId) {
             finished.push(jobId);
-            errors.push("이 과목의 문제 생성 작업이 아닙니다. 다시 생성해 주세요.");
+            errors.push(t("problems.generation.wrongSubject"));
             continue;
           }
           if (job.status === "processing") continue;
           finished.push(jobId);
           if (job.status === "error") {
-            if (job.error === "사용자 중단") messages.push("문제 생성을 중단했습니다.");
-            else errors.push(job.error || "문제 생성에 실패했습니다.");
+            if (job.error === "사용자 중단") messages.push({ key: "problems.generation.stopped" });
+            else errors.push(locale === "ko" && job.error ? job.error : t("problems.generation.failed"));
           } else {
             addedAny = true;
-            messages.push(`${job.result?.added ?? 0}문제 추가됨`);
+            messages.push({ key: "problems.generation.added", count: job.result?.added ?? 0, ok: true });
           }
         } catch (error) {
           if (stopped) return;
           if (error instanceof NotFoundError) {
             finished.push(jobId);
-            errors.push("이전 문제 생성 작업을 찾을 수 없습니다. 다시 생성해 주세요.");
+            errors.push(t("problems.generation.missing"));
             continue;
           }
           // 일시적 오류 — 이 작업은 다음 주기에 다시 확인한다.
-          setBankErr(error instanceof Error ? `${error.message} · 작업 상태를 다시 확인합니다.` : "작업 상태 확인 실패 · 다시 확인합니다.");
+          setBankErr(locale === "ko" && error instanceof Error
+            ? t("problems.generation.retryWithError", { error: error.message })
+            : t("problems.generation.statusFailed"));
         }
       }
       if (finished.length > 0) {
@@ -397,7 +453,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       stopped = true;
       if (timer) clearTimeout(timer);
     };
-  }, [generationJobIds, subject.id]);
+  }, [generationJobIds, locale, subject.id, t]);
 
   // ── 파일(자료)별 그룹 — 드롭다운으로 접었다 폈다 ────────────────────────────────
   const groups = useMemo(() => {
@@ -406,13 +462,19 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       const key = q.src_file_id ?? 0; // 0 = 원본 파일 없는 문제(AI 생성 등)
       let g = m.get(key);
       if (!g) {
-        g = { key, label: q.src_file_id ? (q.src_file_name ?? `파일 #${q.src_file_id}`) : "직접 생성·기타", items: [] };
+        g = {
+          key,
+          label: q.src_file_id
+            ? (q.src_file_name ?? t("problems.file.unnamed", { id: formatNumber(q.src_file_id) }))
+            : t("problems.file.generatedOther"),
+          items: [],
+        };
         m.set(key, g);
       }
       g.items.push(q);
     }
     return [...m.values()];
-  }, [bankQs]);
+  }, [bankQs, formatNumber, t]);
   const [openGroups, setOpenGroups] = useState<Set<number>>(new Set());
   function toggleGroup(key: number) {
     setOpenGroups(prev => {
@@ -483,7 +545,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   async function doGenerate() {
     if (genStarting) return;
     if (genMaterialIds.size === 0) {
-      setBankErr("문제를 만들 기준 자료를 하나 이상 선택하세요.");
+      setBankErr(t("problems.generation.selectMaterials"));
       return;
     }
     setGenStarting(true);
@@ -499,7 +561,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       setGenerationJobIds(storedGenerationJobs(requestedSubjectId));
     } catch (e) {
       if (!mountedRef.current || subjectIdRef.current !== requestedSubjectId) return;
-      setBankErr(e instanceof Error ? e.message : "생성 실패");
+      setBankErr(locale === "ko" && e instanceof Error ? e.message : t("problems.generation.generateFailed"));
     } finally {
       if (mountedRef.current) setGenStarting(false);
     }
@@ -523,7 +585,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       });
       if (!mountedRef.current || request !== quizRequestRef.current) return;
       if (items.length === 0) {
-        setBankErr("조건에 맞는 문제가 없습니다.");
+        setBankErr(t("problems.run.noMatch"));
         setView("bank");
         return;
       }
@@ -545,7 +607,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       setView("play");
     } catch (e) {
       if (!mountedRef.current || request !== quizRequestRef.current) return;
-      setBankErr(e instanceof Error ? e.message : "퀴즈 시작 실패");
+      setBankErr(locale === "ko" && e instanceof Error ? e.message : t("problems.run.startFailed"));
       setView("bank");
     } finally {
       if (request === quizRequestRef.current) {
@@ -566,9 +628,9 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       && (!startWrong || q.wrong_count > 0)
     );
     if (eligible.length === 0) {
-      setBankErr(selected.size === 0
-        ? "풀 범위를 먼저 선택하세요."
-        : "선택 범위에 현재 난이도·출처·오답 조건과 맞는 문제가 없습니다.");
+      setBankErr(t(selected.size === 0
+        ? "problems.run.selectRange"
+        : "problems.run.noMatchSelection"));
       return;
     }
     const questionIds = shuffledQuestionIds(eligible, startCount);
@@ -595,7 +657,9 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     const question = bankQs.find(item => item.id === id);
     scheduleDelete({
       key: `question:${id}`,
-      label: question ? `“${question.question.slice(0, 28)}” 문제` : "문제",
+      label: question
+        ? t("problems.delete.label", { question: question.question.slice(0, 28) })
+        : t("problems.delete.generic"),
       commit: async () => {
         try {
           await apiDeleteQuestion(id);
@@ -632,13 +696,16 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       if (res.filled && res.explanation) {
         setBankQs(prev => prev.map(q => q.id === id ? { ...q, explanation: res.explanation! } : q));
       } else {
-        setExplGenNotice(prev => new Map(prev).set(id, { tone: "warn", text: "정답 불일치 — 검토 필요" }));
+        setExplGenNotice(prev => new Map(prev).set(id, {
+          tone: "warn",
+          text: t("problems.explanation.mismatch"),
+        }));
       }
     } catch (e) {
       if (!mountedRef.current) return;
       setExplGenNotice(prev => new Map(prev).set(id, {
         tone: "bad",
-        text: e instanceof Error ? e.message : "AI 해설 생성에 실패했습니다.",
+        text: locale === "ko" && e instanceof Error ? e.message : t("problems.explanation.failed"),
       }));
     } finally {
       if (mountedRef.current) {
@@ -652,7 +719,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     const targets = !allInScope
       ? bankQs.filter(q => selected.has(q.id))
       : bankQs;
-    const error = printQuestions(subject.name, targets, type);
+    const error = printQuestions(subject.name, targets, type, locale, t, formatNumber);
     if (error) setBankErr(error);
   }
 
@@ -691,7 +758,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       });
     } catch (e) {
       if (mountedRef.current && generation === playGenerationRef.current && requestId === answerRequestRef.current) {
-        setAnswerErr(e instanceof Error ? e.message : "채점 실패");
+        setAnswerErr(locale === "ko" && e instanceof Error ? e.message : t("problems.run.gradingFailed"));
       }
     } finally {
       if (mountedRef.current && generation === playGenerationRef.current && requestId === answerRequestRef.current) {
@@ -783,13 +850,15 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     return (
       <div className="quiz-play">
         <div className="quiz-play-header">
-          <button className="btn sm" onClick={returnToBank}>그만두기</button>
-          <span className="quiz-progress-label">{play.index + 1} / {play.items.length}</span>
+          <button className="btn sm" onClick={returnToBank}>{t("problems.run.stop")}</button>
+          <span className="quiz-progress-label">
+            {formatNumber(play.index + 1)} / {formatNumber(play.items.length)}
+          </span>
         </div>
         <div
           className="quiz-progress-bar"
           role="progressbar"
-          aria-label="퀴즈 진행률"
+          aria-label={t("problems.run.progressAria")}
           aria-valuemin={1}
           aria-valuemax={play.items.length}
           aria-valuenow={play.index + 1}
@@ -799,16 +868,19 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
         {/* key=index — 문항이 바뀔 때마다 프레임 재마운트로 전환 애니메이션 */}
         <div className="quiz-question-frame" key={play.index} ref={questionFrameRef} tabIndex={-1}>
         <div className="quiz-chips">
-          <span className={`q-chip diff-${item.difficulty}`}>{item.difficulty}</span>
-          <span className="q-chip qtype">{qtypeLabel(item.qtype)}</span>
+          <span className={`q-chip diff-${item.difficulty}`}>{difficultyLabel(item.difficulty, t)}</span>
+          <span className="q-chip qtype">{qtypeLabel(item.qtype, t)}</span>
           {item.src_file_id && (
             <a
               className="q-chip qtype"
               href={bookFileUrl(item.src_file_id, item.src_page)}
               target="_blank"
               rel="noreferrer"
-              title="문제집 원본 페이지 보기 — 도형·그림이 있는 문제는 원본으로 확인"
-            >원본 보기{item.src_page ? ` p.${item.src_page}` : ""}</a>
+              title={t("problems.run.originalTitle")}
+            >
+              {t("problems.run.originalView")}
+              {item.src_page ? ` p.${formatNumber(item.src_page)}` : ""}
+            </a>
           )}
         </div>
         <Md className="quiz-question-text" text={item.question} />
@@ -818,16 +890,17 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
             width={1200}
             height={900}
             src={pageImageUrl(item.src_file_id, item.src_page, item.figure_box)}
-            alt={figureAlt(item.figure_description, item.src_page)}
+            alt={figureAlt(item.figure_description, item.src_page, undefined, t, formatNumber)}
             loading="eager"
             fetchPriority="high"
           />
         )}
+        <QuizScratchpad key={`${item.id}-${play.index}`} questionId={item.id} />
 
         {!play.answered && (
           <>
             {item.qtype === "mcq" && item.choices && (
-              <div className="quiz-choices" role="group" aria-label="객관식 답안">
+              <div className="quiz-choices" role="group" aria-label={t("problems.run.mcqAria")}>
                 {item.choices.map((c, i) => (
                   <button
                     key={i}
@@ -837,7 +910,10 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                     aria-keyshortcuts={String(i + 1)}
                     aria-pressed={play.selectedChoice === c}
                   >
-                    <span className="choice-num" aria-hidden="true">{play.selectedChoice === c ? "✓" : i + 1}</span> <MdInlineText text={c} />
+                    <span className="choice-num" aria-hidden="true">
+                      {play.selectedChoice === c ? "✓" : formatNumber(i + 1)}
+                    </span>{" "}
+                    <MdInlineText text={c} />
                   </button>
                 ))}
               </div>
@@ -850,7 +926,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                   style={{ maxWidth: 420 }}
                   name="short-answer"
                   autoComplete="off"
-                  aria-label="단답형 답안"
+                  aria-label={t("problems.run.shortAria")}
                   value={play.shortInput}
                   onChange={e => setPlay(prev => prev ? { ...prev, shortInput: e.target.value } : prev)}
                   onKeyDown={onShortKey}
@@ -860,7 +936,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
               </div>
             )}
             {item.qtype === "ox" && (
-              <div className="quiz-ox" role="group" aria-label="OX 답안">
+              <div className="quiz-ox" role="group" aria-label={t("problems.run.oxAria")}>
                 <button
                   className={`ox-btn${play.selectedChoice === "O" ? " selected" : ""}`}
                   onClick={() => setPlay(prev => prev ? { ...prev, selectedChoice: "O" } : prev)}
@@ -878,7 +954,9 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
               </div>
             )}
             <p className="quiz-shortcut-hint">
-              {item.qtype === "mcq" ? "1–9 선택 · Enter 확인" : item.qtype === "ox" ? "O/X 선택 · Enter 확인" : "Enter 확인"}
+              {t(item.qtype === "mcq"
+                ? "problems.run.shortcutMcq"
+                : item.qtype === "ox" ? "problems.run.shortcutOx" : "problems.run.shortcutShort")}
             </p>
             <div style={{ marginTop: 24 }}>
               {answerErr && <div className="chat-err" role="alert" style={{ marginBottom: 12 }}>{answerErr}</div>}
@@ -892,7 +970,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                   (item.qtype === "short" && !play.shortInput.trim()) ||
                   (item.qtype === "ox" && !play.selectedChoice)
                 }
-              >{answering ? "채점 중…" : "확인"}</button>
+              >{t(answering ? "problems.run.grading" : "problems.run.confirm")}</button>
             </div>
           </>
         )}
@@ -905,15 +983,21 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
             role="status"
             aria-live="polite"
           >
-            <div className="feedback-label">{isCorrect ? "정답" : "오답"}</div>
-            <div className="feedback-submitted">내 답: <strong><MdInline text={submittedAnswer} /></strong></div>
-            <div className="feedback-answer">정답: <strong><MdInline text={play.result.answer} /></strong></div>
+            <div className="feedback-label">
+              {t(isCorrect ? "problems.run.correct" : "problems.run.wrong")}
+            </div>
+            <div className="feedback-submitted">
+              {t("problems.run.myAnswer")} <strong><MdInline text={submittedAnswer} /></strong>
+            </div>
+            <div className="feedback-answer">
+              {t("problems.run.answer")} <strong><MdInline text={play.result.answer} /></strong>
+            </div>
             {play.result.explanation && (
               <Md className="feedback-explanation" text={play.result.explanation} />
             )}
             {/* mcq: 채점 후 선택지 표시 */}
             {item.qtype === "mcq" && item.choices && (
-              <div className="quiz-choices answered" role="list" aria-label="채점된 객관식 답안">
+              <div className="quiz-choices answered" role="list" aria-label={t("problems.run.gradedAria")}>
                 {item.choices.map((c, i) => {
                   // 서버 채점(gradeAnswer)과 동일한 정규화: trim + 소문자 + 공백 축약
                   const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
@@ -924,10 +1008,13 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                   else if (isUserChoice && !isCorrect) cls += " wrong-choice";
                   return (
                     <div key={i} className={cls} role="listitem">
-                      <span className="choice-num">{i + 1}</span> <MdInline text={c} />
+                      <span className="choice-num">{formatNumber(i + 1)}</span> <MdInline text={c} />
                       {(isAnswer || isUserChoice) && (
                         <span className="choice-state">
-                          {[isAnswer ? "정답" : "", isUserChoice ? "내 선택" : ""].filter(Boolean).join(" · ")}
+                          {[
+                            isAnswer ? t("problems.run.correct") : "",
+                            isUserChoice ? t("problems.run.myChoice") : "",
+                          ].filter(Boolean).join(" · ")}
                         </span>
                       )}
                     </div>
@@ -936,7 +1023,9 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
               </div>
             )}
             <button className="btn primary" style={{ marginTop: 16 }} onClick={doNext} aria-keyshortcuts="Enter">
-              {play.index + 1 < play.items.length ? <>다음 <span aria-hidden="true">→</span></> : "결과 보기"}
+              {play.index + 1 < play.items.length
+                ? <>{t("problems.run.next")} <span aria-hidden="true">→</span></>
+                : t("problems.run.results")}
             </button>
           </div>
         )}
@@ -953,17 +1042,17 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     return (
       <div className="quiz-result" ref={resultRef} tabIndex={-1}>
         <div className="result-score">
-          <span className="result-num">{correctCount}</span>
-          <span className="result-total">/ {resultScores.length}</span>
-          <span className="result-pct">{pct}%</span>
+          <span className="result-num">{formatNumber(correctCount)}</span>
+          <span className="result-total">/ {formatNumber(resultScores.length)}</span>
+          <span className="result-pct">{formatNumber(pct)}%</span>
         </div>
         {wrong.length > 0 && (
           <div className="result-wrong-list">
-            <div className="result-wrong-title">틀린 문제</div>
+            <div className="result-wrong-title">{t("problems.run.wrongList")}</div>
             {wrong.map((s, i) => (
               <div key={i} className="result-wrong-item">
                 <span className="result-wrong-q"><MdInline text={s.question} /></span>
-                <span className="result-wrong-a">정답: <MdInline text={s.answer} /></span>
+                <span className="result-wrong-a">{t("problems.run.answer")} <MdInline text={s.answer} /></span>
               </div>
             ))}
           </div>
@@ -971,13 +1060,13 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
         <div className="result-actions">
           {wrong.length > 0 && (
             <button className="btn primary" onClick={doRetryMissed} disabled={startingQuiz}>
-              {startingQuiz ? "불러오는 중…" : "틀린 것만 다시"}
+              {t(startingQuiz ? "problems.bank.loading" : "problems.run.retryMissed")}
             </button>
           )}
           <button className={`btn${wrong.length === 0 ? " primary" : ""}`} onClick={doRetry} disabled={startingQuiz}>
-            {startingQuiz ? "불러오는 중…" : "다시 풀기"}
+            {t(startingQuiz ? "problems.bank.loading" : "problems.run.retry")}
           </button>
-          <button className="btn" onClick={returnToBank}>문제 은행으로</button>
+          <button className="btn" onClick={returnToBank}>{t("problems.run.backToBank")}</button>
         </div>
       </div>
     );
@@ -988,68 +1077,111 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     <div className="quiz-bank">
       {/* 요약 */}
       <div className="quiz-summary">
-        총 {total}문제 · 자료 추출 {uploadedCount} · 직접 생성 {generatedCount} · 하 {diffCounts["하"]} / 중 {diffCounts["중"]} / 상 {diffCounts["상"]}
+        {t("problems.bank.summary", {
+          total: formatNumber(total),
+          uploaded: formatNumber(uploadedCount),
+          generated: formatNumber(generatedCount),
+          low: formatNumber(diffCounts["하"]),
+          medium: formatNumber(diffCounts["중"]),
+          high: formatNumber(diffCounts["상"]),
+        })}
       </div>
 
       {loadErr && (
         <div className="chat-err" role="alert" style={{ marginBottom: 12 }}>
-          {loadErr} <button type="button" onClick={() => void loadBank()}>문제 다시 불러오기</button>
+          {loadErr} <button type="button" onClick={() => void loadBank()}>{t("problems.bank.reload")}</button>
         </div>
       )}
       {bankErr && <div className="chat-err" role="alert" style={{ marginBottom: 12 }}>{bankErr}</div>}
 
       {/* 퀴즈 시작 컨트롤 */}
-      <h2 className="quiz-control-label">출제 조건</h2>
+      <h2 className="quiz-control-label">{t("problems.bank.conditions")}</h2>
       <div className="quiz-start-row">
         <span className="quiz-range-label">
-          범위 · {allInScope ? `전체 ${total}문제` : `선택 ${selected.size}문제`}
+          {t("problems.bank.range")} · {t(
+            allInScope ? "problems.bank.rangeAll" : "problems.bank.rangeSelected",
+            { count: problemCountLabel(allInScope ? total : selected.size, t, formatNumber) },
+          )}
         </span>
-        <label className="quiz-control-field">
-          <span>출처</span>
-          <select className="quiz-select" value={startSource} onChange={e => setStartSource(e.target.value)}>
-            <option value="all">전체</option>
-            <option value="uploaded">업로드</option>
-            <option value="generated">직접 생성</option>
-          </select>
-        </label>
-        <label className="quiz-control-field">
-          <span>난이도</span>
-          <select className="quiz-select" value={startDiff} onChange={e => setStartDiff(e.target.value)}>
-            <option value="all">전체</option>
-            <option value="하">하</option>
-            <option value="중">중</option>
-            <option value="상">상</option>
-          </select>
-        </label>
-        <label className="quiz-number-field">
-          <span>문항 수</span>
-          <input
-            type="number"
-            className="quiz-count-input"
-            name="quiz-count"
-            autoComplete="off"
-            min={1}
-            max={50}
-            value={startCount}
-            onChange={e => setStartCount(Math.max(1, Math.min(50, Number(e.target.value) || 10)))}
-          />
-        </label>
+        <SingleSelectPicker
+          className="quiz-filter-picker"
+          label={t("problems.bank.source")}
+          value={startSource}
+          options={[
+            {
+              value: "all",
+              label: t("problems.source.all"),
+              description: problemCountLabel(total, t, formatNumber),
+            },
+            {
+              value: "uploaded",
+              label: t("problems.source.uploaded"),
+              description: problemCountLabel(uploadedCount, t, formatNumber),
+            },
+            {
+              value: "generated",
+              label: t("problems.source.generated"),
+              description: problemCountLabel(generatedCount, t, formatNumber),
+            },
+          ]}
+          onChange={setStartSource}
+        />
+        <SingleSelectPicker
+          className="quiz-filter-picker"
+          label={t("problems.bank.difficulty")}
+          value={startDiff}
+          options={[
+            {
+              value: "all",
+              label: t("problems.source.all"),
+              description: problemCountLabel(total, t, formatNumber),
+            },
+            {
+              value: "하",
+              label: t("problems.difficulty.low"),
+              description: problemCountLabel(diffCounts["하"], t, formatNumber),
+            },
+            {
+              value: "중",
+              label: t("problems.difficulty.medium"),
+              description: problemCountLabel(diffCounts["중"], t, formatNumber),
+            },
+            {
+              value: "상",
+              label: t("problems.difficulty.high"),
+              description: problemCountLabel(diffCounts["상"], t, formatNumber),
+            },
+          ]}
+          onChange={setStartDiff}
+        />
+        <SingleSelectPicker
+          className="quiz-filter-picker quiz-count-picker"
+          label={t("problems.bank.questionCount")}
+          value={String(startCount)}
+          options={quizCountOptions}
+          onChange={(value) => setStartCount(Number(value))}
+        />
         <label className="quiz-check-label" style={{ marginLeft: 4 }}>
           <input
             type="checkbox"
             checked={startWrong}
             onChange={e => setStartWrong(e.target.checked)}
           />
-          오답만
+          {t("problems.bank.wrongOnly")}
         </label>
         <button
           ref={startButtonRef}
           className="btn primary sm"
           onClick={startQuiz}
           disabled={eligibleStartCount === 0 || startingQuiz || pendingDelete !== null}
-        >{startingQuiz ? "불러오는 중…" : "퀴즈 시작"}</button>
+        >{t(startingQuiz ? "problems.bank.loading" : "problems.bank.start")}</button>
         <span className={`quiz-plan${eligibleStartCount === 0 ? " empty" : ""}`} role="status" aria-live="polite">
-          {eligibleStartCount === 0 ? "조건에 맞는 문제 없음" : `${eligibleStartCount}문제 일치 · ${plannedStartCount}문제 출제`}
+          {eligibleStartCount === 0
+            ? t("problems.bank.noEligible")
+            : t("problems.bank.plan", {
+              eligible: problemCountLabel(eligibleStartCount, t, formatNumber),
+              planned: problemCountLabel(plannedStartCount, t, formatNumber),
+            })}
         </span>
       </div>
 
@@ -1061,15 +1193,19 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
         onToggle={event => setGenerationOpen(event.currentTarget.open)}
       >
         <summary>
-          <span>문제 만들기</span>
-          <small>{generationJobIds.length > 0 ? `생성 중 ${generationJobIds.length}건…` : "선택 자료로 새 문제 만들기"}</small>
+          <span>{t("problems.generation.create")}</span>
+          <small>
+            {generationJobIds.length > 0
+              ? t("problems.generation.activeJobs", { count: formatNumber(generationJobIds.length) })
+              : t("problems.generation.createDescription")}
+          </small>
         </summary>
         <div className="quiz-add-row">
           <div className="quiz-add-section">
             <div className="quiz-generation-scope">
               {readyMaterials.length > 0 ? (
                 <SourcePicker
-                  label="생성 기준 자료"
+                  label={t("problems.generation.sources")}
                   materials={readyMaterials}
                   excluded={genExcluded}
                   onToggle={toggleGenerationMaterial}
@@ -1077,13 +1213,13 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                 />
               ) : (
                 <>
-                  <span className="quiz-generation-label">생성 기준 자료</span>
-                  <span className="quiz-status-msg">준비된 자료 없음</span>
+                  <span className="quiz-generation-label">{t("problems.generation.sources")}</span>
+                  <span className="quiz-status-msg">{t("problems.generation.noReady")}</span>
                 </>
               )}
             </div>
             <label className="quiz-number-field">
-              <span>문항 수</span>
+              <span>{t("problems.bank.questionCount")}</span>
               <input
                 type="number"
                 className="quiz-count-input"
@@ -1095,46 +1231,61 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                 onChange={e => setGenCount(Math.max(1, Math.min(20, Number(e.target.value) || 5)))}
               />
             </label>
-            <label className="quiz-control-field">
-              <span>난이도</span>
-              <select className="quiz-select" value={genDiff} onChange={e => setGenDiff(e.target.value)}>
-                <option value="혼합">혼합</option>
-                <option value="하">하</option>
-                <option value="중">중</option>
-                <option value="상">상</option>
-              </select>
-            </label>
+            <div className="quiz-control-field">
+              <SingleSelectPicker
+                className="quiz-filter-picker"
+                label={t("problems.bank.difficulty")}
+                value={genDiff}
+                options={[
+                  { value: "혼합", label: t("problems.difficulty.mixed") },
+                  { value: "하", label: t("problems.difficulty.low") },
+                  { value: "중", label: t("problems.difficulty.medium") },
+                  { value: "상", label: t("problems.difficulty.high") },
+                ]}
+                onChange={setGenDiff}
+              />
+            </div>
             <button
               className="btn sm"
               onClick={doGenerate}
               disabled={genStarting || genMaterialIds.size === 0}
-            >{genStarting ? "시작 중…" : "문제 생성"}</button>
+            >{t(genStarting ? "problems.generation.starting" : "problems.generation.generate")}</button>
             {generationJobIds.length > 0 && (
               <div className="pending-action-row">
                 <AiPending
-                  label={`문제 생성 ${generationJobIds.length}건 진행 중 · 다른 탭으로 이동해도 계속됩니다. 중단은 위 작업 목록에서`}
+                  label={t("problems.generation.progress", {
+                    count: formatNumber(generationJobIds.length),
+                  })}
                 />
               </div>
             )}
             {genMsgs.map((msg, index) => (
               <span
-                key={`${index}-${msg}`}
-                className={`quiz-status-msg${msg.includes("추가됨") ? " ok" : ""}`}
+                key={`${index}-${msg.key}-${msg.count ?? ""}`}
+                className={`quiz-status-msg${msg.ok ? " ok" : ""}`}
                 role="status"
                 aria-live="polite"
-              >{msg}</span>
+              >
+                {t(msg.key, msg.count === undefined
+                  ? undefined
+                  : { count: problemCountLabel(msg.count, t, formatNumber) })}
+              </span>
             ))}
           </div>
         </div>
       </details>
 
       <details className="context-help quiz-help">
-        <summary>퀴즈 사용법과 단축키</summary>
-        <p>범위·출처·난이도를 고르면 실제 출제 수가 바로 표시됩니다. 풀이 중 숫자키로 객관식을, O/X로 진위를 고르고 Enter로 확인하거나 다음 문제로 이동할 수 있습니다.</p>
+        <summary>{t("problems.help.summary")}</summary>
+        <p>{t("problems.help.text")}</p>
       </details>
 
       {/* 문제 목록 */}
-      {loading && <div className="quiz-status-msg" role="status" aria-live="polite" style={{ marginTop: 16 }}>불러오는 중…</div>}
+      {loading && (
+        <div className="quiz-status-msg" role="status" aria-live="polite" style={{ marginTop: 16 }}>
+          {t("problems.bank.loading")}
+        </div>
+      )}
 
       {!loading && bankQs.length > 0 && (
         <div className="quiz-list">
@@ -1146,11 +1297,15 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                 ref={el => { if (el) el.indeterminate = !allInScope && selected.size > 0; }}
                 onChange={toggleAll}
               />
-              전체 문제
+              {t("problems.list.all")}
             </label>
             <div className="quiz-list-actions">
-              <button className="btn sm" onClick={() => doPrint("question")}>문제지 인쇄</button>
-              <button className="btn sm" onClick={() => doPrint("answer")}>정답지 인쇄</button>
+              <button className="btn sm" onClick={() => doPrint("question")}>
+                {t("problems.list.printQuestion")}
+              </button>
+              <button className="btn sm" onClick={() => doPrint("answer")}>
+                {t("problems.list.printAnswer")}
+              </button>
             </div>
           </div>
 
@@ -1160,54 +1315,65 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
             return (
               <div key={g.key} className="quiz-file-group">
                 <div className="quiz-file-head">
-                  <label className="quiz-check-label quiz-file-select" title="이 자료의 문제 전체 선택">
+                  <label
+                    className="quiz-check-label quiz-file-select"
+                    title={t("problems.list.materialAllTitle")}
+                  >
                     <input
                       type="checkbox"
                       checked={gsel === g.items.length}
                       ref={el => { if (el) el.indeterminate = gsel > 0 && gsel < g.items.length; }}
                       onChange={() => toggleGroupSelection(g.items)}
-                      aria-label={`${g.label} 문제 전체 선택`}
+                      aria-label={t("problems.list.groupSelectAria", { file: g.label })}
                     />
-                    <span>자료 전체</span>
+                    <span>{t("problems.list.materialAll")}</span>
                   </label>
                   <button
                     className="quiz-file-toggle"
                     onClick={() => toggleGroup(g.key)}
                     aria-expanded={open}
                     aria-controls={`quiz-file-panel-${groupIndex}`}
-                    title="클릭해서 이 파일의 문제 열기/닫기"
+                    title={t("problems.list.toggleTitle")}
                   >
                     <span className={`quiz-file-chev${open ? " open" : ""}`} aria-hidden="true">⌄</span>
                     <span className="quiz-file-name">{g.label}</span>
-                    <span className="quiz-file-count">{allInScope ? g.items.length : `${gsel}/${g.items.length}`}문제</span>
+                    <span className="quiz-file-count">
+                      {allInScope
+                        ? problemCountLabel(g.items.length, t, formatNumber)
+                        : t("problems.count.many", {
+                          count: `${formatNumber(gsel)}/${formatNumber(g.items.length)}`,
+                        })}
+                    </span>
                   </button>
                 </div>
 
                 <div id={`quiz-file-panel-${groupIndex}`} className="quiz-file-panel" hidden={!open}>
                 {open && g.items.map(q => (
                   <div key={q.id} className="quiz-row">
-                    <label className="quiz-check-label quiz-check-box" title="이 문제 선택">
+                    <label className="quiz-check-label quiz-check-box" title={t("problems.list.selectTitle")}>
                       <input
                         type="checkbox"
                         checked={allInScope || selected.has(q.id)}
                         onChange={() => toggleSelect(q.id)}
-                        aria-label={`문제 선택: ${q.question.slice(0, 40)}`}
+                        aria-label={t("problems.select.aria", { question: q.question.slice(0, 40) })}
                       />
                     </label>
-                    <span className={`q-chip qtype`}>{qtypeLabel(q.qtype)}</span>
-                    <span className={`q-chip diff-${q.difficulty}`}>{q.difficulty}</span>
+                    <span className="q-chip qtype">{qtypeLabel(q.qtype, t)}</span>
+                    <span className={`q-chip diff-${q.difficulty}`}>{difficultyLabel(q.difficulty, t)}</span>
                     <button
                       type="button"
                       className="quiz-q-text"
                       onClick={() => toggleExpand(q.id)}
-                      title="클릭하면 상세 보기"
+                      title={t("problems.list.detailsTitle")}
                       aria-expanded={expanded.has(q.id)}
                       aria-controls={`quiz-question-detail-${q.id}`}
                     ><MdInlineText text={q.question} /></button>
-                    <span className="quiz-accuracy">{accuracyLabel(q)}</span>
+                    <span className="quiz-accuracy">{accuracyLabel(q, t, formatNumber)}</span>
                     <button
                       className="del-btn"
-                      aria-label={pendingDelete?.key === `question:${q.id}` ? "이 문제 삭제 예정" : `문제 삭제: ${q.question.slice(0, 40)}`}
+                      aria-label={pendingDelete?.key === `question:${q.id}`
+                        ? t("problems.delete.pending")
+                        : t("problems.delete.aria", { question: q.question.slice(0, 40) })}
                       disabled={pendingDelete !== null}
                       onClick={() => doDelete(q.id)}
                     >✕</button>
@@ -1225,19 +1391,21 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                             {q.choices.map((c, i) => <li key={i}><MdInline text={c} /></li>)}
                           </ol>
                         )}
-                        <div className="quiz-row-answer">정답: <strong><MdInline text={q.answer} /></strong></div>
+                        <div className="quiz-row-answer">
+                          {t("problems.run.answer")} <strong><MdInline text={q.answer} /></strong>
+                        </div>
                         {q.explanation ? (
                           <Md className="quiz-row-explanation" text={q.explanation} />
                         ) : (
                           <div className="quiz-row-expl-gen">
                             {explGenBusy.has(q.id) ? (
-                              <AiPending label="AI 해설 생성 중" />
+                              <AiPending label={t("problems.explanation.pending")} />
                             ) : (
                               <button
                                 type="button"
                                 className="btn sm"
                                 onClick={() => void generateExplanation(q.id)}
-                              >AI 해설 생성</button>
+                              >{t("problems.explanation.generate")}</button>
                             )}
                             {explGenNotice.has(q.id) && (
                               <span className={`expl-gen-notice ${explGenNotice.get(q.id)!.tone}`} role="status">
@@ -1252,13 +1420,14 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                             width={1200}
                             height={900}
                             src={pageImageUrl(q.src_file_id, q.src_page, q.figure_box)}
-                            alt={figureAlt(q.figure_description, q.src_page)}
+                            alt={figureAlt(q.figure_description, q.src_page, undefined, t, formatNumber)}
                             loading="lazy"
                           />
                         )}
                         {q.src_file_id && (
                           <a className="q-chip qtype" href={bookFileUrl(q.src_file_id, q.src_page)} target="_blank" rel="noreferrer">
-                            원본 보기{q.src_page ? ` p.${q.src_page}` : ""}
+                            {t("problems.run.originalView")}
+                            {q.src_page ? ` p.${formatNumber(q.src_page)}` : ""}
                           </a>
                         )}
                         </>
@@ -1274,7 +1443,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       )}
 
       {!loading && bankQs.length === 0 && (
-        <div className="quiz-empty">문제가 없습니다. 업로드하거나 AI로 생성하세요.</div>
+        <div className="quiz-empty">{t("problems.bank.empty")}</div>
       )}
     </div>
   );

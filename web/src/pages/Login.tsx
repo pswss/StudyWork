@@ -1,31 +1,50 @@
 import { useRef, useState, type FormEvent } from "react";
-import { AuthError, login } from "../api";
+import { ApiError, AuthError, login, signup, type AuthStatus } from "../api";
 import { Reveal } from "../motion";
+import { LocalePicker, useI18n, type MessageKey } from "../i18n";
 
 interface Props {
-  onLogin: () => void;
+  ownerExists: boolean;
+  onLogin: (status: AuthStatus) => void;
 }
 
-export default function Login({ onLogin }: Props) {
+export default function Login({ ownerExists, onLogin }: Props) {
+  const { t } = useI18n();
+  const [username, setUsername] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
   const [pw, setPw] = useState("");
-  const [err, setErr] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [err, setErr] = useState<MessageKey | { text: string } | "">("");
   const [loading, setLoading] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const usernameRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
   const autoFocusInput = typeof window.matchMedia !== "function" || window.matchMedia("(pointer: fine)").matches;
+  const signupMode = !ownerExists;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!pw || loading) return;
+    if (!username || !pw || loading) return;
+    if (signupMode && pw !== confirmation) {
+      setErr("shell.login.passwordMismatch");
+      passwordRef.current?.focus();
+      return;
+    }
     setLoading(true);
     setErr("");
     try {
-      await login(pw);
-      onLogin();
+      const status = signupMode
+        ? await signup(username, pw, currentPassword)
+        : await login(username, pw);
+      onLogin(status);
     } catch (error) {
-      setErr(error instanceof AuthError
-        ? "비밀번호가 맞지 않습니다. 다시 입력해 주세요."
-        : "서버에 연결하지 못했습니다. 잠시 뒤 다시 시도해 주세요.");
-      inputRef.current?.focus();
+      setErr(
+        error instanceof ApiError
+          ? { text: error.message }
+          : error instanceof AuthError
+            ? "shell.login.invalidCredentials"
+            : "shell.login.connectionError"
+      );
+      passwordRef.current?.focus();
     } finally {
       setLoading(false);
     }
@@ -38,33 +57,101 @@ export default function Login({ onLogin }: Props) {
           <span translate="no">Study<em>Work</em></span>
         </Reveal>
         <Reveal delay={0.2} className="login-sub">
-          비밀번호를 입력해 개인 학습 자료함을 엽니다.
+          {signupMode
+            ? t("shell.login.signupIntro")
+            : t("shell.login.loginIntro")}
         </Reveal>
 
         <form className="login-form" onSubmit={submit}>
-          <div className="field">
-            <label className="field-index" htmlFor="login-password">비밀번호</label>
-            <input
-              ref={inputRef}
-              id="login-password"
-              name="password"
-              type="password"
-              value={pw}
-              onChange={e => setPw(e.target.value)}
-              autoComplete="current-password"
-              required
-              aria-invalid={Boolean(err)}
-              aria-describedby={err ? "login-error" : undefined}
-              autoFocus={autoFocusInput}
-            />
+          <div className="login-fields">
+            <LocalePicker className="solution-book-picker" />
+            <div className="field">
+              <label className="field-index" htmlFor="login-username">{t("shell.login.username")}</label>
+              <input
+                ref={usernameRef}
+                id="login-username"
+                name="username"
+                type="text"
+                value={username}
+                onChange={event => setUsername(event.target.value)}
+                autoComplete="username"
+                minLength={3}
+                maxLength={64}
+                required
+                autoCapitalize="none"
+                spellCheck={false}
+                aria-invalid={Boolean(err)}
+                aria-describedby={err ? "login-error" : undefined}
+                autoFocus={autoFocusInput}
+              />
+            </div>
+            {signupMode && (
+              <div className="field">
+                <label className="field-index" htmlFor="signup-current-password">{t("shell.login.currentPassword")}</label>
+                <input
+                  id="signup-current-password"
+                  name="current-password"
+                  type="password"
+                  value={currentPassword}
+                  onChange={event => setCurrentPassword(event.target.value)}
+                  autoComplete="current-password"
+                  required
+                  aria-invalid={Boolean(err)}
+                  aria-describedby={err ? "login-error" : undefined}
+                />
+              </div>
+            )}
+            <div className="field">
+              <label className="field-index" htmlFor="login-password">
+                {signupMode ? t("shell.login.newPassword") : t("shell.login.password")}
+              </label>
+              <input
+                ref={passwordRef}
+                id="login-password"
+                name="password"
+                type="password"
+                value={pw}
+                onChange={event => setPw(event.target.value)}
+                autoComplete={signupMode ? "new-password" : "current-password"}
+                minLength={signupMode ? 10 : undefined}
+                maxLength={128}
+                required
+                aria-invalid={Boolean(err)}
+                aria-describedby={err ? "login-error" : undefined}
+              />
+            </div>
+            {signupMode && (
+              <div className="field">
+                <label className="field-index" htmlFor="signup-password-confirm">{t("shell.login.confirmPassword")}</label>
+                <input
+                  id="signup-password-confirm"
+                  name="password-confirm"
+                  type="password"
+                  value={confirmation}
+                  onChange={event => setConfirmation(event.target.value)}
+                  autoComplete="new-password"
+                  minLength={10}
+                  maxLength={128}
+                  required
+                  aria-invalid={Boolean(err)}
+                  aria-describedby={err ? "login-error" : undefined}
+                />
+              </div>
+            )}
           </div>
-          {err && <p className="err" id="login-error" role="alert">{err}</p>}
+          {err && (
+            <p className="err" id="login-error" role="alert">
+              {typeof err === "string" ? t(err) : err.text}
+            </p>
+          )}
           <button
             type="submit"
             className="btn primary login-btn"
             disabled={loading}
           >
-            {loading ? "여는 중…" : "열기"}
+            {loading
+              ? (signupMode ? t("shell.login.creating") : t("shell.login.opening"))
+              : (signupMode ? t("shell.login.createAccount") : t("shell.login.signIn"))}
             <span className="btn-arrow" aria-hidden="true">↗</span>
           </button>
         </form>

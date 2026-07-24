@@ -13,7 +13,7 @@ describe("quiz interaction polish", () => {
     expect(source).toContain('className="quiz-generate-disclosure"');
     expect(source).toContain("eligibleStartCount");
     expect(source).toContain('aria-keyshortcuts="Enter"');
-    expect(source).toContain("조건에 맞는 문제 없음");
+    expect(source).toContain('t("problems.bank.noEligible")');
     expect(source).toContain("questionFrameRef.current?.focus()");
     expect(source).toContain("resultRef.current?.focus()");
   });
