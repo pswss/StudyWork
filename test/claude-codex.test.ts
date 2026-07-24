@@ -14,7 +14,12 @@ vi.mock("../src/codex-provider", async (importOriginal) => {
   };
 });
 
-import { chat, extractQuestionsFromFile, generateExplanationsForQuestions } from "../src/claude";
+import {
+  chat,
+  extractQuestionsFromFile,
+  generateExplanationsForQuestions,
+  parseExplanationItems,
+} from "../src/claude";
 import { resetStudySkillRegistryForTests } from "../src/skills";
 import { configureAISettings, updateAISettings } from "../src/ai-settings";
 import { makeEnv } from "./helpers";
@@ -120,6 +125,14 @@ describe("StudyWork Codex facade", () => {
     expect(request.prompt).toContain("mandatory primary evidence");
     expect(request.prompt).toContain("copy that answer field verbatim");
     expect(request.prompt).not.toContain(figures);
+  });
+
+  it("생성 해설에 내부 그림 파일명이나 라벨을 노출하지 않음", () => {
+    expect(() => parseExplanationItems(JSON.stringify([{
+      id: 7,
+      derived_answer: "2",
+      explanation: "근거: page-1.png의 QUESTION_ID 7",
+    }]), [7])).toThrow("내부 그림 참조");
   });
 
   it("업로드 자료와 대화는 developer instructions가 아니라 사용자 데이터로 유지", async () => {

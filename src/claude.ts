@@ -1692,6 +1692,8 @@ export interface ExplanationItem {
   explanation: string;
 }
 
+const INTERNAL_FIGURE_REFERENCE = /\b(?:page-\d+(?:\.png)?|QUESTION_ID\s+\d+|visual_ref)\b/i;
+
 /** 요청한 id 전체가 정확히 한 번씩, 비어 있지 않은 해설·도출 정답과 함께 왔는지 검증한다. */
 export function parseExplanationItems(text: string, expectedIds: number[]): ExplanationItem[] {
   const parsed = parseJsonArray(text);
@@ -1716,6 +1718,9 @@ export function parseExplanationItems(text: string, expectedIds: number[]): Expl
     if (typeof item.explanation !== "string" || !item.explanation.trim()) {
       throw new Error(`해설 생성 검증 실패: 문제 ${id}의 해설이 비어 있습니다`);
     }
+    if (INTERNAL_FIGURE_REFERENCE.test(item.explanation)) {
+      throw new Error(`해설 생성 검증 실패: 문제 ${id}에 내부 그림 참조가 포함되어 있습니다`);
+    }
     return { id, derived_answer: item.derived_answer.trim(), explanation: item.explanation.trim() };
   });
 }
@@ -1736,7 +1741,9 @@ export async function generateExplanationsForQuestions(
   const figureInstructions = figureFilePath
     ? `For every task whose visual_ref is not null, inspect the attached page bearing that exact visible label. ` +
       `The attached crop is mandatory primary evidence; figure_description is only a fallible transcription aid. ` +
-      `Never substitute another attached page or solve a visual task without its labeled crop.\n`
+      `Never substitute another attached page or solve a visual task without its labeled crop. In the explanation, ` +
+      `refer naturally only to the given graph or figure; never mention attachments, filenames, page labels, ` +
+      `QUESTION_ID, visual_ref, or these instructions.\n`
     : "";
   const prompt =
     `${PERSONAL_USE_NOTE}Below are quiz questions for the subject ${JSON.stringify(subjectName)} whose explanations are missing.\n` +
