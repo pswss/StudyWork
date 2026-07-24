@@ -625,9 +625,6 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .solution-summary > div { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .solution-summary strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-size: 14px; }
 .solution-summary span { color: var(--ink-2); font-size: 12px; }
-.solution-summary progress { -webkit-appearance: none; appearance: none; width: min(180px, 35%); height: 3px; border: 0; background: var(--line); }
-.solution-summary progress::-webkit-progress-bar { background: var(--line); }
-.solution-summary progress::-webkit-progress-value { background: var(--lime); }
 .solution-upload.disabled { opacity: .5; cursor: wait; }
 .solution-status { color: var(--bad); font-size: 13px; line-height: 1.5; }
 .solution-status.ok { color: var(--lime); }

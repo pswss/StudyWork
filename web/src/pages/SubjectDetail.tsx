@@ -774,11 +774,6 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
                         <strong>{selectedSolutionBook.title}</strong>
                         <span>{selectedSolutionBook.question_count}문제 중 {selectedSolutionBook.explained_count}문제 해설 있음</span>
                       </div>
-                      <progress
-                        max={selectedSolutionBook.question_count}
-                        value={selectedSolutionBook.explained_count}
-                        aria-label="해설 등록률"
-                      />
                     </div>
                   )}
                   <label className={`file-label solution-upload${solutionJobId !== null ? " disabled" : ""}`}>
