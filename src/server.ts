@@ -128,7 +128,7 @@ const server = serve(
     hostname: HTTPS_ONLY ? "127.0.0.1" : "0.0.0.0",
   },
   () => {
-    console.log(`\nStudyWork 서버 실행 중`);
+    console.log(`\nRemap 서버 실행 중`);
     if (HTTPS_ONLY) {
       console.log(`  HTTPS 프록시 upstream: http://127.0.0.1:${PORT}`);
       console.log("  직접 HTTP 인증/API 접속: 차단");

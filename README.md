@@ -1,10 +1,12 @@
-# StudyWork
+# Remap
 
 수업 자료를 올리면 AI가 읽고 정리해 주는 **1인용 학습 비서 웹 앱**.
 
 사진·PDF·텍스트로 자료를 쌓으면 그 자료를 근거로 답하는 튜터 채팅, 자료 전체를 하나로 합치는 단권화 노트, 문제 추출·생성·채점·오답 관리·시험 계획까지 제공한다. 내 맥에서 로컬 Node 서버로 동작하며, 기본 AI는 저장된 ChatGPT 로그인을 재사용하는 **로컬 Codex CLI의 `gpt-5.6-sol`**이다. API 키는 필요 없다.
 
-> 이 문서는 사용자용 안내이자, 이후 세션의 개발자(AI 포함)가 코드베이스를 정확히 이해하기 위한 기준 문서다. 마지막 갱신: 2026-07-24.
+> 이 문서는 사용자용 안내이자, 이후 세션의 개발자(AI 포함)가 코드베이스를 정확히 이해하기 위한 기준 문서다. 마지막 갱신: 2026-07-25.
+
+기존 설치와 데이터의 호환성을 위해 `studywork.db`, `STUDYWORK_*` 환경변수, 저장 키와 서버 식별자는 종전 이름을 유지한다.
 
 ---
 
@@ -92,7 +94,7 @@ STUDYWORK_AI_REASONING_EFFORT=high
 
 - 기본 보호값은 타임아웃 300초, 동시 요청 4개다. 동시 슬롯 중 1개는 대화형(채팅) 전용 예약 — 추출·단권화 같은 배치 작업은 최대 3개까지만 점유하므로 채팅이 큐에서 굶지 않는다. Codex adapter 자체는 자동 재시도하지 않으며, 기존 문제 추출 작업의 제한된 재시도만 유지한다.
 - 각 호출은 `codex exec --ephemeral` 일회성 세션이다. 사용자 config/rules, 웹, 앱, 멀티에이전트, shell 도구를 끄고 구조화 응답은 기존 strict JSON Schema와 도메인 파서로 다시 검증한다.
-- 프롬프트는 stdin, 결과는 전용 출력 파일로만 전달한다. StudyWork 비밀번호·세션 키·API 키 환경변수는 child process에 넘기지 않는다.
+- 프롬프트는 stdin, 결과는 전용 출력 파일로만 전달한다. Remap 비밀번호·세션 키·API 키 환경변수는 child process에 넘기지 않는다.
 - 이미지는 opaque 임시 이름으로 복사한다. PDF는 기존 6쪽 구간을 `pdftoppm`으로 PNG화한 뒤 이미지로 첨부하며, 원본 경로를 모델 프롬프트에 넣지 않는다.
 - launchd PATH에서 Codex를 찾지 못하면 `~/.local/bin/codex`를 자동 사용한다. 다른 위치만 `STUDYWORK_CODEX_BIN` 절대 경로로 지정한다.
 
@@ -104,7 +106,7 @@ STUDYWORK_AI_PROVIDER=claude-cli
 
 ### Obsidian 연동 (선택)
 
-`.env`의 `OBSIDIAN_VAULT_PATH`에 볼트 절대 경로를 설정하면 완료된 StudyWork 단권화 노트를 Obsidian에 내보낼 수 있다.
+`.env`의 `OBSIDIAN_VAULT_PATH`에 볼트 절대 경로를 설정하면 완료된 Remap 단권화 노트를 Obsidian에 내보낼 수 있다.
 
 ```dotenv
 OBSIDIAN_VAULT_PATH="/absolute/path/to/My Vault"
@@ -113,16 +115,16 @@ OBSIDIAN_WRITE_ENABLED=false
 
 - `OBSIDIAN_WRITE_ENABLED=true`일 때만 완료된 현재 단권화 노트를 새 `.md` 파일로 내보낸다.
 - 내보내기는 create-only 원자 저장이다. 같은 경로가 이미 있으면 `409`로 중단하며 기존 볼트 파일을 덮어쓰지 않는다.
-- Obsidian 노트를 StudyWork 자료로 가져오는 UI와 API는 제공하지 않는다.
+- Obsidian 노트를 Remap 자료로 가져오는 UI와 API는 제공하지 않는다.
 
 ### Skills 연동
 
-StudyWork는 사용자 전역 `~/.codex/skills`에서 표준 `SKILL.md`를 발견하고, 개발자가 허용한 Skill의 지침을 provider와 무관하게 AI 요청에 주입한다. 기본 활성 Skill은 `learning-material-analysis`, `grounded-study-notes`다. 두 Skill은 Codex 전역 폴더에 설치되므로 StudyWork 밖의 다른 프로젝트에서도 발견·사용할 수 있다.
+Remap은 사용자 전역 `~/.codex/skills`에서 표준 `SKILL.md`를 발견하고, 개발자가 허용한 Skill의 지침을 provider와 무관하게 AI 요청에 주입한다. 기본 활성 Skill은 `learning-material-analysis`, `grounded-study-notes`다. 두 Skill은 Codex 전역 폴더에 설치되므로 Remap 밖의 다른 프로젝트에서도 발견·사용할 수 있다.
 
 - `GET /api/skills`: 발견·활성·로딩 오류 수와 Skill 메타데이터 확인
 - `STUDYWORK_ENABLED_SKILLS`: 활성 이름을 쉼표로 지정
 - `STUDYWORK_SKILLS_DIRS`: 추가 검색 루트를 macOS/Linux 경로 구분자 `:`로 지정
-- StudyWork 연동은 **instruction-only**다. 로더는 64KB 이하의 `SKILL.md` 지침만 읽고 symlink 탈출·중복 이름·잘못된 frontmatter를 거부하며, Skill의 스크립트나 shell/network 권한은 자동 실행하지 않는다. Codex에서는 같은 전역 Skill을 Codex의 정상 Skill 흐름으로 사용할 수 있다.
+- Remap 연동은 **instruction-only**다. 로더는 64KB 이하의 `SKILL.md` 지침만 읽고 symlink 탈출·중복 이름·잘못된 frontmatter를 거부하며, Skill의 스크립트나 shell/network 권한은 자동 실행하지 않는다. Codex에서는 같은 전역 Skill을 Codex의 정상 Skill 흐름으로 사용할 수 있다.
 
 **AI가 안 될 때**: `codex login status`, `codex --version`, `pdftoppm -v`를 확인한다. 테스트 mock 성공은 실제 ChatGPT 로그인·모델 접근을 증명하지 않으므로 배포 후 최소 로컬 CLI 호출을 별도로 확인한다. `claude-cli` 롤백 중이라면 `claude` CLI 로그인 상태를 확인한다.
 

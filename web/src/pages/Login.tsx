@@ -54,7 +54,7 @@ export default function Login({ ownerExists, onLogin }: Props) {
     <div className="login-wrap">
       <div className="login-inner">
         <Reveal delay={0.12} as="h1" className="login-display">
-          <span translate="no">Study<em>Work</em></span>
+          <span translate="no">Re<em>map</em></span>
         </Reveal>
         <Reveal delay={0.2} className="login-sub">
           {signupMode

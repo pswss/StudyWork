@@ -74,7 +74,7 @@ obsidianRoutes.post("/subjects/:id/obsidian/export/preview", async (c) => {
   const context = await exportContext(c.env, c.req.param("id"));
   if (!context) return c.json({ error: "subject not found" }, 404);
   if (!context.note) return c.json({ error: "내보낼 노트가 없습니다" }, 404);
-  const path = body.path?.trim() || `StudyWork - ${safeNoteName(context.subject.name)} - ${localDay()}.md`;
+  const path = body.path?.trim() || `Remap - ${safeNoteName(context.subject.name)} - ${localDay()}.md`;
   try {
     return c.json({
       path,
@@ -97,14 +97,14 @@ obsidianRoutes.post("/subjects/:id/obsidian/export", async (c) => {
   if (!context) return c.json({ error: "subject not found" }, 404);
   if (!context.note) return c.json({ error: "내보낼 노트가 없습니다" }, 404);
   if (context.note.status !== "ready") return c.json({ error: "완료된 노트만 내보낼 수 있습니다" }, 409);
-  const path = body.path?.trim() || `StudyWork - ${safeNoteName(context.subject.name)} - ${localDay()}.md`;
+  const path = body.path?.trim() || `Remap - ${safeNoteName(context.subject.name)} - ${localDay()}.md`;
   try {
     const result = vault.writeMarkdown(path, context.note.content, {
       type: "studywork-note",
       tags: ["studywork", "notes"],
       updated: localDay(),
       up: ["[[StudyWork — Personal Study Assistant]]"],
-      source: `StudyWork subject ${c.req.param("id")}`,
+      source: `Remap subject ${c.req.param("id")}`,
     });
     return c.json(result, 201);
   } catch (error) {

@@ -144,7 +144,7 @@ describe("UI i18n", () => {
       await new Promise(resolve => setTimeout(resolve, 0));
     });
     expect(document.documentElement.lang).toBe("en");
-    expect(document.title).toBe("Sign in — StudyWork");
+    expect(document.title).toBe("Sign in — Remap");
     expect(container.textContent).toContain("Create account");
     expect(container.textContent).toContain("简体中文");
     expect(container.querySelector(".single-select-picker input[type='search']")).toBeNull();
