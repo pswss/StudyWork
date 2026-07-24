@@ -58,7 +58,7 @@ describe("앱 주소 이동", () => {
     act(() => root.unmount());
   });
 
-  it("첫 실행에는 로그인 대신 소유자 계정 생성 폼을 연다", async () => {
+  it("첫 실행은 로그인 폼을 열고 회원가입 버튼을 눌러야 계정 생성 폼으로 바뀐다", async () => {
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
@@ -75,9 +75,19 @@ describe("앱 주소 이동", () => {
       root.render(createElement(App));
       await new Promise(resolve => setTimeout(resolve, 0));
     });
-    expect(container.textContent).toContain("계정 만들기");
+    expect(container.textContent).toContain("로그인");
+    expect(container.textContent).toContain("회원가입");
     expect(container.querySelector('input[name="username"]')).not.toBeNull();
-    expect(container.querySelector('input[name="current-password"]')).not.toBeNull();
+    expect(container.querySelector('input[name="current-password"]')).toBeNull();
+    expect(container.querySelector('input[name="password"]')).not.toBeNull();
+    expect(container.querySelector('input[name="password-confirm"]')).toBeNull();
+
+    const signupButton = Array.from(container.querySelectorAll("button"))
+      .find(button => button.textContent?.includes("회원가입"));
+    expect(signupButton).toBeDefined();
+    act(() => signupButton!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+
+    expect(container.textContent).toContain("계정 만들기");
     expect(container.querySelector('input[name="password-confirm"]')).not.toBeNull();
 
     act(() => root.unmount());

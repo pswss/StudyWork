@@ -217,21 +217,10 @@ app.post("/api/signup", async (c) => {
   const body = await c.req.json<{
     username?: unknown;
     password?: unknown;
-    currentPassword?: unknown;
   }>().catch((): {
     username?: unknown;
     password?: unknown;
-    currentPassword?: unknown;
   } => ({}));
-  if (!c.env.APP_PASSWORD) {
-    return c.json({ error: "최초 계정 생성용 서버 설정이 필요합니다" }, 503);
-  }
-  if (
-    typeof body.currentPassword !== "string" ||
-    !safeEqual(body.currentPassword, c.env.APP_PASSWORD)
-  ) {
-    return c.json({ error: "계정 생성 정보를 확인해 주세요" }, 401);
-  }
   if (typeof body.username !== "string" || !validUsername(body.username)) {
     return c.json({ error: "아이디는 한글·영문·숫자·점·밑줄·하이픈으로 3~64자여야 합니다" }, 400);
   }

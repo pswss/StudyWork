@@ -11,15 +11,15 @@ interface Props {
 export default function Login({ ownerExists, onLogin }: Props) {
   const { t } = useI18n();
   const [username, setUsername] = useState("");
-  const [currentPassword, setCurrentPassword] = useState("");
   const [pw, setPw] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [err, setErr] = useState<MessageKey | { text: string } | "">("");
   const [loading, setLoading] = useState(false);
+  const [wantsSignup, setWantsSignup] = useState(false);
   const usernameRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const autoFocusInput = typeof window.matchMedia !== "function" || window.matchMedia("(pointer: fine)").matches;
-  const signupMode = !ownerExists;
+  const signupMode = !ownerExists && wantsSignup;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -33,7 +33,7 @@ export default function Login({ ownerExists, onLogin }: Props) {
     setErr("");
     try {
       const status = signupMode
-        ? await signup(username, pw, currentPassword)
+        ? await signup(username, pw)
         : await login(username, pw);
       onLogin(status);
     } catch (error) {
@@ -85,22 +85,6 @@ export default function Login({ ownerExists, onLogin }: Props) {
                 autoFocus={autoFocusInput}
               />
             </div>
-            {signupMode && (
-              <div className="field">
-                <label className="field-index" htmlFor="signup-current-password">{t("shell.login.currentPassword")}</label>
-                <input
-                  id="signup-current-password"
-                  name="current-password"
-                  type="password"
-                  value={currentPassword}
-                  onChange={event => setCurrentPassword(event.target.value)}
-                  autoComplete="current-password"
-                  required
-                  aria-invalid={Boolean(err)}
-                  aria-describedby={err ? "login-error" : undefined}
-                />
-              </div>
-            )}
             <div className="field">
               <label className="field-index" htmlFor="login-password">
                 {signupMode ? t("shell.login.newPassword") : t("shell.login.password")}
@@ -144,16 +128,34 @@ export default function Login({ ownerExists, onLogin }: Props) {
               {typeof err === "string" ? t(err) : err.text}
             </p>
           )}
-          <button
-            type="submit"
-            className="btn primary login-btn"
-            disabled={loading}
-          >
-            {loading
-              ? (signupMode ? t("shell.login.creating") : t("shell.login.opening"))
-              : (signupMode ? t("shell.login.createAccount") : t("shell.login.signIn"))}
-            <span className="btn-arrow" aria-hidden="true">↗</span>
-          </button>
+          <div className="login-actions">
+            <button
+              type="submit"
+              className="btn primary login-btn"
+              disabled={loading}
+            >
+              {loading
+                ? (signupMode ? t("shell.login.creating") : t("shell.login.opening"))
+                : (signupMode ? t("shell.login.createAccount") : t("shell.login.signIn"))}
+              <span className="btn-arrow" aria-hidden="true">↗</span>
+            </button>
+            {!ownerExists && (
+              <button
+                type="button"
+                className="btn login-btn"
+                disabled={loading}
+                onClick={() => {
+                  setWantsSignup(value => !value);
+                  setPw("");
+                  setConfirmation("");
+                  setErr("");
+                  passwordRef.current?.focus();
+                }}
+              >
+                {signupMode ? t("shell.login.signIn") : t("shell.login.signUp")}
+              </button>
+            )}
+          </div>
         </form>
       </div>
     </div>

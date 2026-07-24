@@ -49,10 +49,6 @@ if (
 mkdirSync(DATA_DIR, { recursive: true });
 const migrationsDir = resolve(import.meta.dirname, "..", "migrations");
 const db = new LocalDB(join(DATA_DIR, "studywork.db"), { migrationsDir });
-const ownerConfigured = await db.prepare("SELECT id FROM users WHERE id = 1").first();
-if (!APP_PASSWORD && !ownerConfigured) {
-  console.warn("APP_PASSWORD가 없어 최초 소유자 계정 생성을 사용할 수 없습니다.");
-}
 const files = new FileStore(join(DATA_DIR, "files"));
 configureAISettings(db);
 

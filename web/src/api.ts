@@ -13,8 +13,6 @@ const SERVER_ERROR_KEYS: Record<string, MessageKey> = {
   "인증 요청이 너무 큽니다": "api.error.authBodyTooLarge",
   "가입 시도 초과 — 잠시 후 다시 시도해 주세요": "api.error.signupRate",
   "이미 소유자 계정이 설정되었습니다": "api.error.ownerExists",
-  "최초 계정 생성용 서버 설정이 필요합니다": "api.error.bootstrapMissing",
-  "계정 생성 정보를 확인해 주세요": "api.error.signupInvalid",
   "아이디는 한글·영문·숫자·점·밑줄·하이픈으로 3~64자여야 합니다": "api.error.usernameInvalid",
   "비밀번호는 10~128자로 입력해 주세요": "api.error.passwordInvalid",
   "로그인 시도 초과 — 잠시 후 다시 시도해 주세요": "api.error.loginRate",
@@ -82,8 +80,8 @@ export interface AuthStatus {
 export async function authStatus(): Promise<AuthStatus> {
   return req<AuthStatus>("GET", "/api/auth/status");
 }
-export async function signup(username: string, password: string, currentPassword: string): Promise<AuthStatus> {
-  return req<AuthStatus>("POST", "/api/signup", { username, password, currentPassword });
+export async function signup(username: string, password: string): Promise<AuthStatus> {
+  return req<AuthStatus>("POST", "/api/signup", { username, password });
 }
 export async function login(username: string, password?: string): Promise<AuthStatus> {
   return password === undefined

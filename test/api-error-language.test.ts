@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { login, subjects } from "../web/src/api";
+import { login, signup, subjects } from "../web/src/api";
 import { LOCALE_STORAGE_KEY } from "../web/src/i18n";
 
 const storedValues = new Map<string, string>();
@@ -23,6 +23,23 @@ afterEach(() => {
 });
 
 describe("API 오류 문구", () => {
+  it("첫 계정 생성은 아이디와 새 비밀번호만 전송한다", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ownerExists: true,
+      authenticated: true,
+      authKind: "owner",
+      username: "owner",
+    }), { status: 201, headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await signup("owner", "new-password");
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/signup", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ username: "owner", password: "new-password" }),
+    }));
+  });
+
   it("본문 없는 서버 오류도 사용자가 복구할 수 있는 말로 보여 준다", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 500 })));
 

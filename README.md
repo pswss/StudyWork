@@ -178,7 +178,7 @@ docs/superpowers/ specs(설계서·UI 목업), plans(구현 계획 3개)
 | 메서드·경로 | 요청 | 응답 |
 |---|---|---|
 | GET /api/auth/status | | `{ownerExists,authenticated,authKind,username?}` + `Cache-Control: no-store` |
-| POST /api/signup | `{username,password,currentPassword}` | 최초 소유자만 201. 비밀번호는 scrypt N=32768,r=8,p=3으로 저장 |
+| POST /api/signup | `{username,password}` | 새 설치의 최초 소유자만 201. 비밀번호는 scrypt N=32768,r=8,p=3으로 저장 |
 | POST /api/login | 계정 전 `{password}`, 계정 후 `{username,password}` | 200 + HttpOnly·SameSite=Strict 세션. HTTPS 전용 모드는 Secure `__Host-sw_token` |
 | POST /api/logout | | 세션 버전을 올려 발급된 소유자 토큰을 즉시 무효화하고 쿠키 삭제 |
 | GET /api/subjects | | `[{id,name,color,material_count,created_at}]` |

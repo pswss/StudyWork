@@ -6,8 +6,8 @@ import { call, makeEnv } from "./helpers";
 const credentials = {
   username: "owner_01",
   password: "correct horse battery staple",
-  currentPassword: "test-password",
 };
+const legacyPassword = "test-password";
 
 function post(env: ReturnType<typeof makeEnv>, path: string, body?: unknown, cookie?: string) {
   return call(env, path, {
@@ -39,7 +39,7 @@ function requestAt(
 describe("auth", () => {
   it("계정이 없을 때만 기존 APP_PASSWORD 로그인을 허용한다", async () => {
     const env = makeEnv();
-    const login = await post(env, "/api/login", { password: "test-password" });
+    const login = await post(env, "/api/login", { password: legacyPassword });
     expect(login.status).toBe(200);
 
     const cookie = cookieOf(login);
@@ -48,23 +48,12 @@ describe("auth", () => {
     const signup = await post(env, "/api/signup", credentials);
     expect(signup.status).toBe(201);
     expect((await call(env, "/api/subjects", { headers: { cookie } })).status).toBe(401);
-    expect((await post(env, "/api/login", { password: "test-password" })).status).toBe(401);
+    expect((await post(env, "/api/login", { password: legacyPassword })).status).toBe(401);
   });
 
-  it("첫 소유자만 만들고 비밀번호는 salt가 있는 scrypt 해시로만 저장한다", async () => {
+  it("서버 비밀번호가 없는 새 설치에서도 첫 소유자를 만들고 scrypt 해시만 저장한다", async () => {
     const env = makeEnv();
-    const missingBootstrap = await post(env, "/api/signup", {
-      username: credentials.username,
-      password: credentials.password,
-    });
-    const wrongBootstrap = await post(env, "/api/signup", {
-      ...credentials,
-      currentPassword: "wrong bootstrap password",
-    });
-    expect(missingBootstrap.status).toBe(401);
-    expect(wrongBootstrap.status).toBe(401);
-    expect(await missingBootstrap.json()).toEqual(await wrongBootstrap.json());
-
+    delete env.APP_PASSWORD;
     const signup = await post(env, "/api/signup", credentials);
     expect(signup.status).toBe(201);
     expect(signup.headers.get("set-cookie")).toContain("HttpOnly");
@@ -188,21 +177,11 @@ describe("auth", () => {
     expect((await post(env, "/api/signup", {
       username: "a b",
       password: credentials.password,
-      currentPassword: credentials.currentPassword,
     })).status).toBe(400);
     expect((await post(env, "/api/signup", {
       username: credentials.username,
       password: "short",
-      currentPassword: credentials.currentPassword,
     })).status).toBe(400);
-  });
-
-  it("최초 계정 생성용 APP_PASSWORD가 없으면 가입을 열지 않는다", async () => {
-    const env = makeEnv();
-    delete env.APP_PASSWORD;
-    const response = await post(env, "/api/signup", credentials);
-    expect(response.status).toBe(503);
-    expect((await env.DB.prepare("SELECT count(*) AS n FROM users").first<{ n: number }>())?.n).toBe(0);
   });
 
   it("실패한 로그인은 IP별 분당 5회 뒤 제한한다", async () => {
@@ -211,6 +190,17 @@ describe("auth", () => {
       expect((await post(env, "/api/login", { password: "wrong" })).status).toBe(401);
     }
     expect((await post(env, "/api/login", { password: "wrong" })).status).toBe(429);
+  });
+
+  it("실패한 가입도 IP별 분당 5회 뒤 제한한다", async () => {
+    const env = makeEnv();
+    for (let i = 0; i < 5; i++) {
+      expect((await post(env, "/api/signup", {
+        username: "x",
+        password: credentials.password,
+      })).status).toBe(400);
+    }
+    expect((await post(env, "/api/signup", credentials)).status).toBe(429);
   });
 
   it("인증 본문은 4KiB를 넘길 수 없다", async () => {
@@ -225,15 +215,16 @@ describe("auth", () => {
 
   it("브라우저의 교차 출처 인증 요청을 거부한다", async () => {
     const env = makeEnv();
-    const hostile = await call(env, "/api/login", {
+    const hostile = await call(env, "/api/signup", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         origin: "https://evil.example",
       },
-      body: JSON.stringify({ password: credentials.currentPassword }),
+      body: JSON.stringify(credentials),
     });
     expect(hostile.status).toBe(403);
+    expect((await env.DB.prepare("SELECT count(*) AS n FROM users").first<{ n: number }>())?.n).toBe(0);
 
     const crossSite = await call(env, "/api/login", {
       method: "POST",
@@ -241,7 +232,7 @@ describe("auth", () => {
         "content-type": "application/json",
         "sec-fetch-site": "cross-site",
       },
-      body: JSON.stringify({ password: credentials.currentPassword }),
+      body: JSON.stringify({ password: legacyPassword }),
     });
     expect(crossSite.status).toBe(403);
 
@@ -252,7 +243,7 @@ describe("auth", () => {
         origin: "https://x",
         "sec-fetch-site": "same-origin",
       },
-      body: JSON.stringify({ password: credentials.currentPassword }),
+      body: JSON.stringify({ password: legacyPassword }),
     });
     expect(sameOrigin.status).toBe(200);
   });
@@ -288,7 +279,7 @@ describe("auth", () => {
     const spoofed = await requestAt(makeEnv(), "http://127.0.0.1/api/login", {
       method: "POST",
       headers: proxyHeaders,
-      body: JSON.stringify({ password: credentials.currentPassword }),
+      body: JSON.stringify({ password: legacyPassword }),
     }, "100.64.0.8");
     expect(spoofed.status).toBe(403);
 

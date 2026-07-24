@@ -145,7 +145,7 @@ describe("UI i18n", () => {
     });
     expect(document.documentElement.lang).toBe("en");
     expect(document.title).toBe("Sign in — Remap");
-    expect(container.textContent).toContain("Create account");
+    expect(container.textContent).toContain("Sign up");
     expect(container.textContent).toContain("简体中文");
     expect(container.querySelector(".single-select-picker input[type='search']")).toBeNull();
   });

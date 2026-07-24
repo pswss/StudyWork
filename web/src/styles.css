@@ -212,6 +212,7 @@ nav {
 }
 .field input::placeholder { color: var(--ink-3); letter-spacing: .12em; }
 .field input[type="text"] { letter-spacing: .02em; }
+.login-actions { display: flex; align-items: center; gap: 10px; }
 .login-btn { margin-top: 28px; padding: 14px 30px; font-size: 13px; }
 .err { color: var(--bad); font-size: 13px; margin-top: 14px; letter-spacing: .02em; }
 .nav-account { display: flex; align-items: center; gap: 14px; }
