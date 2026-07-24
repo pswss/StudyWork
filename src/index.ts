@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { secureHeaders } from "hono/secure-headers";
 import { isIP } from "node:net";
 import {
   authenticatedSession,
@@ -37,6 +38,7 @@ export type Env = {
   APP_PASSWORD?: string;
   AUTH_SECRET: string;
   HTTPS_ONLY?: boolean;
+  SIGNUP_ENABLED?: boolean;
   incoming?: { socket?: { remoteAddress?: string } };
   OBSIDIAN?: ObsidianVault;
   OBSIDIAN_ERROR?: string;
@@ -46,6 +48,7 @@ export type Env = {
 const app = new Hono<{ Bindings: Env }>();
 type AppContext = Context<{ Bindings: Env }>;
 
+app.use("*", secureHeaders({ xFrameOptions: "DENY" }));
 app.get("/api/health", (c) => c.json({ ok: true }));
 
 const AUTH_WINDOW_MS = 60_000;
@@ -212,6 +215,9 @@ app.post("/api/signup", async (c) => {
   }
   if (await owner(c)) {
     return c.json({ error: "이미 소유자 계정이 설정되었습니다" }, 409);
+  }
+  if (c.env.HTTPS_ONLY && !c.env.SIGNUP_ENABLED) {
+    return c.json({ error: "HTTPS 공개 모드에서는 첫 가입이 잠겨 있습니다" }, 403);
   }
 
   const body = await c.req.json<{

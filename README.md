@@ -133,6 +133,8 @@ REMAP은 사용자 전역 `~/.codex/skills`에서 표준 `SKILL.md`를 발견하
 - 로컬 개발: `STUDYWORK_HTTPS_ONLY=false`에서 <http://localhost:8787>. 평문 LAN 주소에는 계정 비밀번호를 입력하지 않는다.
 - 실제 로그인: `.env`의 `STUDYWORK_HTTPS_ONLY=true` 설정 후 Tailscale Serve 같은 루프백 HTTPS 프록시를 `http://127.0.0.1:8787` upstream으로 연결한다. 이 모드에서는 서버가 127.0.0.1에만 바인딩하고, 프록시가 전달한 HTTPS가 아니면 API를 거부한다.
 - Tailscale Serve 예: `tailscale serve --bg http://127.0.0.1:8787` 후 `tailscale serve status`에 표시된 `https://...ts.net` 주소로 접속한다. 직접 Tailscale IP·8787 포트는 열리지 않는다.
+- 개인용 인터넷 공개: 소유자 계정을 먼저 만들고 `STUDYWORK_SIGNUP_ENABLED=false`를 확인한 뒤 `tailscale funnel --bg --yes http://127.0.0.1:8787`을 실행한다. 같은 HTTPS 주소가 인터넷에서도 열리며 AI는 계속 이 맥의 저장된 ChatGPT/Codex 로그인을 사용한다. `tailscale funnel --https=443 off`로 공개를 끈다.
+- Funnel은 **본인 단독 접속용**이다. 보호 API는 REMAP 소유자 로그인 뒤에서만 열리지만 URL 자체는 전 인터넷에 노출된다. 제3자의 AI 요청을 개인 ChatGPT/Codex 계정으로 중계하지 않는다.
 - iOS/iPadOS: Safari 공유 → "홈 화면에 추가"로 앱처럼 사용
 - 제약: **맥이 켜져 있고 서버가 실행 중**이어야 함. 데이터 원본이 서버 한 곳이므로 기기 간 동기화는 자동
 

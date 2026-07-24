@@ -37,6 +37,14 @@ function requestAt(
 }
 
 describe("auth", () => {
+  it("공개 응답에 기본 보안 헤더를 붙인다", async () => {
+    const response = await call(makeEnv(), "/api/health");
+    expect(response.headers.get("strict-transport-security")).toContain("max-age=");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
   it("계정이 없을 때만 기존 APP_PASSWORD 로그인을 허용한다", async () => {
     const env = makeEnv();
     const login = await post(env, "/api/login", { password: legacyPassword });
@@ -73,6 +81,31 @@ describe("auth", () => {
     });
     expect(duplicate.status).toBe(409);
     expect((await env.DB.prepare("SELECT count(*) AS n FROM users").first<{ n: number }>())?.n).toBe(1);
+  });
+
+  it("HTTPS 공개 모드는 명시적으로 열지 않은 첫 가입을 막는다", async () => {
+    const env = makeEnv();
+    env.HTTPS_ONLY = true;
+    const headers = {
+      "content-type": "application/json",
+      origin: "https://remap.example.ts.net",
+      "x-forwarded-host": "remap.example.ts.net",
+      "x-forwarded-proto": "https",
+    };
+    const locked = await requestAt(env, "http://127.0.0.1/api/signup", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(credentials),
+    }, "127.0.0.1");
+    expect(locked.status).toBe(403);
+
+    env.SIGNUP_ENABLED = true;
+    const enabled = await requestAt(env, "http://127.0.0.1/api/signup", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(credentials),
+    }, "127.0.0.1");
+    expect(enabled.status).toBe(201);
   });
 
   it("동시에 가입해도 단일 소유자만 생성한다", async () => {
@@ -251,6 +284,7 @@ describe("auth", () => {
   it("루프백 HTTPS 프록시만 전달 헤더를 신뢰하고 __Host 쿠키를 발급한다", async () => {
     const env = makeEnv();
     env.HTTPS_ONLY = true;
+    env.SIGNUP_ENABLED = true;
     const proxyHeaders = {
       "content-type": "application/json",
       origin: "https://studywork.example.ts.net",

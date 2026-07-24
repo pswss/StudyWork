@@ -27,6 +27,7 @@ const DATA_DIR = resolve(process.env.DATA_DIR ?? "./data");
 const APP_PASSWORD = process.env.APP_PASSWORD || undefined;
 const AUTH_SECRET = process.env.AUTH_SECRET;
 const HTTPS_ONLY = process.env.STUDYWORK_HTTPS_ONLY === "true";
+const SIGNUP_ENABLED = process.env.STUDYWORK_SIGNUP_ENABLED === "true";
 const OBSIDIAN_VAULT_PATH = process.env.OBSIDIAN_VAULT_PATH?.trim();
 const OBSIDIAN_WRITE_ENABLED = process.env.OBSIDIAN_WRITE_ENABLED === "true";
 
@@ -79,6 +80,7 @@ const env: Env = {
   ...(APP_PASSWORD ? { APP_PASSWORD } : {}),
   AUTH_SECRET,
   HTTPS_ONLY,
+  SIGNUP_ENABLED,
   ...(obsidian ? { OBSIDIAN: obsidian } : {}),
   ...(obsidianError ? { OBSIDIAN_ERROR: obsidianError } : {}),
   OBSIDIAN_WRITE_ENABLED,
