@@ -762,6 +762,9 @@ async function processFile(
     if (!alive) return;
     // alive 조회를 기다리는 동안 취소가 들어올 수 있으므로 교체 직전에 다시 확인한다.
     if (!isCurrentJob(job)) return;
+    const figureBackfill = await env.DB.prepare(
+      "SELECT id FROM materials WHERE book_id = ? AND figure_backfill_pending = 1"
+    ).bind(bookId).first<{ id: number }>() !== null;
 
     // 재추출 전 기존 문제는 계속 제공한다. 새 결과가 완성된 지금 안정키(페이지+정규화 지문)로
     // 같은 행을 갱신해야 question_attempts FK와 학습 이력이 유지된다.
@@ -816,6 +819,28 @@ async function processFile(
       const answer = normalizeAnswer(it.answer);
       const answerCompatible = previous?.qtype === it.qtype
         && gradeAnswer(it.qtype, previous.answer, answer, previous.choices);
+      // 그림 설명 backfill은 기존 문제 집합을 절대 재구성하지 않는다.
+      // AI 재추출은 문구·범위가 흔들릴 수 있으므로 안전하게 매칭된 행의 그림 근거만 보수적으로 병합한다.
+      if (figureBackfill) {
+        if (!previous || !answerCompatible) return env.DB.prepare("SELECT 1");
+        matchedIds.add(previous.id);
+        return env.DB.prepare(
+          `UPDATE questions
+           SET has_figure = CASE WHEN ? = 1 THEN 1 ELSE has_figure END,
+               figure_description = CASE
+                 WHEN ? = 1 AND length(trim(COALESCE(?, ''))) > 0 THEN ?
+                 ELSE figure_description
+               END,
+               figure_box = CASE WHEN ? = 1 AND ? IS NOT NULL THEN ? ELSE figure_box END
+           WHERE id = ?
+             AND EXISTS (SELECT 1 FROM book_files WHERE id = ? AND status = 'processing')`
+        ).bind(
+          it.figure ? 1 : 0,
+          it.figure ? 1 : 0, it.figure_description, it.figure_description,
+          it.figure ? 1 : 0, it.box ? it.box.join(",") : null, it.box ? it.box.join(",") : null,
+          previous.id, fileId
+        );
+      }
       if (
         previous && (previous.correct_count > 0 || previous.wrong_count > 0 || previous.attempt_count > 0)
         && !answerCompatible
@@ -865,12 +890,12 @@ async function processFile(
     const protectedUnmatched = unmatched.find(
       (question) => question.correct_count > 0 || question.wrong_count > 0 || question.attempt_count > 0
     );
-    if (protectedUnmatched) {
+    if (protectedUnmatched && !figureBackfill) {
       throw new ProtectedQuestionConflictError(
         `학습 이력이 있는 ${protectedUnmatched.book_number ?? protectedUnmatched.id}번 문항을 새 추출에서 찾지 못했습니다`
       );
     }
-    if (unmatched.length > 0) {
+    if (!figureBackfill && unmatched.length > 0) {
       const placeholders = unmatched.map(() => "?").join(",");
       statements.push(
         env.DB.prepare(

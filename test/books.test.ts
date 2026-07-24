@@ -2146,84 +2146,127 @@ describe("통합 업로드 라우팅 (자료 사이드바)", () => {
     }
   });
 
-  it("추출 범위에서 빠진 학습 문항은 자동 backfill을 비파괴 종료하고 반복하지 않음", async () => {
+  it("자동 backfill은 기존 문항 집합을 보존하고 매칭된 그림 근거만 원자 반영", async () => {
     const material = await createReadyMaterial("학습문항-백필충돌");
     try {
       const started = await startMaterialToBook(env, material.id);
       if ("error" in started) throw new Error(started.error);
       await waitMatBook(material.id, "ready");
-      const protectedQuestion = (await questionsOf(started.bookId))[0];
+      const before = await questionsOf(started.bookId);
+      const matchedQuestion = before[0];
+      const protectedQuestion = before[1];
+      const staleQuestion = before[2];
       await env.DB.prepare(
         `UPDATE questions
          SET question = '[예1] 기존 개념 예제', printed_number = NULL, book_number = '4', wrong_count = 1
          WHERE id = ?`
       ).bind(protectedQuestion.id).run();
       await env.DB.prepare(
+        "UPDATE questions SET question = '[폐기] 이력 없는 구 문항', printed_number = NULL WHERE id = ?"
+      ).bind(staleQuestion.id).run();
+      await env.DB.prepare(
+        "UPDATE questions SET figure_description = NULL WHERE id = ?"
+      ).bind(matchedQuestion.id).run();
+      await env.DB.prepare(
         "INSERT INTO question_attempts (question_id, attempt_id, correct) VALUES (?, ?, 0)"
       ).bind(protectedQuestion.id, `백필-보존-${Date.now()}`).run();
       await env.DB.prepare(
         `UPDATE materials
          SET pending_to_book = 1, figure_backfill_pending = 1,
-             integrity_warning = '페이지 근거 불완전: 1/1쪽'
+             integrity_warning = '자동 문제 보강 건너뜀: 학습 기록이 있는 기존 문항이 현재 추출 범위와 달라 기존 문제와 기록을 보존했습니다. · 페이지 근거 불완전: 1/1쪽'
          WHERE id = ?`
       ).bind(material.id).run();
 
       const callsBefore = mockState.problemCalls;
       await retryPendingToBook(env);
-      let parked: Record<string, unknown> | null = null;
+      let completed: Record<string, unknown> | null = null;
       for (let i = 0; i < 200; i++) {
-        parked = await env.DB.prepare(
+        completed = await env.DB.prepare(
           `SELECT m.pending_to_book, m.figure_backfill_pending, m.book_processing, m.integrity_warning,
                   bf.status AS book_status, bf.error AS book_error
            FROM materials m JOIN book_files bf ON bf.book_id = m.book_id
            WHERE m.id = ?`
         ).bind(material.id).first<Record<string, unknown>>();
-        if (parked?.pending_to_book === 0 && parked.book_processing === 0) break;
+        if (
+          completed?.pending_to_book === 0
+          && completed.figure_backfill_pending === 0
+          && completed.book_processing === 0
+        ) break;
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
-      expect(parked).toMatchObject({
+      expect(completed).toMatchObject({
         pending_to_book: 0,
-        figure_backfill_pending: 1,
+        figure_backfill_pending: 0,
         book_processing: 0,
         book_status: "ready",
         book_error: null,
+        integrity_warning: "페이지 근거 불완전: 1/1쪽",
       });
-      expect(String(parked?.integrity_warning)).toContain("자동 문제 보강 건너뜀");
-      expect(String(parked?.integrity_warning)).toContain("페이지 근거 불완전");
-      expect((await questionsOf(started.bookId)).find((question) => question.id === protectedQuestion.id))
+      const after = await questionsOf(started.bookId);
+      expect(after.find((question) => question.id === protectedQuestion.id))
         .toMatchObject({ question: "[예1] 기존 개념 예제", wrong_count: 1 });
+      expect(after.find((question) => question.id === matchedQuestion.id)).toBeTruthy();
+      expect(after.find((question) => question.id === staleQuestion.id))
+        .toMatchObject({ question: "[폐기] 이력 없는 구 문항" });
+      const freshFigure = after.find(
+        (question) => question.id !== protectedQuestion.id && question.question.includes("꼭짓점")
+      );
+      expect(freshFigure).toMatchObject({
+        has_figure: 1,
+        figure_description: expect.stringContaining("좌표평면"),
+        question: matchedQuestion.question,
+        answer: matchedQuestion.answer,
+      });
+      expect(after.map((question) => question.id).sort((a, b) => a - b))
+        .toEqual(before.map((question) => question.id).sort((a, b) => a - b));
       expect(await env.DB.prepare(
         "SELECT COUNT(*) AS n FROM question_attempts WHERE question_id = ?"
       ).bind(protectedQuestion.id).first()).toEqual({ n: 1 });
-
-      await retryPendingToBook(env);
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(await env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM questions
+         WHERE src_file_id = ? AND has_figure = 1
+           AND length(trim(COALESCE(figure_description, ''))) = 0`
+      ).bind(started.fileId).first()).toEqual({ n: 0 });
       expect(mockState.problemCalls).toBe(callsBefore + 1);
 
-      expect((await call(env, `/api/book-files/${started.fileId}/retry`, {
-        method: "POST",
-        headers: { cookie },
-      })).status).toBe(200);
-      const failed = await waitMatBook(material.id, "error");
-      expect(failed.book_error).toContain("학습 이력이 있는 4번 문항");
-      expect(failed.book_error).toContain("그대로 보존했습니다");
-      expect(await env.DB.prepare(
-        "SELECT pending_to_book FROM materials WHERE id = ?"
-      ).bind(material.id).first()).toEqual({ pending_to_book: 0 });
-
+      // backfill 중 AI가 정답을 다르게 읽어도 기존 정답·학습 기록은 건드리지 않는다.
+      await env.DB.prepare("UPDATE questions SET wrong_count = 1 WHERE id = ?")
+        .bind(freshFigure.id).run();
       await env.DB.prepare(
-        "UPDATE questions SET question = ?, printed_number = '1', book_number = '1' WHERE id = ?"
-      ).bind(protectedQuestion.question, protectedQuestion.id).run();
-      expect((await call(env, `/api/book-files/${started.fileId}/retry`, {
-        method: "POST",
-        headers: { cookie },
-      })).status).toBe(200);
-      const recovered = await waitMatBook(material.id, "ready");
-      expect(recovered.integrity_warning).toBe("페이지 근거 불완전: 1/1쪽");
-      expect(await env.DB.prepare(
-        "SELECT pending_to_book, figure_backfill_pending FROM materials WHERE id = ?"
-      ).bind(material.id).first()).toEqual({ pending_to_book: 0, figure_backfill_pending: 0 });
+        "UPDATE materials SET pending_to_book = 1, figure_backfill_pending = 1 WHERE id = ?"
+      ).bind(material.id).run();
+      mockState.changedAnswerMode = true;
+      await retryPendingToBook(env);
+      let rerun: Record<string, unknown> | null = null;
+      for (let i = 0; i < 200; i++) {
+        rerun = await env.DB.prepare(
+          `SELECT m.pending_to_book, m.figure_backfill_pending, m.book_processing, m.integrity_warning,
+                  bf.status AS book_status
+           FROM materials m JOIN book_files bf ON bf.book_id = m.book_id
+           WHERE m.id = ?`
+        ).bind(material.id).first<Record<string, unknown>>();
+        if (
+          rerun?.pending_to_book === 0
+          && rerun.figure_backfill_pending === 0
+          && rerun.book_processing === 0
+        ) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(rerun).toMatchObject({
+        pending_to_book: 0,
+        figure_backfill_pending: 0,
+        book_processing: 0,
+        book_status: "ready",
+      });
+      expect((await questionsOf(started.bookId)).find((question) => question.id === freshFigure.id))
+        .toMatchObject({ answer: "3", wrong_count: 1 });
+
+      const callsAfterConflict = mockState.problemCalls;
+      await retryPendingToBook(env);
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(mockState.problemCalls).toBe(callsAfterConflict);
     } finally {
+      mockState.changedAnswerMode = false;
       await call(env, `/api/materials/${material.id}`, { method: "DELETE", headers: { cookie } });
       await env.FILES.delete(material.key);
     }
