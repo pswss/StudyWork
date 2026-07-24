@@ -153,6 +153,23 @@ $$\frac{f(3)}{g(3)}=2\Rightarrow g(3)=2,
     }
   });
 
+  it("닫히지 않은 display 수식을 코드 폴백으로 격리하고 정상 수식은 계속 렌더한다", () => {
+    const html = mdHtml(String.raw`정상 수식 $x^2+1$ 뒤의 깨진 해설
+$$\frac{f(3)}{g(3)}=2\Rightarrow g(3)=2`);
+
+    expect(html).toContain('class="katex"');
+    expect(html.match(/<math/g)).toHaveLength(1);
+    expect(html).toContain('<code class="math-fallback">$$\\frac{f(3)}{g(3)}=2\\Rightarrow g(3)=2</code>');
+    expect(html).not.toContain("katex-error");
+  });
+
+  it("delimiter는 맞지만 괄호가 깨진 TeX도 빨간 KaTeX 원문 대신 코드 폴백으로 표시한다", () => {
+    const html = mdHtml(String.raw`계산 결과 $\frac{1}{$`);
+
+    expect(html).toContain('<code class="math-fallback">\\frac{1}{</code>');
+    expect(html).not.toContain("katex-error");
+  });
+
   it("앱과 HTML 저장이 실제 KaTeX 루트에 같은 공식 박스·간격 selector를 가진다", () => {
     const appCss = readFileSync("web/src/styles.css", "utf8");
     // 노트 HTML 다운로드 인라인 스타일은 NotesPanel(구 SubjectDetail)에 있다

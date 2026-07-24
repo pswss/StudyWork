@@ -48,6 +48,96 @@ function hangulToText(t: string): string {
   return t.replace(/[가-힣](?:[가-힣0-9·,\s]*[가-힣0-9])?/g, (m) => `\\text{${m}}`);
 }
 
+function isEscapedAt(text: string, index: number): boolean {
+  let slashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor--) slashCount++;
+  return slashCount % 2 === 1;
+}
+
+function findUnescaped(text: string, delimiter: string, start: number, end = text.length): number {
+  let index = text.indexOf(delimiter, start);
+  while (index >= 0 && index < end) {
+    if (!isEscapedAt(text, index)) return index;
+    index = text.indexOf(delimiter, index + delimiter.length);
+  }
+  return -1;
+}
+
+function paragraphEnd(text: string, start: number): number {
+  const rest = text.slice(start);
+  const blankLine = /\r?\n[ \t]*\r?\n/.exec(rest);
+  return blankLine ? start + blankLine.index : text.length;
+}
+
+/**
+ * marked-katex가 인식하지 못하는 불균형 delimiter를 미리 격리한다.
+ * 그대로 두면 뒤의 맨몸 수식 보정이 `$`를 더 붙여 원문 TeX가 학습 본문에 노출된다.
+ */
+function protectUnbalancedMath(
+  text: string,
+  fallback: (source: string) => string,
+): string {
+  let output = "";
+  let index = 0;
+
+  while (index < text.length) {
+    if (!isEscapedAt(text, index) && text.startsWith("$$", index)) {
+      const close = findUnescaped(text, "$$", index + 2);
+      if (close >= 0) {
+        output += text.slice(index, close + 2);
+        index = close + 2;
+        continue;
+      }
+      const end = paragraphEnd(text, index + 2);
+      output += fallback(text.slice(index, end));
+      index = end;
+      continue;
+    }
+
+    if (!isEscapedAt(text, index) && text[index] === "$") {
+      const lineEnd = text.indexOf("\n", index + 1);
+      const end = lineEnd >= 0 ? lineEnd : text.length;
+      const close = findUnescaped(text, "$", index + 1, end);
+      if (close >= 0) {
+        output += text.slice(index, close + 1);
+        index = close + 1;
+        continue;
+      }
+      const candidate = text.slice(index + 1, end);
+      if (/\\[A-Za-z]+|[_^{}]/.test(candidate)) {
+        output += fallback(text.slice(index, end));
+        index = end;
+        continue;
+      }
+    }
+
+    const openDelimiter = text.startsWith("\\[", index)
+      ? "\\["
+      : text.startsWith("\\(", index)
+        ? "\\("
+        : null;
+    if (openDelimiter) {
+      const nextLine = text.indexOf("\n", index + 2);
+      const end = openDelimiter === "\\["
+        ? paragraphEnd(text, index + 2)
+        : nextLine >= 0 ? nextLine : text.length;
+      output += fallback(text.slice(index, end));
+      index = end;
+      continue;
+    }
+    if (text.startsWith("\\]", index) || text.startsWith("\\)", index)) {
+      output += fallback(text.slice(index, index + 2));
+      index += 2;
+      continue;
+    }
+
+    output += text[index];
+    index++;
+  }
+
+  return output;
+}
+
 // 맨몸 수식 런을 찾아 $로 감싼다 — 정규식 대신 괄호 깊이를 아는 스캐너.
 // \sqrt{(n에 대한 이차식)}처럼 괄호 안에 한글이 섞여도 여는 괄호가 닫힐 때까지 한 식으로 본다
 // (정규식 문자 클래스는 한글에서 런을 끊어 미완성 조각이 감싸지며 KaTeX 에러가 났음)
@@ -80,6 +170,12 @@ function wrapBareMath(seg: string): string {
   return out;
 }
 export function normalizeMath(src: string): string {
+  const fallbacks: string[] = [];
+  const protect = (source: string) => {
+    const marker = `\uE000${fallbacks.length}\uE001`;
+    fallbacks.push(source);
+    return marker;
+  };
   // 1패스: \(...\)·\[...\] → $ 델리미터 (코드 보호)
   const converted = src
     .split(/(```[\s\S]*?```|`[^`\n]*`)/g)
@@ -94,10 +190,14 @@ export function normalizeMath(src: string): string {
             .replace(/\$\$([\s\S]*?)\$\$/g, (_, m: string) => `$$${m.replace(/\r?\n/g, " ")}$$`)
     )
     .join("");
+  const balanced = converted
+    .split(/(```[\s\S]*?```|`[^`\n]*`)/g)
+    .map((seg, i) => i % 2 === 1 ? seg : protectUnbalancedMath(seg, protect))
+    .join("");
   // 2패스: 코드·$수식$ 밖에 남은 맨몸 수식을 $로 감싼다 (1패스 결과 재감쌈 방지를 위해 분리 실행)
   // ponytail: \명령 또는 ^/_ 포함 ASCII 토큰 연쇄를 수식으로 간주 — 한글 문자에서 끊기므로 국문 본문에선 안전.
   // 영문 산문 사이 수식은 이웃 단어까지 묶일 수 있고 snake_case도 수식으로 오인함 — 문제되면 트리거 정제 필요
-  return converted
+  const wrapped = balanced
     .split(/(```[\s\S]*?```|`[^`\n]*`|\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g)
     .map((seg, i) => {
       if (i % 2 === 1) {
@@ -107,6 +207,14 @@ export function normalizeMath(src: string): string {
       return wrapBareMath(seg);
     })
     .join("");
+  return fallbacks.reduce(
+    (result, source, index) => result.replaceAll(
+      `\uE000${index}\uE001`,
+      // dollar를 entity로 넘겨 marked-katex가 폴백 안의 불균형 delimiter를 다시 토큰화하지 않게 한다.
+      `<code class="math-fallback">${escapeHtmlText(source).replace(/\$/g, "&#36;")}</code>`,
+    ),
+    wrapped,
+  );
 }
 
 // **$수식$** — 수식을 통째로 감싼 볼드는 fixCjkBold의 수식 보호 때문에 짝이 안 맞으니 여기서 먼저 변환
@@ -143,9 +251,15 @@ export function escapeHtmlText(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
-const renderBlockHtml = (text: string) => sanitizeHtml(marked.parse(pre(text)) as string);
-const renderInlineHtml = (text: string) => sanitizeHtml(marked.parseInline(pre(text)) as string);
-const renderControlInlineHtml = (text: string) => DOMPurify.sanitize(marked.parseInline(pre(text)) as string, {
+// delimiter는 맞지만 TeX 문법이 깨진 경우 marked-katex의 빨간 원문 대신 명시적인 코드 폴백으로 보존한다.
+const fallbackKatexErrors = (html: string) => html.replace(
+  /<span class="[^"]*\bkatex-error\b[^"]*"[^>]*>([\s\S]*?)<\/span>/g,
+  '<code class="math-fallback">$1</code>',
+);
+
+const renderBlockHtml = (text: string) => sanitizeHtml(fallbackKatexErrors(marked.parse(pre(text)) as string));
+const renderInlineHtml = (text: string) => sanitizeHtml(fallbackKatexErrors(marked.parseInline(pre(text)) as string));
+const renderControlInlineHtml = (text: string) => DOMPurify.sanitize(fallbackKatexErrors(marked.parseInline(pre(text)) as string), {
   ...SANITIZE_CONFIG,
   FORBID_TAGS: [
     ...(SANITIZE_CONFIG.FORBID_TAGS ?? []),
