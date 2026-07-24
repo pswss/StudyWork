@@ -538,8 +538,10 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
    CHAT
    ========================================================================== */
 .chat-log {
-  display: flex; flex-direction: column; gap: 18px;
-  min-height: 260px; padding-bottom: 8px; overflow: visible;
+  flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+  gap: 18px; padding-bottom: 8px; min-height: 0;
+  /* 대화가 길어지면 페이지가 늘어나는 대신 로그 내부 스크롤로 전환 */
+  max-height: 62vh;
 }
 .chat-msg {
   display: flex; flex-direction: column; max-width: 82%;

@@ -90,37 +90,35 @@ afterEach(() => {
 });
 
 describe("채팅 모션과 스크롤", () => {
-  it("탭 복귀에는 움직이지 않고 채팅 하단에서 추가된 항목만 페이지 입력창으로 이동한다", async () => {
+  it("탭 복귀에는 움직이지 않고 하단에서 추가된 항목만 내부 로그로 이동한다", async () => {
     const view = await render(true);
     const log = view.querySelector(".chat-log") as HTMLDivElement;
-    const input = view.querySelector(".chat-textarea") as HTMLTextAreaElement;
-    const scrollIntoView = vi.fn();
-    Object.defineProperty(input, "scrollIntoView", {
-      configurable: true,
-      value: scrollIntoView,
+    const scrollTo = vi.fn();
+    Object.defineProperties(log, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, writable: true, value: 600 },
+      scrollTo: { configurable: true, value: scrollTo },
     });
 
     await render(false);
     await render(true);
-    expect(scrollIntoView).not.toHaveBeenCalled();
+    expect(scrollTo).not.toHaveBeenCalled();
     expect(view.querySelector(".chat-msg")?.classList.contains("entering")).toBe(false);
 
     await act(async () => {
       setMessages?.(current => [...current, { ...oldMessage, id: 2, content: "새 답변" }]);
       await Promise.resolve();
     });
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: "end", behavior: "smooth" });
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: "smooth" });
 
-    Object.defineProperty(log, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({ bottom: 2_000 }),
-    });
-    window.dispatchEvent(new Event("scroll"));
+    log.scrollTop = 0;
+    log.dispatchEvent(new Event("scroll", { bubbles: true }));
     await act(async () => {
       setMessages?.(current => [...current, { ...oldMessage, id: 3, content: "스크롤 중 새 답변" }]);
       await Promise.resolve();
     });
-    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenCalledTimes(1);
   });
 
   it("보내서 새로 추가한 메시지에만 등장 상태를 붙인다", async () => {
@@ -143,10 +141,10 @@ describe("채팅 모션과 스크롤", () => {
     expect(messages[1].classList.contains("entering")).toBe(true);
   });
 
-  it("채팅 로그는 높이 제한이나 내부 세로 스크롤 없이 페이지 흐름에서 늘어난다", () => {
+  it("채팅 로그는 62vh를 넘으면 내부 세로 스크롤을 유지한다", () => {
     const css = readFileSync("web/src/styles.css", "utf8");
     const block = css.match(/\.chat-log\s*\{([^}]*)\}/)?.[1] ?? "";
-    expect(block).toContain("overflow: visible");
-    expect(block).not.toMatch(/max-height|overflow-y/);
+    expect(block).toContain("overflow-y: auto");
+    expect(block).toContain("max-height: 62vh");
   });
 });
