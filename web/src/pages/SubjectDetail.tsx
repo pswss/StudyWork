@@ -43,15 +43,15 @@ interface Props {
 }
 
 export type SubjectTab = "chat" | "quiz" | "solution" | "exam" | "note" | "settings";
+type LearningTab = Exclude<SubjectTab, "settings">;
 
-const TAB_ORDER: SubjectTab[] = ["chat", "quiz", "solution", "exam", "note", "settings"];
-const TAB_KEYS: Record<SubjectTab, MessageKey> = {
+const LEARNING_TAB_ORDER: LearningTab[] = ["chat", "quiz", "solution", "exam", "note"];
+const TAB_KEYS: Record<LearningTab, MessageKey> = {
   chat: "workspace.tabs.chat",
   quiz: "workspace.tabs.problems",
   solution: "workspace.tabs.solutions",
   exam: "workspace.tabs.exam",
   note: "workspace.tabs.notes",
-  settings: "workspace.tabs.settings",
 };
 // 기존 한국어 표시 계약: quiz: "문제"
 
@@ -159,6 +159,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
   // 언마운트 후 setState 방지 가드
   const mountedRef = useRef(true);
   const subjectIdRef = useRef(subject.id);
+  const lastLearningTabRef = useRef<LearningTab>(initialTab === "settings" ? "chat" : initialTab);
   const matsPendingRef = useRef<Map<number, Promise<void>>>(new Map());
   const booksRequestRef = useRef(0);
   const solutionUploadRequestRef = useRef(0);
@@ -171,6 +172,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
 
   useEffect(() => {
     subjectIdRef.current = subject.id;
+    lastLearningTabRef.current = initialTab === "settings" ? "chat" : initialTab;
     setTab(initialTab);
     setTabMotion("instant");
     setQuizView(new URLSearchParams(window.location.search).get("quizView") === "wrong" ? "wrong" : "bank");
@@ -206,6 +208,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
   }, [subject.id]);
   useEffect(() => { void loadMsgs(subject.id); }, [subject.id]);
   useEffect(() => {
+    if (initialTab !== "settings") lastLearningTabRef.current = initialTab;
     setTab(initialTab);
     setTabMotion("instant");
   }, [initialTab]);
@@ -395,6 +398,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
 
   // 포인터 전환만 부드럽게 움직이고 URL·뒤로가기는 즉시 복원한다.
   function selectTab(t: SubjectTab, motion: "smooth" | "instant" = "smooth") {
+    if (t !== "settings") lastLearningTabRef.current = t;
     setTabMotion(motion);
     setTab(t);
     onTabChange?.(t);
@@ -648,7 +652,8 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
       || trayExplTargets.has(target);
   }
   const explRunningCount = new Set([...explJobs.map((job) => job.target), ...trayExplTargets]).size;
-  const tabLabel = (tabId: SubjectTab) => t(TAB_KEYS[tabId]);
+  const tabLabel = (tabId: LearningTab) => t(TAB_KEYS[tabId]);
+  const rovingLearningTab = tab === "settings" ? lastLearningTabRef.current : tab;
 
   return (
     <div className="page detail-page">
@@ -669,12 +674,24 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
         <div className="detail-head-main">
           <Reveal delay={0.1} as="h1" className="detail-title">{subject.name}</Reveal>
         </div>
-        <span className="detail-meta">
-          {t("workspace.meta", {
-            materials: formatNumber(matCount),
-            messages: formatNumber(msgCount),
-          })}
-        </span>
+        <div className="detail-tools">
+          <span className="detail-meta">
+            {t("workspace.meta", {
+              materials: formatNumber(matCount),
+              messages: formatNumber(msgCount),
+            })}
+          </span>
+          <button
+            id="subject-settings-control"
+            type="button"
+            className="detail-settings-btn"
+            aria-controls="subject-panel-settings"
+            aria-pressed={tab === "settings"}
+            onClick={() => selectTab("settings")}
+          >
+            {t("workspace.tabs.settings")}
+          </button>
+        </div>
       </div>
 
       {materialsErr && (
@@ -720,6 +737,7 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
           <div
             className="tabs"
             role="tablist"
+            aria-label={t("workspace.learningTabsAria")}
             onKeyDown={e => {
               // WAI-ARIA tabs: 좌우 화살표로 이동 (roving tabindex)
               if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(e.key)) return;
@@ -727,20 +745,24 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
               const next = e.key === "Home"
                 ? 0
                 : e.key === "End"
-                  ? TAB_ORDER.length - 1
-                  : (TAB_ORDER.indexOf(tab) + (e.key === "ArrowRight" ? 1 : -1) + TAB_ORDER.length) % TAB_ORDER.length;
-              selectTab(TAB_ORDER[next], "instant");
+                  ? LEARNING_TAB_ORDER.length - 1
+                  : (
+                      LEARNING_TAB_ORDER.indexOf(rovingLearningTab)
+                      + (e.key === "ArrowRight" ? 1 : -1)
+                      + LEARNING_TAB_ORDER.length
+                    ) % LEARNING_TAB_ORDER.length;
+              selectTab(LEARNING_TAB_ORDER[next], "instant");
               (e.currentTarget.children[next] as HTMLElement | undefined)?.focus();
             }}
           >
-            {TAB_ORDER.map((t, i) => (
+            {LEARNING_TAB_ORDER.map((t, i) => (
               <button
                 key={t}
                 id={`subject-tab-${t}`}
                 role="tab"
                 aria-selected={tab === t}
                 aria-controls={`subject-panel-${t}`}
-                tabIndex={tab === t ? 0 : -1}
+                tabIndex={rovingLearningTab === t ? 0 : -1}
                 className={`tab-index${tab === t ? " active" : ""}`}
                 onClick={() => selectTab(t)}
               >
@@ -1008,16 +1030,15 @@ export default function SubjectDetail({ subject, onBack, initialTab = "chat", on
             />
           </div>
 
-          <div
+          <section
             id="subject-panel-settings"
             className="panel main-card"
-            role="tabpanel"
-            aria-labelledby="subject-tab-settings"
+            aria-labelledby="subject-settings-control"
             hidden={tab !== "settings"}
             aria-hidden={tab !== "settings"}
           >
               <AISettingsPanel onSaved={() => void refreshChatAIStatus()} />
-          </div>
+          </section>
         </div>
       </div>
     </div>

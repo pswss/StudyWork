@@ -6,6 +6,7 @@ import { parseQuizFilters } from "../web/src/pages/Quiz";
 describe("상세 화면 주소와 디자인 계약", () => {
   it("과목과 탭 주소를 복구하고 잘못된 주소는 무시한다", () => {
     expect(parseStudyRoute("?subject=12&tab=solution")).toEqual({ subjectId: 12, tab: "solution" });
+    expect(parseStudyRoute("?subject=12&tab=settings")).toEqual({ subjectId: 12, tab: "settings" });
     expect(parseStudyRoute("?subject=12")).toEqual({ subjectId: 12, tab: "chat" });
     expect(parseStudyRoute("?subject=0&tab=chat")).toBeNull();
     expect(parseStudyRoute("?subject=12&tab=unknown")).toBeNull();
@@ -35,13 +36,18 @@ describe("상세 화면 주소와 디자인 계약", () => {
     const app = readFileSync("web/src/App.tsx", "utf8");
     const chat = readFileSync("web/src/pages/ChatPanel.tsx", "utf8");
     const css = readFileSync("web/src/styles.css", "utf8");
+    const pkg = readFileSync("package.json", "utf8");
 
     expect(app).not.toContain("<Cursor");
+    expect(app).not.toContain("<Scene");
+    expect(pkg).not.toContain("react-three");
     expect(chat).toContain('className="chat-ai-settings"');
     expect(chat).toContain("learnerEffortLabel");
     expect(chat).not.toContain('<summary className="clickable">AI ·');
     expect(css).not.toContain("revealUp");
     expect(css).not.toContain("has-custom-cursor");
+    expect(css).toContain("font-size: clamp(44px, 6.5vw, 72px)");
+    expect(css).toContain("font-size: 12px; font-weight: 700;\n  letter-spacing: .04em; color: var(--ink-2)");
   });
 
   it("한글 조합 중 Enter가 제출로 처리되지 않는다", () => {

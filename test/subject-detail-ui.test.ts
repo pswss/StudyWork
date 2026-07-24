@@ -63,6 +63,22 @@ describe("해설 탭 브라우저 경계", () => {
     expect(pending).toContain('className="ai-pending-sec" aria-hidden="true"');
   });
 
+  it("다섯 학습 탭의 roving 포커스와 독립 설정 유틸리티를 분리한다", () => {
+    const detail = readFileSync("web/src/pages/SubjectDetail.tsx", "utf8");
+
+    expect(detail).toContain(
+      'const LEARNING_TAB_ORDER: LearningTab[] = ["chat", "quiz", "solution", "exam", "note"]'
+    );
+    expect(detail).toContain("LEARNING_TAB_ORDER.indexOf(rovingLearningTab)");
+    expect(detail).toContain("selectTab(LEARNING_TAB_ORDER[next], \"instant\")");
+    expect(detail).toContain("tabIndex={rovingLearningTab === t ? 0 : -1}");
+    expect(detail).toContain('id="subject-settings-control"');
+    expect(detail).toContain('aria-controls="subject-panel-settings"');
+    expect(detail).toContain('aria-pressed={tab === "settings"}');
+    expect(detail).toContain('aria-labelledby="subject-settings-control"');
+    expect(detail).not.toContain('id="subject-tab-settings"');
+  });
+
   it("자료가 하나뿐이어도 단권화 소스 선택을 다시 열 수 있다", () => {
     const notes = readFileSync("web/src/pages/NotesPanel.tsx", "utf8");
 

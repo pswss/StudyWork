@@ -176,17 +176,34 @@ export default function ChatPanel({
     };
   }, [recoveringChat, setMsgs, subject.id]);
 
-  // 새 항목이 생겼고 사용자가 이미 하단을 보고 있을 때만 채팅 로그 내부를 이동한다.
+  // 단일 페이지 스크롤에서 사용자가 채팅 하단을 보고 있는지 추적한다.
+  useEffect(() => {
+    if (!active) return;
+    const updateNearBottom = () => {
+      const log = chatLogRef.current;
+      if (!log) return;
+      nearBottomRef.current = log.getBoundingClientRect().bottom - window.innerHeight <= 120;
+    };
+    updateNearBottom();
+    window.addEventListener("scroll", updateNearBottom, { passive: true });
+    window.addEventListener("resize", updateNearBottom);
+    return () => {
+      window.removeEventListener("scroll", updateNearBottom);
+      window.removeEventListener("resize", updateNearBottom);
+    };
+  }, [active]);
+
+  // 새 항목이 생겼고 사용자가 이미 하단을 보고 있을 때만 페이지의 입력창까지 이동한다.
   // active를 의존성에서 제외해 다른 탭에서 돌아오는 동작 자체로는 스크롤하지 않는다.
   useEffect(() => {
     const nextItems = msgs.length + Number(busy);
     const added = nextItems > previousLogItemsRef.current;
     previousLogItemsRef.current = nextItems;
     if (!active || !added || !nearBottomRef.current) return;
-    const log = chatLogRef.current;
-    if (!log || typeof log.scrollTo !== "function") return;
+    const composer = composerRef.current;
+    if (!composer || typeof composer.scrollIntoView !== "function") return;
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    log.scrollTo({ top: log.scrollHeight, behavior: reduceMotion ? "auto" : "smooth" });
+    composer.scrollIntoView({ block: "end", behavior: reduceMotion ? "auto" : "smooth" });
   }, [msgs.length, busy]);
 
   function markMessageEntering(id: number) {
@@ -367,10 +384,6 @@ export default function ChatPanel({
         role="log"
         aria-live="polite"
         aria-relevant="additions text"
-        onScroll={event => {
-          const log = event.currentTarget;
-          nearBottomRef.current = log.scrollHeight - log.scrollTop - log.clientHeight <= 120;
-        }}
       >
         {msgs.length === 0 && !busy && (loading
           ? <AiPending label={t("workspace.chat.loading")} />

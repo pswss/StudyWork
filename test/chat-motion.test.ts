@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { readFileSync } from "node:fs";
 import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -89,35 +90,37 @@ afterEach(() => {
 });
 
 describe("채팅 모션과 스크롤", () => {
-  it("탭 복귀에는 움직이지 않고 하단에서 추가된 항목만 내부 로그로 이동한다", async () => {
+  it("탭 복귀에는 움직이지 않고 채팅 하단에서 추가된 항목만 페이지 입력창으로 이동한다", async () => {
     const view = await render(true);
     const log = view.querySelector(".chat-log") as HTMLDivElement;
-    const scrollTo = vi.fn();
-    Object.defineProperties(log, {
-      scrollHeight: { configurable: true, value: 1000 },
-      clientHeight: { configurable: true, value: 400 },
-      scrollTop: { configurable: true, writable: true, value: 600 },
-      scrollTo: { configurable: true, value: scrollTo },
+    const input = view.querySelector(".chat-textarea") as HTMLTextAreaElement;
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(input, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
     });
 
     await render(false);
     await render(true);
-    expect(scrollTo).not.toHaveBeenCalled();
+    expect(scrollIntoView).not.toHaveBeenCalled();
     expect(view.querySelector(".chat-msg")?.classList.contains("entering")).toBe(false);
 
     await act(async () => {
       setMessages?.(current => [...current, { ...oldMessage, id: 2, content: "새 답변" }]);
       await Promise.resolve();
     });
-    expect(scrollTo).toHaveBeenCalledWith({ top: 1000, behavior: "smooth" });
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "end", behavior: "smooth" });
 
-    log.scrollTop = 0;
-    log.dispatchEvent(new Event("scroll", { bubbles: true }));
+    Object.defineProperty(log, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ bottom: 2_000 }),
+    });
+    window.dispatchEvent(new Event("scroll"));
     await act(async () => {
       setMessages?.(current => [...current, { ...oldMessage, id: 3, content: "스크롤 중 새 답변" }]);
       await Promise.resolve();
     });
-    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
   it("보내서 새로 추가한 메시지에만 등장 상태를 붙인다", async () => {
@@ -138,5 +141,12 @@ describe("채팅 모션과 스크롤", () => {
     const messages = view.querySelectorAll(".chat-msg");
     expect(messages[0].classList.contains("entering")).toBe(false);
     expect(messages[1].classList.contains("entering")).toBe(true);
+  });
+
+  it("채팅 로그는 높이 제한이나 내부 세로 스크롤 없이 페이지 흐름에서 늘어난다", () => {
+    const css = readFileSync("web/src/styles.css", "utf8");
+    const block = css.match(/\.chat-log\s*\{([^}]*)\}/)?.[1] ?? "";
+    expect(block).toContain("overflow: visible");
+    expect(block).not.toMatch(/max-height|overflow-y/);
   });
 });
