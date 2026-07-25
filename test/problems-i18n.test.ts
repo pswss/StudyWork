@@ -42,10 +42,10 @@ describe("문제 도메인 다국어", () => {
     const scratchpad = readFileSync("web/src/pages/QuizScratchpad.tsx", "utf8");
     const wrong = readFileSync("web/src/pages/Wrong.tsx", "utf8");
     for (const contentBinding of [
-      "text={item.question}",
+      "text={numberedQuestionText(item)}",
       "text={submittedAnswer}",
       "text={play.result.answer}",
-      "text={q.question}",
+      "text={numberedQuestionText(q)}",
       "text={q.answer}",
       "text={q.explanation}",
       "text={c}",

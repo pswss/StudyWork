@@ -406,6 +406,49 @@ describe("GET /api/subjects/:id/questions", () => {
     expect(Array.isArray(mcq?.choices)).toBe(true);
   });
 
+  it("문제집 번호가 다시 시작되어도 원본 페이지 순서와 번호를 보존", async () => {
+    const book = await env.DB.prepare(
+      "INSERT INTO books (subject_id, title) VALUES (?, '원본 순서 검증') RETURNING id"
+    ).bind(subjectId).first<{ id: number }>();
+    const file = await env.DB.prepare(
+      `INSERT INTO book_files (book_id, name, r2_key, mime, status)
+       VALUES (?, '순서.pdf', 'question-order.pdf', 'application/pdf', 'ready') RETURNING id`
+    ).bind(book!.id).first<{ id: number }>();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO questions
+           (subject_id, source, qtype, difficulty, question, answer, book_id, book_number,
+            printed_number, src_file_id, src_page)
+         VALUES (?, 'uploaded', 'short', '중', '앞 단원 마지막', '답', ?, '16', '16', ?, 10)`
+      ).bind(subjectId, book!.id, file!.id),
+      env.DB.prepare(
+        `INSERT INTO questions
+           (subject_id, source, qtype, difficulty, question, answer, book_id, book_number,
+            printed_number, src_file_id, src_page)
+         VALUES (?, 'uploaded', 'short', '중', '다음 단원 첫째', '답', ?, '1', '1', ?, 11)`
+      ).bind(subjectId, book!.id, file!.id),
+      env.DB.prepare(
+        `INSERT INTO questions
+           (subject_id, source, qtype, difficulty, question, answer, book_id, book_number,
+            printed_number, src_file_id, src_page)
+         VALUES (?, 'uploaded', 'short', '중', '다음 단원 둘째', '답', ?, '2', '2', ?, 11)`
+      ).bind(subjectId, book!.id, file!.id),
+    ]);
+
+    const res = await call(env, `/api/subjects/${subjectId}/questions`, { headers: { cookie } });
+    const rows = (await res.json()) as Array<{
+      src_file_id: number | null;
+      printed_number: string | null;
+      question: string;
+    }>;
+    expect(rows.filter((row) => row.src_file_id === file!.id).map((row) => [row.printed_number, row.question]))
+      .toEqual([
+        ["16", "앞 단원 마지막"],
+        ["1", "다음 단원 첫째"],
+        ["2", "다음 단원 둘째"],
+      ]);
+  });
+
   it("source 필터: generated만 조회", async () => {
     const res = await call(env, `/api/subjects/${subjectId}/questions?source=generated`, {
       headers: { cookie },
@@ -465,6 +508,9 @@ describe("GET /api/subjects/:id/quiz", () => {
     ).bind(targetSubject, source, difficulty, marker, srcFileId, wrongCount).first<{ id: number }>())!.id;
 
     selectedUploadedId = await add(subjectId, "uploaded", "상", "범위-업로드-상-오답", file!.id, 1);
+    await env.DB.prepare(
+      "UPDATE questions SET book_number = '17', printed_number = '17' WHERE id = ?"
+    ).bind(selectedUploadedId).run();
     selectedGeneratedId = await add(subjectId, "generated", "상", "범위-생성-상-오답", file!.id, 1);
     selectedEasyId = await add(subjectId, "uploaded", "하", "범위-업로드-하", file!.id, 0);
     await add(subjectId, "uploaded", "상", "범위-다른파일", otherFileId, 1);
@@ -536,6 +582,18 @@ describe("GET /api/subjects/:id/quiz", () => {
     expect(res.status).toBe(200);
     const rows = (await res.json()) as Array<{ id: number }>;
     expect(new Set(rows.map((row) => row.id))).toEqual(new Set([selectedUploadedId, selectedGeneratedId]));
+  });
+
+  it("풀이 응답에도 원본 문제 번호를 전달", async () => {
+    const res = await call(
+      env,
+      `/api/subjects/${subjectId}/quiz?questionIds=${selectedUploadedId}&count=1`,
+      { headers: { cookie } }
+    );
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual([
+      expect.objectContaining({ id: selectedUploadedId, book_number: "17", printed_number: "17" }),
+    ]);
   });
 
   it("questionIds와 기존 필터·count는 모두 교집합", async () => {

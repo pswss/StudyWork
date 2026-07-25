@@ -252,6 +252,8 @@ export interface Question {
   correct_count: number;
   wrong_count: number;
   created_at: string;
+  book_number: string | null; // 원본 번호가 없는 구형 문제집의 저장 순번
+  printed_number: string | null; // 문제집에 실제 인쇄된 문제 번호
   src_file_id: number | null; // 원본 자료 파일 (삭제됐으면 null)
   src_file_name: string | null; // 원본 자료 파일명 — 문제 은행을 파일별로 묶는 그룹 라벨
   src_page: number | null;
@@ -267,6 +269,8 @@ export interface QuizItem {
   question: string;
   choices: string[] | null;
   source: "uploaded" | "generated";
+  book_number: string | null;
+  printed_number: string | null;
   src_file_id: number | null; // 문제집 자동 등록 문제의 원본 파일 (도형·그림 확인용)
   src_page: number | null;
   has_figure: boolean; // 그림·도형 딸린 문제 — 원본 페이지 이미지를 인라인 표시
@@ -431,6 +435,8 @@ export interface WrongQuestion {
   correct_count: number;
   wrong_count: number;
   from_wrong_note: number;
+  book_number: string | null;
+  printed_number: string | null;
   src_file_id: number | null;
   src_page: number | null;
   has_figure: number;

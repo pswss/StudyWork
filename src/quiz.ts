@@ -76,8 +76,14 @@ quizRoutes.get("/subjects/:id/questions", async (c) => {
     sql += " AND difficulty = ?";
     params.push(difficulty);
   }
-  // 파일별로 묶이도록 src_file_id로 그룹핑 후 문제 번호 수치순 (프론트 드롭다운 그룹 정렬)
-  sql += " ORDER BY src_file_id, CAST(book_number AS INTEGER), book_number, created_at DESC";
+  // 문제집 문항은 번호가 단원마다 다시 시작할 수 있어 원본 페이지·저장 순서를 따른다.
+  // 직접 생성한 문항은 기존처럼 최신순을 유지한다.
+  sql +=
+    " ORDER BY src_file_id," +
+    " CASE WHEN src_file_id IS NULL THEN created_at END DESC," +
+    " CASE WHEN src_file_id IS NULL THEN id END DESC," +
+    " CASE WHEN src_file_id IS NOT NULL THEN COALESCE(src_page, 2147483647) END," +
+    " CASE WHEN src_file_id IS NOT NULL THEN id END";
 
   const { results } = await c.env.DB.prepare(sql)
     .bind(...params)
@@ -240,7 +246,7 @@ quizRoutes.get("/subjects/:id/quiz", async (c) => {
 
   // src_file_id는 원본 파일이 실제로 남아 있을 때만 노출 — 삭제된 문제집의 죽은 링크(404) 방지
   let sql =
-    "SELECT id, qtype, difficulty, question, choices, source, " +
+    "SELECT id, qtype, difficulty, question, choices, source, book_number, printed_number, " +
     "CASE WHEN EXISTS(SELECT 1 FROM book_files bf WHERE bf.id = questions.src_file_id) THEN src_file_id ELSE NULL END AS src_file_id, " +
     "src_page, has_figure, figure_description, figure_box FROM questions WHERE subject_id = ?";
   const params: unknown[] = [subjectId];
@@ -283,6 +289,8 @@ quizRoutes.get("/subjects/:id/quiz", async (c) => {
     question: r.question,
     choices: r.choices ? JSON.parse(r.choices as string) : null,
     source: r.source,
+    book_number: r.book_number ?? null,
+    printed_number: r.printed_number ?? null,
     src_file_id: r.src_file_id ?? null, // 문제집 자동 등록 문제의 원본 파일 (도형·그림 확인용)
     src_page: r.src_page ?? null,
     has_figure: r.has_figure === 1,

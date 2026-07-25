@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { figureAlt, quizShortcutChoice } from "../web/src/pages/Quiz";
+import { figureAlt, numberedQuestionText, quizShortcutChoice } from "../web/src/pages/Quiz";
 
 describe("quiz interaction polish", () => {
   it("maps answer shortcuts and keeps setup progressively disclosed", () => {
@@ -24,5 +24,15 @@ describe("quiz interaction polish", () => {
 
     const source = readFileSync("web/src/pages/Quiz.tsx", "utf8");
     expect(source.match(/figureAlt\(/g)?.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("keeps the workbook number in front without duplicating an existing prefix", () => {
+    expect(numberedQuestionText({ question: "함수의 값을 구하시오.", printed_number: "17" }))
+      .toBe("17. 함수의 값을 구하시오.");
+    expect(numberedQuestionText({ question: "17. 함수의 값을 구하시오.", printed_number: "17" }))
+      .toBe("17. 함수의 값을 구하시오.");
+    expect(numberedQuestionText({ question: "레거시 문항", book_number: "8" }))
+      .toBe("8. 레거시 문항");
+    expect(numberedQuestionText({ question: "AI 생성 문항" })).toBe("AI 생성 문항");
   });
 });

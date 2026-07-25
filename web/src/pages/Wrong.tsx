@@ -12,7 +12,7 @@ import {
 import { Md, MdInline, MdInlineText } from "../md";
 import { useI18n } from "../i18n";
 import { AiPending } from "../Pending";
-import { difficultyLabel, figureAlt, qtypeLabel } from "./Quiz";
+import { difficultyLabel, figureAlt, numberedQuestionText, qtypeLabel } from "./Quiz";
 
 interface Props {
   subject: Subject;
@@ -203,7 +203,7 @@ export default function WrongPanel({ subject, active, onRelearn }: Props) {
                   aria-expanded={expanded.has(q.id)}
                   aria-controls={`wrong-detail-${q.id}`}
                   title={t("problems.wrong.detailsTitle")}
-                ><MdInlineText text={q.question} /></button>
+                ><MdInlineText text={numberedQuestionText(q)} /></button>
                 <div className="wrong-row-meta">
                   {q.from_wrong_note === 1 && (
                     <span className="wrong-note-badge">{t("problems.wrong.photoBadge")}</span>
@@ -216,7 +216,7 @@ export default function WrongPanel({ subject, active, onRelearn }: Props) {
               <div className="wrong-row-detail" id={`wrong-detail-${q.id}`} hidden={!expanded.has(q.id)}>
                 {expanded.has(q.id) && (
                   <>
-                  <Md className="quiz-row-full-q" text={q.question} />
+                  <Md className="quiz-row-full-q" text={numberedQuestionText(q)} />
                   {q.choices && (
                     <ol className="quiz-row-choices">
                       {q.choices.map((c, i) => <li key={i}><MdInline text={c} /></li>)}

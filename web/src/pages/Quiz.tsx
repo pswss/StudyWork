@@ -155,6 +155,32 @@ function accuracyLabel(q: Question, t: Translate, formatNumber: NumberFormatter)
   });
 }
 
+type NumberedQuestion = {
+  question: string;
+  printed_number?: string | null;
+  book_number?: string | null;
+};
+
+const questionPrefixMatch = (text: string) =>
+  /^\s*(?:(?:문제|q(?:uestion)?|#)\s*)?[[(]?\s*0*(\d+)\s*[\])]?(?:\s*(?:번(?:\s*문제)?|문제|[.)]))?(?:\s+|$)/iu.exec(text);
+
+const questionPrefix = (text: string) => questionPrefixMatch(text)?.[1] ?? null;
+
+export function questionNumber(q: NumberedQuestion): string | null {
+  return q.printed_number?.trim() || questionPrefix(q.question) || q.book_number?.trim() || null;
+}
+
+export function numberedQuestionText(q: NumberedQuestion): string {
+  const number = questionNumber(q);
+  if (!number || questionPrefix(q.question) === number) return q.question;
+  return `${number}. ${q.question}`;
+}
+
+function questionTextWithoutNumber(q: NumberedQuestion): string {
+  const prefix = questionPrefixMatch(q.question);
+  return prefix?.[1] === questionNumber(q) ? q.question.slice(prefix[0].length) : q.question;
+}
+
 export function figureAlt(
   description: string | null,
   page: number | null,
@@ -196,9 +222,9 @@ function printQuestions(
   ))}`;
   const body = qs
     .map((q, i) => {
-      const num = formatNumber(i + 1);
+      const num = escapeHtmlText(questionNumber(q) ?? formatNumber(i + 1));
       if (type === "question") {
-        let html = `<div class="q-block"><p class="q-num">${num}.</p><p class="q-text">${mdInlineHtml(q.question)}</p>`;
+        let html = `<div class="q-block"><p class="q-num">${num}.</p><p class="q-text">${mdInlineHtml(questionTextWithoutNumber(q))}</p>`;
         if (q.src_file_id && q.has_figure) {
           const src = escapeHtmlText(new URL(pageImageUrl(q.src_file_id, q.src_page, q.figure_box), window.location.origin).href);
           const alt = escapeHtmlText(figureAlt(q.figure_description, q.src_page, i + 1, t, formatNumber));
@@ -753,7 +779,12 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
           ...prev,
           answered: true,
           result: res,
-          scores: [...prev.scores, { id: item.id, correct: res.correct, question: item.question, answer: res.answer }],
+          scores: [...prev.scores, {
+            id: item.id,
+            correct: res.correct,
+            question: numberedQuestionText(item),
+            answer: res.answer,
+          }],
         };
       });
     } catch (e) {
@@ -883,7 +914,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
             </a>
           )}
         </div>
-        <Md className="quiz-question-text" text={item.question} />
+        <Md className="quiz-question-text" text={numberedQuestionText(item)} />
         {item.src_file_id && item.has_figure && (
           <img
             className="quiz-figure"
@@ -1367,7 +1398,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                       title={t("problems.list.detailsTitle")}
                       aria-expanded={expanded.has(q.id)}
                       aria-controls={`quiz-question-detail-${q.id}`}
-                    ><MdInlineText text={q.question} /></button>
+                    ><MdInlineText text={numberedQuestionText(q)} /></button>
                     <span className="quiz-accuracy">{accuracyLabel(q, t, formatNumber)}</span>
                     <button
                       className="del-btn"
@@ -1385,7 +1416,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                     >
                       {expanded.has(q.id) && (
                         <>
-                        <Md className="quiz-row-full-q" text={q.question} />
+                        <Md className="quiz-row-full-q" text={numberedQuestionText(q)} />
                         {q.choices && (
                           <ol className="quiz-row-choices">
                             {q.choices.map((c, i) => <li key={i}><MdInline text={c} /></li>)}
