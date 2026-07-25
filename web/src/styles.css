@@ -61,6 +61,7 @@ button, summary, select, label, a { touch-action: manipulation; }
   outline: 2px solid var(--lime);
   outline-offset: 2px;
 }
+#main-content:focus-visible { outline: none; }
 
 /* ===== overlay ===== */
 .vignette {
@@ -915,6 +916,10 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   content: "⌄" / ""; flex: 0 0 auto; color: var(--ink-3);
   transform: rotate(-90deg); transition: transform .22s var(--ease);
 }
+.single-select-picker.compact { min-width: 92px; width: 92px; }
+.single-select-picker.compact > summary { min-height: 36px; padding: 7px 9px; gap: 6px; }
+.single-select-picker.compact > summary > strong { font-size: 12px; }
+.single-select-picker.compact > summary::after { font-size: 11px; }
 .single-select-picker > summary:hover { color: var(--ink); background: rgba(217, 255, 63, .03); }
 .single-select-picker > summary:active { background: rgba(217, 255, 63, .07); }
 .single-select-picker[open] { z-index: 30; border-color: var(--line-strong); }

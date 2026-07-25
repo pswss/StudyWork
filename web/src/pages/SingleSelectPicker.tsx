@@ -147,8 +147,7 @@ export default function SingleSelectPicker({
   return (
     <details
       ref={detailsRef}
-      className={`single-select-picker${className ? ` ${className}` : ""}${disabled ? " disabled" : ""}`}
-      style={compact ? { minWidth: 108, width: 108 } : undefined}
+      className={`single-select-picker${compact ? " compact" : ""}${className ? ` ${className}` : ""}${disabled ? " disabled" : ""}`}
       onToggle={handleToggle}
       onKeyDown={handleKeyDown}
     >
