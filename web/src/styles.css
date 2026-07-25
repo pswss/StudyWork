@@ -108,16 +108,11 @@ nav {
   padding: 26px 52px 0;
 }
 .brand {
-  display: flex; align-items: baseline; gap: 12px; cursor: pointer; user-select: none;
+  display: flex; align-items: baseline; cursor: pointer; user-select: none;
   border: 0; background: none; text-decoration: none;
 }
-.brand-mark {
-  font-family: var(--disp); font-weight: 800; font-size: 15px;
-  letter-spacing: .04em; color: var(--bg);
-  background: var(--lime); padding: 3px 7px 2px; border-radius: 4px; line-height: 1;
-}
 .brand-name {
-  font-family: var(--serif); font-size: 17px; font-weight: 800; letter-spacing: -.02em;
+  font-family: var(--serif); font-size: 20px; font-weight: 800; letter-spacing: -.02em;
   color: var(--ink); transition: color .2s var(--ease);
 }
 .brand-name em { font-style: normal; color: var(--lime); }

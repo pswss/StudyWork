@@ -206,7 +206,6 @@ export default function App() {
             }}
             aria-label={t("shell.goToSubjects")}
           >
-            <span className="brand-mark" translate="no">RM</span>
             <span className="brand-name" translate="no"><em>RE</em>MAP</span>
           </a>
           <div className="nav-account">
