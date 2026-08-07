@@ -22,7 +22,10 @@ describe("문제 도메인 다국어", () => {
     }));
     expect(html).toContain(expected[locale].scratch);
     expect(html).toContain(translate(locale, "problems.scratch.pen"));
+    expect(html).toContain(translate(locale, "problems.scratch.highlighter"));
     expect(html).toContain(translate(locale, "problems.scratch.undo"));
+    expect(html).toContain(translate(locale, "problems.scratch.redo"));
+    expect(html).toContain(translate(locale, "problems.scratch.settings"));
     expect(html).toContain(translate(locale, "problems.scratch.memoLabel"));
     expect(html).toContain("<textarea");
 
