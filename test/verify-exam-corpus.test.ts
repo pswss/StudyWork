@@ -17,6 +17,8 @@ import {
   QUIZ_EXTRACT_SPEC,
   TARGETED_PROBLEM_TRANSCRIPTION_RULES,
   TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+  TARGETED_SOLUTION_TRANSCRIPTION_RULES,
+  TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
 } from "../src/claude";
 import {
   canonicalEvidenceHash,
@@ -43,7 +45,13 @@ const SEMANTIC_RULES =
   `are intentionally hidden and must not be guessed; ordinal markers inside explanations are redacted. ` +
   `Return ambiguous when the explanation does not establish ` +
   `exactly one choice. choiceIndex is 1-based and evidence must briefly cite the decisive value or conclusion.`;
-const SEMANTIC_PROMPT_DIGEST = hash(`2\n${SEMANTIC_RULES}`);
+const SEMANTIC_PROMPT_DIGEST = hash(`3\n${SEMANTIC_RULES}`);
+const SOLUTION_FIDELITY_RULES = `
+Independently compare every supplied accepted official solution with the attached official solution PDF pixels. Report the visible page where that numbered solution starts. Check the supplied raw final answer separately from the complete explanation through its final step. Compare every sign, coefficient, exponent, root index, fraction, formula, table, diagram, and conclusion. LaTeX normalization is allowed only when it preserves every mathematical and Korean source detail.
+
+answerStatus is exact only when an explicit final answer is visible in these pixels and faithfully matches raw_answer; mismatch when a visible official answer differs; not_visible only when no explicit answer is visible in this attached range; unverifiable when pixels are unclear. Do not call a value derived from the reasoning exact. explanationStatus is exact only when the full reasoning is faithful and complete; mismatch for any omission, substitution, changed formula/value, truncated continuation, summary, invented step, or missing source-required table/diagram description; unverifiable when the pixels or continuation context do not support a confident decision. A redundant visual need not be narrated, but explain that it is redundant in evidence. Never guess exact. Give concise page-grounded evidence and keep every input key exactly once.
+`.trim();
+const SOLUTION_FIDELITY_PROMPT_DIGEST = hash(`1\n${SOLUTION_FIDELITY_RULES}`);
 const TRANSCRIPTION_GATE_RULES = `
 Independently compare every supplied transcription with the attached official source pixels. Check the complete shared passage and source material, the full stem, every answer choice and distractor, inequalities, signs, coefficients, exponents, fractions, formulas, tables, qtype, and all figure or visual dependencies including figure_description. Check that box plausibly covers the source problem and figure, without requiring pixel-perfect crop decimals. Do not infer fidelity from plausibility or from the proposed answer. Base the curriculum decision on the source pixels, not on an inaccurate supplied transcription.
 
@@ -52,6 +60,9 @@ Return transcription_status exact only when all source-required content is faith
 const TRANSCRIPTION_PROMPT_DIGEST = hash(`1\n${TRANSCRIPTION_GATE_RULES}`);
 const TARGETED_PROMPT_DIGEST = hash(
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
+);
+const TARGETED_SOLUTION_PROMPT_DIGEST = hash(
+  `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`,
 );
 const SOURCE_COUNTS: Record<string, number> = { 국어: 45, 수학: 30, 통합과학: 20, 통합사회: 20 };
 const CASES: Array<{ id: string; subject: string; grade: number; rawTitle: string; accepted: Accepted[] }> = [
@@ -364,6 +375,95 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
       },
     }));
     const effectiveCorpusHash = canonicalEvidenceHash(effectiveCorpus);
+    const acceptedFidelity = testCase.accepted.map((_accepted, index) => {
+      const solutionItem = solutionItems[index];
+      const rangeIndex = solutionRanges.findIndex((range) =>
+        solutionItem.page >= range.ownedFrom && solutionItem.page <= range.ownedTo);
+      const range = solutionRanges[rangeIndex];
+      const basePath = `solution-chunks/v3-${String(rangeIndex).padStart(4, "0")}.json`;
+      const marker = /^([①-⑩])$/u.exec(answerCases[index].officialRaw)?.[1];
+      const input = {
+        key: `1:${index + 1}`,
+        printedNumber: String(index + 1),
+        qtype: answerCases[index].qtype,
+        allowDerivedMarkerAnswer: marker !== undefined,
+        sourcePage: solutionItem.page,
+        rawAnswer: solutionItem.answer,
+        explanation: solutionItem.explanation,
+        complete: true,
+        baseSolutionCheckpoint: { path: basePath, sha256: hash(readFileSync(join(stateDir, basePath))) },
+        baseSolutionItemHash: canonicalEvidenceHash(solutionItem),
+        baseContextFrom: range.from,
+        baseContextTo: range.to,
+        baseOwnedFrom: range.ownedFrom,
+        baseOwnedTo: range.ownedTo,
+      };
+      const decision = {
+        key: input.key,
+        sourcePage: input.sourcePage,
+        answerStatus: marker ? "not_visible" : "exact",
+        explanationStatus: "exact",
+        evidence: marker
+          ? "the complete explanation is exact; its ordinal raw answer is not visible in this range"
+          : "the explicit raw answer and complete explanation match the official pixels",
+      };
+      return { input, decision, solutionItem };
+    });
+    const fidelityInputs = acceptedFidelity.map(({ input }) => input);
+    const fidelityInputHash = canonicalEvidenceHash(fidelityInputs);
+    const fidelityRelativePath =
+      `solution-fidelity/v1-0000-${effectiveCorpusHash}-${fidelityInputHash}.json`;
+    const fidelityCheckpoint = {
+      version: 1,
+      entryId: entry.id,
+      sourceHash: solutionHash,
+      from: 1,
+      to: solutionPageCount,
+      ownedFrom: 1,
+      ownedTo: solutionPageCount,
+      classifierVersion: 4,
+      rulesDigest: DIGEST,
+      transcriptionGateVersion: 1,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      effectiveProblemCorpusHash: effectiveCorpusHash,
+      inputHash: fidelityInputHash,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      inputs: fidelityInputs,
+      items: acceptedFidelity.map(({ decision }) => decision),
+    };
+    const fidelityHash = writeEvidence(join(stateDir, fidelityRelativePath), fidelityCheckpoint);
+    const solutionFidelityCheckpoints = [{
+      path: fidelityRelativePath,
+      sha256: fidelityHash,
+      from: 1,
+      to: solutionPageCount,
+      ownedFrom: 1,
+      ownedTo: solutionPageCount,
+      inputHash: fidelityInputHash,
+    }];
+    const solutionFidelityItems = acceptedFidelity.map(({ input, decision }) => ({
+      key: input.key,
+      printedNumber: input.printedNumber,
+      qtype: input.qtype,
+      basePage: input.sourcePage,
+      effectivePage: input.sourcePage,
+      answerStatus: decision.answerStatus,
+      explanationStatus: decision.explanationStatus,
+      evidence: decision.evidence,
+      fidelityArtifact: { path: fidelityRelativePath, sha256: fidelityHash },
+      baseSolutionItemHash: input.baseSolutionItemHash,
+      effectiveSolutionItemHash: input.baseSolutionItemHash,
+      baseRawAnswerHash: hash(input.rawAnswer),
+      effectiveRawAnswerHash: hash(input.rawAnswer),
+      baseExplanationHash: hash(input.explanation),
+      effectiveExplanationHash: hash(input.explanation),
+    })).sort((left, right) => left.key.localeCompare(right.key));
+    const effectiveSolutionCorpusHash = canonicalEvidenceHash(acceptedFidelity.map(({ input, solutionItem }) => ({
+      key: input.key,
+      solution: solutionItem,
+    })).sort((left, right) => left.key.localeCompare(right.key)));
     const markerInputs: Array<{ key: string; choices: string[]; detailedExplanation: string }> = [];
     const auditItems = testCase.accepted.flatMap((_accepted, index) => {
       const answer = answerCases[index];
@@ -396,12 +496,17 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
         semantic,
       }];
     }).sort((left, right) => left.key.localeCompare(right.key));
-    let semanticCheckpoint: { path: string; sha256: string; inputHash: string } | null = null;
+    let semanticCheckpoint: {
+      path: string;
+      sha256: string;
+      inputHash: string;
+      effectiveSolutionCorpusHash: string;
+    } | null = null;
     if (markerInputs.length > 0) {
       const inputHash = canonicalEvidenceHash(markerInputs);
-      const relativePath = `semantic-choice-checks/v2-${inputHash}.json`;
+      const relativePath = `semantic-choice-checks/v3-${inputHash}.json`;
       const checkpoint = {
-        version: 2,
+        version: 3,
         entryId: entry.id,
         problemHash,
         solutionHash,
@@ -410,6 +515,7 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
         transcriptionGateVersion: 1,
         transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
         effectiveCorpusHash,
+        effectiveSolutionCorpusHash,
         inputHash,
         promptDigest: SEMANTIC_PROMPT_DIGEST,
         model: "gpt-5.6-sol",
@@ -418,14 +524,15 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
         items: markerInputs.map((input) => ({
           key: input.key,
           status: "resolved",
-          choiceIndex: 5,
-          evidence: "official explanation resolves choice 5",
+          choiceIndex: auditItems.find((item) => item.key === input.key)!.choiceIndex,
+          evidence: `official explanation resolves choice ${auditItems.find((item) => item.key === input.key)!.choiceIndex}`,
         })),
       };
       semanticCheckpoint = {
         path: relativePath,
         sha256: writeEvidence(join(stateDir, relativePath), checkpoint),
         inputHash,
+        effectiveSolutionCorpusHash,
       };
     }
     const targetQuestionCounts = Object.fromEntries(testCase.accepted.map((accepted) => [accepted.target, 1]));
@@ -437,23 +544,33 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
       rulesDigest: DIGEST,
       transcriptionGateVersion: 1,
       transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
-      semanticChoiceVersion: 2,
+      solutionFidelityVersion: 1,
+      solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      semanticChoiceVersion: 3,
       semanticPromptDigest: SEMANTIC_PROMPT_DIGEST,
       sourceQuestionCount: problems.length,
       acceptedQuestionCount: testCase.accepted.length,
       rejectedQuestionCount: problems.length - testCase.accepted.length,
       reviewQuestionCount: 0,
       targetQuestionCounts,
+      acceptedSolutionKeys: solutionFidelityItems.map((item) => item.key),
+      solutionRepairKeys: [],
+      derivedAnswerKeys: solutionFidelityItems
+        .filter((item) => item.answerStatus === "not_visible").map((item) => item.key),
       acceptedMcqKeys: auditItems.map((item) => item.key).sort(),
       effectiveCorpusHash,
+      effectiveSolutionCorpusHash,
+      solutionFidelityCheckpoints,
+      solutionFidelityItems,
+      solutionRepairs: [],
       semanticCheckpoint,
       repairs: [],
       items: auditItems,
     };
     const auditDigest = canonicalEvidenceHash(auditBasis);
-    const auditRelativePath = `answer-audit/v1-${auditDigest}.json`;
+    const auditRelativePath = `answer-audit/v2-${auditDigest}.json`;
     const auditHash = writeEvidence(join(stateDir, auditRelativePath), {
-      version: 1,
+      version: 2,
       auditDigest,
       ...auditBasis,
     });
@@ -541,17 +658,23 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
       rulesDigest: DIGEST,
       transcriptionGateVersion: 1,
       transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      solutionFidelityVersion: 1,
+      solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
       receipt: { path: "receipt.json", sha256: receiptHash },
       answerAudit: {
         path: auditRelativePath,
         sha256: auditHash,
         effectiveCorpusHash,
+        effectiveSolutionCorpusHash,
       },
       repairs: [],
+      solutionFidelityCheckpoints,
+      solutionFidelityItems,
+      solutionRepairs: [],
     };
     const attestationDigest = canonicalEvidenceHash(attestationBasis);
-    writeEvidence(join(stateDir, "answer-attestation", `v1-${attestationDigest}.json`), {
-      version: 1,
+    writeEvidence(join(stateDir, "answer-attestation", `v2-${attestationDigest}.json`), {
+      version: 2,
       attestationDigest,
       ...attestationBasis,
     });
@@ -688,6 +811,86 @@ function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
     || Number(left.question.number) - Number(right.question.number));
   const effectiveCorpusHash = canonicalEvidenceHash(effectiveQuestions);
   const answers = [answerCase("math", 0), answerCase("math", 1)];
+  const acceptedSolutions = [0, 1].map((index) =>
+    solutionCheckpoint.items.find((item: { number: string }) => item.number === String(index + 1)));
+  const fidelityInputs = acceptedSolutions.map((solutionItem, index) => ({
+    key: index === 0 ? "2:1" : "1:2",
+    printedNumber: String(index + 1),
+    qtype: "mcq",
+    allowDerivedMarkerAnswer: false,
+    sourcePage: solutionItem.page,
+    rawAnswer: solutionItem.answer,
+    explanation: solutionItem.explanation,
+    complete: true,
+    baseSolutionCheckpoint: baseSolutionPointer,
+    baseSolutionItemHash: canonicalEvidenceHash(solutionItem),
+    baseContextFrom: 1,
+    baseContextTo: 6,
+    baseOwnedFrom: 1,
+    baseOwnedTo: 4,
+  })).sort((left, right) => left.key.localeCompare(right.key));
+  const fidelityInputHash = canonicalEvidenceHash(fidelityInputs);
+  const fidelityRelativePath = `solution-fidelity/v1-0000-${effectiveCorpusHash}-${fidelityInputHash}.json`;
+  const fidelityDecisions = fidelityInputs.map((input) => ({
+    key: input.key,
+    sourcePage: input.sourcePage,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: "the explicit raw answer and complete explanation match the official pixels",
+  }));
+  const fidelityCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    sourceHash: downloads.solution.sha256,
+    from: 1,
+    to: 13,
+    ownedFrom: 1,
+    ownedTo: 13,
+    classifierVersion: 4,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 1,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    effectiveProblemCorpusHash: effectiveCorpusHash,
+    inputHash: fidelityInputHash,
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    inputs: fidelityInputs,
+    items: fidelityDecisions,
+  };
+  const fidelityHash = writeEvidence(join(stateDir, fidelityRelativePath), fidelityCheckpoint);
+  const solutionFidelityCheckpoints = [{
+    path: fidelityRelativePath,
+    sha256: fidelityHash,
+    from: 1,
+    to: 13,
+    ownedFrom: 1,
+    ownedTo: 13,
+    inputHash: fidelityInputHash,
+  }];
+  const solutionFidelityItems = fidelityInputs.map((input, index) => ({
+    key: input.key,
+    printedNumber: input.printedNumber,
+    qtype: input.qtype,
+    basePage: input.sourcePage,
+    effectivePage: input.sourcePage,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: fidelityDecisions[index].evidence,
+    fidelityArtifact: { path: fidelityRelativePath, sha256: fidelityHash },
+    baseSolutionItemHash: input.baseSolutionItemHash,
+    effectiveSolutionItemHash: input.baseSolutionItemHash,
+    baseRawAnswerHash: hash(input.rawAnswer),
+    effectiveRawAnswerHash: hash(input.rawAnswer),
+    baseExplanationHash: hash(input.explanation),
+    effectiveExplanationHash: hash(input.explanation),
+  })).sort((left, right) => left.key.localeCompare(right.key));
+  const effectiveSolutionCorpusHash = canonicalEvidenceHash(fidelityInputs.map((input) => ({
+    key: input.key,
+    solution: solutionCheckpoint.items.find(
+      (item: { number: string }) => item.number === input.printedNumber,
+    ),
+  })).sort((left, right) => left.key.localeCompare(right.key)));
   const items = answers.map((answer, index) => ({
     key: index === 0 ? "2:1" : "1:2",
     printedNumber: String(index + 1),
@@ -706,7 +909,9 @@ function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
     rulesDigest: DIGEST,
     transcriptionGateVersion: 1,
     transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
-    semanticChoiceVersion: 2,
+    solutionFidelityVersion: 1,
+    solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    semanticChoiceVersion: 3,
     semanticPromptDigest: SEMANTIC_PROMPT_DIGEST,
     sourceQuestionCount: 30,
     acceptedQuestionCount: 2,
@@ -716,8 +921,15 @@ function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
       "수학 - 수학Ⅱ·미적분Ⅰ": 1,
       "수학 - 수학Ⅰ·대수": 1,
     },
+    acceptedSolutionKeys: ["1:2", "2:1"],
+    solutionRepairKeys: [],
+    derivedAnswerKeys: [],
     acceptedMcqKeys: ["1:2", "2:1"],
     effectiveCorpusHash,
+    effectiveSolutionCorpusHash,
+    solutionFidelityCheckpoints,
+    solutionFidelityItems,
+    solutionRepairs: [],
     semanticCheckpoint: null,
     repairs: [repair],
     items,
@@ -725,8 +937,8 @@ function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
   const auditDir = join(stateDir, "answer-audit");
   for (const name of readdirSync(auditDir)) rmSync(join(auditDir, name));
   const auditDigest = canonicalEvidenceHash(auditBasis);
-  const auditRelativePath = `answer-audit/v1-${auditDigest}.json`;
-  const auditHash = writeEvidence(join(stateDir, auditRelativePath), { version: 1, auditDigest, ...auditBasis });
+  const auditRelativePath = `answer-audit/v2-${auditDigest}.json`;
+  const auditHash = writeEvidence(join(stateDir, auditRelativePath), { version: 2, auditDigest, ...auditBasis });
   const attestationDir = join(stateDir, "answer-attestation");
   for (const name of readdirSync(attestationDir)) rmSync(join(attestationDir, name));
   const receiptHash = hash(readFileSync(join(stateDir, "receipt.json")));
@@ -738,13 +950,23 @@ function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
     rulesDigest: DIGEST,
     transcriptionGateVersion: 1,
     transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    solutionFidelityVersion: 1,
+    solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
     receipt: { path: "receipt.json", sha256: receiptHash },
-    answerAudit: { path: auditRelativePath, sha256: auditHash, effectiveCorpusHash },
+    answerAudit: {
+      path: auditRelativePath,
+      sha256: auditHash,
+      effectiveCorpusHash,
+      effectiveSolutionCorpusHash,
+    },
     repairs: [repair],
+    solutionFidelityCheckpoints,
+    solutionFidelityItems,
+    solutionRepairs: [],
   };
   const attestationDigest = canonicalEvidenceHash(attestationBasis);
-  writeEvidence(join(attestationDir, `v1-${attestationDigest}.json`), {
-    version: 1,
+  writeEvidence(join(attestationDir, `v2-${attestationDigest}.json`), {
+    version: 2,
     attestationDigest,
     ...attestationBasis,
   });
@@ -758,6 +980,439 @@ function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
     .run();
   db.close();
   return join(stateDir, classificationArtifactPath);
+}
+
+function installQ27SolutionRepair(files: ReturnType<typeof fixture>): {
+  repairArtifact: string;
+  fidelityArtifact: string;
+} {
+  const stateDir = files.stateDirs.math;
+  const entry = JSON.parse(readFileSync(join(stateDir, "entry.json"), "utf8")).entry;
+  const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
+  const problemPath = join(stateDir, "problem-chunks", "v2-0000.json");
+  const classificationPath = join(stateDir, "classification-chunks", `v4-0000-${DIGEST}.json`);
+  const solutionPath = join(stateDir, "solution-chunks", "v3-0000.json");
+  const problemCheckpoint = JSON.parse(readFileSync(problemPath, "utf8"));
+  const classificationCheckpoint = JSON.parse(readFileSync(classificationPath, "utf8"));
+  const solutionCheckpoint = JSON.parse(readFileSync(solutionPath, "utf8"));
+  const q27Problem = problemCheckpoint.items[26];
+  Object.assign(q27Problem, {
+    qtype: "short",
+    question: "두 수 $\\sqrt{2m}$, $\\sqrt[3]{3m}$이 모두 자연수가 되게 하는 자연수 $m$의 최솟값을 구하시오.",
+    choices: null,
+    answer: "$72$",
+  });
+  Object.assign(classificationCheckpoint.items[1], {
+    decision: "reject",
+    canonical_subject: null,
+    curriculum_course: null,
+    domain: null,
+    achievement_codes: [],
+    reason_codes: ["OUT_OF_SCOPE"],
+  });
+  Object.assign(classificationCheckpoint.items[26], {
+    decision: "accept",
+    canonical_subject: "math_B",
+    curriculum_course: "2015 수학Ⅰ",
+    domain: "거듭제곱근",
+    achievement_codes: ["12수학Ⅰ01-01"],
+    confidence: 0.99,
+    reason_codes: ["IN_SCOPE_ROOTS_AND_POWERS"],
+    transcription_status: "exact",
+    transcription_evidence: "27번 거듭제곱근 조건이 공식 문제 픽셀과 정확히 일치한다",
+  });
+  const q27BaseSolution = solutionCheckpoint.items.find(
+    (item: { number: string }) => item.number === "27",
+  );
+  Object.assign(q27BaseSolution, {
+    answer: "72",
+    explanation: "$m=3q^3$이어야 하고 결국 $m=2^3\\times3^2=72$이다.",
+    page: 1,
+    complete: true,
+  });
+  writeJson(problemPath, problemCheckpoint);
+  writeJson(classificationPath, classificationCheckpoint);
+  writeJson(solutionPath, solutionCheckpoint);
+
+  const effectiveCorpus = problemCheckpoint.items.map((question: Record<string, unknown>, index: number) => ({
+    question,
+    classification: classificationCheckpoint.items[index],
+  }));
+  const effectiveCorpusHash = canonicalEvidenceHash(effectiveCorpus);
+  const baseSolutionPointer = {
+    path: "solution-chunks/v3-0000.json",
+    sha256: hash(readFileSync(solutionPath)),
+  };
+  const q1Solution = solutionCheckpoint.items.find((item: { number: string }) => item.number === "1");
+  const fidelityInputs = [
+    { key: "1:1", printedNumber: "1", question: problemCheckpoint.items[0], solution: q1Solution },
+    { key: "1:27", printedNumber: "27", question: q27Problem, solution: q27BaseSolution },
+  ].map(({ key, printedNumber, question, solution }) => ({
+    key,
+    printedNumber,
+    qtype: question.qtype,
+    allowDerivedMarkerAnswer: false,
+    sourcePage: solution.page,
+    rawAnswer: solution.answer,
+    explanation: solution.explanation,
+    complete: true,
+    baseSolutionCheckpoint: baseSolutionPointer,
+    baseSolutionItemHash: canonicalEvidenceHash(solution),
+    baseContextFrom: 1,
+    baseContextTo: 6,
+    baseOwnedFrom: 1,
+    baseOwnedTo: 4,
+  }));
+  const fidelityInputHash = canonicalEvidenceHash(fidelityInputs);
+  const fidelityRelativePath = `solution-fidelity/v1-0000-${effectiveCorpusHash}-${fidelityInputHash}.json`;
+  const fidelityDecisions = [{
+    key: "1:1",
+    sourcePage: q1Solution.page,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: "1번 답과 전체 해설이 공식 픽셀과 정확히 일치한다",
+  }, {
+    key: "1:27",
+    sourcePage: 1,
+    answerStatus: "exact",
+    explanationStatus: "mismatch",
+    evidence: "공식 해설은 m=3^2q^3인데 전사는 m=3q^3이다",
+  }];
+  const fidelityCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    sourceHash: downloads.solution.sha256,
+    from: 1,
+    to: 13,
+    ownedFrom: 1,
+    ownedTo: 13,
+    classifierVersion: 4,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 1,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    effectiveProblemCorpusHash: effectiveCorpusHash,
+    inputHash: fidelityInputHash,
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    inputs: fidelityInputs,
+    items: fidelityDecisions,
+  };
+  const fidelityHash = writeEvidence(join(stateDir, fidelityRelativePath), fidelityCheckpoint);
+  const baseFidelityPointer = { path: fidelityRelativePath, sha256: fidelityHash };
+  const solutionFidelityCheckpoints = [{
+    ...baseFidelityPointer,
+    from: 1,
+    to: 13,
+    ownedFrom: 1,
+    ownedTo: 13,
+    inputHash: fidelityInputHash,
+  }];
+
+  const q27Input = fidelityInputs[1];
+  const correctedSolution = {
+    number: "27",
+    answer: "72",
+    explanation: "$m=3^2q^3$이어야 하므로 $m=2^3\\times3^2=72$이다.",
+    page: 2,
+    complete: true,
+  };
+  const repairRelativePath = `solution-repairs/v1-0001-0027-${fidelityHash}.json`;
+  const repairCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    key: "1:27",
+    printedNumber: "27",
+    basePage: 1,
+    contextFrom: 1,
+    contextTo: 6,
+    baseOwnedFrom: 1,
+    baseOwnedTo: 4,
+    sourceHash: downloads.solution.sha256,
+    effectiveProblemCorpusHash: effectiveCorpusHash,
+    baseSolutionCheckpoint: baseSolutionPointer,
+    baseFidelityCheckpoint: baseFidelityPointer,
+    baseSolutionItemHash: q27Input.baseSolutionItemHash,
+    baseRawAnswerHash: hash(q27Input.rawAnswer),
+    baseExplanationHash: hash(q27Input.explanation),
+    promptVersion: TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
+    promptDigest: TARGETED_SOLUTION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    effectivePage: 2,
+    item: correctedSolution,
+  };
+  const repairHash = writeEvidence(join(stateDir, repairRelativePath), repairCheckpoint);
+  const repairPointer = { path: repairRelativePath, sha256: repairHash };
+  const effectiveSolutionItemHash = canonicalEvidenceHash(correctedSolution);
+  const repairedInput = {
+    ...q27Input,
+    sourcePage: 2,
+    rawAnswer: correctedSolution.answer,
+    explanation: correctedSolution.explanation,
+  };
+  const repairedInputHash = canonicalEvidenceHash(repairedInput);
+  const repairFidelityRelativePath =
+    `solution-fidelity-repairs/v1-0001-0027-${fidelityHash}-${effectiveSolutionItemHash}.json`;
+  const repairDecision = {
+    key: "1:27",
+    sourcePage: 2,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: "2쪽의 m=3^2q^3과 마지막 값 72가 모두 정확히 일치한다",
+  };
+  const repairFidelityCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    key: "1:27",
+    sourceHash: downloads.solution.sha256,
+    from: 1,
+    to: 6,
+    basePage: 1,
+    effectivePage: 2,
+    baseOwnedFrom: 1,
+    baseOwnedTo: 4,
+    effectiveProblemCorpusHash: effectiveCorpusHash,
+    baseSolutionCheckpoint: baseSolutionPointer,
+    baseFidelityCheckpoint: baseFidelityPointer,
+    repairArtifact: repairPointer,
+    effectiveSolutionItemHash,
+    inputHash: repairedInputHash,
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    input: repairedInput,
+    item: repairDecision,
+  };
+  const repairFidelityHash = writeEvidence(
+    join(stateDir, repairFidelityRelativePath),
+    repairFidelityCheckpoint,
+  );
+  const repairFidelityPointer = { path: repairFidelityRelativePath, sha256: repairFidelityHash };
+  const solutionRepair = {
+    key: "1:27",
+    printedNumber: "27",
+    basePage: 1,
+    effectivePage: 2,
+    contextFrom: 1,
+    contextTo: 6,
+    baseOwnedFrom: 1,
+    baseOwnedTo: 4,
+    baseSolutionCheckpoint: baseSolutionPointer,
+    baseFidelityCheckpoint: baseFidelityPointer,
+    repairArtifact: repairPointer,
+    fidelityArtifact: { ...repairFidelityPointer, promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST },
+    baseSolutionItemHash: q27Input.baseSolutionItemHash,
+    effectiveSolutionItemHash,
+    baseRawAnswerHash: hash(q27Input.rawAnswer),
+    effectiveRawAnswerHash: hash(correctedSolution.answer),
+    baseExplanationHash: hash(q27Input.explanation),
+    effectiveExplanationHash: hash(correctedSolution.explanation),
+  };
+  const solutionFidelityItems = [{
+    key: "1:1",
+    printedNumber: "1",
+    qtype: fidelityInputs[0].qtype,
+    basePage: q1Solution.page,
+    effectivePage: q1Solution.page,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: fidelityDecisions[0].evidence,
+    fidelityArtifact: baseFidelityPointer,
+    baseSolutionItemHash: fidelityInputs[0].baseSolutionItemHash,
+    effectiveSolutionItemHash: fidelityInputs[0].baseSolutionItemHash,
+    baseRawAnswerHash: hash(q1Solution.answer),
+    effectiveRawAnswerHash: hash(q1Solution.answer),
+    baseExplanationHash: hash(q1Solution.explanation),
+    effectiveExplanationHash: hash(q1Solution.explanation),
+  }, {
+    key: "1:27",
+    printedNumber: "27",
+    qtype: "short",
+    basePage: 1,
+    effectivePage: 2,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: repairDecision.evidence,
+    fidelityArtifact: repairFidelityPointer,
+    baseSolutionItemHash: q27Input.baseSolutionItemHash,
+    effectiveSolutionItemHash,
+    baseRawAnswerHash: hash(q27Input.rawAnswer),
+    effectiveRawAnswerHash: hash(correctedSolution.answer),
+    baseExplanationHash: hash(q27Input.explanation),
+    effectiveExplanationHash: hash(correctedSolution.explanation),
+  }];
+  const effectiveSolutionCorpusHash = canonicalEvidenceHash([{
+    key: "1:1",
+    solution: q1Solution,
+  }, {
+    key: "1:27",
+    solution: correctedSolution,
+  }]);
+  const answer = answerCase("math", 0);
+  const auditItems = [{
+    key: "1:1",
+    printedNumber: "1",
+    sourcePage: 1,
+    officialRawAnswerHash: hash(answer.officialRaw),
+    storedAnswerHash: hash(answer.storedAnswer),
+    mode: "choice-content",
+    choiceIndex: answer.choices!.indexOf(answer.storedAnswer) + 1,
+    semantic: null,
+  }];
+  const auditBasis = {
+    entryId: entry.id,
+    problemHash: downloads.problem.sha256,
+    solutionHash: downloads.solution.sha256,
+    classifierVersion: 4,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 1,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    solutionFidelityVersion: 1,
+    solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    semanticChoiceVersion: 3,
+    semanticPromptDigest: SEMANTIC_PROMPT_DIGEST,
+    sourceQuestionCount: 30,
+    acceptedQuestionCount: 2,
+    rejectedQuestionCount: 28,
+    reviewQuestionCount: 0,
+    targetQuestionCounts: {
+      "수학 - 수학Ⅱ·미적분Ⅰ": 1,
+      "수학 - 수학Ⅰ·대수": 1,
+    },
+    acceptedSolutionKeys: ["1:1", "1:27"],
+    solutionRepairKeys: ["1:27"],
+    derivedAnswerKeys: [],
+    acceptedMcqKeys: ["1:1"],
+    effectiveCorpusHash,
+    effectiveSolutionCorpusHash,
+    solutionFidelityCheckpoints,
+    solutionFidelityItems,
+    solutionRepairs: [solutionRepair],
+    semanticCheckpoint: null,
+    repairs: [],
+    items: auditItems,
+  };
+  const auditDir = join(stateDir, "answer-audit");
+  for (const name of readdirSync(auditDir)) rmSync(join(auditDir, name));
+  const auditDigest = canonicalEvidenceHash(auditBasis);
+  const auditRelativePath = `answer-audit/v2-${auditDigest}.json`;
+  const auditHash = writeEvidence(join(stateDir, auditRelativePath), {
+    version: 2,
+    auditDigest,
+    ...auditBasis,
+  });
+  const attestationDir = join(stateDir, "answer-attestation");
+  for (const name of readdirSync(attestationDir)) rmSync(join(attestationDir, name));
+  const receiptHash = hash(readFileSync(join(stateDir, "receipt.json")));
+  const attestationBasis = {
+    entryId: entry.id,
+    problemHash: downloads.problem.sha256,
+    solutionHash: downloads.solution.sha256,
+    classifierVersion: 4,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 1,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    solutionFidelityVersion: 1,
+    solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    receipt: { path: "receipt.json", sha256: receiptHash },
+    answerAudit: {
+      path: auditRelativePath,
+      sha256: auditHash,
+      effectiveCorpusHash,
+      effectiveSolutionCorpusHash,
+    },
+    repairs: [],
+    solutionFidelityCheckpoints,
+    solutionFidelityItems,
+    solutionRepairs: [solutionRepair],
+  };
+  const attestationDigest = canonicalEvidenceHash(attestationBasis);
+  writeEvidence(join(attestationDir, `v2-${attestationDigest}.json`), {
+    version: 2,
+    attestationDigest,
+    ...attestationBasis,
+  });
+
+  const db = new Database(files.dbPath);
+  const mathBBook = db.prepare(`
+    SELECT books.id
+    FROM books JOIN subjects ON subjects.id = books.subject_id
+    WHERE subjects.name = '수학 - 수학Ⅰ·대수'
+  `).get() as { id: number };
+  db.prepare(`
+    UPDATE questions
+    SET qtype = 'short', question = ?, choices = NULL, answer = '72', explanation = ?,
+        book_number = '27', printed_number = '27'
+    WHERE book_id = ?
+  `).run(q27Problem.question, correctedSolution.explanation, mathBBook.id);
+  db.prepare(`
+    UPDATE book_items
+    SET number = '27', answer = '72', content = ?, page = 1
+    WHERE book_id = ? AND category = '문제'
+  `).run(q27Problem.question, mathBBook.id);
+  db.prepare(`
+    UPDATE book_items
+    SET number = '27', answer = '72', content = ?, page = 2
+    WHERE book_id = ? AND category = '해설'
+  `).run(correctedSolution.explanation, mathBBook.id);
+  db.close();
+  return {
+    repairArtifact: join(stateDir, repairRelativePath),
+    fidelityArtifact: join(stateDir, repairFidelityRelativePath),
+  };
+}
+
+function rewriteBaselineFidelityAuthority(
+  files: ReturnType<typeof fixture>,
+  id: keyof ReturnType<typeof fixture>["stateDirs"],
+  mutateCheckpoint: (checkpoint: Record<string, any>) => void,
+  mutateAudit: (audit: Record<string, any>) => void = () => undefined,
+): void {
+  const stateDir = files.stateDirs[id];
+  const attestationDir = join(stateDir, "answer-attestation");
+  const attestationName = readdirSync(attestationDir).find((name) => /^v2-/u.test(name))!;
+  const attestation = JSON.parse(readFileSync(join(attestationDir, attestationName), "utf8"));
+  const audit = JSON.parse(readFileSync(join(stateDir, attestation.answerAudit.path), "utf8"));
+  const checkpointEvidence = audit.solutionFidelityCheckpoints[0];
+  const checkpoint = JSON.parse(readFileSync(join(stateDir, checkpointEvidence.path), "utf8"));
+  mutateCheckpoint(checkpoint);
+  const checkpointHash = writeEvidence(join(stateDir, checkpointEvidence.path), checkpoint);
+  checkpointEvidence.sha256 = checkpointHash;
+  for (const item of audit.solutionFidelityItems) {
+    if (item.fidelityArtifact.path === checkpointEvidence.path) item.fidelityArtifact.sha256 = checkpointHash;
+  }
+  mutateAudit(audit);
+
+  const { version: _auditVersion, auditDigest: _oldAuditDigest, ...auditBasis } = audit;
+  const nextAuditDigest = canonicalEvidenceHash(auditBasis);
+  const nextAuditPath = `answer-audit/v2-${nextAuditDigest}.json`;
+  for (const name of readdirSync(join(stateDir, "answer-audit"))) {
+    rmSync(join(stateDir, "answer-audit", name));
+  }
+  const nextAuditHash = writeEvidence(join(stateDir, nextAuditPath), {
+    version: 2,
+    auditDigest: nextAuditDigest,
+    ...auditBasis,
+  });
+
+  const { version: _attestationVersion, attestationDigest: _oldAttestationDigest, ...attestationBasis } = attestation;
+  attestationBasis.answerAudit = {
+    path: nextAuditPath,
+    sha256: nextAuditHash,
+    effectiveCorpusHash: audit.effectiveCorpusHash,
+    effectiveSolutionCorpusHash: audit.effectiveSolutionCorpusHash,
+  };
+  attestationBasis.solutionFidelityCheckpoints = audit.solutionFidelityCheckpoints;
+  attestationBasis.solutionFidelityItems = audit.solutionFidelityItems;
+  attestationBasis.solutionRepairs = audit.solutionRepairs;
+  const nextAttestationDigest = canonicalEvidenceHash(attestationBasis);
+  for (const name of readdirSync(attestationDir)) rmSync(join(attestationDir, name));
+  writeEvidence(join(attestationDir, `v2-${nextAttestationDigest}.json`), {
+    version: 2,
+    attestationDigest: nextAttestationDigest,
+    ...attestationBasis,
+  });
 }
 
 describe("exam corpus verifier", () => {
@@ -811,6 +1466,55 @@ describe("exam corpus verifier", () => {
     const report = verifyExamCorpus(files);
     expect(report.ok).toBe(false);
     expect(report.failures.some((failure) => failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+  });
+
+  it("overlays the Q27 3-squared solution repair into DB evidence and rejects tampering", () => {
+    const files = fixture();
+    const artifacts = installQ27SolutionRepair(files);
+    const repaired = verifyExamCorpus(files);
+    expect(repaired, JSON.stringify(repaired.failures)).toMatchObject({ ok: true });
+
+    const db = new Database(files.dbPath, { readonly: true, fileMustExist: true });
+    const row = db.prepare("SELECT answer, explanation, printed_number FROM questions WHERE printed_number = '27'")
+      .get() as { answer: string; explanation: string; printed_number: string };
+    db.close();
+    expect(row).toEqual({
+      answer: "72",
+      explanation: "$m=3^2q^3$이어야 하므로 $m=2^3\\times3^2=72$이다.",
+      printed_number: "27",
+    });
+
+    const tampered = JSON.parse(readFileSync(artifacts.repairArtifact, "utf8"));
+    tampered.item.explanation = "$m=3q^3$이어야 하므로 72이다.";
+    writeJson(artifacts.repairArtifact, tampered);
+    const report = verifyExamCorpus(files);
+    expect(report.ok).toBe(false);
+    expect(report.failures.some((failure) => failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+  });
+
+  it("rejects stale fidelity metadata and non-marker not_visible answer authority", () => {
+    const staleFiles = fixture();
+    rewriteBaselineFidelityAuthority(staleFiles, "math", (checkpoint) => {
+      checkpoint.promptDigest = "0".repeat(64);
+    });
+    const stale = verifyExamCorpus(staleFiles);
+    expect(stale.ok).toBe(false);
+    expect(stale.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("stale"))).toBe(true);
+
+    const derivedFiles = fixture();
+    rewriteBaselineFidelityAuthority(derivedFiles, "math", (checkpoint) => {
+      checkpoint.items[0].answerStatus = "not_visible";
+      checkpoint.items[0].evidence = "the content answer is not visible";
+    }, (audit) => {
+      const item = audit.solutionFidelityItems.find((candidate: { key: string }) => candidate.key === "1:1");
+      item.answerStatus = "not_visible";
+      item.evidence = "the content answer is not visible";
+      audit.derivedAnswerKeys = ["1:1"];
+    });
+    const derived = verifyExamCorpus(derivedFiles);
+    expect(derived.ok).toBe(false);
+    expect(derived.failures.some((failure) => failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
   });
 
   it("requires exactly one post-commit answer attestation for every receipt", () => {

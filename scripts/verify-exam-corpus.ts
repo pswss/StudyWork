@@ -21,6 +21,8 @@ import {
   QUIZ_EXTRACT_SPEC,
   TARGETED_PROBLEM_TRANSCRIPTION_RULES,
   TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+  TARGETED_SOLUTION_TRANSCRIPTION_RULES,
+  TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
 } from "../src/claude";
 
 export const TARGET_SUBJECTS = [
@@ -243,6 +245,13 @@ const CLASSIFIER_VERSION = 4;
 const PROBLEM_REPAIR_VERSION = 2;
 const CLASSIFICATION_REPAIR_VERSION = 3;
 const PROBLEM_SLICE_PAGES = 20;
+const SOLUTION_SLICE_PAGES = 6;
+const SOLUTION_SLICE_STRIDE = 4;
+const SOLUTION_FIDELITY_VERSION = 1;
+const SOLUTION_FIDELITY_SLICE_PAGES = 22;
+const SOLUTION_FIDELITY_SLICE_STRIDE = 18;
+const SOLUTION_REPAIR_VERSION = 1;
+const SOLUTION_REPAIR_FIDELITY_VERSION = 1;
 const TRANSCRIPTION_GATE_VERSION = 1;
 const TRANSCRIPTION_GATE_RULES = `
 Independently compare every supplied transcription with the attached official source pixels. Check the complete shared passage and source material, the full stem, every answer choice and distractor, inequalities, signs, coefficients, exponents, fractions, formulas, tables, qtype, and all figure or visual dependencies including figure_description. Check that box plausibly covers the source problem and figure, without requiring pixel-perfect crop decimals. Do not infer fidelity from plausibility or from the proposed answer. Base the curriculum decision on the source pixels, not on an inaccurate supplied transcription.
@@ -250,7 +259,16 @@ Independently compare every supplied transcription with the attached official so
 Return transcription_status exact only when all source-required content is faithfully represented. Return mismatch when any omission, substitution, changed bound/sign/value/formula/choice, wrong qtype, or inaccurate visual description is visible. Return unverifiable when the pixels or required context do not let you decide confidently; never guess exact. Give concise page-grounded transcription_evidence. Curriculum decision and transcription fidelity are independent, so reject and review items still require this source check.
 `.trim();
 const TRANSCRIPTION_PROMPT_DIGEST = sha256(`${TRANSCRIPTION_GATE_VERSION}\n${TRANSCRIPTION_GATE_RULES}`);
-const SEMANTIC_CHOICE_VERSION = 2;
+const SOLUTION_FIDELITY_RULES = `
+Independently compare every supplied accepted official solution with the attached official solution PDF pixels. Report the visible page where that numbered solution starts. Check the supplied raw final answer separately from the complete explanation through its final step. Compare every sign, coefficient, exponent, root index, fraction, formula, table, diagram, and conclusion. LaTeX normalization is allowed only when it preserves every mathematical and Korean source detail.
+
+answerStatus is exact only when an explicit final answer is visible in these pixels and faithfully matches raw_answer; mismatch when a visible official answer differs; not_visible only when no explicit answer is visible in this attached range; unverifiable when pixels are unclear. Do not call a value derived from the reasoning exact. explanationStatus is exact only when the full reasoning is faithful and complete; mismatch for any omission, substitution, changed formula/value, truncated continuation, summary, invented step, or missing source-required table/diagram description; unverifiable when the pixels or continuation context do not support a confident decision. A redundant visual need not be narrated, but explain that it is redundant in evidence. Never guess exact. Give concise page-grounded evidence and keep every input key exactly once.
+`.trim();
+const SOLUTION_FIDELITY_PROMPT_DIGEST = sha256(
+  `${SOLUTION_FIDELITY_VERSION}\n${SOLUTION_FIDELITY_RULES}`,
+);
+const SEMANTIC_CHOICE_VERSION = 3;
+const LEGACY_SEMANTIC_CHOICE_VERSION = 2;
 const SEMANTIC_CHOICE_RULES =
   `For each item, use only its official detailed explanation and answer-choice contents to identify the one ` +
   `choice semantically supported by the reasoning. The official answer marker and the problem extractor's answer ` +
@@ -258,8 +276,14 @@ const SEMANTIC_CHOICE_RULES =
   `Return ambiguous when the explanation does not establish ` +
   `exactly one choice. choiceIndex is 1-based and evidence must briefly cite the decisive value or conclusion.`;
 const SEMANTIC_CHOICE_PROMPT_DIGEST = sha256(`${SEMANTIC_CHOICE_VERSION}\n${SEMANTIC_CHOICE_RULES}`);
+const LEGACY_SEMANTIC_CHOICE_PROMPT_DIGEST = sha256(
+  `${LEGACY_SEMANTIC_CHOICE_VERSION}\n${SEMANTIC_CHOICE_RULES}`,
+);
 const TARGETED_PROBLEM_PROMPT_DIGEST = sha256(
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
+);
+const TARGETED_SOLUTION_PROMPT_DIGEST = sha256(
+  `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`,
 );
 
 const OFFICIAL_CIRCLED_ANSWERS = "①②③④⑤⑥⑦⑧⑨⑩";
@@ -893,6 +917,10 @@ type OfficialSolution = {
   page: number;
   evidence: Record<string, unknown>;
   checkpoint: EvidencePointer;
+  contextFrom: number;
+  contextTo: number;
+  ownedFrom: number;
+  ownedTo: number;
 };
 
 function loadSolutions(
@@ -957,6 +985,10 @@ function loadSolutions(
             path: `solution-chunks/${name}`,
             sha256: hashFile(join(dir, name)),
           },
+          contextFrom: from,
+          contextTo: to,
+          ownedFrom,
+          ownedTo,
         });
       }
     } catch (error) {
@@ -966,8 +998,8 @@ function loadSolutions(
   validateRanges(ranges, evidence.pageCount, "solution", entry.id, add);
   for (const [index, slice] of topology.entries()) {
     const next = topology[index + 1];
-    const expectedFrom = index * 4 + 1;
-    const expectedTo = Math.min(expectedFrom + 5, evidence.pageCount);
+    const expectedFrom = index * SOLUTION_SLICE_STRIDE + 1;
+    const expectedTo = Math.min(expectedFrom + SOLUTION_SLICE_PAGES - 1, evidence.pageCount);
     const expectedOwnedTo = next ? next.from - 1 : slice.to;
     if (
       slice.from !== expectedFrom || slice.to !== expectedTo || (next && next.from !== slice.to - 1)
@@ -1207,6 +1239,533 @@ function applyDeclaredRepair(
   };
 }
 
+type SolutionFidelityInput = {
+  key: string;
+  printedNumber: string;
+  qtype: ProblemQuestion["qtype"];
+  allowDerivedMarkerAnswer: boolean;
+  sourcePage: number;
+  rawAnswer: string;
+  explanation: string;
+  complete: true;
+  baseSolutionCheckpoint: EvidencePointer;
+  baseSolutionItemHash: string;
+  baseContextFrom: number;
+  baseContextTo: number;
+  baseOwnedFrom: number;
+  baseOwnedTo: number;
+};
+
+type SolutionFidelityDecision = {
+  key: string;
+  sourcePage: number;
+  answerStatus: "exact" | "mismatch" | "not_visible" | "unverifiable";
+  explanationStatus: "exact" | "mismatch" | "unverifiable";
+  evidence: string;
+};
+
+type SolutionFidelityCheckpointEvidence = EvidencePointer & {
+  from: number;
+  to: number;
+  ownedFrom: number;
+  ownedTo: number;
+  inputHash: string;
+};
+
+type VerifiedSolutionFidelity = {
+  solutions: Map<string, OfficialSolution>;
+  checkpoints: SolutionFidelityCheckpointEvidence[];
+  items: Record<string, unknown>[];
+  repairs: Record<string, unknown>[];
+  acceptedSolutionKeys: string[];
+  solutionRepairKeys: string[];
+  derivedAnswerKeys: string[];
+  effectiveSolutionCorpusHash: string;
+};
+
+function solutionFidelityCheckpointEvidence(value: unknown, label: string): SolutionFidelityCheckpointEvidence {
+  const row = object(value, label);
+  if (Object.keys(row).sort().join(",") !== "from,inputHash,ownedFrom,ownedTo,path,sha256,to") {
+    throw new Error(`${label} has unexpected fields`);
+  }
+  const pointer = evidencePointer({ path: row.path, sha256: row.sha256 }, label);
+  const inputHash = exactString(row.inputHash, `${label}.inputHash`);
+  if (!/^[a-f0-9]{64}$/u.test(inputHash)) throw new Error(`${label}.inputHash is invalid`);
+  return {
+    ...pointer,
+    from: integer(row.from, `${label}.from`, 1),
+    to: integer(row.to, `${label}.to`, 1),
+    ownedFrom: integer(row.ownedFrom, `${label}.ownedFrom`, 1),
+    ownedTo: integer(row.ownedTo, `${label}.ownedTo`, 1),
+    inputHash,
+  };
+}
+
+function solutionFidelityDecision(
+  value: unknown,
+  input: SolutionFidelityInput,
+  label: string,
+): SolutionFidelityDecision {
+  const row = object(value, label);
+  const key = exactString(row.key, `${label}.key`);
+  if (key !== input.key) throw new Error(`${label}.key does not match its accepted solution`);
+  const answerStatus = row.answerStatus;
+  if (answerStatus !== "exact" && answerStatus !== "mismatch"
+    && answerStatus !== "not_visible" && answerStatus !== "unverifiable") {
+    throw new Error(`${key}: invalid solution answerStatus`);
+  }
+  const explanationStatus = row.explanationStatus;
+  if (explanationStatus !== "exact" && explanationStatus !== "mismatch"
+    && explanationStatus !== "unverifiable") {
+    throw new Error(`${key}: invalid solution explanationStatus`);
+  }
+  return {
+    key,
+    sourcePage: integer(row.sourcePage, `${label}.sourcePage`, 1),
+    answerStatus,
+    explanationStatus,
+    evidence: exactString(row.evidence, `${label}.evidence`),
+  };
+}
+
+function expectedSolutionFidelitySlices(pageCount: number): Array<{
+  index: number;
+  from: number;
+  to: number;
+  ownedFrom: number;
+  ownedTo: number;
+}> {
+  const slices: Array<{ index: number; from: number; to: number; ownedFrom: number; ownedTo: number }> = [];
+  for (let index = 0, from = 1; from <= pageCount; index += 1, from += SOLUTION_FIDELITY_SLICE_STRIDE) {
+    const to = Math.min(from + SOLUTION_FIDELITY_SLICE_PAGES - 1, pageCount);
+    const nextFrom = to === pageCount ? null : from + SOLUTION_FIDELITY_SLICE_STRIDE;
+    slices.push({ index, from, to, ownedFrom: from, ownedTo: nextFrom === null ? to : nextFrom - 1 });
+    if (to === pageCount) break;
+  }
+  return slices;
+}
+
+function fidelityInput(
+  record: ClassifiedEvidence,
+  solution: OfficialSolution,
+): SolutionFidelityInput {
+  let allowDerivedMarkerAnswer = false;
+  if (record.question.qtype === "mcq") {
+    try {
+      allowDerivedMarkerAnswer = resolveOfficialAnswerForDb(record.question, solution.rawAnswer).mode === "choice-marker";
+    } catch {
+      // A problem repair may be required for an unresolved value; it must not authorize a derived marker answer.
+    }
+  }
+  return {
+    key: record.question.key,
+    printedNumber: record.question.printedNumber,
+    qtype: record.question.qtype,
+    allowDerivedMarkerAnswer,
+    sourcePage: solution.page,
+    rawAnswer: solution.rawAnswer,
+    explanation: solution.explanation,
+    complete: true,
+    baseSolutionCheckpoint: solution.checkpoint,
+    baseSolutionItemHash: canonicalEvidenceHash(solution.evidence),
+    baseContextFrom: solution.contextFrom,
+    baseContextTo: solution.contextTo,
+    baseOwnedFrom: solution.ownedFrom,
+    baseOwnedTo: solution.ownedTo,
+  };
+}
+
+function parseRepairedSolution(
+  value: unknown,
+  label: string,
+  base: OfficialSolution,
+): OfficialSolution {
+  const row = object(value, label);
+  const rawNumber = exactString(row.number, `${label}.number`);
+  const number = numericPrintedLocator(rawNumber);
+  const page = integer(row.page, `${label}.page`, 1);
+  if (number === null || row.complete !== true) throw new Error(`${label} is not a complete numbered solution`);
+  const rawAnswer = exactString(row.answer, `${label}.answer`);
+  const explanation = exactString(row.explanation, `${label}.explanation`);
+  return {
+    printedNumber: String(number),
+    rawAnswer,
+    explanation,
+    page,
+    evidence: { number: rawNumber, answer: rawAnswer, explanation, page, complete: true },
+    checkpoint: base.checkpoint,
+    contextFrom: base.contextFrom,
+    contextTo: base.contextTo,
+    ownedFrom: base.ownedFrom,
+    ownedTo: base.ownedTo,
+  };
+}
+
+function verifySolutionFidelity(
+  stateDir: string,
+  entry: ManifestEntry,
+  solutionEvidence: DownloadEvidence,
+  rulesDigest: string,
+  effective: DecisionSummary,
+  baseSolutions: Map<string, OfficialSolution>,
+  audit: Record<string, unknown>,
+): VerifiedSolutionFidelity {
+  if (!Array.isArray(audit.solutionFidelityCheckpoints) || !Array.isArray(audit.solutionFidelityItems)
+    || !Array.isArray(audit.solutionRepairs)) {
+    throw new Error("answer audit solution fidelity arrays are missing");
+  }
+  const acceptedRecords = effective.order.map((key) => effective.records.get(key)!)
+    .filter((record) => record.classification.decision === "accept");
+  const effectiveProblemCorpusHash = canonicalEvidenceHash(effective.order.map((key) => {
+    const record = effective.records.get(key)!;
+    return { question: record.question.evidence, classification: record.classification };
+  }));
+  const accepted = acceptedRecords.map((record) => {
+    const solution = baseSolutions.get(record.question.printedNumber);
+    if (!solution || !solution.rawAnswer.trim() || !solution.explanation.trim()) {
+      throw new Error(`${record.question.key}: accepted question has no complete base official solution`);
+    }
+    return { record, solution, input: fidelityInput(record, solution) };
+  });
+  const acceptedSolutionKeys = accepted.map(({ record }) => record.question.key).sort();
+  const declaredCheckpoints = new Map<string, SolutionFidelityCheckpointEvidence>();
+  for (const [index, value] of audit.solutionFidelityCheckpoints.entries()) {
+    const checkpoint = solutionFidelityCheckpointEvidence(value, `solutionFidelityCheckpoints[${index}]`);
+    if (declaredCheckpoints.has(checkpoint.path)) throw new Error(`duplicate solution fidelity checkpoint ${checkpoint.path}`);
+    declaredCheckpoints.set(checkpoint.path, checkpoint);
+  }
+
+  const baseResults = new Map<string, {
+    input: SolutionFidelityInput;
+    solution: OfficialSolution;
+    decision: SolutionFidelityDecision;
+    artifact: EvidencePointer;
+    sliceTo: number;
+  }>();
+  const expectedCheckpoints: SolutionFidelityCheckpointEvidence[] = [];
+  for (const slice of expectedSolutionFidelitySlices(solutionEvidence.pageCount)) {
+    const owned = accepted.filter(({ input }) => input.sourcePage >= slice.ownedFrom && input.sourcePage <= slice.ownedTo);
+    if (owned.length === 0) continue;
+    const inputs = owned.map(({ input }) => input);
+    const inputHash = canonicalEvidenceHash(inputs);
+    const relativePath = `solution-fidelity/v${SOLUTION_FIDELITY_VERSION}-${String(slice.index).padStart(4, "0")}-` +
+      `${effectiveProblemCorpusHash}-${inputHash}.json`;
+    const expectedEvidence = {
+      path: relativePath,
+      sha256: declaredCheckpoints.get(relativePath)?.sha256 ?? "",
+      from: slice.from,
+      to: slice.to,
+      ownedFrom: slice.ownedFrom,
+      ownedTo: slice.ownedTo,
+      inputHash,
+    };
+    const declared = declaredCheckpoints.get(relativePath);
+    if (!declared || !isDeepStrictEqual(declared, expectedEvidence)) {
+      throw new Error(`${relativePath}: missing or stale solution fidelity checkpoint evidence`);
+    }
+    const pointer = { path: declared.path, sha256: declared.sha256 };
+    const checkpoint = readBoundEvidence(stateDir, pointer, relativePath);
+    if (!Array.isArray(checkpoint.items)) throw new Error(`${relativePath}.items must be an array`);
+    const inputByKey = new Map(inputs.map((input) => [input.key, input]));
+    const decisions = new Map<string, SolutionFidelityDecision>();
+    const items = checkpoint.items.map((value, index) => {
+      const key = exactString(object(value, `${relativePath}.items[${index}]`).key, `${relativePath}.items[${index}].key`);
+      const input = inputByKey.get(key);
+      if (!input || decisions.has(key)) throw new Error(`${relativePath}: missing, extra, or duplicate key ${key}`);
+      const decision = solutionFidelityDecision(value, input, `${relativePath}.items[${index}]`);
+      if (decision.sourcePage < slice.from || decision.sourcePage > slice.to) {
+        throw new Error(`${key}: fidelity sourcePage is outside its attached 22/18 slice`);
+      }
+      decisions.set(key, decision);
+      return decision;
+    });
+    if (decisions.size !== inputs.length) throw new Error(`${relativePath}: accepted solution key coverage is incomplete`);
+    const expectedCheckpoint = {
+      version: SOLUTION_FIDELITY_VERSION,
+      entryId: entry.id,
+      sourceHash: solutionEvidence.sha256,
+      from: slice.from,
+      to: slice.to,
+      ownedFrom: slice.ownedFrom,
+      ownedTo: slice.ownedTo,
+      classifierVersion: CLASSIFIER_VERSION,
+      rulesDigest,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      effectiveProblemCorpusHash,
+      inputHash,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      inputs,
+      items,
+    };
+    if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)) {
+      throw new Error(`${relativePath}: metadata/input/output is stale or incomplete`);
+    }
+    for (const { solution, input } of owned) {
+      if (baseResults.has(input.key)) throw new Error(`${input.key}: duplicate solution fidelity ownership`);
+      baseResults.set(input.key, {
+        input,
+        solution,
+        decision: decisions.get(input.key)!,
+        artifact: pointer,
+        sliceTo: slice.to,
+      });
+    }
+    expectedCheckpoints.push(expectedEvidence);
+  }
+  if (baseResults.size !== accepted.length) {
+    throw new Error(`solution fidelity accepted-key coverage is ${baseResults.size}/${accepted.length}`);
+  }
+  expectedCheckpoints.sort((left, right) => left.path.localeCompare(right.path));
+  if (!isDeepStrictEqual(audit.solutionFidelityCheckpoints, expectedCheckpoints)) {
+    throw new Error("answer audit solution fidelity checkpoint set/order is not exact");
+  }
+
+  const expectedRepairKeys = new Set([...baseResults].flatMap(([key, result]) => {
+    const terminalAnswer = result.decision.answerStatus === "exact"
+      || result.decision.answerStatus === "not_visible" && result.input.allowDerivedMarkerAnswer;
+    return result.decision.sourcePage !== result.input.sourcePage
+      || result.decision.explanationStatus !== "exact" || !terminalAnswer
+      || result.input.baseContextTo > result.sliceTo ? [key] : [];
+  }));
+  const declaredRepairs = new Map<string, Record<string, unknown>>();
+  for (const value of audit.solutionRepairs) {
+    const repair = object(value, "solution repair evidence");
+    const key = exactString(repair.key, "solution repair.key");
+    if (declaredRepairs.has(key)) throw new Error(`duplicate declared solution repair ${key}`);
+    declaredRepairs.set(key, repair);
+  }
+  if (declaredRepairs.size !== expectedRepairKeys.size
+    || [...declaredRepairs].some(([key]) => !expectedRepairKeys.has(key))) {
+    throw new Error("declared solution repair keys do not exactly match non-terminal fidelity keys");
+  }
+
+  const effectiveSolutions = new Map(baseSolutions);
+  const terminalItems = new Map<string, Record<string, unknown>>();
+  const expectedRepairs: Record<string, unknown>[] = [];
+  for (const [key, result] of baseResults) {
+    const { input, solution: baseSolution, decision, artifact } = result;
+    if (!expectedRepairKeys.has(key)) {
+      terminalItems.set(key, {
+        key,
+        printedNumber: input.printedNumber,
+        qtype: input.qtype,
+        basePage: input.sourcePage,
+        effectivePage: input.sourcePage,
+        answerStatus: decision.answerStatus,
+        explanationStatus: decision.explanationStatus,
+        evidence: decision.evidence,
+        fidelityArtifact: artifact,
+        baseSolutionItemHash: input.baseSolutionItemHash,
+        effectiveSolutionItemHash: input.baseSolutionItemHash,
+        baseRawAnswerHash: sha256(input.rawAnswer),
+        effectiveRawAnswerHash: sha256(input.rawAnswer),
+        baseExplanationHash: sha256(input.explanation),
+        effectiveExplanationHash: sha256(input.explanation),
+      });
+      continue;
+    }
+
+    const repair = declaredRepairs.get(key)!;
+    const printedNumber = exactString(repair.printedNumber, `${key}.printedNumber`);
+    const basePage = integer(repair.basePage, `${key}.basePage`, 1);
+    const effectivePage = integer(repair.effectivePage, `${key}.effectivePage`, 1);
+    const contextFrom = integer(repair.contextFrom, `${key}.contextFrom`, 1);
+    const contextTo = integer(repair.contextTo, `${key}.contextTo`, contextFrom);
+    const baseOwnedFrom = integer(repair.baseOwnedFrom, `${key}.baseOwnedFrom`, contextFrom);
+    const baseOwnedTo = integer(repair.baseOwnedTo, `${key}.baseOwnedTo`, baseOwnedFrom);
+    if (printedNumber !== input.printedNumber || basePage !== input.sourcePage
+      || contextFrom !== input.baseContextFrom || contextTo !== input.baseContextTo
+      || baseOwnedFrom !== input.baseOwnedFrom || baseOwnedTo !== input.baseOwnedTo
+      || basePage < baseOwnedFrom || basePage > baseOwnedTo
+      || effectivePage < contextFrom || effectivePage > contextTo
+      || contextTo - contextFrom + 1 > SOLUTION_SLICE_PAGES) {
+      throw new Error(`${key}: solution repair identity/context does not match owning base 6/4 chunk`);
+    }
+    const baseSolutionCheckpoint = evidencePointer(repair.baseSolutionCheckpoint, `${key}.baseSolutionCheckpoint`);
+    const baseFidelityCheckpoint = evidencePointer(repair.baseFidelityCheckpoint, `${key}.baseFidelityCheckpoint`);
+    sameEvidencePointer(baseSolutionCheckpoint, input.baseSolutionCheckpoint, `${key}.baseSolutionCheckpoint`);
+    sameEvidencePointer(baseFidelityCheckpoint, artifact, `${key}.baseFidelityCheckpoint`);
+    const baseSolutionPath = confinedEvidencePath(stateDir, baseSolutionCheckpoint, `${key} base solution checkpoint`);
+    if (hashFile(baseSolutionPath) !== baseSolutionCheckpoint.sha256) {
+      throw new Error(`${key}: base solution checkpoint hash mismatch`);
+    }
+    readBoundEvidence(stateDir, baseFidelityCheckpoint, `${key} base fidelity checkpoint`);
+    if (repair.baseSolutionItemHash !== input.baseSolutionItemHash
+      || repair.baseRawAnswerHash !== sha256(input.rawAnswer)
+      || repair.baseExplanationHash !== sha256(input.explanation)) {
+      throw new Error(`${key}: solution repair base hashes do not match immutable evidence`);
+    }
+
+    const repairArtifact = evidencePointer(repair.repairArtifact, `${key}.repairArtifact`);
+    const expectedRepairPath = `solution-repairs/v${SOLUTION_REPAIR_VERSION}-${String(basePage).padStart(4, "0")}-` +
+      `${printedNumber.padStart(4, "0")}-${artifact.sha256}.json`;
+    if (repairArtifact.path !== expectedRepairPath) throw new Error(`${key}: solution repair path is invalid`);
+    const repairCheckpoint = readBoundEvidence(stateDir, repairArtifact, `${key} solution repair`);
+    const corrected = parseRepairedSolution(repairCheckpoint.item, `${key} solution repair.item`, baseSolution);
+    if (corrected.printedNumber !== printedNumber || corrected.page !== effectivePage
+      || corrected.page < contextFrom || corrected.page > contextTo) {
+      throw new Error(`${key}: repaired solution changed printed number or escaped its bounded context`);
+    }
+    const effectiveSolutionItemHash = canonicalEvidenceHash(corrected.evidence);
+    const expectedRepairCheckpoint = {
+      version: SOLUTION_REPAIR_VERSION,
+      entryId: entry.id,
+      key,
+      printedNumber,
+      basePage,
+      contextFrom,
+      contextTo,
+      baseOwnedFrom,
+      baseOwnedTo,
+      sourceHash: solutionEvidence.sha256,
+      effectiveProblemCorpusHash,
+      baseSolutionCheckpoint,
+      baseFidelityCheckpoint,
+      baseSolutionItemHash: input.baseSolutionItemHash,
+      baseRawAnswerHash: sha256(input.rawAnswer),
+      baseExplanationHash: sha256(input.explanation),
+      promptVersion: TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
+      promptDigest: TARGETED_SOLUTION_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      effectivePage,
+      item: corrected.evidence,
+    };
+    if (!isDeepStrictEqual(repairCheckpoint, expectedRepairCheckpoint)) {
+      throw new Error(`${key}: solution repair metadata/content is stale or incomplete`);
+    }
+
+    const fidelityArtifactRow = object(repair.fidelityArtifact, `${key}.fidelityArtifact`);
+    if (Object.keys(fidelityArtifactRow).sort().join(",") !== "path,promptDigest,sha256") {
+      throw new Error(`${key}.fidelityArtifact has unexpected fields`);
+    }
+    const fidelityArtifact = evidencePointer(
+      { path: fidelityArtifactRow.path, sha256: fidelityArtifactRow.sha256 },
+      `${key}.fidelityArtifact`,
+    );
+    if (fidelityArtifactRow.promptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST) {
+      throw new Error(`${key}: repaired solution fidelity prompt is stale`);
+    }
+    const repairedInput: SolutionFidelityInput = {
+      ...input,
+      sourcePage: corrected.page,
+      rawAnswer: corrected.rawAnswer,
+      explanation: corrected.explanation,
+    };
+    const repairedInputHash = canonicalEvidenceHash(repairedInput);
+    const expectedFidelityPath = `solution-fidelity-repairs/v${SOLUTION_REPAIR_FIDELITY_VERSION}-` +
+      `${String(basePage).padStart(4, "0")}-${printedNumber.padStart(4, "0")}-` +
+      `${artifact.sha256}-${effectiveSolutionItemHash}.json`;
+    if (fidelityArtifact.path !== expectedFidelityPath) {
+      throw new Error(`${key}: repaired solution fidelity path is invalid`);
+    }
+    const fidelityCheckpoint = readBoundEvidence(stateDir, fidelityArtifact, `${key} repaired solution fidelity`);
+    const repairedDecision = solutionFidelityDecision(
+      fidelityCheckpoint.item,
+      repairedInput,
+      `${key} repaired solution fidelity.item`,
+    );
+    const expectedFidelityCheckpoint = {
+      version: SOLUTION_REPAIR_FIDELITY_VERSION,
+      entryId: entry.id,
+      key,
+      sourceHash: solutionEvidence.sha256,
+      from: contextFrom,
+      to: contextTo,
+      basePage,
+      effectivePage,
+      baseOwnedFrom,
+      baseOwnedTo,
+      effectiveProblemCorpusHash,
+      baseSolutionCheckpoint,
+      baseFidelityCheckpoint,
+      repairArtifact,
+      effectiveSolutionItemHash,
+      inputHash: repairedInputHash,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      input: repairedInput,
+      item: repairedDecision,
+    };
+    if (!isDeepStrictEqual(fidelityCheckpoint, expectedFidelityCheckpoint)) {
+      throw new Error(`${key}: repaired solution fidelity metadata/content is stale or incomplete`);
+    }
+    const terminalAnswer = repairedDecision.answerStatus === "exact"
+      || repairedDecision.answerStatus === "not_visible" && input.allowDerivedMarkerAnswer;
+    if (repairedDecision.sourcePage !== effectivePage || repairedDecision.explanationStatus !== "exact"
+      || !terminalAnswer) {
+      throw new Error(`${key}: repaired solution did not reach terminal source fidelity`);
+    }
+    const expectedRepair = {
+      key,
+      printedNumber,
+      basePage,
+      effectivePage,
+      contextFrom,
+      contextTo,
+      baseOwnedFrom,
+      baseOwnedTo,
+      baseSolutionCheckpoint,
+      baseFidelityCheckpoint,
+      repairArtifact,
+      fidelityArtifact: { ...fidelityArtifact, promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST },
+      baseSolutionItemHash: input.baseSolutionItemHash,
+      effectiveSolutionItemHash,
+      baseRawAnswerHash: sha256(input.rawAnswer),
+      effectiveRawAnswerHash: sha256(corrected.rawAnswer),
+      baseExplanationHash: sha256(input.explanation),
+      effectiveExplanationHash: sha256(corrected.explanation),
+    };
+    if (!isDeepStrictEqual(repair, expectedRepair)) {
+      throw new Error(`${key}: solution repair evidence envelope does not match its artifacts`);
+    }
+    expectedRepairs.push(expectedRepair);
+    effectiveSolutions.set(printedNumber, corrected);
+    terminalItems.set(key, {
+      key,
+      printedNumber,
+      qtype: input.qtype,
+      basePage,
+      effectivePage,
+      answerStatus: repairedDecision.answerStatus,
+      explanationStatus: repairedDecision.explanationStatus,
+      evidence: repairedDecision.evidence,
+      fidelityArtifact,
+      baseSolutionItemHash: input.baseSolutionItemHash,
+      effectiveSolutionItemHash,
+      baseRawAnswerHash: sha256(input.rawAnswer),
+      effectiveRawAnswerHash: sha256(corrected.rawAnswer),
+      baseExplanationHash: sha256(input.explanation),
+      effectiveExplanationHash: sha256(corrected.explanation),
+    });
+  }
+  const items = [...terminalItems.values()].sort((left, right) =>
+    String(left.key).localeCompare(String(right.key)));
+  expectedRepairs.sort((left, right) => String(left.key).localeCompare(String(right.key)));
+  if (items.length !== accepted.length || !isDeepStrictEqual(audit.solutionFidelityItems, items)
+    || !isDeepStrictEqual(audit.solutionRepairs, expectedRepairs)) {
+    throw new Error("answer audit terminal solution fidelity items/repairs are not exact");
+  }
+  const effectiveSolutionCorpus = acceptedRecords.map((record) => ({
+    key: record.question.key,
+    solution: effectiveSolutions.get(record.question.printedNumber)!.evidence,
+  })).sort((left, right) => left.key.localeCompare(right.key));
+  return {
+    solutions: effectiveSolutions,
+    checkpoints: expectedCheckpoints,
+    items,
+    repairs: expectedRepairs,
+    acceptedSolutionKeys,
+    solutionRepairKeys: expectedRepairs.map((repair) => String(repair.key)),
+    derivedAnswerKeys: items.filter((item) => item.answerStatus === "not_visible").map((item) => String(item.key)),
+    effectiveSolutionCorpusHash: canonicalEvidenceHash(effectiveSolutionCorpus),
+  };
+}
+
 type SemanticDecision = {
   key: string;
   status: "resolved" | "ambiguous";
@@ -1222,6 +1781,7 @@ function verifySemanticCheckpoint(
   solutionEvidence: DownloadEvidence,
   rulesDigest: string,
   effectiveCorpusHash: string,
+  effectiveSolutionCorpusHash: string,
   inputs: Array<{ key: string; choices: string[]; detailedExplanation: string }>,
 ): Map<string, SemanticDecision> {
   const inputHash = canonicalEvidenceHash(inputs);
@@ -1230,10 +1790,13 @@ function verifySemanticCheckpoint(
     return new Map();
   }
   const envelope = object(value, "answer audit semanticCheckpoint");
-  if (Object.keys(envelope).sort().join(",") !== "inputHash,path,sha256") {
+  if (Object.keys(envelope).sort().join(",") !== "effectiveSolutionCorpusHash,inputHash,path,sha256") {
     throw new Error("semanticCheckpoint has unexpected fields");
   }
   if (envelope.inputHash !== inputHash) throw new Error("semanticCheckpoint input hash does not match marker inputs");
+  if (envelope.effectiveSolutionCorpusHash !== effectiveSolutionCorpusHash) {
+    throw new Error("semanticCheckpoint effective solution corpus hash is stale");
+  }
   const pointer = evidencePointer({ path: envelope.path, sha256: envelope.sha256 }, "semanticCheckpoint");
   if (pointer.path !== `semantic-choice-checks/v${SEMANTIC_CHOICE_VERSION}-${inputHash}.json`) {
     throw new Error("semantic checkpoint path does not match input hash");
@@ -1273,6 +1836,7 @@ function verifySemanticCheckpoint(
     transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
     transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
     effectiveCorpusHash,
+    effectiveSolutionCorpusHash,
     inputHash,
     promptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
     model: "gpt-5.6-sol",
@@ -1286,6 +1850,8 @@ function verifySemanticCheckpoint(
   return decisions;
 }
 
+type VerifiedAnswerAudit = { decisions: DecisionSummary; solutions: Map<string, OfficialSolution> };
+
 function verifyAnswerAudit(
   stateDir: string,
   entry: ManifestEntry,
@@ -1295,11 +1861,11 @@ function verifyAnswerAudit(
   solutions: Map<string, OfficialSolution>,
   terminal: Record<string, unknown>,
   add: AddFailure,
-): DecisionSummary {
+): VerifiedAnswerAudit {
   const rulesDigest = base.rulesDigest;
   if (!rulesDigest) {
     add({ code: "ANSWER_AUDIT_INVALID", entryId: entry.id, message: "selected classification rules digest is missing" });
-    return base;
+    return { decisions: base, solutions };
   }
   const receiptHash = canonicalEvidenceHash(terminal);
   try {
@@ -1315,10 +1881,10 @@ function verifyAnswerAudit(
       entryId: entry.id,
       message: error instanceof Error ? error.message : String(error),
     });
-    return base;
+    return { decisions: base, solutions };
   }
   const attestationDir = join(stateDir, "answer-attestation");
-  const names = listJson(attestationDir, /^v1-[a-f0-9]{64}\.json$/u);
+  const names = listJson(attestationDir, /^v2-[a-f0-9]{64}\.json$/u);
   const candidates: Array<{ name: string; path: string; value: Record<string, unknown> }> = [];
   for (const name of names) {
     try {
@@ -1336,6 +1902,8 @@ function verifyAnswerAudit(
         && value.rulesDigest === rulesDigest
         && value.transcriptionGateVersion === TRANSCRIPTION_GATE_VERSION
         && value.transcriptionPromptDigest === TRANSCRIPTION_PROMPT_DIGEST
+        && value.solutionFidelityVersion === SOLUTION_FIDELITY_VERSION
+        && value.solutionFidelityPromptDigest === SOLUTION_FIDELITY_PROMPT_DIGEST
         && receipt.path === "receipt.json"
         && receipt.sha256 === receiptHash;
       if (looksCurrent) candidates.push({ name, path, value });
@@ -1349,13 +1917,13 @@ function verifyAnswerAudit(
       entryId: entry.id,
       message: `expected one current post-commit answer attestation, found ${candidates.length}`,
     });
-    return base;
+    return { decisions: base, solutions };
   }
 
   try {
     const { name, path: attestationPath, value: attestation } = candidates[0];
     const attestationDigest = exactString(attestation.attestationDigest, "answer attestation.digest");
-    if (attestation.version !== 1 || name !== `v1-${attestationDigest}.json`
+    if (attestation.version !== 2 || name !== `v2-${attestationDigest}.json`
       || !/^[a-f0-9]{64}$/u.test(attestationDigest)) {
       throw new Error("answer attestation version/name/digest is invalid");
     }
@@ -1369,29 +1937,35 @@ function verifyAnswerAudit(
       throw new Error("answer attestation does not bind the committed canonical receipt");
     }
     const auditEnvelope = object(attestation.answerAudit, "answer attestation audit");
-    if (Object.keys(auditEnvelope).sort().join(",") !== "effectiveCorpusHash,path,sha256") {
+    if (Object.keys(auditEnvelope).sort().join(",")
+      !== "effectiveCorpusHash,effectiveSolutionCorpusHash,path,sha256") {
       throw new Error("answer attestation audit pointer has unexpected fields");
     }
     const auditPointer = evidencePointer(
       { path: auditEnvelope.path, sha256: auditEnvelope.sha256 },
       "answer attestation audit",
     );
-    const auditPathMatch = /^answer-audit\/v1-([a-f0-9]{64})\.json$/u.exec(auditPointer.path);
-    if (!auditPathMatch || !/^[a-f0-9]{64}$/u.test(String(auditEnvelope.effectiveCorpusHash))) {
+    const auditPathMatch = /^answer-audit\/v2-([a-f0-9]{64})\.json$/u.exec(auditPointer.path);
+    if (!auditPathMatch || !/^[a-f0-9]{64}$/u.test(String(auditEnvelope.effectiveCorpusHash))
+      || !/^[a-f0-9]{64}$/u.test(String(auditEnvelope.effectiveSolutionCorpusHash))) {
       throw new Error("answer attestation audit path/effective corpus hash is invalid");
     }
     const audit = readBoundEvidence(stateDir, auditPointer, "attested answer audit");
     const auditDigest = exactString(audit.auditDigest, "answer audit.digest");
-    if (audit.version !== 1 || auditPathMatch[1] !== auditDigest || !/^[a-f0-9]{64}$/u.test(auditDigest)) {
+    if (audit.version !== 2 || auditPathMatch[1] !== auditDigest || !/^[a-f0-9]{64}$/u.test(auditDigest)) {
       throw new Error("answer audit version/name/digest is invalid");
     }
     const { version: _version, auditDigest: _auditDigest, ...auditBasis } = audit;
     if (canonicalEvidenceHash(auditBasis) !== auditDigest) {
       throw new Error("answer audit canonical digest or file hash is invalid");
     }
-    if (!Array.isArray(audit.repairs)) throw new Error("answer audit repairs must be an array");
-    if (auditEnvelope.effectiveCorpusHash !== audit.effectiveCorpusHash) {
-      throw new Error("answer attestation effective corpus hash does not match its audit");
+    if (!Array.isArray(audit.repairs) || !Array.isArray(audit.solutionFidelityCheckpoints)
+      || !Array.isArray(audit.solutionFidelityItems) || !Array.isArray(audit.solutionRepairs)) {
+      throw new Error("answer audit repair/fidelity arrays are missing");
+    }
+    if (auditEnvelope.effectiveCorpusHash !== audit.effectiveCorpusHash
+      || auditEnvelope.effectiveSolutionCorpusHash !== audit.effectiveSolutionCorpusHash) {
+      throw new Error("answer attestation effective corpus hashes do not match its audit");
     }
     const expectedAttestationBasis = {
       entryId: entry.id,
@@ -1401,12 +1975,18 @@ function verifyAnswerAudit(
       rulesDigest,
       transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
       transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      solutionFidelityVersion: SOLUTION_FIDELITY_VERSION,
+      solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
       receipt: receiptPointer,
       answerAudit: {
         ...auditPointer,
         effectiveCorpusHash: auditEnvelope.effectiveCorpusHash,
+        effectiveSolutionCorpusHash: auditEnvelope.effectiveSolutionCorpusHash,
       },
       repairs: audit.repairs,
+      solutionFidelityCheckpoints: audit.solutionFidelityCheckpoints,
+      solutionFidelityItems: audit.solutionFidelityItems,
+      solutionRepairs: audit.solutionRepairs,
     };
     if (!isDeepStrictEqual(attestationBasis, expectedAttestationBasis)) {
       throw new Error("answer attestation does not exactly bind receipt/audit/repairs");
@@ -1449,13 +2029,26 @@ function verifyAnswerAudit(
     if (auditEnvelope.effectiveCorpusHash !== effectiveCorpusHash) {
       throw new Error("attested effective corpus hash does not match reconstructed corpus");
     }
+    const solutionFidelity = verifySolutionFidelity(
+      stateDir,
+      entry,
+      solutionEvidence,
+      rulesDigest,
+      effective,
+      solutions,
+      audit,
+    );
+    if (auditEnvelope.effectiveSolutionCorpusHash !== solutionFidelity.effectiveSolutionCorpusHash) {
+      throw new Error("attested effective solution corpus hash does not match reconstructed overlay");
+    }
+    const effectiveSolutions = solutionFidelity.solutions;
     const acceptedRecords = effective.order.map((key) => effective.records.get(key)!)
       .filter((record) => record.classification.decision === "accept");
     const acceptedMcq = acceptedRecords.filter((record) => record.question.qtype === "mcq");
     const markerInputs: Array<{ key: string; choices: string[]; detailedExplanation: string }> = [];
     const resolutions = new Map<string, OfficialAnswerResolution>();
     for (const record of acceptedMcq) {
-      const solution = solutions.get(record.question.printedNumber);
+      const solution = effectiveSolutions.get(record.question.printedNumber);
       if (!solution) throw new Error(`${record.question.key}: official solution is missing`);
       const resolution = resolveOfficialAnswerForDb(record.question, solution.rawAnswer);
       if (resolution.choiceIndex === null) throw new Error(`${record.question.key}: MCQ has no resolved choice index`);
@@ -1476,10 +2069,26 @@ function verifyAnswerAudit(
       solutionEvidence,
       rulesDigest,
       effectiveCorpusHash,
+      solutionFidelity.effectiveSolutionCorpusHash,
       markerInputs,
     );
+    const terminalFidelityByKey = new Map(solutionFidelity.items.map((item) => [String(item.key), item]));
+    for (const record of acceptedRecords) {
+      const fidelity = terminalFidelityByKey.get(record.question.key);
+      if (!fidelity || fidelity.explanationStatus !== "exact") {
+        throw new Error(`${record.question.key}: accepted solution lacks exact explanation fidelity`);
+      }
+      if (fidelity.answerStatus === "exact") continue;
+      const resolution = resolutions.get(record.question.key);
+      const semantic = semanticByKey.get(record.question.key);
+      if (fidelity.answerStatus !== "not_visible" || record.question.qtype !== "mcq"
+        || resolution?.mode !== "choice-marker" || semantic?.status !== "resolved"
+        || semantic.choiceIndex !== resolution.choiceIndex! + 1) {
+        throw new Error(`${record.question.key}: not_visible answer lacks final marker semantic authority`);
+      }
+    }
     const auditItems = acceptedMcq.map((record) => {
-      const solution = solutions.get(record.question.printedNumber)!;
+      const solution = effectiveSolutions.get(record.question.printedNumber)!;
       const resolution = resolutions.get(record.question.key)!;
       const semantic = semanticByKey.get(record.question.key) ?? null;
       if (resolution.mode === "choice-marker" && (
@@ -1514,6 +2123,8 @@ function verifyAnswerAudit(
       rulesDigest,
       transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
       transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      solutionFidelityVersion: SOLUTION_FIDELITY_VERSION,
+      solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
       semanticChoiceVersion: SEMANTIC_CHOICE_VERSION,
       semanticPromptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
       sourceQuestionCount: effective.problems.size,
@@ -1521,8 +2132,15 @@ function verifyAnswerAudit(
       rejectedQuestionCount: effective.rejected,
       reviewQuestionCount: effective.reviews,
       targetQuestionCounts,
+      acceptedSolutionKeys: solutionFidelity.acceptedSolutionKeys,
+      solutionRepairKeys: solutionFidelity.solutionRepairKeys,
+      derivedAnswerKeys: solutionFidelity.derivedAnswerKeys,
       acceptedMcqKeys: auditItems.map((item) => item.key).sort(),
       effectiveCorpusHash,
+      effectiveSolutionCorpusHash: solutionFidelity.effectiveSolutionCorpusHash,
+      solutionFidelityCheckpoints: solutionFidelity.checkpoints,
+      solutionFidelityItems: solutionFidelity.items,
+      solutionRepairs: solutionFidelity.repairs,
       semanticCheckpoint: semanticEnvelope,
       repairs: [...audit.repairs].sort((left, right) =>
         exactString(object(left, "repair").key, "repair.key")
@@ -1538,14 +2156,14 @@ function verifyAnswerAudit(
       || terminal.reviewQuestionCount !== effective.reviews) {
       throw new Error("terminal receipt/result counts do not match answer audit effective corpus");
     }
-    return effective;
+    return { decisions: effective, solutions: effectiveSolutions };
   } catch (error) {
     add({
       code: error instanceof CorpusValidationError ? error.code : "ANSWER_AUDIT_INVALID",
       entryId: entry.id,
       message: error instanceof Error ? error.message : String(error),
     });
-    return base;
+    return { decisions: base, solutions };
   }
 }
 
@@ -1580,11 +2198,12 @@ function verifyFilteredAnswerAudit(
       throw new Error("filtered repair audit problem/solution number sets differ");
     }
     const pointer = evidencePointer(result.answerAudit, "filtered result answerAudit");
-    const pathMatch = /^answer-audit\/v1-([a-f0-9]{64})\.json$/u.exec(pointer.path);
+    const pathMatch = /^answer-audit\/v([12])-([a-f0-9]{64})\.json$/u.exec(pointer.path);
     if (!pathMatch) throw new Error("filtered answer audit path is invalid");
+    const version = Number(pathMatch[1]);
     const audit = readBoundEvidence(stateDir, pointer, "filtered answer audit");
     const auditDigest = exactString(audit.auditDigest, "filtered answer audit.digest");
-    if (audit.version !== 1 || pathMatch[1] !== auditDigest) {
+    if (audit.version !== version || pathMatch[2] !== auditDigest) {
       throw new Error("filtered answer audit version/name/digest is invalid");
     }
     const { version: _version, auditDigest: _digest, ...auditBasis } = audit;
@@ -1627,15 +2246,33 @@ function verifyFilteredAnswerAudit(
       rulesDigest,
       transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
       transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
-      semanticChoiceVersion: SEMANTIC_CHOICE_VERSION,
-      semanticPromptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
+      ...(version === 2 ? {
+        solutionFidelityVersion: SOLUTION_FIDELITY_VERSION,
+        solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+        semanticChoiceVersion: SEMANTIC_CHOICE_VERSION,
+        semanticPromptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
+      } : {
+        semanticChoiceVersion: LEGACY_SEMANTIC_CHOICE_VERSION,
+        semanticPromptDigest: LEGACY_SEMANTIC_CHOICE_PROMPT_DIGEST,
+      }),
       sourceQuestionCount: effective.problems.size,
       acceptedQuestionCount: 0,
       rejectedQuestionCount: effective.rejected,
       reviewQuestionCount: effective.reviews,
       targetQuestionCounts: {},
+      ...(version === 2 ? {
+        acceptedSolutionKeys: [],
+        solutionRepairKeys: [],
+        derivedAnswerKeys: [],
+      } : {}),
       acceptedMcqKeys: [],
       effectiveCorpusHash,
+      ...(version === 2 ? {
+        effectiveSolutionCorpusHash: canonicalEvidenceHash([]),
+        solutionFidelityCheckpoints: [],
+        solutionFidelityItems: [],
+        solutionRepairs: [],
+      } : {}),
       semanticCheckpoint: null,
       repairs: [...audit.repairs].sort((left, right) =>
         exactString(object(left, "repair").key, "repair.key")
@@ -2135,7 +2772,7 @@ export function verifyExamCorpus(options: {
           message: "problem and official solution printed-number sets differ",
         });
       }
-      decisions = verifyAnswerAudit(
+      const verifiedAudit = verifyAnswerAudit(
         stateDir,
         entry,
         problemEvidence,
@@ -2145,6 +2782,8 @@ export function verifyExamCorpus(options: {
         receipt,
         add,
       );
+      decisions = verifiedAudit.decisions;
+      const effectiveSolutions = verifiedAudit.solutions;
       if (decisions.reviews > 0) {
         report.manifest.review += 1;
         add({ code: "REVIEW_COMMITTED", entryId: entry.id, message: "effective repair classifications require review" });
@@ -2174,8 +2813,9 @@ export function verifyExamCorpus(options: {
 
       const problemNumbers = new Set([...decisions.problems.values()].map((question) => question.printedNumber));
       if (
-        solutions.size !== problemNumbers.size || [...problemNumbers].some((number) => !solutions.has(number))
-        || [...solutions].some(([number]) => !problemNumbers.has(number))
+        effectiveSolutions.size !== problemNumbers.size
+        || [...problemNumbers].some((number) => !effectiveSolutions.has(number))
+        || [...effectiveSolutions].some(([number]) => !problemNumbers.has(number))
       ) {
         add({
           code: "SOLUTION_NUMBER_SET",
@@ -2185,7 +2825,7 @@ export function verifyExamCorpus(options: {
       }
       const expectedByTarget = new Map<TargetSubject, AcceptedQuestion[]>();
       for (const question of decisions.accepted) {
-        const solution = solutions.get(question.printedNumber);
+        const solution = effectiveSolutions.get(question.printedNumber);
         if (!solution) {
           add({ code: "OFFICIAL_SOLUTION_MISSING", entryId: entry.id, target: question.target, message: `${question.printedNumber}: official solution missing` });
           continue;
