@@ -1180,10 +1180,11 @@ export const QUIZ_EXTRACT_SPEC =
   `- box: when figure is true, [top,bottom] — the vertical span of the problem INCLUDING its figure as fractions of page height (e.g. [0.3,0.6]), be a bit generous; null otherwise\n` +
   `- Output ONLY the JSON array. Nothing else.`;
 
-export const TARGETED_PROBLEM_TRANSCRIPTION_VERSION = 1;
+export const TARGETED_PROBLEM_TRANSCRIPTION_VERSION = 2;
 export const TARGETED_PROBLEM_TRANSCRIPTION_RULES =
-  `TARGETED CORRECTION: Inspect only the requested original page and printed problem number. ` +
-  `Emit exactly that one complete problem and no siblings. Re-read every character from the source pixels: ` +
+  `TARGETED CORRECTION: Emit only the requested printed problem and no siblings. Inspect its entire bounded ` +
+  `attached context, including earlier or later pages that contain a required shared passage, table, figure, or <보기>. ` +
+  `Re-read every character from the source pixels: ` +
   `inequality endpoints, signs, coefficients, exponents, radicals, fractions, pi factors, and every answer choice. ` +
   `Do not preserve, infer from, or repair toward any prior transcription or supplied answer.`;
 
@@ -1307,7 +1308,9 @@ export async function extractProblemsFromFile(
     : "";
   const readInstruction = kind === "pdf"
     ? target
-      ? `Read original document page ${target.page} in the attached PDF and locate printed problem ${targetNumber}.`
+      ? `Read the attached bounded context for original document pages ${firstPage}-${lastPage}, locate printed ` +
+        `problem ${targetNumber} on page ${target.page}, and use surrounding pages only for source material ` +
+        `required to make that one problem self-contained.`
       : `Read the first ${contentPageCount} attached page image(s) as original document pages ${firstPage}-${lastPage}; cover that content range without gaps.${answerKeyNote}`
     : `Read the attached file "${absPath}".`;
   const selfContainedRule = problemExtractionSelfContainedRule(opts?.selfContained === true);

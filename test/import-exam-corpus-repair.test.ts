@@ -19,6 +19,7 @@ import type { QuizItemEx, SolutionItem } from "../src/claude";
 import {
   CLASSIFIER_DIGEST,
   CLASSIFIER_VERSION,
+  PROBLEM_REPAIR_VERSION,
   TRANSCRIPTION_GATE_VERSION,
   TRANSCRIPTION_PROMPT_DIGEST,
   assertNoCommittedReceiptForFilteredResult,
@@ -51,6 +52,8 @@ describe("exam corpus targeted problem repair", () => {
     root = mkdtempSync(join(tmpdir(), "studywork-corpus-repair-"));
     const problemDocument = await PDFDocument.create();
     for (let page = 0; page < 4; page++) problemDocument.addPage([100, 100]);
+    problemDocument.getPage(2).drawText("SHARED PASSAGE START", { x: 5, y: 50, size: 6 });
+    problemDocument.getPage(3).drawText("11 QUESTION", { x: 5, y: 50, size: 6 });
     const problemBytes = await problemDocument.save();
     const solutionDocument = await PDFDocument.create();
     solutionDocument.addPage([100, 100]);
@@ -229,12 +232,16 @@ describe("exam corpus targeted problem repair", () => {
     }) => {
       if (request.schema?.name === "studywork_file_quiz_items") {
         calls.target++;
+        const attached = await PDFDocument.load(readFileSync(request.file!.path));
+        expect(attached.getPageCount()).toBe(4);
+        expect(request.prompt).toContain("bounded context for original document pages 1-4");
+        expect(request.prompt).toContain("required shared passage");
         return {
           text: JSON.stringify([{
             number: "11",
             qtype: "mcq",
             difficulty: "중",
-            question: "$0\\le x\\le\\pi$일 때 모든 실근의 합은?",
+            question: "[공유 지문: 원본 3쪽에서 시작한 조건]\n$0\\le x\\le\\pi$일 때 모든 실근의 합은?",
             choices: [
               "① $\\frac{7}{6}\\pi$",
               "② $\\frac{4}{3}\\pi$",
@@ -257,8 +264,8 @@ describe("exam corpus targeted problem repair", () => {
       if (request.schema?.name === "studywork_exam_corpus_classification") {
         calls.classification++;
         const attached = await PDFDocument.load(readFileSync(request.file!.path));
-        expect(attached.getPageCount()).toBe(1);
-        expect(request.prompt).toContain("original pages 4-4");
+        expect(attached.getPageCount()).toBe(4);
+        expect(request.prompt).toContain("original pages 1-4");
         expect(request.prompt).toContain('"qtype":"mcq"');
         expect(request.prompt).toContain('"figure_description":null');
         expect(request.prompt).toContain('"box":null');
@@ -316,8 +323,20 @@ describe("exam corpus targeted problem repair", () => {
     const repaired = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
     expect(calls).toEqual({ target: 1, classification: 2, semantic: 1 });
     expect(repaired.repairs).toHaveLength(1);
-    expect(repaired.repairs[0]).toMatchObject({ key: "4:11", printedNumber: "11", sourcePage: 4 });
+    expect(PROBLEM_REPAIR_VERSION).toBe(2);
+    expect(repaired.repairs[0]).toMatchObject({
+      key: "4:11",
+      printedNumber: "11",
+      sourcePage: 4,
+      contextFrom: 1,
+      contextTo: 4,
+      problemArtifact: { path: expect.stringMatching(/^problem-repairs\/v2-/u) },
+    });
     expect(repaired.repairs[0].classificationArtifact.path).toMatch(/^classification-repairs\/v2-/u);
+    expect(JSON.parse(readFileSync(join(root, repaired.repairs[0].problemArtifact.path), "utf8")))
+      .toMatchObject({ contextFrom: 1, contextTo: 4, sourcePage: 4, printedNumber: "11" });
+    expect(JSON.parse(readFileSync(join(root, repaired.repairs[0].classificationArtifact.path), "utf8")))
+      .toMatchObject({ contextFrom: 1, contextTo: 4, key: "4:11" });
     expect(repaired.auditPath).toMatch(/^answer-audit\/v1-[a-f0-9]{64}\.json$/u);
     expect(repaired.auditHash).toMatch(/^[a-f0-9]{64}$/u);
     const changedKeys = repaired.classified.flatMap((item, index) =>
@@ -328,11 +347,12 @@ describe("exam corpus targeted problem repair", () => {
       question: {
         number: "11",
         page: 4,
-        question: expect.stringContaining("0\\le x\\le\\pi"),
+        question: expect.stringContaining("공유 지문"),
         choices: expect.arrayContaining(["① $\\frac{7}{6}\\pi$"]),
       },
       classification: { decision: "accept", canonical_subject: "math_B" },
     });
+    expect(repaired.classified[10].question.question).toContain("0\\le x\\le\\pi");
     const imported = matchOfficialSolutions(entry, repaired.classified, solutions);
     expect(imported.find((item) => item.printedNumber === "11")?.officialAnswer)
       .toBe("① $\\frac{7}{6}\\pi$");
@@ -368,6 +388,7 @@ describe("exam corpus targeted problem repair", () => {
         sha256: repaired.auditHash,
         effectiveCorpusHash: repaired.effectiveCorpusHash,
       },
+      repairs: [{ key: "4:11", contextFrom: 1, contextTo: 4 }],
     });
     expect(() => assertNoCommittedReceiptForFilteredResult(root)).toThrow("명시적 migration");
 

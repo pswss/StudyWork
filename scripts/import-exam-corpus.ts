@@ -54,7 +54,7 @@ export const IMPORT_REASONING_EFFORT = "high" as const;
 export const IMPORT_CONCURRENCY = 10;
 export const PROBLEM_SLICE_PAGES = 20;
 export const PROBLEM_SLICE_STRIDE = 18;
-export const PROBLEM_REPAIR_VERSION = 1;
+export const PROBLEM_REPAIR_VERSION = 2;
 export const CLASSIFICATION_REPAIR_VERSION = 2;
 export const SEMANTIC_CHOICE_CHECK_VERSION = 2;
 export const ANSWER_AUDIT_VERSION = 1;
@@ -344,6 +344,8 @@ export type ProblemRepairEvidence = {
   key: string;
   printedNumber: string;
   sourcePage: number;
+  contextFrom: number;
+  contextTo: number;
   baseProblemCheckpoint: { path: string; sha256: string };
   baseClassificationCheckpoint: { path: string; sha256: string };
   baseSolutionCheckpoint: { path: string; sha256: string };
@@ -920,19 +922,26 @@ async function withSlices<T>(
   }
 }
 
-async function withSourcePageSlice<T>(
+async function withProblemContextSlice<T>(
   analysisPath: string,
-  sourcePage: number,
-  run: (singlePagePath: string) => Promise<T>
+  contextFrom: number,
+  contextTo: number,
+  run: (contextPath: string) => Promise<T>
 ): Promise<T> {
-  const sliced = await slicePdf(analysisPath, 1, 1);
+  if (
+    !Number.isInteger(contextFrom) || !Number.isInteger(contextTo) || contextFrom < 1 ||
+    contextTo < contextFrom || contextTo - contextFrom + 1 > PROBLEM_SLICE_PAGES
+  ) throw new Error(`문제 repair context 범위가 유효하지 않습니다: ${contextFrom}-${contextTo}`);
+  const sliced = await slicePdf(analysisPath, PROBLEM_SLICE_PAGES, PROBLEM_SLICE_STRIDE);
   if (!sliced) {
-    if (sourcePage !== 1) throw new Error(`원본 ${sourcePage}페이지 단일 slice를 만들 수 없습니다`);
+    if (contextFrom !== 1 || await pdfPageCount(analysisPath) !== contextTo) {
+      throw new Error(`문제 repair context ${contextFrom}-${contextTo} slice를 만들 수 없습니다`);
+    }
     return run(analysisPath);
   }
   try {
-    const target = sliced.slices.find((slice) => slice.from === sourcePage && slice.to === sourcePage);
-    if (!target) throw new Error(`원본 ${sourcePage}페이지 단일 slice가 없습니다`);
+    const target = sliced.slices.find((slice) => slice.from === contextFrom && slice.to === contextTo);
+    if (!target) throw new Error(`문제 repair context ${contextFrom}-${contextTo} slice가 없습니다`);
     return await run(target.path);
   } finally {
     sliced.cleanup();
@@ -1245,6 +1254,8 @@ function officialSolutionsByNumber(
 type BaseQuestionEvidence = {
   problem: { path: string; sha256: string };
   classification: { path: string; sha256: string };
+  contextFrom: number;
+  contextTo: number;
   questionHash: string;
   classificationHash: string;
 };
@@ -1274,6 +1285,13 @@ async function baseQuestionEvidence(
     match.checkpoint.version !== CHECKPOINT_VERSION || match.checkpoint.sourceHash !== evidence.sha256 ||
     match.checkpoint.model !== IMPORT_MODEL || match.checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
   ) throw new Error(`${key} base problem checkpoint 메타데이터가 다릅니다`);
+  const contextFrom = Number(match.checkpoint.from);
+  const contextTo = Number(match.checkpoint.to);
+  if (
+    !Number.isInteger(contextFrom) || !Number.isInteger(contextTo) || contextFrom < 1 ||
+    contextTo < contextFrom || contextTo - contextFrom + 1 > PROBLEM_SLICE_PAGES ||
+    classified.question.page! < contextFrom || classified.question.page! > contextTo
+  ) throw new Error(`${key} base problem checkpoint context 범위가 유효하지 않습니다`);
   const original = match.questions.find((question) => questionKey(question) === key)!;
   if (canonicalEvidenceHash(original) !== canonicalEvidenceHash(classified.question)) {
     throw new Error(`${key} base problem checkpoint 항목이 현재 분류 입력과 다릅니다`);
@@ -1290,6 +1308,7 @@ async function baseQuestionEvidence(
   if (
     classificationCheckpoint.version !== CLASSIFIER_VERSION ||
     classificationCheckpoint.sourceHash !== evidence.sha256 ||
+    classificationCheckpoint.from !== contextFrom || classificationCheckpoint.to !== contextTo ||
     classificationCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
     classificationCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
     classificationCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
@@ -1311,6 +1330,8 @@ async function baseQuestionEvidence(
       path: `classification-chunks/${classificationName}`,
       sha256: await sha256File(classificationPath),
     },
+    contextFrom,
+    contextTo,
     questionHash: canonicalEvidenceHash(original),
     classificationHash: canonicalEvidenceHash(originalDecision),
   };
@@ -1453,9 +1474,10 @@ async function semanticChoiceCheckpoint(
 
 export function semanticExplanationWithoutMarkers(value: string): string {
   return value
-    .replace(/\[\s*(?:정답|답)\s*\]\s*(?:[①-⑩]|\d{1,2}(?:\s*번)?)/gu, "[CHOICE MARKER HIDDEN]")
-    .replace(/(?:[①-⑩]|\d{1,2})\s*번\s*(?:이|가)?\s*(?:정답|답)(?:이다|입니다)?/gu, "[CHOICE MARKER HIDDEN]")
-    .replace(/(?:정답|답)\s*(?:은|는|이|가|:|：|=)?\s*(?:[①-⑩]|\d{1,2})(?:\s*번)?/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/\[\s*(?:정답|답)\s*\]\s*(?:[①-⑩]|(?:10|[1-9])(?!\d)(?:\s*번)?)/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/(?:[①-⑩]|(?:10|[1-9])(?!\d))\s*번\s*(?:선택지\s*)?(?:이|가)?\s*(?:정답|답)(?:이다|입니다)?/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/선택지\s*(?:[①-⑩]|(?:10|[1-9])(?!\d))(?:\s*번)?\s*(?:이|가)?\s*(?:정답|답)(?:이다|입니다)?/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/(?:정답|답)\s*(?:은|는|이|가|:|：|=)\s*(?:[①-⑩]|(?:10|[1-9])(?!\d))(?:\s*번)?/gu, "[CHOICE MARKER HIDDEN]")
     .replace(/[①-⑩]/gu, "[CHOICE MARKER HIDDEN]");
 }
 
@@ -1477,7 +1499,11 @@ async function repairClassifiedQuestion(
   const problemPath = join(stateDir, problemRelativePath);
 
   return withImporterPdfForAnalysis(problem, async (analysisProblem) =>
-    withSourcePageSlice(analysisProblem.path, sourcePage, async (singlePagePath) => {
+    withProblemContextSlice(
+      analysisProblem.path,
+      baseQuestion.contextFrom,
+      baseQuestion.contextTo,
+      async (contextPath) => {
     let corrected: QuizItemEx;
     let problemCheckpoint: Record<string, unknown>;
     if (existsSync(problemPath)) {
@@ -1486,6 +1512,8 @@ async function repairClassifiedQuestion(
         problemCheckpoint.version !== PROBLEM_REPAIR_VERSION || problemCheckpoint.entryId !== entry.id ||
         problemCheckpoint.key !== key || problemCheckpoint.sourcePage !== sourcePage ||
         problemCheckpoint.printedNumber !== printedNumber || problemCheckpoint.sourceHash !== problem.sha256 ||
+        problemCheckpoint.contextFrom !== baseQuestion.contextFrom ||
+        problemCheckpoint.contextTo !== baseQuestion.contextTo ||
         canonicalEvidenceHash(problemCheckpoint.baseProblemCheckpoint) !== canonicalEvidenceHash(baseQuestion.problem) ||
         problemCheckpoint.baseQuestionHash !== baseQuestion.questionHash ||
         canonicalEvidenceHash(problemCheckpoint.baseSolutionCheckpoint) !== canonicalEvidenceHash(baseSolution.checkpoint) ||
@@ -1497,9 +1525,9 @@ async function repairClassifiedQuestion(
       ) throw new Error(`기존 문제 repair 체크포인트 메타데이터가 다릅니다: ${problemPath}`);
       corrected = restoredQuizItems([problemCheckpoint.item])[0];
     } else {
-      const extracted = await extractProblemsFromFile(singlePagePath, "pdf", {
-        sliceBase: sourcePage,
-        contentPageCount: 1,
+      const extracted = await extractProblemsFromFile(contextPath, "pdf", {
+        sliceBase: baseQuestion.contextFrom,
+        contentPageCount: baseQuestion.contextTo - baseQuestion.contextFrom + 1,
         selfContained: true,
         target: { page: sourcePage, printedNumber },
         reasoningEffort: IMPORT_REASONING_EFFORT,
@@ -1511,6 +1539,8 @@ async function repairClassifiedQuestion(
         key,
         sourcePage,
         printedNumber,
+        contextFrom: baseQuestion.contextFrom,
+        contextTo: baseQuestion.contextTo,
         sourceHash: problem.sha256,
         baseProblemCheckpoint: baseQuestion.problem,
         baseQuestionHash: baseQuestion.questionHash,
@@ -1550,6 +1580,8 @@ async function repairClassifiedQuestion(
         classificationCheckpoint.version !== CLASSIFICATION_REPAIR_VERSION ||
         classificationCheckpoint.entryId !== entry.id || classificationCheckpoint.key !== key ||
         classificationCheckpoint.sourceHash !== problem.sha256 ||
+        classificationCheckpoint.contextFrom !== baseQuestion.contextFrom ||
+        classificationCheckpoint.contextTo !== baseQuestion.contextTo ||
         canonicalEvidenceHash(classificationCheckpoint.problemArtifact) !== canonicalEvidenceHash({
           path: problemRelativePath,
           sha256: problemArtifactHash,
@@ -1569,9 +1601,9 @@ async function repairClassifiedQuestion(
     } else {
       classification = (await classifyQuestions(
         entry,
-        singlePagePath,
-        sourcePage,
-        sourcePage,
+        contextPath,
+        baseQuestion.contextFrom,
+        baseQuestion.contextTo,
         [corrected]
       ))[0];
       classificationCheckpoint = {
@@ -1579,6 +1611,8 @@ async function repairClassifiedQuestion(
         entryId: entry.id,
         key,
         sourceHash: problem.sha256,
+        contextFrom: baseQuestion.contextFrom,
+        contextTo: baseQuestion.contextTo,
         problemArtifact: { path: problemRelativePath, sha256: problemArtifactHash },
         baseClassificationCheckpoint: baseQuestion.classification,
         baseClassificationHash: baseQuestion.classificationHash,
@@ -1603,6 +1637,8 @@ async function repairClassifiedQuestion(
         key,
         printedNumber,
         sourcePage,
+        contextFrom: baseQuestion.contextFrom,
+        contextTo: baseQuestion.contextTo,
         baseProblemCheckpoint: baseQuestion.problem,
         baseClassificationCheckpoint: baseQuestion.classification,
         baseSolutionCheckpoint: baseSolution.checkpoint,
@@ -1622,7 +1658,8 @@ async function repairClassifiedQuestion(
         officialRawAnswerHash: sha256Text(officialSolution.answer),
       },
     };
-    })
+      }
+    )
   );
 }
 

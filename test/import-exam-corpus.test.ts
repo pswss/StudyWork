@@ -20,6 +20,7 @@ import {
   TARGET_SUBJECTS,
   PROBLEM_SLICE_PAGES,
   PROBLEM_SLICE_STRIDE,
+  PROBLEM_REPAIR_VERSION,
   assertImportSchema,
   canonicalEvidenceHash,
   commitCorpusEntry,
@@ -50,6 +51,7 @@ describe("exam corpus importer", () => {
 
   it("defines the q20 same-target and q29 excluded-dependency boundary", () => {
     expect(CLASSIFIER_VERSION).toBe(4);
+    expect(PROBLEM_REPAIR_VERSION).toBe(2);
     expect(CLASSIFICATION_REPAIR_VERSION).toBe(2);
     expect(SEMANTIC_CHOICE_CHECK_VERSION).toBe(2);
     expect(TRANSCRIPTION_GATE_VERSION).toBe(1);
@@ -105,8 +107,13 @@ describe("exam corpus importer", () => {
       .toThrow("보기에 대응할 수 없습니다");
     expect(officialAnswerForStorage(question(["① 6", "② 9", "③ 12", "④ 15", "⑤ 18"]), "⑤"))
       .toBe("⑤");
-    expect(semanticExplanationWithoutMarkers("[정답] 2 / 정답: 3 / 4번이 정답 / 계산 결과는 2이다."))
-      .toBe("[CHOICE MARKER HIDDEN] / [CHOICE MARKER HIDDEN] / [CHOICE MARKER HIDDEN] / 계산 결과는 2이다.");
+    expect(semanticExplanationWithoutMarkers(
+      "[정답] 2 / 정답: 3 / 4번이 정답 / 2번 선택지가 정답 / 선택지 2가 정답 / " +
+      "계산 결과는 2이다. / 답은 20개 / 정답은 1359"
+    )).toBe(
+      "[CHOICE MARKER HIDDEN] / [CHOICE MARKER HIDDEN] / [CHOICE MARKER HIDDEN] / " +
+      "[CHOICE MARKER HIDDEN] / [CHOICE MARKER HIDDEN] / 계산 결과는 2이다. / 답은 20개 / 정답은 1359"
+    );
 
     const officialQ11 = "\\(\\frac{7\\pi}{6}\\)";
     expect(() => officialAnswerForStorage(question([

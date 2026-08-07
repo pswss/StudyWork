@@ -59,9 +59,11 @@ afterEach(() => {
 });
 
 describe("StudyWork Codex facade", () => {
-  it("원본 페이지의 지정 문제만 high로 재전사하며 부등호와 선택지를 그대로 요구", async () => {
+  it("앞쪽 공유 지문 context를 읽되 지정 문제만 high로 재전사함", async () => {
     const document = await PDFDocument.create();
     for (let page = 0; page < 4; page++) document.addPage([100, 100]);
+    document.getPage(2).drawText("SHARED PASSAGE START", { x: 5, y: 50, size: 6 });
+    document.getPage(3).drawText("11 QUESTION", { x: 5, y: 50, size: 6 });
     const problem = join(dir, "Q11-target.pdf");
     writeFileSync(problem, await document.save());
     providerMock.complete.mockResolvedValueOnce({
@@ -90,6 +92,8 @@ describe("StudyWork Codex facade", () => {
     });
 
     await expect(extractProblemsFromFile(problem, "pdf", {
+      sliceBase: 1,
+      contentPageCount: 4,
       target: { page: 4, printedNumber: "11" },
       selfContained: true,
       reasoningEffort: "high",
@@ -103,10 +107,12 @@ describe("StudyWork Codex facade", () => {
     ]);
     const request = providerMock.complete.mock.calls[0][0];
     expect(request.reasoningEffort).toBe("high");
-    expect(request.prompt).toContain("original document page 4");
+    expect(request.prompt).toContain("bounded context for original document pages 1-4");
     expect(request.prompt).toContain("printed problem 11");
+    expect(request.prompt).toContain("surrounding pages");
+    expect(request.prompt).toContain("required shared passage");
     expect(request.prompt).toContain("inequality endpoints");
-    expect(request.prompt).toContain("Emit exactly that one complete problem and no siblings");
+    expect(request.prompt).toContain("Emit only the requested printed problem and no siblings");
   });
 
   it("해설 lookahead 시작 항목은 버리고 다음 owned slice에서 한 번만 보존", async () => {
