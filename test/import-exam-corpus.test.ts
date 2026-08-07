@@ -8,8 +8,14 @@ import { PDFDocument } from "pdf-lib";
 import { LocalDB } from "../src/localdb";
 import { problemExtractionSelfContainedRule } from "../src/claude";
 import {
+  CLASSIFIER_DIGEST,
   CLASSIFIER_VERSION,
+  CLASSIFICATION_REPAIR_VERSION,
   CURRICULUM_RULES,
+  SEMANTIC_CHOICE_CHECK_VERSION,
+  TRANSCRIPTION_GATE_RULES,
+  TRANSCRIPTION_GATE_VERSION,
+  TRANSCRIPTION_PROMPT_DIGEST,
   SOLUTION_CHECKPOINT_VERSION,
   TARGET_SUBJECTS,
   PROBLEM_SLICE_PAGES,
@@ -27,6 +33,8 @@ import {
   problemChunkCount,
   problemOwnedRange,
   solutionOwnedStartRange,
+  semanticExplanationWithoutMarkers,
+  transcriptionRepairKeys,
   validateFilteredResult,
   validateProblemSliceTopology,
   withImporterPdfForAnalysis,
@@ -41,7 +49,15 @@ describe("exam corpus importer", () => {
   });
 
   it("defines the q20 same-target and q29 excluded-dependency boundary", () => {
-    expect(CLASSIFIER_VERSION).toBe(3);
+    expect(CLASSIFIER_VERSION).toBe(4);
+    expect(CLASSIFICATION_REPAIR_VERSION).toBe(2);
+    expect(SEMANTIC_CHOICE_CHECK_VERSION).toBe(2);
+    expect(TRANSCRIPTION_GATE_VERSION).toBe(1);
+    expect(TRANSCRIPTION_PROMPT_DIGEST).toMatch(/^[a-f0-9]{64}$/u);
+    expect(TRANSCRIPTION_GATE_RULES).toContain("complete shared passage");
+    expect(TRANSCRIPTION_GATE_RULES).toContain("every answer choice and distractor");
+    expect(TRANSCRIPTION_GATE_RULES).toContain("Base the curriculum decision on the source pixels");
+    expect(TRANSCRIPTION_GATE_RULES).toContain("reject and review items still require this source check");
     expect(CURRICULUM_RULES).toContain(
       "If every necessary concept belongs to one canonical subject, accept under that canonical subject even when multiple domains or codes are required"
     );
@@ -54,7 +70,7 @@ describe("exam corpus importer", () => {
       "Use review only for genuine ambiguity, missing or unclear visual/passage context"
     );
     expect(createHash("sha256").update(CURRICULUM_RULES).digest("hex").slice(0, 16))
-      .not.toBe("9dd042bc21faba5e");
+      .toBe("7bb7cb863c8c4855");
   });
 
   it("owns solution starts once and resolves official MCQ values without changing markers", () => {
@@ -84,8 +100,13 @@ describe("exam corpus importer", () => {
       "$\\dfrac{4}{3}$"
     )).toBe("② $\\frac43$");
     expect(officialAnswerForStorage(question(["① 2", "② 7"]), "2")).toBe("① 2");
+    expect(officialAnswerForStorage(question(["① 5", "② 0.5"]), "0.5")).toBe("② 0.5");
+    expect(() => officialAnswerForStorage(question(["① 5", "② 7"]), "0.5"))
+      .toThrow("보기에 대응할 수 없습니다");
     expect(officialAnswerForStorage(question(["① 6", "② 9", "③ 12", "④ 15", "⑤ 18"]), "⑤"))
       .toBe("⑤");
+    expect(semanticExplanationWithoutMarkers("[정답] 2 / 정답: 3 / 4번이 정답 / 계산 결과는 2이다."))
+      .toBe("[CHOICE MARKER HIDDEN] / [CHOICE MARKER HIDDEN] / [CHOICE MARKER HIDDEN] / 계산 결과는 2이다.");
 
     const officialQ11 = "\\(\\frac{7\\pi}{6}\\)";
     expect(() => officialAnswerForStorage(question([
@@ -206,7 +227,17 @@ describe("exam corpus importer", () => {
         entryId: entry.id,
         reason: "NO_IN_SCOPE_QUESTIONS",
         rulesDigest: "stale",
-      }, entry.id)).toThrow("rulesDigest가 오래되었습니다");
+      }, entry.id)).toThrow("transcription gate가 오래되었습니다");
+      expect(validateFilteredResult({
+        version: 2,
+        status: "filtered",
+        entryId: entry.id,
+        reason: "NO_IN_SCOPE_QUESTIONS",
+        rulesDigest: CLASSIFIER_DIGEST,
+        classifierVersion: CLASSIFIER_VERSION,
+        transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+        transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      }, entry.id)).toBe("NO_IN_SCOPE_QUESTIONS");
       expect(() => parseCorpusManifest({
         schemaVersion: 2,
         entries: [{ ...entry.raw, problemPdfUrl: "https://example.test/problem.pdf" }],
@@ -232,6 +263,8 @@ describe("exam corpus importer", () => {
         achievement_codes: ["12대수01-01"],
         confidence: 0.99,
         reason_codes: ["IN_SCOPE"],
+        transcription_status: "exact",
+        transcription_evidence: "원본 2쪽의 식과 보기가 일치한다.",
       };
       const classified = Array.from({ length: 30 }, (_, index) => {
         const number = index + 1;
@@ -271,9 +304,21 @@ describe("exam corpus importer", () => {
             achievement_codes: [],
             confidence: 0.99,
             reason_codes: ["OUT_OF_SCOPE"],
+            transcription_status: "exact" as const,
+            transcription_evidence: `원본 ${page}쪽의 문항과 일치한다.`,
           },
         };
       });
+      expect(transcriptionRepairKeys([
+        classified[0],
+        {
+          ...classified[1],
+          classification: {
+            ...classified[1].classification,
+            transcription_status: "mismatch",
+          },
+        },
+      ])).toEqual([`${classified[1].question.page}:2`]);
       const officialSolutions = Array.from({ length: 30 }, (_, index) => ({
         number: String(index + 1),
         answer: index === 0 ? "①" : String(index + 1),
@@ -359,6 +404,19 @@ describe("exam corpus importer", () => {
       expect((db.prepare("SELECT COUNT(*) AS n FROM book_items").get() as { n: number }).n).toBe(2);
       expect((db.prepare("SELECT correct_count FROM questions").get() as { correct_count: number }).correct_count).toBe(2);
       expect((db.prepare("SELECT title FROM books WHERE id = ?").get(userBookId) as { title: string }).title).toBe(examBookTitle(entry));
+      await expect(commitCorpusEntry(db, filesDir, entry, problem, solution, [{
+        ...imported[0],
+        question: "repair로 달라진 문항",
+      }], true)).rejects.toThrow("덮어쓰지 않습니다");
+      await expect(commitCorpusEntry(db, filesDir, entry, problem, solution, [{
+        ...imported[0],
+        targetSubject: "수학 - 수학Ⅱ·미적분Ⅰ",
+        classification: {
+          ...imported[0].classification,
+          canonical_subject: "math_A",
+          achievement_codes: ["12미적Ⅰ-02-01"],
+        },
+      }], true)).rejects.toThrow("이전 import 책이 삭제되었습니다");
 
       const sameTitleExam = { ...entry, id: "ebsi:paper-2", raw: { ...entry.raw, id: "ebsi:paper-2" } };
       const second = await commitCorpusEntry(db, filesDir, sameTitleExam, problem, solution, imported);

@@ -18,10 +18,16 @@ vi.mock("../src/codex-provider", async (importOriginal) => {
 import type { QuizItemEx, SolutionItem } from "../src/claude";
 import {
   CLASSIFIER_DIGEST,
+  CLASSIFIER_VERSION,
+  TRANSCRIPTION_GATE_VERSION,
+  TRANSCRIPTION_PROMPT_DIGEST,
+  assertNoCommittedReceiptForFilteredResult,
+  assertNoReceiptResultConflict,
   canonicalEvidenceHash,
   matchOfficialSolutions,
   parseCorpusManifest,
   repairAndAuditOfficialAnswers,
+  writeAnswerAttestation,
   type ClassificationDecision,
   type PdfEvidence,
 } from "../scripts/import-exam-corpus";
@@ -148,6 +154,10 @@ describe("exam corpus targeted problem repair", () => {
         achievement_codes: ["12수학Ⅰ02-02"],
         confidence: 0.99,
         reason_codes: ["IN_SCOPE_TRIGONOMETRY"],
+        transcription_status: question.number === "11" ? "mismatch" : "exact",
+        transcription_evidence: question.number === "11"
+          ? "원본 4쪽의 부등식과 보기가 전사와 다르다."
+          : "원본 문항과 전사가 일치한다.",
       } : {
         key,
         decision: "reject",
@@ -157,6 +167,8 @@ describe("exam corpus targeted problem repair", () => {
         achievement_codes: [],
         confidence: 0.99,
         reason_codes: ["OUT_OF_SCOPE"],
+        transcription_status: "exact",
+        transcription_evidence: "원본 문항과 전사가 일치한다.",
       };
     });
     const classified = questions.map((question, index) => ({ question, classification: decisions[index] }));
@@ -182,14 +194,16 @@ describe("exam corpus targeted problem repair", () => {
       reasoningEffort: "high",
       items: questions,
     });
-    writeJson(join(root, "classification-chunks", `v3-0000-${CLASSIFIER_DIGEST}.json`), {
-      version: 3,
+    writeJson(join(root, "classification-chunks", `v${CLASSIFIER_VERSION}-0000-${CLASSIFIER_DIGEST}.json`), {
+      version: CLASSIFIER_VERSION,
       sourceHash: problem.sha256,
       from: 1,
       to: 4,
       ownedFrom: 1,
       ownedTo: 4,
       rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
       model: "gpt-5.6-sol",
       reasoningEffort: "high",
       items: decisions,
@@ -208,7 +222,11 @@ describe("exam corpus targeted problem repair", () => {
 
     let crashClassification = true;
     const calls = { target: 0, classification: 0, semantic: 0 };
-    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+    providerMock.complete.mockImplementation(async (request: {
+      schema?: { name?: string };
+      prompt: string;
+      file?: { path: string };
+    }) => {
       if (request.schema?.name === "studywork_file_quiz_items") {
         calls.target++;
         return {
@@ -238,6 +256,12 @@ describe("exam corpus targeted problem repair", () => {
       }
       if (request.schema?.name === "studywork_exam_corpus_classification") {
         calls.classification++;
+        const attached = await PDFDocument.load(readFileSync(request.file!.path));
+        expect(attached.getPageCount()).toBe(1);
+        expect(request.prompt).toContain("original pages 4-4");
+        expect(request.prompt).toContain('"qtype":"mcq"');
+        expect(request.prompt).toContain('"figure_description":null');
+        expect(request.prompt).toContain('"box":null');
         if (crashClassification) throw new Error("simulated classification interruption");
         return {
           text: JSON.stringify([{
@@ -249,6 +273,8 @@ describe("exam corpus targeted problem repair", () => {
             achievement_codes: ["12수학Ⅰ02-02"],
             confidence: 0.99,
             reason_codes: ["IN_SCOPE_TRIGONOMETRY"],
+            transcription_status: "exact",
+            transcription_evidence: "원본 4쪽의 부등식, 식, 다섯 보기가 모두 일치한다.",
           }]),
           provider: "codex-cli",
           model: "gpt-5.6-sol",
@@ -291,6 +317,7 @@ describe("exam corpus targeted problem repair", () => {
     expect(calls).toEqual({ target: 1, classification: 2, semantic: 1 });
     expect(repaired.repairs).toHaveLength(1);
     expect(repaired.repairs[0]).toMatchObject({ key: "4:11", printedNumber: "11", sourcePage: 4 });
+    expect(repaired.repairs[0].classificationArtifact.path).toMatch(/^classification-repairs\/v2-/u);
     expect(repaired.auditPath).toMatch(/^answer-audit\/v1-[a-f0-9]{64}\.json$/u);
     expect(repaired.auditHash).toMatch(/^[a-f0-9]{64}$/u);
     const changedKeys = repaired.classified.flatMap((item, index) =>
@@ -310,10 +337,55 @@ describe("exam corpus targeted problem repair", () => {
     expect(imported.find((item) => item.printedNumber === "11")?.officialAnswer)
       .toBe("① $\\frac{7}{6}\\pi$");
     expect(imported).toHaveLength(2);
+    expect(readdirSync(join(root, "semantic-choice-checks"))[0]).toMatch(/^v2-/u);
+
+    expect(() => assertNoCommittedReceiptForFilteredResult(root)).not.toThrow();
+    const receipt = { version: 2, status: "committed", entryId: entry.id };
+    const attestation = await writeAnswerAttestation(
+      root,
+      entry.id,
+      problem.sha256,
+      solution.sha256,
+      receipt,
+      repaired
+    );
+    expect(attestation.path).toMatch(/^answer-attestation\/v1-[a-f0-9]{64}\.json$/u);
+    expect(attestation.sha256).toMatch(/^[a-f0-9]{64}$/u);
+    const auditCheckpoint = JSON.parse(readFileSync(join(root, repaired.auditPath!), "utf8"));
+    expect(auditCheckpoint).toMatchObject({
+      classifierVersion: 4,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    });
+    const attestationCheckpoint = JSON.parse(readFileSync(join(root, attestation.path), "utf8"));
+    expect(attestationCheckpoint).toMatchObject({
+      classifierVersion: 4,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      receipt: { path: "receipt.json" },
+      answerAudit: {
+        path: repaired.auditPath,
+        sha256: repaired.auditHash,
+        effectiveCorpusHash: repaired.effectiveCorpusHash,
+      },
+    });
+    expect(() => assertNoCommittedReceiptForFilteredResult(root)).toThrow("명시적 migration");
+
+    writeFileSync(join(root, "result.json"), "{}\n");
+    expect(() => assertNoReceiptResultConflict(root)).toThrow("terminal conflict");
+    rmSync(join(root, "result.json"));
 
     const replay = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
     expect(calls).toEqual({ target: 1, classification: 2, semantic: 1 });
     expect(replay.auditHash).toBe(repaired.auditHash);
+    await expect(writeAnswerAttestation(
+      root,
+      entry.id,
+      problem.sha256,
+      solution.sha256,
+      receipt,
+      replay
+    )).resolves.toEqual(attestation);
     expect(canonicalEvidenceHash(replay.classified)).toBe(canonicalEvidenceHash(repaired.classified));
 
     const classificationArtifact = join(root, repaired.repairs[0].classificationArtifact.path);

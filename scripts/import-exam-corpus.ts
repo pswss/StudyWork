@@ -8,12 +8,14 @@ import {
   constants,
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdtempSync,
   mkdirSync,
   openSync,
   readdirSync,
   readFileSync,
   readSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -53,9 +55,10 @@ export const IMPORT_CONCURRENCY = 10;
 export const PROBLEM_SLICE_PAGES = 20;
 export const PROBLEM_SLICE_STRIDE = 18;
 export const PROBLEM_REPAIR_VERSION = 1;
-export const CLASSIFICATION_REPAIR_VERSION = 1;
-export const SEMANTIC_CHOICE_CHECK_VERSION = 1;
+export const CLASSIFICATION_REPAIR_VERSION = 2;
+export const SEMANTIC_CHOICE_CHECK_VERSION = 2;
 export const ANSWER_AUDIT_VERSION = 1;
+export const ANSWER_ATTESTATION_VERSION = 1;
 
 const execFileP = promisify(execFile);
 
@@ -144,7 +147,8 @@ const EXPECTED_QUESTION_COUNT: Record<SourceSubject, number> = {
   통합사회: 20,
   통합과학: 20,
 };
-export const CLASSIFIER_VERSION = 3;
+export const CLASSIFIER_VERSION = 4;
+export const TRANSCRIPTION_GATE_VERSION = 1;
 const CHECKPOINT_VERSION = 2;
 export const SOLUTION_CHECKPOINT_VERSION = 3;
 
@@ -171,6 +175,16 @@ INTEGRATED_SOCIAL accepts only source school grade 1 or 2 and one of: 통합사�
 `.trim();
 
 export const CLASSIFIER_DIGEST = createHash("sha256").update(CURRICULUM_RULES).digest("hex").slice(0, 16);
+
+export const TRANSCRIPTION_GATE_RULES = `
+Independently compare every supplied transcription with the attached official source pixels. Check the complete shared passage and source material, the full stem, every answer choice and distractor, inequalities, signs, coefficients, exponents, fractions, formulas, tables, qtype, and all figure or visual dependencies including figure_description. Check that box plausibly covers the source problem and figure, without requiring pixel-perfect crop decimals. Do not infer fidelity from plausibility or from the proposed answer. Base the curriculum decision on the source pixels, not on an inaccurate supplied transcription.
+
+Return transcription_status exact only when all source-required content is faithfully represented. Return mismatch when any omission, substitution, changed bound/sign/value/formula/choice, wrong qtype, or inaccurate visual description is visible. Return unverifiable when the pixels or required context do not let you decide confidently; never guess exact. Give concise page-grounded transcription_evidence. Curriculum decision and transcription fidelity are independent, so reject and review items still require this source check.
+`.trim();
+
+export const TRANSCRIPTION_PROMPT_DIGEST = createHash("sha256")
+  .update(`${TRANSCRIPTION_GATE_VERSION}\n${TRANSCRIPTION_GATE_RULES}`)
+  .digest("hex");
 
 const CLASSIFICATION_SCHEMA: AIJsonSchema = {
   name: "studywork_exam_corpus_classification",
@@ -203,6 +217,8 @@ const CLASSIFICATION_SCHEMA: AIJsonSchema = {
             achievement_codes: { type: "array", items: { type: "string" } },
             confidence: { type: "number", minimum: 0, maximum: 1 },
             reason_codes: { type: "array", items: { type: "string" } },
+            transcription_status: { type: "string", enum: ["exact", "mismatch", "unverifiable"] },
+            transcription_evidence: { type: "string" },
           },
           required: [
             "key",
@@ -213,6 +229,8 @@ const CLASSIFICATION_SCHEMA: AIJsonSchema = {
             "achievement_codes",
             "confidence",
             "reason_codes",
+            "transcription_status",
+            "transcription_evidence",
           ],
           additionalProperties: false,
         },
@@ -288,6 +306,8 @@ export type ClassificationDecision = {
   achievement_codes: string[];
   confidence: number;
   reason_codes: string[];
+  transcription_status: "exact" | "mismatch" | "unverifiable";
+  transcription_evidence: string;
 };
 
 export type PdfEvidence = {
@@ -309,10 +329,16 @@ export type ImportedQuestion = QuizItemEx & {
   classification: ClassificationDecision;
 };
 
-type ClassifiedQuestion = {
+export type ClassifiedQuestion = {
   question: QuizItemEx;
   classification: ClassificationDecision;
 };
+
+export function transcriptionRepairKeys(classified: ClassifiedQuestion[]): string[] {
+  return classified.flatMap(({ question, classification }) =>
+    classification.transcription_status === "exact" ? [] : [questionKey(question)]
+  );
+}
 
 export type ProblemRepairEvidence = {
   key: string;
@@ -322,7 +348,13 @@ export type ProblemRepairEvidence = {
   baseClassificationCheckpoint: { path: string; sha256: string };
   baseSolutionCheckpoint: { path: string; sha256: string };
   problemArtifact: { path: string; sha256: string };
-  classificationArtifact: { path: string; sha256: string; rulesDigest: string };
+  classificationArtifact: {
+    path: string;
+    sha256: string;
+    rulesDigest: string;
+    transcriptionGateVersion: number;
+    transcriptionPromptDigest: string;
+  };
   baseQuestionHash: string;
   effectiveQuestionHash: string;
   baseClassificationHash: string;
@@ -343,6 +375,7 @@ type AnswerAuditResult = {
   repairs: ProblemRepairEvidence[];
   auditPath: string | null;
   auditHash: string | null;
+  effectiveCorpusHash: string | null;
 };
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -784,6 +817,15 @@ function parseDecisions(
     if (!Array.isArray(row.reason_codes) || row.reason_codes.length === 0 || row.reason_codes.some((code) => typeof code !== "string" || !code.trim())) {
       throw new Error(`분류 ${key}: reason_codes가 유효하지 않습니다`);
     }
+    if (!(["exact", "mismatch", "unverifiable"] as unknown[]).includes(row.transcription_status)) {
+      throw new Error(`분류 ${key}: transcription_status가 유효하지 않습니다`);
+    }
+    const transcriptionStatus = row.transcription_status as ClassificationDecision["transcription_status"];
+    const transcriptionEvidence = exactString(
+      row.transcription_evidence,
+      `분류 ${key}.transcription_evidence`,
+      2000
+    );
     const confidence = Number(row.confidence);
     if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
       throw new Error(`분류 ${key}: confidence가 유효하지 않습니다`);
@@ -812,6 +854,8 @@ function parseDecisions(
       achievement_codes: [...new Set(row.achievement_codes as string[])],
       confidence,
       reason_codes: [...new Set(row.reason_codes as string[])],
+      transcription_status: transcriptionStatus,
+      transcription_evidence: transcriptionEvidence,
     };
   });
   if (seen.size !== expected.size) throw new Error(`분류 결과 누락: ${expected.size - seen.size}문항`);
@@ -830,8 +874,12 @@ async function classifyQuestions(
     key: questionKey(question),
     printed_number: String(numericPrintedLocator(question.number)),
     source_page: question.page,
+    qtype: question.qtype,
     question: question.question,
     choices: question.choices,
+    figure: question.figure,
+    figure_description: question.figure_description,
+    box: question.box,
   }));
   const allowedCodes = ALLOWED_CANONICAL[entry.subject]
     .flatMap((canonical) => [...ACHIEVEMENT_CODES[canonical]])
@@ -840,7 +888,8 @@ async function classifyQuestions(
     `Attached official problem PDF slice contains original pages ${from}-${to}. ` +
     `Exam source subject is ${entry.subject}; source school grade is ${entry.grade ?? "unknown"}. ` +
     `Inspect complete source passages and visual evidence, then classify every supplied question.\n\n` +
-    `${CURRICULUM_RULES}\n\nAllowed exact achievement codes for this source: ${allowedCodes.join(", ")}\n\n` +
+    `${TRANSCRIPTION_GATE_RULES}\n\n${CURRICULUM_RULES}\n\n` +
+    `Allowed exact achievement codes for this source: ${allowedCodes.join(", ")}\n\n` +
     `Questions:\n${JSON.stringify(input)}`;
   const result = await getCodexProvider({ model: IMPORT_MODEL, reasoningEffort: IMPORT_REASONING_EFFORT }).complete({
     operation: "problem-extract",
@@ -866,6 +915,25 @@ async function withSlices<T>(
   if (!sliced) return run([{ path: evidence.path, from: 1, to: evidence.pageCount }]);
   try {
     return await run(sliced.slices);
+  } finally {
+    sliced.cleanup();
+  }
+}
+
+async function withSourcePageSlice<T>(
+  analysisPath: string,
+  sourcePage: number,
+  run: (singlePagePath: string) => Promise<T>
+): Promise<T> {
+  const sliced = await slicePdf(analysisPath, 1, 1);
+  if (!sliced) {
+    if (sourcePage !== 1) throw new Error(`원본 ${sourcePage}페이지 단일 slice를 만들 수 없습니다`);
+    return run(analysisPath);
+  }
+  try {
+    const target = sliced.slices.find((slice) => slice.from === sourcePage && slice.to === sourcePage);
+    if (!target) throw new Error(`원본 ${sourcePage}페이지 단일 slice가 없습니다`);
+    return await run(target.path);
   } finally {
     sliced.cleanup();
   }
@@ -938,7 +1006,9 @@ async function extractAndClassifyAnalysisPdf(
           checkpoint.version !== CLASSIFIER_VERSION || checkpoint.sourceHash !== evidence.sha256 ||
           checkpoint.from !== slice.from || checkpoint.to !== slice.to || checkpoint.rulesDigest !== CLASSIFIER_DIGEST ||
           checkpoint.model !== IMPORT_MODEL || checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
-          checkpoint.ownedFrom !== ownership.from || checkpoint.ownedTo !== ownership.to
+          checkpoint.ownedFrom !== ownership.from || checkpoint.ownedTo !== ownership.to ||
+          checkpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+          checkpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST
         ) throw new Error(`분류 체크포인트 메타데이터가 다릅니다: ${classificationPath}`);
         decisions = parseDecisions(checkpoint.items, questions, entry);
       } else {
@@ -951,6 +1021,8 @@ async function extractAndClassifyAnalysisPdf(
           ownedFrom: ownership.from,
           ownedTo: ownership.to,
           rulesDigest: CLASSIFIER_DIGEST,
+          transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+          transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
           model: IMPORT_MODEL,
           reasoningEffort: IMPORT_REASONING_EFFORT,
           items: decisions,
@@ -1056,7 +1128,7 @@ const OFFICIAL_CIRCLED_ANSWERS = "①②③④⑤⑥⑦⑧⑨⑩";
 const normalizedAnswerText = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
 const strippedChoiceMarker = (value: string) => normalizedAnswerText(value)
   .replace(/^[①-⑩]\s*/, "")
-  .replace(/^\d{1,2}\s*[.)]\s*/, "");
+  .replace(/^\d{1,2}\s*(?:\)|\.(?!\d))\s*/, "");
 
 function normalizedChoiceContent(value: string): string {
   let normalized = strippedChoiceMarker(value).trim();
@@ -1219,6 +1291,8 @@ async function baseQuestionEvidence(
     classificationCheckpoint.version !== CLASSIFIER_VERSION ||
     classificationCheckpoint.sourceHash !== evidence.sha256 ||
     classificationCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+    classificationCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+    classificationCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
     classificationCheckpoint.model !== IMPORT_MODEL ||
     classificationCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
   ) throw new Error(`${key} base classification checkpoint 메타데이터가 다릅니다`);
@@ -1331,6 +1405,8 @@ async function semanticChoiceCheckpoint(
       checkpoint.version !== SEMANTIC_CHOICE_CHECK_VERSION || checkpoint.entryId !== entry.id ||
       checkpoint.problemHash !== problem.sha256 || checkpoint.solutionHash !== solution.sha256 ||
       checkpoint.classifierVersion !== CLASSIFIER_VERSION || checkpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+      checkpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+      checkpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
       checkpoint.effectiveCorpusHash !== effectiveCorpusHash || checkpoint.inputHash !== inputHash ||
       checkpoint.promptDigest !== SEMANTIC_CHOICE_PROMPT_DIGEST || checkpoint.model !== IMPORT_MODEL ||
       checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
@@ -1358,6 +1434,8 @@ async function semanticChoiceCheckpoint(
       solutionHash: solution.sha256,
       classifierVersion: CLASSIFIER_VERSION,
       rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
       effectiveCorpusHash,
       inputHash,
       promptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
@@ -1373,10 +1451,12 @@ async function semanticChoiceCheckpoint(
   return { decisions, path: relativePath, sha256, inputHash };
 }
 
-function semanticExplanationWithoutMarkers(value: string): string {
+export function semanticExplanationWithoutMarkers(value: string): string {
   return value
-    .replace(/[①-⑩]/gu, "[CHOICE MARKER HIDDEN]")
-    .replace(/((?:정답|답)\s*(?:은|:|：)?\s*)\d{1,2}\s*번/gu, "$1[CHOICE MARKER HIDDEN]");
+    .replace(/\[\s*(?:정답|답)\s*\]\s*(?:[①-⑩]|\d{1,2}(?:\s*번)?)/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/(?:[①-⑩]|\d{1,2})\s*번\s*(?:이|가)?\s*(?:정답|답)(?:이다|입니다)?/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/(?:정답|답)\s*(?:은|는|이|가|:|：|=)?\s*(?:[①-⑩]|\d{1,2})(?:\s*번)?/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/[①-⑩]/gu, "[CHOICE MARKER HIDDEN]");
 }
 
 async function repairClassifiedQuestion(
@@ -1396,7 +1476,8 @@ async function repairClassifiedQuestion(
     `problem-repairs/v${PROBLEM_REPAIR_VERSION}-${String(sourcePage).padStart(4, "0")}-${printedNumber.padStart(4, "0")}.json`;
   const problemPath = join(stateDir, problemRelativePath);
 
-  return withImporterPdfForAnalysis(problem, async (analysisProblem) => {
+  return withImporterPdfForAnalysis(problem, async (analysisProblem) =>
+    withSourcePageSlice(analysisProblem.path, sourcePage, async (singlePagePath) => {
     let corrected: QuizItemEx;
     let problemCheckpoint: Record<string, unknown>;
     if (existsSync(problemPath)) {
@@ -1416,7 +1497,9 @@ async function repairClassifiedQuestion(
       ) throw new Error(`기존 문제 repair 체크포인트 메타데이터가 다릅니다: ${problemPath}`);
       corrected = restoredQuizItems([problemCheckpoint.item])[0];
     } else {
-      const extracted = await extractProblemsFromFile(analysisProblem.path, "pdf", {
+      const extracted = await extractProblemsFromFile(singlePagePath, "pdf", {
+        sliceBase: sourcePage,
+        contentPageCount: 1,
         selfContained: true,
         target: { page: sourcePage, printedNumber },
         reasoningEffort: IMPORT_REASONING_EFFORT,
@@ -1444,9 +1527,8 @@ async function repairClassifiedQuestion(
     }
     if (
       questionKey(corrected) !== key || corrected.page !== sourcePage ||
-      numericPrintedLocator(corrected.number) !== Number(printedNumber) ||
-      corrected.qtype !== "mcq" || !corrected.choices || corrected.choices.length < 2
-    ) throw new Error(`${key} 문제 repair가 원본 페이지·번호·객관식 구조를 보존하지 않았습니다`);
+      numericPrintedLocator(corrected.number) !== Number(printedNumber)
+    ) throw new Error(`${key} 문제 repair가 원본 페이지·번호를 보존하지 않았습니다`);
     const effectiveQuestionHash = canonicalEvidenceHash(corrected);
     const problemArtifactHash = await sha256File(problemPath);
     if (problemArtifactHash !== canonicalEvidenceHash(problemCheckpoint)) {
@@ -1478,6 +1560,8 @@ async function repairClassifiedQuestion(
         classificationCheckpoint.effectiveQuestionHash !== effectiveQuestionHash ||
         classificationCheckpoint.classifierVersion !== CLASSIFIER_VERSION ||
         classificationCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+        classificationCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+        classificationCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
         classificationCheckpoint.model !== IMPORT_MODEL ||
         classificationCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
       ) throw new Error(`기존 classification repair 체크포인트 메타데이터가 다릅니다: ${classificationPath}`);
@@ -1485,9 +1569,9 @@ async function repairClassifiedQuestion(
     } else {
       classification = (await classifyQuestions(
         entry,
-        analysisProblem.path,
-        1,
-        analysisProblem.pageCount,
+        singlePagePath,
+        sourcePage,
+        sourcePage,
         [corrected]
       ))[0];
       classificationCheckpoint = {
@@ -1501,6 +1585,8 @@ async function repairClassifiedQuestion(
         effectiveQuestionHash,
         classifierVersion: CLASSIFIER_VERSION,
         rulesDigest: CLASSIFIER_DIGEST,
+        transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+        transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
         model: IMPORT_MODEL,
         reasoningEffort: IMPORT_REASONING_EFFORT,
         item: classification,
@@ -1525,6 +1611,8 @@ async function repairClassifiedQuestion(
           path: classificationRelativePath,
           sha256: classificationArtifactHash,
           rulesDigest: CLASSIFIER_DIGEST,
+          transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+          transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
         },
         baseQuestionHash: baseQuestion.questionHash,
         effectiveQuestionHash,
@@ -1534,7 +1622,8 @@ async function repairClassifiedQuestion(
         officialRawAnswerHash: sha256Text(officialSolution.answer),
       },
     };
-  });
+    })
+  );
 }
 
 export async function repairAndAuditOfficialAnswers(
@@ -1583,10 +1672,26 @@ export async function repairAndAuditOfficialAnswers(
   };
 
   for (;;) {
-    if (effective.some(({ classification }) => classification.decision === "review")) {
-      return { classified: effective, repairs: [...repairs.values()], auditPath: null, auditHash: null };
-    }
     const byNumber = officialSolutionsByNumber(entry, effective, solutions);
+    const transcriptionIssues = transcriptionRepairKeys(effective);
+    if (transcriptionIssues.length > 0) {
+      if (!await applyRepairs(transcriptionIssues, byNumber)) {
+        throw new Error(
+          `문제 재전사 후에도 원본 전사를 검증할 수 없습니다: ${transcriptionIssues.join(", ")}`
+        );
+      }
+      finalSemantic = null;
+      continue;
+    }
+    if (effective.some(({ classification }) => classification.decision === "review")) {
+      return {
+        classified: effective,
+        repairs: [...repairs.values()],
+        auditPath: null,
+        auditHash: null,
+        effectiveCorpusHash: null,
+      };
+    }
     const acceptedMcq = effective.filter(
       ({ question, classification }) => classification.decision === "accept" && question.qtype === "mcq"
     );
@@ -1649,6 +1754,10 @@ export async function repairAndAuditOfficialAnswers(
     break;
   }
 
+  const remainingTranscriptionIssues = transcriptionRepairKeys(effective);
+  if (remainingTranscriptionIssues.length > 0) {
+    throw new Error(`terminal corpus에 원본 전사 미검증 문항이 있습니다: ${remainingTranscriptionIssues.join(", ")}`);
+  }
   const finalByNumber = officialSolutionsByNumber(entry, effective, solutions);
   const finalMcq = effective.filter(
     ({ question, classification }) => classification.decision === "accept" && question.qtype === "mcq"
@@ -1696,6 +1805,8 @@ export async function repairAndAuditOfficialAnswers(
     solutionHash: solutionEvidence.sha256,
     classifierVersion: CLASSIFIER_VERSION,
     rulesDigest: CLASSIFIER_DIGEST,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
     semanticChoiceVersion: SEMANTIC_CHOICE_CHECK_VERSION,
     semanticPromptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
     sourceQuestionCount: effective.length,
@@ -1723,7 +1834,72 @@ export async function repairAndAuditOfficialAnswers(
     repairs: repairList,
     auditPath: auditRelativePath,
     auditHash,
+    effectiveCorpusHash,
   };
+}
+
+function confinedStateFile(stateDir: string, relativePath: string, label: string): string {
+  if (!relativePath || relativePath.includes("\0") || relativePath.startsWith("/") || relativePath.split("/").includes("..")) {
+    throw new Error(`${label} 상대 경로가 유효하지 않습니다`);
+  }
+  const root = realpathSync(stateDir);
+  const path = resolve(stateDir, relativePath);
+  if (!existsSync(path) || lstatSync(path).isSymbolicLink() || !lstatSync(path).isFile()) {
+    throw new Error(`${label}이 regular file이 아닙니다`);
+  }
+  const real = realpathSync(path);
+  if (!real.startsWith(`${root}/`)) throw new Error(`${label}이 stateDir 밖을 가리킵니다`);
+  return path;
+}
+
+export async function writeAnswerAttestation(
+  stateDir: string,
+  entryId: string,
+  problemHash: string,
+  solutionHash: string,
+  receipt: unknown,
+  answerAudit: AnswerAuditResult
+): Promise<{ path: string; sha256: string }> {
+  if (!answerAudit.auditPath || !answerAudit.auditHash || !answerAudit.effectiveCorpusHash) {
+    throw new Error("answer attestation에 terminal audit 정보가 없습니다");
+  }
+  const receiptPath = join(stateDir, "receipt.json");
+  writeImmutableJson(receiptPath, receipt);
+  const receiptHash = await sha256File(receiptPath);
+  if (receiptHash !== canonicalEvidenceHash(receipt)) throw new Error("receipt canonical hash가 다릅니다");
+  const auditPath = confinedStateFile(stateDir, answerAudit.auditPath, "answer audit");
+  if (await sha256File(auditPath) !== answerAudit.auditHash) throw new Error("answer audit hash가 다릅니다");
+  const audit = object(JSON.parse(readFileSync(auditPath, "utf8")), "answer audit");
+  if (
+    audit.entryId !== entryId || audit.problemHash !== problemHash || audit.solutionHash !== solutionHash ||
+    audit.classifierVersion !== CLASSIFIER_VERSION || audit.rulesDigest !== CLASSIFIER_DIGEST ||
+    audit.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+    audit.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+    audit.effectiveCorpusHash !== answerAudit.effectiveCorpusHash
+  ) {
+    throw new Error("answer audit terminal binding이 다릅니다");
+  }
+  const basis = {
+    entryId,
+    problemHash,
+    solutionHash,
+    classifierVersion: CLASSIFIER_VERSION,
+    rulesDigest: CLASSIFIER_DIGEST,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    receipt: { path: "receipt.json", sha256: receiptHash },
+    answerAudit: {
+      path: answerAudit.auditPath,
+      sha256: answerAudit.auditHash,
+      effectiveCorpusHash: answerAudit.effectiveCorpusHash,
+    },
+    repairs: answerAudit.repairs,
+  };
+  const attestationDigest = canonicalEvidenceHash(basis);
+  const relativePath = `answer-attestation/v${ANSWER_ATTESTATION_VERSION}-${attestationDigest}.json`;
+  const checkpoint = { version: ANSWER_ATTESTATION_VERSION, attestationDigest, ...basis };
+  const sha256 = await writeImmutableEvidence(join(stateDir, relativePath), checkpoint);
+  return { path: relativePath, sha256 };
 }
 
 export function matchOfficialSolutions(
@@ -2091,13 +2267,29 @@ export function validateFilteredResult(value: unknown, entryId: string): string 
     throw new Error("기존 result.json이 유효하지 않습니다");
   }
   const reason = exactString(result.reason, "result.json.reason", 100);
-  if (reason === "NO_IN_SCOPE_QUESTIONS" && result.rulesDigest !== CLASSIFIER_DIGEST) {
-    throw new Error("기존 filtered result의 classifier rulesDigest가 오래되었습니다");
+  if (reason === "NO_IN_SCOPE_QUESTIONS" && (
+    result.rulesDigest !== CLASSIFIER_DIGEST || result.classifierVersion !== CLASSIFIER_VERSION ||
+    result.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+    result.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST
+  )) {
+    throw new Error("기존 filtered result의 classifier 또는 transcription gate가 오래되었습니다");
   }
   if (reason !== "NO_IN_SCOPE_QUESTIONS" && reason !== "SOURCE_GRADE_OUT_OF_SCOPE") {
     throw new Error("기존 result.json reason이 유효하지 않습니다");
   }
   return reason;
+}
+
+export function assertNoCommittedReceiptForFilteredResult(stateDir: string): void {
+  if (existsSync(join(stateDir, "receipt.json"))) {
+    throw new Error("committed receipt가 있는 entry를 filtered result로 바꿀 수 없습니다; 명시적 migration이 필요합니다");
+  }
+}
+
+export function assertNoReceiptResultConflict(stateDir: string): void {
+  if (existsSync(join(stateDir, "receipt.json")) && existsSync(join(stateDir, "result.json"))) {
+    throw new Error("receipt.json과 result.json이 함께 존재하는 terminal conflict입니다");
+  }
 }
 
 async function processEntry(
@@ -2109,12 +2301,16 @@ async function processEntry(
   const stateDir = join(dataDir, "import-exam-corpus", entryToken(entry));
   mkdirSync(stateDir, { recursive: true });
   writeImmutableJson(join(stateDir, "entry.json"), { schemaVersion: 2, entry: entry.raw });
+  const receiptPath = join(stateDir, "receipt.json");
   const resultPath = join(stateDir, "result.json");
+  assertNoReceiptResultConflict(stateDir);
   if (existsSync(resultPath)) {
+    assertNoCommittedReceiptForFilteredResult(stateDir);
     const reason = validateFilteredResult(JSON.parse(readFileSync(resultPath, "utf8")), entry.id);
     return { id: entry.id, status: "filtered", accepted: 0, message: reason };
   }
   if (["통합과학", "통합사회"].includes(entry.subject) && ![1, 2].includes(entry.grade ?? 0)) {
+    assertNoCommittedReceiptForFilteredResult(stateDir);
     writeImmutableJson(resultPath, {
       version: 2,
       status: "filtered",
@@ -2149,18 +2345,23 @@ async function processEntry(
 
   let classified = await extractAndClassifyProblems(entry, problem, stateDir);
   validateProblemNumberRange(entry, classified);
+  const transcriptionIssues = transcriptionRepairKeys(classified);
   const reviews = classified.filter(({ classification }) => classification.decision === "review");
-  if (reviews.length > 0) {
+  if (transcriptionIssues.length === 0 && reviews.length > 0) {
     return { id: entry.id, status: "review", accepted: 0, message: `${reviews.length}문항 수동 검토 필요` };
   }
   const acceptedCount = classified.filter(({ classification }) => classification.decision === "accept").length;
-  if (acceptedCount === 0) {
+  if (transcriptionIssues.length === 0 && acceptedCount === 0) {
+    assertNoCommittedReceiptForFilteredResult(stateDir);
     writeImmutableJson(resultPath, {
       version: 2,
       status: "filtered",
       entryId: entry.id,
       reason: "NO_IN_SCOPE_QUESTIONS",
       rulesDigest: CLASSIFIER_DIGEST,
+      classifierVersion: CLASSIFIER_VERSION,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
       sourceQuestionCount: classified.length,
       acceptedQuestionCount: 0,
       rejectedQuestionCount: classified.length,
@@ -2188,12 +2389,16 @@ async function processEntry(
     ({ classification }) => classification.decision === "accept"
   ).length;
   if (repairedAcceptedCount === 0) {
+    assertNoCommittedReceiptForFilteredResult(stateDir);
     writeImmutableJson(resultPath, {
       version: 2,
       status: "filtered",
       entryId: entry.id,
       reason: "NO_IN_SCOPE_QUESTIONS",
       rulesDigest: CLASSIFIER_DIGEST,
+      classifierVersion: CLASSIFIER_VERSION,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
       sourceQuestionCount: classified.length,
       acceptedQuestionCount: 0,
       rejectedQuestionCount: classified.length,
@@ -2208,7 +2413,6 @@ async function processEntry(
     throw new Error("accepted corpus의 terminal answer audit이 없습니다");
   }
   const imported = matchOfficialSolutions(entry, classified, solutions);
-  const receiptPath = join(stateDir, "receipt.json");
   const receipt = {
     version: 2,
     status: "committed",
@@ -2248,6 +2452,14 @@ async function processEntry(
   if (existsSync(receiptPath)) writeImmutableJson(receiptPath, receipt);
   const commit = await commitCorpusEntry(db, join(dataDir, "files"), entry, problem, solution, imported, existsSync(receiptPath));
   writeImmutableJson(receiptPath, receipt);
+  await writeAnswerAttestation(
+    stateDir,
+    entry.id,
+    problem.sha256,
+    solution.sha256,
+    receipt,
+    answerAudit
+  );
   return {
     id: entry.id,
     status: commit.insertedTargets.length > 0 ? "imported" : "existing",
