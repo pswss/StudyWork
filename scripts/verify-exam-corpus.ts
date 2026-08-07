@@ -241,6 +241,10 @@ export function canonicalEvidenceHash(value: unknown): string {
   return sha256(canonicalJson(value));
 }
 
+export function compareCorpusQuestionKeys(left: string, right: string): number {
+  return left.localeCompare(right, "en");
+}
+
 const CLASSIFIER_VERSION = 4;
 const PROBLEM_REPAIR_VERSION = 2;
 const CLASSIFICATION_REPAIR_VERSION = 3;
@@ -1427,7 +1431,7 @@ function verifySolutionFidelity(
     }
     return { record, solution, input: fidelityInput(record, solution) };
   });
-  const acceptedSolutionKeys = accepted.map(({ record }) => record.question.key).sort();
+  const acceptedSolutionKeys = accepted.map(({ record }) => record.question.key).sort(compareCorpusQuestionKeys);
   const declaredCheckpoints = new Map<string, SolutionFidelityCheckpointEvidence>();
   for (const [index, value] of audit.solutionFidelityCheckpoints.entries()) {
     const checkpoint = solutionFidelityCheckpointEvidence(value, `solutionFidelityCheckpoints[${index}]`);
@@ -1744,8 +1748,8 @@ function verifySolutionFidelity(
     });
   }
   const items = [...terminalItems.values()].sort((left, right) =>
-    String(left.key).localeCompare(String(right.key)));
-  expectedRepairs.sort((left, right) => String(left.key).localeCompare(String(right.key)));
+    compareCorpusQuestionKeys(String(left.key), String(right.key)));
+  expectedRepairs.sort((left, right) => compareCorpusQuestionKeys(String(left.key), String(right.key)));
   if (items.length !== accepted.length || !isDeepStrictEqual(audit.solutionFidelityItems, items)
     || !isDeepStrictEqual(audit.solutionRepairs, expectedRepairs)) {
     throw new Error("answer audit terminal solution fidelity items/repairs are not exact");
@@ -1753,15 +1757,16 @@ function verifySolutionFidelity(
   const effectiveSolutionCorpus = acceptedRecords.map((record) => ({
     key: record.question.key,
     solution: effectiveSolutions.get(record.question.printedNumber)!.evidence,
-  })).sort((left, right) => left.key.localeCompare(right.key));
+  })).sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
   return {
     solutions: effectiveSolutions,
     checkpoints: expectedCheckpoints,
     items,
     repairs: expectedRepairs,
     acceptedSolutionKeys,
-    solutionRepairKeys: expectedRepairs.map((repair) => String(repair.key)),
-    derivedAnswerKeys: items.filter((item) => item.answerStatus === "not_visible").map((item) => String(item.key)),
+    solutionRepairKeys: expectedRepairs.map((repair) => String(repair.key)).sort(compareCorpusQuestionKeys),
+    derivedAnswerKeys: items.filter((item) => item.answerStatus === "not_visible")
+      .map((item) => String(item.key)).sort(compareCorpusQuestionKeys),
     effectiveSolutionCorpusHash: canonicalEvidenceHash(effectiveSolutionCorpus),
   };
 }
@@ -2108,7 +2113,7 @@ function verifyAnswerAudit(
           evidence: semantic.evidence,
         },
       };
-    }).sort((left, right) => left.key.localeCompare(right.key));
+    }).sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
     const targetQuestionCounts = Object.fromEntries(TARGET_SUBJECTS.flatMap((target) => {
       const count = acceptedRecords.filter((record) =>
         TARGET_BY_CANONICAL[record.classification.canonical_subject!] === target).length;
@@ -2135,16 +2140,17 @@ function verifyAnswerAudit(
       acceptedSolutionKeys: solutionFidelity.acceptedSolutionKeys,
       solutionRepairKeys: solutionFidelity.solutionRepairKeys,
       derivedAnswerKeys: solutionFidelity.derivedAnswerKeys,
-      acceptedMcqKeys: auditItems.map((item) => item.key).sort(),
+      acceptedMcqKeys: auditItems.map((item) => item.key).sort(compareCorpusQuestionKeys),
       effectiveCorpusHash,
       effectiveSolutionCorpusHash: solutionFidelity.effectiveSolutionCorpusHash,
       solutionFidelityCheckpoints: solutionFidelity.checkpoints,
       solutionFidelityItems: solutionFidelity.items,
       solutionRepairs: solutionFidelity.repairs,
       semanticCheckpoint: semanticEnvelope,
-      repairs: [...audit.repairs].sort((left, right) =>
-        exactString(object(left, "repair").key, "repair.key")
-          .localeCompare(exactString(object(right, "repair").key, "repair.key"))),
+      repairs: [...audit.repairs].sort((left, right) => compareCorpusQuestionKeys(
+        exactString(object(left, "repair").key, "repair.key"),
+        exactString(object(right, "repair").key, "repair.key"),
+      )),
       items: auditItems,
     };
     if (!isDeepStrictEqual(auditBasis, expectedBasis)) {
@@ -2274,9 +2280,10 @@ function verifyFilteredAnswerAudit(
         solutionRepairs: [],
       } : {}),
       semanticCheckpoint: null,
-      repairs: [...audit.repairs].sort((left, right) =>
-        exactString(object(left, "repair").key, "repair.key")
-          .localeCompare(exactString(object(right, "repair").key, "repair.key"))),
+      repairs: [...audit.repairs].sort((left, right) => compareCorpusQuestionKeys(
+        exactString(object(left, "repair").key, "repair.key"),
+        exactString(object(right, "repair").key, "repair.key"),
+      )),
       items: [],
     };
     if (!isDeepStrictEqual(auditBasis, expectedBasis)

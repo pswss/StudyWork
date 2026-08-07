@@ -22,6 +22,7 @@ import {
 } from "../src/claude";
 import {
   canonicalEvidenceHash,
+  compareCorpusQuestionKeys,
   officialAnswerForDb,
   runCli,
   TARGET_SUBJECTS,
@@ -1416,6 +1417,12 @@ function rewriteBaselineFidelityAuthority(
 }
 
 describe("exam corpus verifier", () => {
+  it("uses localeCompare order for multi-digit page question keys", () => {
+    const keys = ["10:25", "2:6", "1:1"];
+    expect([...keys].sort(compareCorpusQuestionKeys)).toEqual(["1:1", "10:25", "2:6"]);
+    expect([...keys].sort()).toEqual(["10:25", "1:1", "2:6"]);
+  });
+
   it("independently maps official MCQ values, fractions, and markers to DB answers", () => {
     expect(canonicalEvidenceHash({ b: 1, a: ["x", null] }))
       .toBe("2dccb31ca7d4b9dc00ebe9e1b2fca5314ca2563469fbf6ba1c69752939768835");
