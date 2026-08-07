@@ -10,6 +10,7 @@ import { problemExtractionSelfContainedRule } from "../src/claude";
 import {
   CLASSIFIER_VERSION,
   CURRICULUM_RULES,
+  SOLUTION_CHECKPOINT_VERSION,
   TARGET_SUBJECTS,
   PROBLEM_SLICE_PAGES,
   PROBLEM_SLICE_STRIDE,
@@ -19,10 +20,12 @@ import {
   examBookTitle,
   isAllowedAchievementCode,
   matchOfficialSolutions,
+  officialAnswerForStorage,
   parseCorpusManifest,
   parsePdfInfoOutput,
   problemChunkCount,
   problemOwnedRange,
+  solutionOwnedStartRange,
   validateFilteredResult,
   validateProblemSliceTopology,
   withImporterPdfForAnalysis,
@@ -46,6 +49,37 @@ describe("exam corpus importer", () => {
     );
     expect(createHash("sha256").update(CURRICULUM_RULES).digest("hex").slice(0, 16))
       .not.toBe("9dd042bc21faba5e");
+  });
+
+  it("owns solution starts once and resolves official MCQ values without changing markers", () => {
+    expect(SOLUTION_CHECKPOINT_VERSION).toBe(3);
+    expect(solutionOwnedStartRange({ from: 1, to: 6 }, 5)).toEqual({ from: 1, to: 4 });
+    expect(solutionOwnedStartRange({ from: 5, to: 10 })).toEqual({ from: 5, to: 10 });
+
+    const question = (choices: string[]) => ({
+      number: "4",
+      qtype: "mcq" as const,
+      difficulty: "중" as const,
+      question: "공식 정답 매핑",
+      choices,
+      answer: "",
+      explanation: "",
+      page: 1,
+      figure: false,
+      figure_description: null,
+      box: null,
+    });
+    expect(officialAnswerForStorage(question(["① 6", "② 9", "③ 12", "④ 15", "⑤ 18"]), "18"))
+      .toBe("⑤ 18");
+    expect(officialAnswerForStorage(question(["① $5$", "② $6$", "③ $7$", "④ $8$", "⑤ $9$"]), "8"))
+      .toBe("④ $8$");
+    expect(officialAnswerForStorage(
+      question(["① $\\frac76$", "② $\\frac43$", "③ $\\frac32$", "④ $\\frac53$", "⑤ $\\frac{11}{6}$"]),
+      "$\\dfrac{4}{3}$"
+    )).toBe("② $\\frac43$");
+    expect(officialAnswerForStorage(question(["① 2", "② 7"]), "2")).toBe("① 2");
+    expect(officialAnswerForStorage(question(["① 6", "② 9", "③ 12", "④ 15", "⑤ 18"]), "⑤"))
+      .toBe("⑤");
   });
 
   it("commits once, resumes without duplicates, and preserves same-title books", async () => {

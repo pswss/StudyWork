@@ -978,6 +978,11 @@ export interface SolutionItem {
   complete: true;
 }
 
+export interface SolutionStartPageRange {
+  from: number;
+  to: number;
+}
+
 const CIRCLED_NUMBERS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳";
 
 export function numericPrintedLocator(value: string | null | undefined): number | null {
@@ -1123,20 +1128,28 @@ export function parseQuizItemsEx(text: string): QuizItemEx[] {
   return items;
 }
 
-export function parseSolutionItems(text: string): SolutionItem[] {
-  return parseJsonArray(text).map((raw, index) => {
+export function parseSolutionItems(
+  text: string,
+  opts?: { ownedStartPageRange?: SolutionStartPageRange }
+): SolutionItem[] {
+  const owned = opts?.ownedStartPageRange;
+  if (owned && (
+    !Number.isInteger(owned.from) || !Number.isInteger(owned.to) || owned.from < 1 || owned.to < owned.from
+  )) throw new Error("해설 시작 페이지 소유 범위가 유효하지 않습니다.");
+  return parseJsonArray(text).flatMap((raw, index) => {
     if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
       throw new Error(`해설 ${index + 1}: 객체가 아닙니다.`);
     }
     const item = raw as Record<string, unknown>;
+    const page = Number(item.page);
+    if (!Number.isInteger(page) || page < 1) throw new Error(`해설 ${index + 1}: 페이지가 유효하지 않습니다.`);
+    if (owned && (page < owned.from || page > owned.to)) return [];
     const number = typeof item.number === "string" ? item.number.trim() : "";
     const answer = typeof item.answer === "string" ? item.answer.trim() : "";
     const explanation = typeof item.explanation === "string" ? item.explanation.trim() : "";
-    const page = Number(item.page);
     const complete = item.complete;
     if (!number) throw new Error(`해설 ${index + 1}: 문제 번호가 비어 있습니다.`);
     if (!answer) throw new Error(`해설 ${index + 1}: 정답이 비어 있습니다.`);
-    if (!Number.isInteger(page) || page < 1) throw new Error(`해설 ${index + 1}: 페이지가 유효하지 않습니다.`);
     if (complete !== true) throw new Error(`해설 ${index + 1}: 청크 경계에서 내용이 잘렸습니다.`);
     return { number, answer, explanation, page, complete };
   });
@@ -1356,7 +1369,12 @@ export async function extractProblemsFromFile(
 export async function extractSolutionsFromFile(
   absPath: string,
   kind: "image" | "pdf",
-  opts?: { sliceBase?: number; signal?: AbortSignal; contentPageCount?: number }
+  opts?: {
+    sliceBase?: number;
+    signal?: AbortSignal;
+    contentPageCount?: number;
+    ownedStartPageRange?: SolutionStartPageRange;
+  }
 ): Promise<SolutionItem[]> {
   const pagesInFile = kind === "pdf" ? await pdfPageCount(absPath) : 1;
   if (!pagesInFile) throw new AIProviderError("invalid_file", "해설지 페이지 수를 확인할 수 없습니다");
@@ -1366,6 +1384,12 @@ export async function extractSolutionsFromFile(
   }
   const firstPage = opts?.sliceBase ?? 1;
   const lastPage = firstPage + contentPageCount - 1;
+  const ownedStartPageRange = opts?.ownedStartPageRange;
+  if (ownedStartPageRange && (
+    !Number.isInteger(ownedStartPageRange.from) || !Number.isInteger(ownedStartPageRange.to) ||
+    ownedStartPageRange.from < firstPage || ownedStartPageRange.to > lastPage ||
+    ownedStartPageRange.to < ownedStartPageRange.from
+  )) throw new AIProviderError("invalid_file", "해설 시작 페이지 소유 범위가 유효하지 않습니다");
   const readInstruction = kind === "pdf"
     ? `Read the first ${contentPageCount} attached page image(s) as original document pages ${firstPage}-${lastPage}.`
     : "Read the attached image.";
@@ -1380,7 +1404,9 @@ export async function extractSolutionsFromFile(
     `- number: output only the visible printed problem number as ASCII digits, e.g. "17". Normalize Q17, [17], and 17번 문제 to "17". Never emit an unlabeled continuation or an item whose label is not visible.\n` +
     `- answer: the official final answer. Never solve or invent an answer.\n` +
     `- explanation: copy the complete official reasoning in Korean with formulas in LaTeX. Never summarize or invent steps. Use "" only when a labeled entry inside the detailed solution section genuinely prints an answer without any reasoning.\n` +
-    `- Emit an item only when its printed problem label and start are visible in the attached pages; ignore continuation fragments that began before ${firstPage}.\n` +
+    (ownedStartPageRange
+      ? `- OWNED START PAGES: Emit only solutions whose printed label and start page is from ${ownedStartPageRange.from} through ${ownedStartPageRange.to}. Treat every other attached page solely as continuation lookahead for those owned solutions; never emit a solution that starts on a lookahead page.\n`
+      : `- Emit an item only when its printed problem label and start are visible in the attached pages; ignore continuation fragments that began before ${firstPage}.\n`) +
     `- complete: true only when the full worked solution is visible through its final step and answer. Use false if it continues beyond page ${lastPage}.\n` +
     `- Ignore covers, contents, ads, and compact quick-answer tables that duplicate later worked solutions.\n` +
     `- page: original page where the solution starts, from ${firstPage} through ${lastPage}.\n` +
@@ -1397,7 +1423,7 @@ export async function extractSolutionsFromFile(
   });
   let items: SolutionItem[];
   try {
-    items = parseSolutionItems(result);
+    items = parseSolutionItems(result, { ownedStartPageRange });
   } catch (error) {
     throw new ProblemChunkValidationError(error instanceof Error ? error.message : "해설 구조 검증 실패");
   }

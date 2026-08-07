@@ -17,6 +17,7 @@ vi.mock("../src/codex-provider", async (importOriginal) => {
 import {
   chat,
   extractQuestionsFromFile,
+  extractSolutionsFromFile,
   generateFigureDescriptionsForQuestions,
   generateExplanationsForQuestions,
   parseExplanationItems,
@@ -57,6 +58,64 @@ afterEach(() => {
 });
 
 describe("StudyWork Codex facade", () => {
+  it("해설 lookahead 시작 항목은 버리고 다음 owned slice에서 한 번만 보존", async () => {
+    const document = await PDFDocument.create();
+    for (let page = 0; page < 6; page++) document.addPage([100, 100]);
+    const slice = join(dir, "해설-overlap.pdf");
+    writeFileSync(slice, await document.save());
+
+    providerMock.complete.mockResolvedValueOnce({
+      text: JSON.stringify([
+        { number: "19", answer: "④", explanation: "19번 완전 해설", page: 4, complete: true },
+        { number: "20", answer: "", explanation: "다음 쪽에 계속", page: 5, complete: false },
+      ]),
+      provider: "codex-cli",
+      model: "gpt-5.6-sol",
+    });
+    const first = await extractSolutionsFromFile(slice, "pdf", {
+      sliceBase: 1,
+      contentPageCount: 6,
+      ownedStartPageRange: { from: 1, to: 4 },
+    });
+
+    providerMock.complete.mockResolvedValueOnce({
+      text: JSON.stringify([
+        { number: "20", answer: "②", explanation: "20번 완전 해설", page: 5, complete: true },
+      ]),
+      provider: "codex-cli",
+      model: "gpt-5.6-sol",
+    });
+    const second = await extractSolutionsFromFile(slice, "pdf", {
+      sliceBase: 5,
+      contentPageCount: 6,
+      ownedStartPageRange: { from: 5, to: 10 },
+    });
+
+    expect([...first, ...second]).toEqual([
+      { number: "19", answer: "④", explanation: "19번 완전 해설", page: 4, complete: true },
+      { number: "20", answer: "②", explanation: "20번 완전 해설", page: 5, complete: true },
+    ]);
+    expect([...first, ...second].filter((item) => item.page === 5)).toHaveLength(1);
+    expect(providerMock.complete.mock.calls[0][0].prompt).toContain("OWNED START PAGES");
+    expect(providerMock.complete.mock.calls[0][0].prompt).toContain("from 1 through 4");
+    expect(providerMock.complete.mock.calls[0][0].prompt).toContain(
+      "never emit a solution that starts on a lookahead page"
+    );
+
+    providerMock.complete.mockResolvedValueOnce({
+      text: JSON.stringify([
+        { number: "19", answer: "④", explanation: "다음 쪽에 계속", page: 4, complete: false },
+      ]),
+      provider: "codex-cli",
+      model: "gpt-5.6-sol",
+    });
+    await expect(extractSolutionsFromFile(slice, "pdf", {
+      sliceBase: 1,
+      contentPageCount: 6,
+      ownedStartPageRange: { from: 1, to: 4 },
+    })).rejects.toThrow("청크 경계에서 내용이 잘렸습니다");
+  });
+
   it("이미지 작업을 경로 노출 없이 로컬 Codex provider와 Skill 지침으로 전달", async () => {
     const image = join(dir, "한글 학습 이미지.png");
     writeFileSync(image, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));

@@ -138,6 +138,7 @@ const EXPECTED_QUESTION_COUNT: Record<SourceSubject, number> = {
 };
 export const CLASSIFIER_VERSION = 3;
 const CHECKPOINT_VERSION = 2;
+export const SOLUTION_CHECKPOINT_VERSION = 3;
 
 export const CURRICULUM_RULES = `
 Classify each question from the complete attached passage, stem, choices, tables, and figures. Never classify from the filename or exam label alone.
@@ -337,6 +338,18 @@ export function problemOwnedRange(
     from: index === 0 ? slice.from : slice.from + 1,
     to: nextFrom ?? slice.to,
   };
+}
+
+export function solutionOwnedStartRange(
+  slice: { from: number; to: number },
+  nextFrom?: number
+): { from: number; to: number } {
+  const to = nextFrom === undefined ? slice.to : nextFrom - 1;
+  if (
+    !Number.isInteger(slice.from) || !Number.isInteger(slice.to) || slice.from < 1 || slice.to < slice.from ||
+    (nextFrom !== undefined && !Number.isInteger(nextFrom)) || to < slice.from || to > slice.to
+  ) throw new Error("해설 PDF slice 시작 페이지 소유 범위가 유효하지 않습니다");
+  return { from: slice.from, to };
 }
 
 export function validateProblemSliceTopology(
@@ -876,32 +889,45 @@ async function extractSolutionsFromAnalysisPdf(
   return withSlices(evidence, 6, 4, async (slices) => {
     const combined: SolutionItem[] = [];
     for (const [index, slice] of slices.entries()) {
-      const checkpointPath = join(stateDir, "solution-chunks", `v${CHECKPOINT_VERSION}-${String(index).padStart(4, "0")}.json`);
+      const ownership = solutionOwnedStartRange(slice, slices[index + 1]?.from);
+      const checkpointPath = join(
+        stateDir,
+        "solution-chunks",
+        `v${SOLUTION_CHECKPOINT_VERSION}-${String(index).padStart(4, "0")}.json`
+      );
       let items: SolutionItem[];
       if (existsSync(checkpointPath)) {
         const checkpoint = object(JSON.parse(readFileSync(checkpointPath, "utf8")), "해설 체크포인트");
         if (
-          checkpoint.version !== CHECKPOINT_VERSION || checkpoint.sourceHash !== evidence.sha256 ||
+          checkpoint.version !== SOLUTION_CHECKPOINT_VERSION || checkpoint.sourceHash !== evidence.sha256 ||
           checkpoint.from !== slice.from || checkpoint.to !== slice.to || checkpoint.model !== IMPORT_MODEL ||
-          checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+          checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT || checkpoint.ownedFrom !== ownership.from ||
+          checkpoint.ownedTo !== ownership.to
         ) throw new Error(`해설 체크포인트 메타데이터가 다릅니다: ${checkpointPath}`);
         items = parseSolutionItems(JSON.stringify(checkpoint.items));
       } else {
         items = await extractSolutionsFromFile(slice.path, "pdf", {
           sliceBase: slice.from,
           contentPageCount: slice.to - slice.from + 1,
+          ownedStartPageRange: ownership,
         });
-        const nextFrom = slices[index + 1]?.from;
-        if (nextFrom !== undefined) items = items.filter((item) => item.page < nextFrom);
+        if (items.some((item) => item.page < ownership.from || item.page > ownership.to)) {
+          throw new Error(`해설 추출이 ${ownership.from}-${ownership.to} 시작 페이지 범위를 벗어났습니다`);
+        }
         writeImmutableJson(checkpointPath, {
-          version: CHECKPOINT_VERSION,
+          version: SOLUTION_CHECKPOINT_VERSION,
           sourceHash: evidence.sha256,
           from: slice.from,
           to: slice.to,
+          ownedFrom: ownership.from,
+          ownedTo: ownership.to,
           model: IMPORT_MODEL,
           reasoningEffort: IMPORT_REASONING_EFFORT,
           items,
         });
+      }
+      if (items.some((item) => item.page < ownership.from || item.page > ownership.to)) {
+        throw new Error(`해설 체크포인트가 ${ownership.from}-${ownership.to} 시작 페이지 범위를 벗어났습니다`);
       }
       combined.push(...items);
     }
@@ -940,12 +966,39 @@ const strippedChoiceMarker = (value: string) => normalizedAnswerText(value)
   .replace(/^[①-⑩]\s*/, "")
   .replace(/^\d{1,2}\s*[.)]\s*/, "");
 
-function officialAnswerForStorage(question: QuizItemEx, answer: string): string {
+function normalizedChoiceContent(value: string): string {
+  let normalized = strippedChoiceMarker(value).trim();
+  if (normalized.startsWith("$") && normalized.endsWith("$") && normalized.length >= 2) {
+    normalized = normalized.slice(1, -1);
+  } else if (normalized.startsWith("\\(") && normalized.endsWith("\\)")) {
+    normalized = normalized.slice(2, -2);
+  }
+  normalized = normalized.replace(/\\(?:dfrac|tfrac)/gu, "\\frac");
+  normalized = normalized.replace(
+    /\\frac\s*(?:\{([^{}]+)\}|([^\s{}]))\s*(?:\{([^{}]+)\}|([^\s{}]))/gu,
+    (
+      _match: string,
+      numeratorGroup: string | undefined,
+      numeratorToken: string | undefined,
+      denominatorGroup: string | undefined,
+      denominatorToken: string | undefined
+    ) => `\\frac{${numeratorGroup ?? numeratorToken}}{${denominatorGroup ?? denominatorToken}}`
+  );
+  return normalized.toLowerCase().replace(/\s+/gu, "");
+}
+
+export function officialAnswerForStorage(question: QuizItemEx, answer: string): string {
   const official = answer.trim();
   if (question.qtype !== "mcq") return official;
   const choices = question.choices ?? [];
   const exact = choices.filter((choice) => normalizedAnswerText(choice) === normalizedAnswerText(official));
-  if (exact.length === 1) return official;
+  if (exact.length === 1) return exact[0];
+
+  const officialContent = normalizedChoiceContent(official);
+  const contentMatches = officialContent
+    ? choices.filter((choice) => normalizedChoiceContent(choice) === officialContent)
+    : [];
+  if (contentMatches.length === 1) return contentMatches[0];
 
   const circled = /^(?:정답\s*[:：]?\s*)?([①-⑩])(?:\s*번)?$/.exec(official)?.[1];
   if (circled) {
@@ -957,12 +1010,7 @@ function officialAnswerForStorage(question: QuizItemEx, answer: string): string 
   if (numeric) {
     const index = Number(numeric) - 1;
     if (index >= 0 && index < choices.length) return official;
-    throw new Error(`${question.number}번 공식 객관식 정답이 보기 범위를 벗어났습니다: ${official}`);
   }
-  const stripped = choices.filter(
-    (choice) => strippedChoiceMarker(choice) === strippedChoiceMarker(official)
-  );
-  if (stripped.length === 1) return official;
   throw new Error(`${question.number}번 공식 객관식 정답을 보기에 대응할 수 없습니다: ${official}`);
 }
 
