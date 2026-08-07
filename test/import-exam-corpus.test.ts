@@ -34,6 +34,7 @@ import {
   matchOfficialSolutions,
   officialAnswerForStorage,
   parseCorpusManifest,
+  parseDecisions,
   parsePdfInfoOutput,
   problemChunkCount,
   problemOwnedRange,
@@ -84,6 +85,43 @@ describe("exam corpus importer", () => {
     );
     expect(createHash("sha256").update(CURRICULUM_RULES).digest("hex").slice(0, 16))
       .toBe("7bb7cb863c8c4855");
+  });
+
+  it("normalizes assigned reject results for ebsi:5525982 and ebsi:5578421 Q3", () => {
+    const [decision] = parseDecisions([{
+      key: "2:3",
+      decision: "reject",
+      canonical_subject: "korean_reading",
+      curriculum_course: "독서",
+      domain: "토론",
+      achievement_codes: ["12독작01-03"],
+      confidence: 0.99,
+      reason_codes: ["OUT_OF_SCOPE_DEBATE"],
+      transcription_status: "exact",
+      transcription_evidence: "공식 문제 2쪽의 토론 입론 문항과 일치한다.",
+    }], [{
+      number: "3",
+      qtype: "mcq",
+      difficulty: "중",
+      question: "토론의 입론에 대한 이해",
+      choices: ["①", "②"],
+      answer: "",
+      explanation: "",
+      page: 2,
+      figure: false,
+      figure_description: null,
+      box: null,
+    }], { subject: "국어", grade: 3 });
+
+    expect(decision).toMatchObject({
+      decision: "reject",
+      canonical_subject: null,
+      curriculum_course: null,
+      domain: null,
+      achievement_codes: [],
+      reason_codes: ["OUT_OF_SCOPE_DEBATE"],
+      transcription_status: "exact",
+    });
   });
 
   it("owns solution starts once and resolves official MCQ values without changing markers", () => {

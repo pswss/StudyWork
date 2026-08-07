@@ -955,10 +955,10 @@ function restoredQuizItems(value: unknown): QuizItemEx[] {
   })));
 }
 
-function parseDecisions(
+export function parseDecisions(
   value: unknown,
   questions: QuizItemEx[],
-  entry: CorpusManifestEntry
+  entry: Pick<CorpusManifestEntry, "subject" | "grade">
 ): ClassificationDecision[] {
   if (!Array.isArray(value)) throw new Error("분류 결과가 배열이 아닙니다");
   const expected = new Set(questions.map(questionKey));
@@ -973,16 +973,19 @@ function parseDecisions(
       throw new Error(`분류 ${key}: decision이 유효하지 않습니다`);
     }
     const decision = row.decision as ClassificationDecision["decision"];
-    const canonical = row.canonical_subject;
+    const canonical = decision === "accept" ? row.canonical_subject : null;
     const canonicalSubject = canonical === null ? null : exactString(canonical, `분류 ${key}.canonical_subject`) as CanonicalSubject;
     if (canonicalSubject !== null && !(canonicalSubject in TARGET_BY_CANONICAL)) {
       throw new Error(`분류 ${key}: canonical_subject가 유효하지 않습니다`);
     }
-    const curriculumCourse = row.curriculum_course === null
+    const rawCurriculumCourse = decision === "accept" ? row.curriculum_course : null;
+    const curriculumCourse = rawCurriculumCourse === null
       ? null
-      : exactString(row.curriculum_course, `분류 ${key}.curriculum_course`, 200);
-    const domain = row.domain === null ? null : exactString(row.domain, `분류 ${key}.domain`, 200);
-    if (!Array.isArray(row.achievement_codes) || row.achievement_codes.some((code) => typeof code !== "string" || !code.trim())) {
+      : exactString(rawCurriculumCourse, `분류 ${key}.curriculum_course`, 200);
+    const rawDomain = decision === "accept" ? row.domain : null;
+    const domain = rawDomain === null ? null : exactString(rawDomain, `분류 ${key}.domain`, 200);
+    const achievementCodes = decision === "accept" ? row.achievement_codes : [];
+    if (!Array.isArray(achievementCodes) || achievementCodes.some((code) => typeof code !== "string" || !code.trim())) {
       throw new Error(`분류 ${key}: achievement_codes가 유효하지 않습니다`);
     }
     if (!Array.isArray(row.reason_codes) || row.reason_codes.length === 0 || row.reason_codes.some((code) => typeof code !== "string" || !code.trim())) {
@@ -1004,17 +1007,15 @@ function parseDecisions(
     if (decision === "accept") {
       if (
         canonicalSubject === null || !allowed.has(canonicalSubject) || confidence < 0.9 ||
-        !curriculumCourse || !domain || row.achievement_codes.length === 0
+        !curriculumCourse || !domain || achievementCodes.length === 0
       ) throw new Error(`분류 ${key}: accept 근거가 부족하거나 원본 과목 범위를 벗어났습니다`);
-      const invalidCode = (row.achievement_codes as string[]).find(
+      const invalidCode = (achievementCodes as string[]).find(
         (code) => !isAllowedAchievementCode(canonicalSubject, code)
       );
       if (invalidCode) throw new Error(`분류 ${key}: 허용 범위 밖 성취기준 코드입니다: ${invalidCode}`);
       if (["통합과학", "통합사회"].includes(entry.subject) && ![1, 2].includes(entry.grade ?? 0)) {
         throw new Error(`분류 ${key}: 통합과학/통합사회는 고1·고2 원본만 accept할 수 있습니다`);
       }
-    } else if (canonicalSubject !== null || curriculumCourse !== null || domain !== null || row.achievement_codes.length > 0) {
-      throw new Error(`분류 ${key}: reject/review는 교과 배정을 비워야 합니다`);
     }
     return {
       key,
@@ -1022,7 +1023,7 @@ function parseDecisions(
       canonical_subject: canonicalSubject,
       curriculum_course: curriculumCourse,
       domain,
-      achievement_codes: [...new Set(row.achievement_codes as string[])],
+      achievement_codes: [...new Set(achievementCodes as string[])],
       confidence,
       reason_codes: [...new Set(row.reason_codes as string[])],
       transcription_status: transcriptionStatus,
