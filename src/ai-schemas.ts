@@ -43,6 +43,30 @@ export const QUIZ_ITEMS_SCHEMA = arrayEnvelope(
   quizItem
 );
 
+export const MOCK_EXAM_ITEMS_SCHEMA = arrayEnvelope(
+  "studywork_mock_exam_items",
+  "An ordered 2028 CSAT-style mock-exam chunk grounded in the supplied learning material.",
+  {
+    type: "object",
+    properties: {
+      ...(quizItem.properties as Record<string, unknown>),
+      number: { type: "integer", minimum: 1, maximum: 45 },
+      section: { type: "string" },
+      passage_group: { type: ["string", "null"] },
+      passage: { type: ["string", "null"] },
+      qtype: { type: "string", enum: ["mcq", "short"] },
+    },
+    required: [
+      ...(quizItem.required as string[]),
+      "number",
+      "section",
+      "passage_group",
+      "passage",
+    ],
+    additionalProperties: false,
+  }
+);
+
 export const QUIZ_FILE_ITEMS_SCHEMA = arrayEnvelope(
   "studywork_file_quiz_items",
   "Quiz questions extracted from an attached PDF or image, with page and figure evidence.",

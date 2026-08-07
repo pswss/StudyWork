@@ -1179,6 +1179,18 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 }
 /* 생성 기준 자료 — 단권화와 같은 SourcePicker 드롭다운 재사용 */
 .quiz-generation-scope .note-source-picker { margin: 0; }
+.quiz-mock-row {
+  width: 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 12px; border-radius: 8px; background: var(--panel-2);
+}
+.quiz-mock-picker { min-width: 210px; }
+.quiz-mock-summary {
+  flex: 1; min-width: 220px; color: var(--ink-2); font-size: 12px; line-height: 1.5;
+}
+.quiz-custom-label {
+  width: 100%; color: var(--ink-2); font-size: 12px; font-weight: 650;
+  padding-top: 2px;
+}
 .quiz-status-msg {
   font-family: var(--disp); font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
   color: var(--lime);
@@ -1202,6 +1214,12 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   margin: 8px 0; border-radius: 8px; background: var(--panel-2);
 }
 .quiz-figure.compact { width: min(100%, 560px); border-radius: 6px; }
+.quiz-passage {
+  max-width: 75ch; margin: 14px 0 22px; padding: 16px 18px;
+  border-radius: 8px; background: var(--panel-2); color: var(--ink-2);
+  font-size: 14px; line-height: 1.75;
+}
+.quiz-passage table { width: 100%; }
 
 .quiz-list { display: flex; flex-direction: column; }
 .quiz-row { content-visibility: auto; contain-intrinsic-size: auto 68px; }
@@ -1264,6 +1282,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 .quiz-file-panel { animation: contentIn .22s var(--ease) both; }
 .quiz-file-head {
   display: flex; align-items: center; gap: 10px; width: 100%;
+  flex-wrap: wrap;
   padding: 10px 12px; background: var(--panel-2);
   border: 1px solid var(--line); border-radius: 6px;
   color: var(--ink);
@@ -1291,6 +1310,7 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   font-family: var(--disp); font-size: 11px; font-weight: 600; letter-spacing: .06em;
   color: var(--ink-2); font-variant-numeric: tabular-nums;
 }
+.quiz-file-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .quiz-file-group > .quiz-row { margin-left: 12px; }
 .quiz-file-select { flex-shrink: 0; }
 .quiz-file-select span { white-space: nowrap; }
@@ -1818,7 +1838,14 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
   .quiz-add-section .quiz-number-field { min-width: 120px; flex: 1; flex-direction: column; align-items: stretch; }
   .quiz-add-section .quiz-select,
   .quiz-add-section .quiz-count-input { width: 100%; }
+  .quiz-mock-row { align-items: stretch; }
+  .quiz-mock-row .single-select-picker,
+  .quiz-mock-row .btn { width: 100%; }
+  .quiz-mock-summary { min-width: 0; width: 100%; }
   .quiz-list-actions { width: 100%; margin-left: 0; }
+  .quiz-file-head { flex-wrap: wrap; }
+  .quiz-file-actions { width: 100%; }
+  .quiz-file-actions .btn { flex: 1; }
   .quiz-file-name {
     white-space: normal; display: -webkit-box; -webkit-box-orient: vertical;
     -webkit-line-clamp: 2; overflow: hidden;

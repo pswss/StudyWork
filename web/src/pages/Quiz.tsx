@@ -5,6 +5,7 @@ import {
   Subject, Material, Question, QuizItem, AnswerResult,
   questions as apiQuestions,
   generateQuestions as apiGenerate,
+  generateMockExam as apiGenerateMockExam,
   aiJob as apiAIJob,
   quiz as apiQuiz,
   answerQuestion as apiAnswer,
@@ -13,8 +14,9 @@ import {
   bookFileUrl,
   pageImageUrl,
   NotFoundError,
+  type MockExamArea,
 } from "../api";
-import { escapeHtmlText, Md, MdInline, MdInlineText, mdInlineHtml } from "../md";
+import { escapeHtmlText, Md, MdInline, MdInlineText, mdHtml, mdInlineHtml } from "../md";
 import { useI18n, type Locale, type MessageKey, type Translate } from "../i18n";
 import SourcePicker from "./SourcePicker";
 import SingleSelectPicker from "./SingleSelectPicker";
@@ -56,6 +58,7 @@ interface QuizRunOptions {
   wrong?: boolean;
   questionIds?: number[];
   srcFileId?: number;
+  ordered?: boolean;
 }
 
 interface QuizFilters {
@@ -72,6 +75,34 @@ interface GenerationNotice {
 }
 
 type NumberFormatter = (value: number, options?: Intl.NumberFormatOptions) => string;
+
+const MOCK_EXAM_FRAMES: ReadonlyArray<{
+  area: MockExamArea;
+  labelKey: MessageKey;
+  count: number;
+  minutes: number;
+}> = [
+  { area: "korean", labelKey: "problems.mock.korean", count: 45, minutes: 80 },
+  { area: "math", labelKey: "problems.mock.math", count: 30, minutes: 100 },
+  { area: "english", labelKey: "problems.mock.english", count: 45, minutes: 70 },
+  { area: "history", labelKey: "problems.mock.history", count: 20, minutes: 30 },
+  { area: "social", labelKey: "problems.mock.social", count: 25, minutes: 40 },
+  { area: "science", labelKey: "problems.mock.science", count: 25, minutes: 40 },
+  { area: "vocational", labelKey: "problems.mock.vocational", count: 25, minutes: 40 },
+  { area: "second-language", labelKey: "problems.mock.secondLanguage", count: 20, minutes: 30 },
+];
+
+function inferMockExamArea(subjectName: string): MockExamArea {
+  const name = subjectName.replace(/\s+/g, "").toLowerCase();
+  if (/수학|대수|미적분|확률|통계/.test(name)) return "math";
+  if (/영어|english/.test(name)) return "english";
+  if (/한국사/.test(name)) return "history";
+  if (/통합사회|사회/.test(name)) return "social";
+  if (/통합과학|과학|물리|화학|생명|지구/.test(name)) return "science";
+  if (/직업/.test(name)) return "vocational";
+  if (/독일|프랑스|스페인|중국|일본|러시아|아랍|베트남|한문/.test(name)) return "second-language";
+  return "korean";
+}
 
 export function parseQuizFilters(search: string): QuizFilters {
   const params = new URLSearchParams(search);
@@ -220,11 +251,29 @@ function printQuestions(
   const title = `${escapeHtmlText(subjectName)} ${escapeHtmlText(t(
     type === "question" ? "problems.print.questionSheet" : "problems.print.answerSheet",
   ))}`;
+  let previousMockExam: number | null | undefined;
+  let previousSection: string | null = null;
+  let previousPassageGroup: string | null = null;
   const body = qs
     .map((q, i) => {
+      if (q.mock_exam_job_id !== previousMockExam) {
+        previousMockExam = q.mock_exam_job_id;
+        previousSection = null;
+        previousPassageGroup = null;
+      }
+      const section = q.exam_section && q.exam_section !== previousSection
+        ? `<h2>${escapeHtmlText(q.exam_section)}</h2>`
+        : "";
+      previousSection = q.exam_section;
+      const passage = type === "question" && q.passage && q.passage_group !== previousPassageGroup
+        ? `<section class="passage">${mdHtml(q.passage)}</section>`
+        : "";
+      previousPassageGroup = q.passage_group;
       const num = escapeHtmlText(questionNumber(q) ?? formatNumber(i + 1));
       if (type === "question") {
-        let html = `<div class="q-block"><p class="q-num">${num}.</p><p class="q-text">${mdInlineHtml(questionTextWithoutNumber(q))}</p>`;
+        let html = `${section}${passage}<div class="q-block"><p class="q-num">${num}.` +
+          `${q.exam_points == null ? "" : ` <span class="points">${escapeHtmlText(t("problems.mock.points", { points: formatNumber(q.exam_points) }))}</span>`}</p>` +
+          `<p class="q-text">${mdInlineHtml(questionTextWithoutNumber(q))}</p>`;
         if (q.src_file_id && q.has_figure) {
           const src = escapeHtmlText(new URL(pageImageUrl(q.src_file_id, q.src_page, q.figure_box), window.location.origin).href);
           const alt = escapeHtmlText(figureAlt(q.figure_description, q.src_page, i + 1, t, formatNumber));
@@ -241,7 +290,7 @@ function printQuestions(
         html += `</div>`;
         return html;
       } else {
-        return `<div class="q-block"><p class="q-num">${num}. <strong>${mdInlineHtml(q.answer)}</strong></p>${q.explanation ? `<p class="expl">${mdInlineHtml(q.explanation)}</p>` : ""}</div>`;
+        return `${section}<div class="q-block"><p class="q-num">${num}. <strong>${mdInlineHtml(q.answer)}</strong></p>${q.explanation ? `<div class="expl">${mdHtml(q.explanation)}</div>` : ""}</div>`;
       }
     })
     .join("");
@@ -250,14 +299,18 @@ function printQuestions(
 <style>
   body{font-family:"Nanum Myeongjo","Batang",serif;background:#fff;color:#111;padding:40px;max-width:800px;margin:0 auto;}
   h1{font-size:22px;margin-bottom:28px;border-bottom:2px solid #111;padding-bottom:8px;}
+  h2{font-size:17px;margin:30px 0 14px;padding-bottom:5px;border-bottom:1px solid #777;break-after:avoid;}
+  .passage{font-size:14px;line-height:1.75;padding:12px 14px;margin:0 0 16px;background:#f5f5f5;break-inside:avoid;}
+  .passage table{width:100%;border-collapse:collapse}.passage th,.passage td{border:1px solid #777;padding:5px;}
   .q-block{margin-bottom:24px;}
   .q-num{font-weight:700;margin-bottom:4px;}
+  .points{font-weight:400;color:#555;font-size:12px;}
   .q-text{margin-bottom:6px;line-height:1.7;}
   .q-figure{display:block;max-width:100%;max-height:420px;object-fit:contain;margin:12px auto;}
   .choices{padding-left:24px;line-height:2;}
   .ans-blank{border-bottom:1px solid #555;height:28px;margin-top:8px;}
   .ox-blank{font-size:18px;margin-top:6px;letter-spacing:8px;}
-  .expl{color:#555;font-size:13px;margin-top:4px;}
+  .expl{color:#555;font-size:13px;margin-top:4px;line-height:1.6;}
   @media print{body{padding:20px;}}
 </style></head><body><h1>${title}</h1>${body}</body></html>`);
   win.document.close();
@@ -313,6 +366,8 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   const [genCount, setGenCount] = useState(5);
   const [genDiff, setGenDiff] = useState("혼합");
   const [genStarting, setGenStarting] = useState(false);
+  const [mockArea, setMockArea] = useState<MockExamArea>(() => inferMockExamArea(subject.name));
+  const [mockStarting, setMockStarting] = useState(false);
   const [genMsgs, setGenMsgs] = useState<GenerationNotice[]>([]);
   const [generationJobIds, setGenerationJobIds] = useState<number[]>(() => storedGenerationJobs(subject.id));
   const [generationOpen, setGenerationOpen] = useState(() => storedGenerationJobs(subject.id).length > 0);
@@ -323,6 +378,15 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     () => new Set(readyMaterials.filter(m => !genExcluded.has(m.id)).map(m => m.id)),
     [readyMaterials, genExcluded],
   );
+  const mockExamOptions = useMemo(() => MOCK_EXAM_FRAMES.map((frame) => ({
+    value: frame.area,
+    label: t(frame.labelKey),
+    description: t("problems.mock.frame", {
+      count: problemCountLabel(frame.count, t, formatNumber),
+      minutes: formatNumber(frame.minutes),
+    }),
+  })), [formatNumber, t]);
+  const mockFrame = MOCK_EXAM_FRAMES.find((frame) => frame.area === mockArea)!;
 
   // 은행 - 문제 상세 토글
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -411,6 +475,8 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     setGenerationJobIds(savedJobIds);
     setGenerationOpen(savedJobIds.length > 0);
     setGenStarting(false);
+    setMockStarting(false);
+    setMockArea(inferMockExamArea(subject.name));
     setGenMsgs(savedJobIds.length > 0 ? [{ key: "problems.generation.resume" }] : []);
     void loadBank();
   }, [subject.id]);
@@ -483,17 +549,21 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
 
   // ── 파일(자료)별 그룹 — 드롭다운으로 접었다 폈다 ────────────────────────────────
   const groups = useMemo(() => {
-    const m = new Map<number, { key: number; label: string; items: Question[] }>();
+    const m = new Map<string, { key: string; label: string; items: Question[]; mockExam: boolean }>();
     for (const q of bankQs) {
-      const key = q.src_file_id ?? 0; // 0 = 원본 파일 없는 문제(AI 생성 등)
+      const key = q.mock_exam_job_id
+        ? `mock:${q.mock_exam_job_id}`
+        : q.src_file_id ? `file:${q.src_file_id}` : "other";
       let g = m.get(key);
       if (!g) {
         g = {
           key,
-          label: q.src_file_id
-            ? (q.src_file_name ?? t("problems.file.unnamed", { id: formatNumber(q.src_file_id) }))
-            : t("problems.file.generatedOther"),
+          label: q.mock_exam_title
+            ?? (q.src_file_id
+              ? (q.src_file_name ?? t("problems.file.unnamed", { id: formatNumber(q.src_file_id) }))
+              : t("problems.file.generatedOther")),
           items: [],
+          mockExam: q.mock_exam_job_id != null,
         };
         m.set(key, g);
       }
@@ -501,8 +571,8 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     }
     return [...m.values()];
   }, [bankQs, formatNumber, t]);
-  const [openGroups, setOpenGroups] = useState<Set<number>>(new Set());
-  function toggleGroup(key: number) {
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  function toggleGroup(key: string) {
     setOpenGroups(prev => {
       const n = new Set(prev);
       if (n.has(key)) n.delete(key); else n.add(key);
@@ -593,6 +663,33 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     }
   }
 
+  async function doGenerateMockExam() {
+    if (mockStarting) return;
+    if (genMaterialIds.size === 0) {
+      setBankErr(t("problems.generation.selectMaterials"));
+      return;
+    }
+    setMockStarting(true);
+    setBankErr("");
+    const requestedSubjectId = subject.id;
+    try {
+      const { jobId } = await apiGenerateMockExam(requestedSubjectId, mockArea, [...genMaterialIds]);
+      writeStoredGenerationJobs(requestedSubjectId, [
+        ...storedGenerationJobs(requestedSubjectId).filter((id) => id !== jobId),
+        jobId,
+      ]);
+      if (!mountedRef.current || subjectIdRef.current !== requestedSubjectId) return;
+      setGenerationJobIds(storedGenerationJobs(requestedSubjectId));
+    } catch (error) {
+      if (!mountedRef.current || subjectIdRef.current !== requestedSubjectId) return;
+      setBankErr(locale === "ko" && error instanceof Error
+        ? error.message
+        : t("problems.mock.generateFailed"));
+    } finally {
+      if (mountedRef.current) setMockStarting(false);
+    }
+  }
+
   // ── 퀴즈 시작 ─────────────────────────────────────────────────────────────────
   async function runQuiz(opts: QuizRunOptions) {
     if (quizPendingRef.current) return;
@@ -608,6 +705,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
         wrong: opts.wrong,
         questionIds: opts.questionIds,
         srcFileId: opts.srcFileId,
+        ordered: opts.ordered,
       });
       if (!mountedRef.current || request !== quizRequestRef.current) return;
       if (items.length === 0) {
@@ -666,6 +764,17 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       count: questionIds.length,
       wrong: startWrong || undefined,
       questionIds,
+    });
+  }
+
+  function startMockExam(items: Question[]) {
+    const ordered = [...items].sort((a, b) => (a.exam_order ?? 0) - (b.exam_order ?? 0));
+    return runQuiz({
+      source: "all",
+      diff: "all",
+      count: ordered.length,
+      questionIds: ordered.map((question) => question.id),
+      ordered: true,
     });
   }
 
@@ -741,11 +850,11 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   }
 
   // ── 인쇄 ──────────────────────────────────────────────────────────────────────
-  function doPrint(type: "question" | "answer") {
-    const targets = !allInScope
+  function doPrint(type: "question" | "answer", questions?: Question[], title = subject.name) {
+    const targets = questions ?? (!allInScope
       ? bankQs.filter(q => selected.has(q.id))
-      : bankQs;
-    const error = printQuestions(subject.name, targets, type, locale, t, formatNumber);
+      : bankQs);
+    const error = printQuestions(title, targets, type, locale, t, formatNumber);
     if (error) setBankErr(error);
   }
 
@@ -901,6 +1010,10 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
         <div className="quiz-chips">
           <span className={`q-chip diff-${item.difficulty}`}>{difficultyLabel(item.difficulty, t)}</span>
           <span className="q-chip qtype">{qtypeLabel(item.qtype, t)}</span>
+          {item.exam_section && <span className="q-chip qtype">{item.exam_section}</span>}
+          {item.exam_points != null && (
+            <span className="q-chip qtype">{t("problems.mock.points", { points: formatNumber(item.exam_points) })}</span>
+          )}
           {item.src_file_id && (
             <a
               className="q-chip qtype"
@@ -915,6 +1028,11 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
           )}
         </div>
         <QuizQuestionAnnotation questionId={item.id}>
+          {item.passage && (
+            <section className="quiz-passage" aria-label={t("problems.mock.passage")}>
+              <Md text={item.passage} />
+            </section>
+          )}
           <Md className="quiz-question-text" text={numberedQuestionText(item)} />
           {item.src_file_id && item.has_figure && (
             <img
@@ -1251,6 +1369,30 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                 </>
               )}
             </div>
+            <div className="quiz-mock-row">
+              <SingleSelectPicker
+                className="quiz-filter-picker quiz-mock-picker"
+                label={t("problems.mock.area")}
+                value={mockArea}
+                options={mockExamOptions}
+                onChange={(value) => setMockArea(value as MockExamArea)}
+              />
+              <span className="quiz-mock-summary">
+                {t("problems.mock.summary", {
+                  area: t(mockFrame.labelKey),
+                  count: problemCountLabel(mockFrame.count, t, formatNumber),
+                  minutes: formatNumber(mockFrame.minutes),
+                })}
+                {mockArea === "english" ? ` · ${t("problems.mock.listeningTranscript")}` : ""}
+              </span>
+              <button
+                type="button"
+                className="btn primary sm"
+                onClick={doGenerateMockExam}
+                disabled={mockStarting || genMaterialIds.size === 0}
+              >{t(mockStarting ? "problems.mock.starting" : "problems.mock.generate")}</button>
+            </div>
+            <span className="quiz-custom-label">{t("problems.generation.custom")}</span>
             <label className="quiz-number-field">
               <span>{t("problems.bank.questionCount")}</span>
               <input
@@ -1378,6 +1520,26 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                         })}
                     </span>
                   </button>
+                  {g.mockExam && (
+                    <div className="quiz-file-actions">
+                      <button
+                        type="button"
+                        className="btn primary sm"
+                        onClick={() => void startMockExam(g.items)}
+                        disabled={startingQuiz || pendingDelete !== null}
+                      >{t(startingQuiz ? "problems.bank.loading" : "problems.mock.play")}</button>
+                      <button
+                        type="button"
+                        className="btn sm"
+                        onClick={() => doPrint("question", g.items, g.label)}
+                      >{t("problems.list.printQuestion")}</button>
+                      <button
+                        type="button"
+                        className="btn sm"
+                        onClick={() => doPrint("answer", g.items, g.label)}
+                      >{t("problems.list.printAnswer")}</button>
+                    </div>
+                  )}
                 </div>
 
                 <div id={`quiz-file-panel-${groupIndex}`} className="quiz-file-panel" hidden={!open}>

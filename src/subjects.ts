@@ -52,9 +52,11 @@ subjects.delete("/:id", async (c) => {
   ).bind(id).all<{ id: number }>();
   for (const job of examJobs) cancelJob(`exam-job:${job.id}`);
   const { results: questionJobs } = await c.env.DB.prepare(
-    "SELECT id FROM ai_jobs WHERE subject_id = ? AND kind = 'question-generate' AND status = 'processing'"
-  ).bind(id).all<{ id: number }>();
-  for (const job of questionJobs) cancelJob(`question-job:${job.id}`);
+    "SELECT id, kind FROM ai_jobs WHERE subject_id = ? AND kind IN ('question-generate', 'mock-exam-generate') AND status = 'processing'"
+  ).bind(id).all<{ id: number; kind: string }>();
+  for (const job of questionJobs) {
+    cancelJob(`${job.kind === "mock-exam-generate" ? "mock-exam" : "question"}-job:${job.id}`);
+  }
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM messages WHERE subject_id = ?").bind(id),
     c.env.DB.prepare("DELETE FROM materials WHERE subject_id = ?").bind(id),

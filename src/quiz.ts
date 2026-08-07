@@ -1,12 +1,13 @@
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import type { Env } from "./index";
-import { generateQuestions, type QuizQuestion } from "./claude";
+import { generateMockExam, generateQuestions, type QuizQuestion } from "./claude";
 import { checkAndIncrementUsage } from "./usage";
-import { createAIJob, readyAIJobStatement, runAIJob } from "./ai-jobs";
+import { createAIJob, readyAIJobStatement, runAIJob, setAIJobProgress } from "./ai-jobs";
 import {
   activeBookMutations, activeSolutionBooks, claimTarget, isCurrentJob, releaseTarget, startJob,
 } from "./jobs";
+import { getMockExamBlueprint, isMockExamArea, type MockExamQuestion } from "./mock-exam";
 
 export const quizRoutes = new Hono<{ Bindings: Env }>();
 
@@ -36,6 +37,38 @@ function questionInsertStatements(
     if (!failIfSubjectMissing) values.push(subjectId);
     return db.prepare(sql).bind(...values);
   });
+}
+
+function mockExamInsertStatements(
+  db: Env["DB"],
+  subjectId: string | number,
+  jobId: number,
+  title: string,
+  questions: MockExamQuestion[],
+) {
+  return questions.map((question) => db.prepare(
+    `INSERT INTO questions
+     (subject_id, source, qtype, difficulty, question, choices, answer, explanation,
+      printed_number, mock_exam_job_id, mock_exam_title, exam_order, exam_points,
+      exam_section, passage_group, passage)
+     VALUES (?, 'generated', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(
+    subjectId,
+    question.qtype,
+    question.difficulty,
+    question.question,
+    question.choices ? JSON.stringify(question.choices) : null,
+    question.answer,
+    question.explanation,
+    String(question.number),
+    jobId,
+    title,
+    question.number,
+    question.points,
+    question.section,
+    question.passage_group,
+    question.passage,
+  ));
 }
 
 // ── 공통 헬퍼: 문제 배열을 DB에 insert하고 추가된 수를 반환한다 (wrong.ts에서도 사용) ──
@@ -76,10 +109,13 @@ quizRoutes.get("/subjects/:id/questions", async (c) => {
     sql += " AND difficulty = ?";
     params.push(difficulty);
   }
-  // 문제집 문항은 번호가 단원마다 다시 시작할 수 있어 원본 페이지·저장 순서를 따른다.
-  // 직접 생성한 문항은 기존처럼 최신순을 유지한다.
+  // 모의고사는 최신 회차 안에서 공식 번호순, 문제집은 원본 페이지·저장 순서,
+  // 나머지 직접 생성 문항은 기존처럼 최신순을 유지한다.
   sql +=
-    " ORDER BY src_file_id," +
+    " ORDER BY CASE WHEN mock_exam_job_id IS NOT NULL THEN 0 ELSE 1 END," +
+    " CASE WHEN mock_exam_job_id IS NOT NULL THEN mock_exam_job_id END DESC," +
+    " CASE WHEN mock_exam_job_id IS NOT NULL THEN exam_order END," +
+    " src_file_id," +
     " CASE WHEN src_file_id IS NULL THEN created_at END DESC," +
     " CASE WHEN src_file_id IS NULL THEN id END DESC," +
     " CASE WHEN src_file_id IS NOT NULL THEN COALESCE(src_page, 2147483647) END," +
@@ -102,21 +138,33 @@ quizRoutes.get("/subjects/:id/questions", async (c) => {
 // 문제 파일 업로드 추출 라우트는 제거 — 문제집화(to-book)가 문제 등록을 담당한다
 
 // ── POST /api/subjects/:id/questions/generate ────────────────────────────────
-// {count, difficulty, materialIds?} → 즉시 job 반환 → 서버에서 자료 기반 AI 생성·insert
+// 일반: {count, difficulty, materialIds?}
+// 모의고사: {mockExamArea, materialIds?} → 즉시 job 반환 → 서버에서 생성·검산·원자 저장
 quizRoutes.post("/subjects/:id/questions/generate", async (c) => {
   const subjectId = c.req.param("id");
 
-  const body = await c.req.json<{ count?: number; difficulty?: string; materialIds?: unknown }>().catch(
-    () => ({}) as { count?: number; difficulty?: string; materialIds?: unknown }
+  const body = await c.req.json<{
+    count?: number;
+    difficulty?: string;
+    materialIds?: unknown;
+    mockExamArea?: unknown;
+  }>().catch(
+    () => ({}) as { count?: number; difficulty?: string; materialIds?: unknown; mockExamArea?: unknown }
   );
 
-  const count = Number(body.count ?? 10);
-  if (!Number.isInteger(count) || count < 1 || count > 20) {
+  const mockArea = body.mockExamArea;
+  if (mockArea !== undefined && !isMockExamArea(mockArea)) {
+    return c.json({ error: "지원하지 않는 2028 수능 영역입니다" }, 400);
+  }
+  const blueprint = mockArea === undefined ? null : getMockExamBlueprint(mockArea);
+
+  const count = blueprint?.count ?? Number(body.count ?? 10);
+  if (!blueprint && (!Number.isInteger(count) || count < 1 || count > 20)) {
     return c.json({ error: "count는 1~20 사이 정수여야 합니다" }, 400);
   }
 
   const diff = body.difficulty ?? "혼합";
-  if (!["하", "중", "상", "혼합"].includes(diff)) {
+  if (!blueprint && !["하", "중", "상", "혼합"].includes(diff)) {
     return c.json({ error: "difficulty는 하/중/상/혼합 중 하나여야 합니다" }, 400);
   }
 
@@ -160,16 +208,51 @@ quizRoutes.post("/subjects/:id/questions/generate", async (c) => {
     return c.json({ error: "선택한 자료에 문제를 만들 수 있는 본문이 없습니다." }, 400);
   }
 
-  // 대상 단위 중복 가드 — 완전히 같은 자료 선택만 409, 다른 선택은 동시 생성 허용.
+  // 대상 단위 중복 가드 — 같은 자료+영역만 409, 다른 조합은 동시 생성 허용.
   const target = materialIds ? `mats:${[...materialIds].sort((a, b) => a - b).join(",")}` : "all";
-  const targetKey = `qgen:${subjectId}:${target}`;
+  const targetKey = blueprint
+    ? `mock-exam:${subjectId}:${blueprint.area}:${target}`
+    : `qgen:${subjectId}:${target}`;
   if (!claimTarget(targetKey)) {
-    return c.json({ error: "같은 자료 선택으로 문제 생성이 이미 진행 중입니다" }, 409);
+    return c.json({ error: "같은 자료와 생성 조건의 작업이 이미 진행 중입니다" }, 409);
   }
   let backgroundStarted = false;
   try {
     if (!(await checkAndIncrementUsage(c.env.DB))) {
       return c.json({ error: "오늘 사용량 한도 도달" }, 429);
+    }
+
+    if (blueprint) {
+      const jobId = await createAIJob(c.env.DB, subjectId, "mock-exam-generate", {
+        label: `${blueprint.label} · ${blueprint.count}문항 · ${blueprint.minutes}분`,
+        target,
+        progress: 0,
+      });
+      const title = `2028 ${blueprint.label} AI 모의고사 #${jobId}`;
+      const job = startJob(`mock-exam-job:${jobId}`);
+      runAIJob(c.env.DB, jobId, job, async () => {
+        const questions = await generateMockExam(
+          blueprint.area,
+          subject.name,
+          mats,
+          job.signal,
+          (completed, total) => setAIJobProgress(jobId, completed, total),
+        );
+        if (!isCurrentJob(job)) throw new Error("작업이 중단되었습니다");
+        return {
+          writes: mockExamInsertStatements(c.env.DB, subjectId, jobId, title, questions),
+          completion: readyAIJobStatement(c.env.DB, jobId, {
+            added: questions.length,
+            mockExamJobId: jobId,
+            area: blueprint.area,
+            title,
+          }),
+        };
+      },
+      "모의고사 생성에 실패했습니다. AI 설정과 선택 자료를 확인한 뒤 다시 시도해 주세요.",
+      () => { releaseTarget(targetKey); });
+      backgroundStarted = true;
+      return c.json({ jobId, status: "processing" as const }, 202);
     }
 
     const jobId = await createAIJob(c.env.DB, subjectId, "question-generate", {
@@ -187,7 +270,6 @@ quizRoutes.post("/subjects/:id/questions/generate", async (c) => {
       );
       if (!isCurrentJob(job)) throw new Error("작업이 중단되었습니다");
       return {
-        // plain VALUES + FK: 과목이 삭제된 경우 전체 batch가 실패하고 문항 일부도 남지 않는다.
         writes: questionInsertStatements(c.env.DB, subjectId, "generated", questions, false, true),
         completion: readyAIJobStatement(c.env.DB, jobId, { added: questions.length }),
       };
@@ -209,6 +291,11 @@ quizRoutes.get("/subjects/:id/quiz", async (c) => {
   const source = c.req.query("source") || "all";
   const difficulty = c.req.query("difficulty") || "all";
   const wrongOnly = c.req.query("wrong") === "1";
+  const order = c.req.query("order");
+  if (order !== undefined && order !== "exam") {
+    return c.json({ error: "order는 exam만 지원합니다" }, 400);
+  }
+  const examOrder = order === "exam";
   const search = new URL(c.req.url).searchParams;
   const questionIdParams = search.getAll("questionIds");
   const srcFileIdParams = search.getAll("src_file_id");
@@ -217,6 +304,9 @@ quizRoutes.get("/subjects/:id/quiz", async (c) => {
   }
   if (questionIdParams.length > 0 && srcFileIdParams.length > 0) {
     return c.json({ error: "questionIds와 src_file_id는 함께 지정할 수 없습니다" }, 400);
+  }
+  if (examOrder && questionIdParams.length === 0) {
+    return c.json({ error: "모의고사 순서는 questionIds와 함께 지정해야 합니다" }, 400);
   }
 
   let questionIds: number[] | null = null;
@@ -247,6 +337,7 @@ quizRoutes.get("/subjects/:id/quiz", async (c) => {
   // src_file_id는 원본 파일이 실제로 남아 있을 때만 노출 — 삭제된 문제집의 죽은 링크(404) 방지
   let sql =
     "SELECT id, qtype, difficulty, question, choices, source, book_number, printed_number, " +
+    "mock_exam_job_id, mock_exam_title, exam_order, exam_points, exam_section, passage_group, passage, " +
     "CASE WHEN EXISTS(SELECT 1 FROM book_files bf WHERE bf.id = questions.src_file_id) THEN src_file_id ELSE NULL END AS src_file_id, " +
     "src_page, has_figure, figure_description, figure_box FROM questions WHERE subject_id = ?";
   const params: unknown[] = [subjectId];
@@ -271,11 +362,12 @@ quizRoutes.get("/subjects/:id/quiz", async (c) => {
     sql += " AND wrong_count > 0";
   }
 
-  // SRS-lite: 오답이 정답보다 많은 것 우선 → 오래 안 본 순(미시도는 가장 오래된 취급) → 랜덤 타이브레이크
-  sql +=
-    " ORDER BY (wrong_count > correct_count) DESC," +
-    " COALESCE((SELECT MAX(qa.created_at) FROM question_attempts qa WHERE qa.question_id = questions.id), '') ASC," +
-    " RANDOM() LIMIT ?";
+  // 모의고사 실행은 공식 번호순. 일반 퀴즈는 기존 SRS-lite 순서를 유지한다.
+  sql += examOrder
+    ? " ORDER BY COALESCE(exam_order, 2147483647), id LIMIT ?"
+    : " ORDER BY (wrong_count > correct_count) DESC," +
+      " COALESCE((SELECT MAX(qa.created_at) FROM question_attempts qa WHERE qa.question_id = questions.id), '') ASC," +
+      " RANDOM() LIMIT ?";
   params.push(count);
 
   const { results } = await c.env.DB.prepare(sql)
@@ -291,6 +383,13 @@ quizRoutes.get("/subjects/:id/quiz", async (c) => {
     source: r.source,
     book_number: r.book_number ?? null,
     printed_number: r.printed_number ?? null,
+    mock_exam_job_id: r.mock_exam_job_id ?? null,
+    mock_exam_title: r.mock_exam_title ?? null,
+    exam_order: r.exam_order ?? null,
+    exam_points: r.exam_points ?? null,
+    exam_section: r.exam_section ?? null,
+    passage_group: r.passage_group ?? null,
+    passage: r.passage ?? null,
     src_file_id: r.src_file_id ?? null, // 문제집 자동 등록 문제의 원본 파일 (도형·그림 확인용)
     src_page: r.src_page ?? null,
     has_figure: r.has_figure === 1,

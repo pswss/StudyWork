@@ -260,6 +260,13 @@ export interface Question {
   has_figure: number; // 1이면 그림 딸린 문제 — 원본 페이지 이미지 인라인 표시
   figure_description: string | null; // 풀이에 필요한 도형 요소·축·값·관계 설명
   figure_box: string | null; // "top,bottom" 페이지 높이 비율 — 있으면 그 구간만 잘라 표시
+  mock_exam_job_id: number | null;
+  mock_exam_title: string | null;
+  exam_order: number | null;
+  exam_points: number | null;
+  exam_section: string | null;
+  passage_group: string | null;
+  passage: string | null;
 }
 
 export interface QuizItem {
@@ -276,6 +283,13 @@ export interface QuizItem {
   has_figure: boolean; // 그림·도형 딸린 문제 — 원본 페이지 이미지를 인라인 표시
   figure_description: string | null; // 풀이에 필요한 도형 요소·축·값·관계 설명
   figure_box: string | null; // "top,bottom" 페이지 높이 비율 — 있으면 그 구간만 잘라 표시
+  mock_exam_job_id: number | null;
+  mock_exam_title: string | null;
+  exam_order: number | null;
+  exam_points: number | null;
+  exam_section: string | null;
+  passage_group: string | null;
+  passage: string | null;
 }
 
 export interface AnswerResult {
@@ -305,6 +319,27 @@ export async function generateQuestions(
   return req<AIJobStart>("POST", `/api/subjects/${subjectId}/questions/generate`, { count, difficulty, materialIds });
 }
 
+export type MockExamArea =
+  | "korean"
+  | "math"
+  | "english"
+  | "history"
+  | "social"
+  | "science"
+  | "vocational"
+  | "second-language";
+
+export async function generateMockExam(
+  subjectId: number,
+  mockExamArea: MockExamArea,
+  materialIds: number[],
+): Promise<AIJobStart> {
+  return req<AIJobStart>("POST", `/api/subjects/${subjectId}/questions/generate`, {
+    mockExamArea,
+    materialIds,
+  });
+}
+
 export async function quiz(
   subjectId: number,
   opts: {
@@ -314,6 +349,7 @@ export async function quiz(
     wrong?: boolean;
     questionIds?: number[];
     srcFileId?: number;
+    ordered?: boolean;
   }
 ): Promise<QuizItem[]> {
   const params = new URLSearchParams();
@@ -323,6 +359,7 @@ export async function quiz(
   if (opts.wrong) params.set("wrong", "1");
   if (opts.questionIds !== undefined) params.set("questionIds", opts.questionIds.join(","));
   if (opts.srcFileId !== undefined) params.set("src_file_id", String(opts.srcFileId));
+  if (opts.ordered) params.set("order", "exam");
   const qs = params.toString();
   return req<QuizItem[]>("GET", `/api/subjects/${subjectId}/quiz${qs ? "?" + qs : ""}`);
 }

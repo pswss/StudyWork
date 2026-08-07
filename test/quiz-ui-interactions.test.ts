@@ -16,6 +16,10 @@ describe("quiz interaction polish", () => {
     expect(source).toContain('t("problems.bank.noEligible")');
     expect(source).toContain("questionFrameRef.current?.focus()");
     expect(source).toContain("resultRef.current?.focus()");
+    expect(source).toContain("doGenerateMockExam");
+    expect(source).toContain('"problems.mock.generate"');
+    expect(source).toContain("ordered: true");
+    expect(source).toContain('className="quiz-passage"');
   });
 
   it("uses extracted figure descriptions with a legacy fallback", () => {

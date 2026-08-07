@@ -4,7 +4,7 @@
 
 사진·PDF·텍스트로 자료를 쌓으면 그 자료를 근거로 답하는 튜터 채팅, 자료 전체를 하나로 합치는 단권화 노트, 문제 추출·생성·채점·오답 관리·시험 계획까지 제공한다. 내 맥에서 로컬 Node 서버로 동작하며, 기본 AI는 저장된 ChatGPT 로그인을 재사용하는 **로컬 Codex CLI의 `gpt-5.6-sol`**이다. API 키는 필요 없다.
 
-> 이 문서는 사용자용 안내이자, 이후 세션의 개발자(AI 포함)가 코드베이스를 정확히 이해하기 위한 기준 문서다. 마지막 갱신: 2026-07-25.
+> 이 문서는 사용자용 안내이자, 이후 세션의 개발자(AI 포함)가 코드베이스를 정확히 이해하기 위한 기준 문서다. 마지막 갱신: 2026-08-07.
 
 기존 설치와 데이터의 호환성을 위해 `studywork.db`, `STUDYWORK_*` 환경변수, 저장 키와 서버 식별자는 종전 이름을 유지한다.
 
@@ -35,7 +35,7 @@
 |---|---|
 | (사이드바) **자료** | 사진(필기·프린트·교과서)·PDF·직접 입력 텍스트 업로드. 사진/PDF는 AI가 전체 내용을 텍스트로 추출해 DB에 저장(상태: processing→ready/error, 실패 시 재시도 버튼). 이 추출 텍스트가 채팅·단권화·문제 생성의 컨텍스트가 된다 |
 | **채팅** | 과목 자료를 신뢰하지 않는 사용자 입력 JSON으로 전달하는 튜터 채팅(출처 자료 제목 표시). 자료 본문은 퀴즈 생성과 같은 **96k 문자 예산**으로 자료별 균등 발췌해 주입하고, 입력창 위 **채팅 컨텍스트** 선택으로 자료 범위를 좁힐 수 있다(기본 전체, 과목별 localStorage 영속). 고정 안전 규칙과 허용 Skill만 system/developer 지침에 둔다. 입력창 위 토글로 **자료 기반 / 일반 질문** 모드 전환 — 일반 질문은 자료 없이 일반 지식으로 답변. 대화는 DB에 저장, 최근 30개가 컨텍스트로 전달됨 |
-| **퀴즈** | 문제 은행: 문제집·프린트 사진/PDF에서 **문제 추출** 또는 선택 자료 기반 **AI 생성**(개수 1~20, 난이도 하/중/상/혼합). 자료 전체·자료별 전체·개별 문제로 범위를 고른 뒤 난이도·출처·개수·오답 필터와 교차해 단일 **퀴즈 시작** 버튼으로 출제한다. AI 생성은 백그라운드 작업이라 다른 탭에서도 계속되며, 독립 검산과 엄격한 구조·논리 검증을 통과한 문제만 작업 완료 상태와 한 트랜잭션으로 저장한다. 문제 선택 후 **문제지/정답지 인쇄** 가능 |
+| **퀴즈** | 문제 은행: 문제집·프린트 사진/PDF에서 **문제 추출**, 선택 자료 기반 **AI 생성**(개수 1~20, 난이도 하/중/상/혼합), 또는 **2028 수능형 AI 모의고사**를 만든다. 모의고사는 국어 45·수학 30·영어 45·한국사 20·통합사회/통합과학/직업탐구 각 25·제2외국어/한문 20문항의 공식 기본 틀과 번호별 유형·배점·난이도·공유 지문 순서를 고정한다. 생성된 회차는 공식 번호순 풀이와 문제지/정답지 인쇄를 지원한다. 모든 AI 생성은 백그라운드에서 독립 검산 후 한 트랜잭션으로 저장한다. 일반 퀴즈는 자료 전체·자료별 전체·개별 문제 범위와 난이도·출처·개수·오답 필터를 교차해 출제한다. |
 | **해설** | 기존 문제집 선택 → 같은 책의 공식 해설 PDF/이미지 업로드. 단일 문제 원본과 1번부터 연속된 전체 해설지만 지원하며, 6쪽 청크로 읽은 뒤 문항 수·인쇄 번호·정답 순서가 모두 맞을 때만 빈 해설을 한 트랜잭션으로 채운다. 하나라도 다르면 기존 문제를 바꾸지 않는다 |
 | **오답** (퀴즈 탭 안 "오답 노트" 뷰) | 퀴즈에서 틀린 문제 자동 축적(wrong_count>0). 목록은 문제·정답·해설·정오 횟수·마지막 시도 시각(`last_attempted_at`)을 펼쳐 보여준다. 학교 시험지·문제집 사진으로 **오답 직접 등록**(from_wrong_note=1, wrong_count=1로 삽입 — 사진 원본은 추출 후 삭제되므로 별도 보관 안 함), **약점 분석**(AI가 오답 패턴 요약, 저장 안 함), **틀린 문제 바로 풀기**(문제 은행 뷰로 전환 후 오답만 즉시 출제). 퀴즈 결과 화면에는 이번 세션에서 틀린 바로 그 문제들만 재출제하는 **틀린 것만 다시** 버튼이 있다 |
 | **시험** | 시험 제목·날짜·범위 입력 → AI가 오늘~시험일 날짜별 공부 계획 생성. 생성·계획 조정은 백그라운드 작업이라 다른 탭에서도 계속되며, 시험·TODO·작업 완료 상태를 한 트랜잭션으로 저장한다. D-day·진도바, 날짜별 체크리스트, 완료 항목·지난 날짜를 보존하는 **계획 조정**, 삭제 지원 |
@@ -200,9 +200,9 @@ docs/superpowers/ specs(설계서·UI 목업), plans(구현 계획 3개)
 | GET /api/subjects/:id/books | | 문제집·파일 상태·전체 문제 수·해설 보유 문제 수 |
 | POST /api/subjects/:subjectId/books/:bookId/explanations ⚡ | multipart `file` | 202 `{jobId,status}` — 전체 순서 검증 후 빈 해설 원자 추가 |
 | POST /api/subjects/:id/questions/extract ⚡ | multipart `file` | 201 `{added}` |
-| POST /api/subjects/:id/questions/generate ⚡ | `{count:1-20, difficulty:"하"\|"중"\|"상"\|"혼합", materialIds:[...]}` | 202 `{jobId,status}` — 선택 자료 기반 백그라운드 생성 |
+| POST /api/subjects/:id/questions/generate ⚡ | 일반 `{count:1-20, difficulty:"하"\|"중"\|"상"\|"혼합", materialIds:[...]}` 또는 모의고사 `{mockExamArea:"korean"\|"math"\|"english"\|"history"\|"social"\|"science"\|"vocational"\|"second-language", materialIds:[...]}` | 202 `{jobId,status}` — 선택 자료 기반 백그라운드 생성 |
 | GET /api/ai-jobs/:id | | `{id,subject_id,kind,status,result,error,...}` — 문제·시험 TODO 작업 상태 |
-| GET /api/subjects/:id/quiz | `?source=all\|uploaded\|generated &difficulty=all\|하\|중\|상 &count=1-50 &wrong=1` | 출제 목록(**정답·해설 제외**), SRS-lite 정렬: 오답 우세 우선 → 오래 안 본 순(`question_attempts` MAX(created_at), 미시도=가장 오래된 취급) → RANDOM() 타이브레이크 |
+| GET /api/subjects/:id/quiz | `?source=all\|uploaded\|generated &difficulty=all\|하\|중\|상 &count=1-50 &wrong=1`; 모의고사는 `questionIds=...&order=exam` | 출제 목록(**정답·해설 제외**). 일반 퀴즈는 SRS-lite 정렬, 모의고사는 공식 번호순 |
 | POST /api/questions/:id/answer | `{answer}` (빈 문자열 400) | `{correct,answer,explanation}` + counts 갱신 |
 | DELETE /api/questions/:id | | |
 | GET /api/subjects/:id/wrong | | wrong_count>0 문제, 많이 틀린 순, `last_attempted_at` 포함(시도 없으면 null) |
@@ -226,7 +226,7 @@ docs/superpowers/ specs(설계서·UI 목업), plans(구현 계획 3개)
 - `messages(id, subject_id, role:user|assistant, content, created_at)`
 - `usage_daily(day PK, calls)`
 - `notes(subject_id PK, content, updated_at)` — 과목당 1개, upsert
-- `questions(id, subject_id, source:uploaded|generated, qtype:mcq|short|ox, difficulty:하|중|상, question, choices(JSON문자열|NULL), answer, explanation, correct_count, wrong_count, from_wrong_note, created_at)`
+- `questions(id, subject_id, source, qtype, difficulty, question, choices, answer, explanation, ..., mock_exam_job_id, mock_exam_title, exam_order, exam_points, exam_section, passage_group, passage)`
 - `books` / `book_files(..., content_hash, page_count, status, error, progress)` / `book_items(..., page, has_figure, figure_box)` — 문제 추출 원본과 페이지 근거
 - `exams(id, subject_id, title, exam_date, scope, ai_job_id, created_at)` / `plan_items(id, exam_id, day, task, done)`
 - `ai_jobs(id, subject_id, kind, status, result, error, created_at, updated_at)` — 탭 이동과 분리된 AI 작업 상태

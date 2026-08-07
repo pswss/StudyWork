@@ -4,6 +4,7 @@ import { gradeAnswer, insertQuestions } from "../src/quiz";
 import type { QuizQuestion } from "../src/claude";
 
 const generationCalls = vi.hoisted(() => [] as unknown[][]);
+const mockExamCalls = vi.hoisted(() => [] as unknown[][]);
 const generationControl = vi.hoisted(() => ({
   invalidNext: false,
   nextGate: null as Promise<void> | null,
@@ -78,6 +79,36 @@ vi.mock("../src/claude", () => ({
       explanation: "a>0 이면 아래로 볼록(위로 열림)이다.",
     },
     ];
+  },
+  generateMockExam: async (...args: unknown[]) => {
+    mockExamCalls.push(args);
+    const progress = args[4] as ((completed: number, total: number) => void) | undefined;
+    progress?.(2, 2);
+    const points = [
+      2, 2, 2, 3, 3, 3, 3, 3, 3, 3,
+      3, 3, 3, 4, 4, 4, 4, 4, 4, 4,
+      4, 3, 3, 3, 3, 4, 4, 4, 4, 4,
+    ];
+    return Array.from({ length: 30 }, (_, index) => {
+      const number = index + 1;
+      const qtype = number <= 21 ? "mcq" : "short";
+      const choices = qtype === "mcq"
+        ? Array.from({ length: 5 }, (__, choice) => `${number}번 보기 ${choice + 1}`)
+        : null;
+      return {
+        number,
+        section: number % 3 === 1 ? "대수" : number % 3 === 2 ? "미적분Ⅰ" : "확률과 통계",
+        passage_group: null,
+        passage: null,
+        qtype,
+        difficulty: points[index] === 2 ? "하" : points[index] === 3 ? "중" : "상",
+        points: points[index],
+        question: `${number}번 AI 모의고사 문제`,
+        choices,
+        answer: choices?.[0] ?? String(number),
+        explanation: `${number}번 검산 해설`,
+      };
+    });
   },
 }));
 
@@ -336,6 +367,59 @@ describe("POST /api/subjects/:id/questions/generate", () => {
       method: "POST",
       headers: { cookie, "content-type": "application/json" },
       body: JSON.stringify({ count: 0, difficulty: "중" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /api/subjects/:id/questions/generate — 2028 모의고사", () => {
+  it("수학 30문항을 한 작업으로 저장하고 공식 번호순으로 출제", async () => {
+    const res = await call(env, `/api/subjects/${subjectId}/questions/generate`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ mockExamArea: "math", materialIds: [materialId] }),
+    });
+    expect(res.status).toBe(202);
+    const { jobId } = await res.json() as { jobId: number };
+    await expect(waitAIJob(jobId)).resolves.toMatchObject({
+      status: "ready",
+      result: { added: 30, mockExamJobId: jobId, area: "math" },
+    });
+    expect(mockExamCalls.at(-1)?.[0]).toBe("math");
+
+    const { results } = await env.DB.prepare(
+      `SELECT id, qtype, exam_order, exam_points, mock_exam_title
+       FROM questions WHERE mock_exam_job_id = ? ORDER BY exam_order`,
+    ).bind(jobId).all<{
+      id: number;
+      qtype: string;
+      exam_order: number;
+      exam_points: number;
+      mock_exam_title: string;
+    }>();
+    expect(results).toHaveLength(30);
+    expect(results.map((row) => row.exam_order)).toEqual(Array.from({ length: 30 }, (_, index) => index + 1));
+    expect(results.slice(0, 21).every((row) => row.qtype === "mcq")).toBe(true);
+    expect(results.slice(21).every((row) => row.qtype === "short")).toBe(true);
+    expect(results.reduce((sum, row) => sum + row.exam_points, 0)).toBe(100);
+    expect(results[0].mock_exam_title).toContain("2028 수학 AI 모의고사");
+
+    const quizRes = await call(
+      env,
+      `/api/subjects/${subjectId}/quiz?questionIds=${results.map((row) => row.id).reverse().join(",")}&count=30&order=exam`,
+      { headers: { cookie } },
+    );
+    expect(quizRes.status).toBe(200);
+    const items = await quizRes.json() as Array<{ exam_order: number; exam_points: number }>;
+    expect(items.map((item) => item.exam_order)).toEqual(Array.from({ length: 30 }, (_, index) => index + 1));
+    expect(items[0].exam_points).toBe(2);
+  });
+
+  it("지원하지 않는 영역은 작업 시작 전에 거부", async () => {
+    const res = await call(env, `/api/subjects/${subjectId}/questions/generate`, {
+      method: "POST",
+      headers: { cookie, "content-type": "application/json" },
+      body: JSON.stringify({ mockExamArea: "physics-2", materialIds: [materialId] }),
     });
     expect(res.status).toBe(400);
   });

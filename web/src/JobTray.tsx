@@ -7,6 +7,7 @@ import { translate, useI18n, type MessageKey } from "./i18n";
 const KIND_KEYS: Record<string, MessageKey> = {
   "explanation-generate": "shell.jobs.kind.explanation",
   "question-generate": "shell.jobs.kind.question",
+  "mock-exam-generate": "shell.jobs.kind.mockExam",
   "book-explanations": "shell.jobs.kind.bookExplanations",
   "exam-plan": "shell.jobs.kind.examPlan",
   consolidate: "shell.jobs.kind.consolidate",
