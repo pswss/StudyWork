@@ -4,10 +4,17 @@ import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { runCli, TARGET_SUBJECTS, verifyExamCorpus } from "../scripts/verify-exam-corpus";
+import { officialAnswerForDb, runCli, TARGET_SUBJECTS, verifyExamCorpus } from "../scripts/verify-exam-corpus";
 
 type Target = (typeof TARGET_SUBJECTS)[number];
 type Accepted = { canonical: string; target: Target; code: string };
+type AnswerCase = {
+  qtype: "mcq" | "short";
+  choices: string[] | null;
+  problemAnswer: string;
+  officialRaw: string;
+  storedAnswer: string;
+};
 
 const DIGEST = "1234567890abcdef";
 const SOURCE_COUNTS: Record<string, number> = { 국어: 45, 수학: 30, 통합과학: 20, 통합사회: 20 };
@@ -47,6 +54,39 @@ const CASES: Array<{ id: string; subject: string; grade: number; rawTitle: strin
     accepted: [{ canonical: "integrated_social", target: "사회 - 통합사회 (2022 개정)", code: "10통사1-01-01" }],
   },
 ];
+
+function answerCase(id: string, index: number): AnswerCase {
+  if (id === "math" && index === 0) return {
+    qtype: "mcq",
+    choices: ["① 6", "② 9", "③ 12", "④ 15", "⑤ 18"],
+    problemAnswer: "⑤ 18",
+    officialRaw: "18",
+    storedAnswer: "⑤ 18",
+  };
+  if (id === "math" && index === 1) return {
+    qtype: "mcq",
+    choices: ["① $5$", "② $6$", "③ $7$", "④ $8$", "⑤ $9$"],
+    problemAnswer: "④ $8$",
+    officialRaw: "8",
+    storedAnswer: "④ $8$",
+  };
+  if (id === "korean" && index === 0) return {
+    qtype: "mcq",
+    choices: ["① $\\frac76$", "② $\\frac43$", "③ $\\frac32$", "④ $\\frac53$", "⑤ $\\frac{11}{6}$"],
+    problemAnswer: "② $\\frac43$",
+    officialRaw: "$\\dfrac{4}{3}$",
+    storedAnswer: "② $\\frac43$",
+  };
+  if (id === "korean" && index === 1) return {
+    qtype: "mcq",
+    choices: ["① 6", "② 9", "③ 12", "④ 15", "⑤ 18"],
+    problemAnswer: "⑤ 18",
+    officialRaw: "⑤",
+    storedAnswer: "⑤",
+  };
+  const answer = `${id}-answer-${index + 1}`;
+  return { qtype: "short", choices: null, problemAnswer: answer, officialRaw: answer, storedAnswer: answer };
+}
 
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -130,6 +170,7 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
     const solution = `solution-${testCase.id}`;
     const problemHash = hash(problem);
     const solutionHash = hash(solution);
+    const solutionPageCount = testCase.id === "math" ? 13 : 1;
     mkdirSync(stateDir, { recursive: true });
     writeFileSync(join(stateDir, "problem.pdf"), problem);
     writeFileSync(join(stateDir, "solution.pdf"), solution);
@@ -137,15 +178,16 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
     writeJson(join(stateDir, "downloads.json"), {
       version: 2,
       problem: { path: "problem.pdf", requestedUrl: entry.problemPdfUrl, sha256: problemHash, bytes: problem.length, pageCount: 1 },
-      solution: { path: "solution.pdf", requestedUrl: entry.solutionPdfUrl, sha256: solutionHash, bytes: solution.length, pageCount: 1 },
+      solution: { path: "solution.pdf", requestedUrl: entry.solutionPdfUrl, sha256: solutionHash, bytes: solution.length, pageCount: solutionPageCount },
     });
-    const problems = Array.from({ length: SOURCE_COUNTS[testCase.subject] }, (_, index) => ({
+    const answerCases = Array.from({ length: SOURCE_COUNTS[testCase.subject] }, (_, index) => answerCase(testCase.id, index));
+    const problems = answerCases.map((answer, index) => ({
       number: String(index + 1),
-      qtype: "short",
+      qtype: answer.qtype,
       difficulty: "중",
       question: `${testCase.id} question ${index + 1}`,
-      choices: null,
-      answer: `${testCase.id}-answer-${index + 1}`,
+      choices: answer.choices,
+      answer: answer.problemAnswer,
       explanation: "",
       page: 1,
       figure: false,
@@ -163,8 +205,8 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
       reasoningEffort: "high",
       items: problems,
     });
-    writeJson(join(stateDir, "classification-chunks", `v2-0000-${DIGEST}.json`), {
-      version: 2,
+    writeJson(join(stateDir, "classification-chunks", `v3-0000-${DIGEST}.json`), {
+      version: 3,
       sourceHash: problemHash,
       from: 1,
       to: 1,
@@ -196,21 +238,30 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
         };
       }),
     });
-    writeJson(join(stateDir, "solution-chunks", "v2-0000.json"), {
-      version: 2,
-      sourceHash: solutionHash,
-      from: 1,
-      to: 1,
-      model: "gpt-5.6-sol",
-      reasoningEffort: "high",
-      items: problems.map((problemItem, index) => ({
+    const solutionItems = problems.map((_problemItem, index) => ({
         number: String(index + 1),
-        answer: problemItem.answer,
+        answer: answerCases[index].officialRaw,
         explanation: `${testCase.id} official explanation ${index + 1}`,
-        page: 1,
+        page: solutionPageCount === 1 ? 1 : index % solutionPageCount + 1,
         complete: true,
-      })),
-    });
+    }));
+    const solutionRanges = solutionPageCount === 1
+      ? [{ from: 1, to: 1, ownedFrom: 1, ownedTo: 1 }]
+      : [
+          { from: 1, to: 6, ownedFrom: 1, ownedTo: 4 },
+          { from: 5, to: 10, ownedFrom: 5, ownedTo: 8 },
+          { from: 9, to: 13, ownedFrom: 9, ownedTo: 13 },
+        ];
+    for (const [index, range] of solutionRanges.entries()) {
+      writeJson(join(stateDir, "solution-chunks", `v3-${String(index).padStart(4, "0")}.json`), {
+        version: 3,
+        sourceHash: solutionHash,
+        ...range,
+        model: "gpt-5.6-sol",
+        reasoningEffort: "high",
+        items: solutionItems.filter((item) => item.page >= range.ownedFrom && item.page <= range.ownedTo),
+      });
+    }
 
     const displayTitle = `2025년 · ${testCase.rawTitle}`;
     const targetBooks = testCase.accepted.map((accepted, index) => {
@@ -228,20 +279,23 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
         .run(targetBookId, subjectIds.get(accepted.target), displayTitle);
       db.prepare("INSERT INTO book_files (id, book_id, r2_key, content_hash, page_count, status) VALUES (?, ?, ?, ?, 1, 'ready')")
         .run(problemFileId, targetBookId, problemR2Key, problemHash);
-      db.prepare("INSERT INTO book_files (id, book_id, r2_key, content_hash, page_count, status) VALUES (?, ?, ?, ?, 1, 'ready')")
-        .run(solutionFileId, targetBookId, solutionR2Key, solutionHash);
+      db.prepare("INSERT INTO book_files (id, book_id, r2_key, content_hash, page_count, status) VALUES (?, ?, ?, ?, ?, 'ready')")
+        .run(solutionFileId, targetBookId, solutionR2Key, solutionHash, solutionPageCount);
       const officialExplanation = `${testCase.id} official explanation ${index + 1}`;
+      const answer = answerCases[index];
       const id = ++questionId;
       db.prepare(
         `INSERT INTO questions
          (id, subject_id, source, qtype, question, choices, answer, explanation, book_id,
           book_number, printed_number, src_file_id, src_page)
-         VALUES (?, ?, 'uploaded', 'short', ?, NULL, ?, ?, ?, ?, ?, ?, 1)`,
+         VALUES (?, ?, 'uploaded', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
       ).run(
         id,
         subjectIds.get(accepted.target),
+        answer.qtype,
         problems[index].question,
-        problems[index].answer,
+        answer.choices ? JSON.stringify(answer.choices) : null,
+        answer.storedAnswer,
         officialExplanation,
         targetBookId,
         String(index + 1),
@@ -249,9 +303,9 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
         problemFileId,
       );
       db.prepare("INSERT INTO book_items (id, book_id, file_id, category, number, answer, content, page) VALUES (?, ?, ?, '문제', ?, ?, ?, 1)")
-        .run(++itemId, targetBookId, problemFileId, String(index + 1), problems[index].answer, problems[index].question);
-      db.prepare("INSERT INTO book_items (id, book_id, file_id, category, number, answer, content, page) VALUES (?, ?, ?, '해설', ?, ?, ?, 1)")
-        .run(++itemId, targetBookId, solutionFileId, String(index + 1), problems[index].answer, officialExplanation);
+        .run(++itemId, targetBookId, problemFileId, String(index + 1), answer.storedAnswer, problems[index].question);
+      db.prepare("INSERT INTO book_items (id, book_id, file_id, category, number, answer, content, page) VALUES (?, ?, ?, '해설', ?, ?, ?, ?)")
+        .run(++itemId, targetBookId, solutionFileId, String(index + 1), answer.storedAnswer, officialExplanation, solutionItems[index].page);
       return {
         subject: accepted.target,
         examTitle: entry.examTitle,
@@ -295,6 +349,17 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
 }
 
 describe("exam corpus verifier", () => {
+  it("independently maps official MCQ values, fractions, and markers to DB answers", () => {
+    const mcq = (choices: string[]) => ({ qtype: "mcq", choices, printedNumber: "1" });
+    expect(officialAnswerForDb(mcq(["① 6", "② 9", "③ 12", "④ 15", "⑤ 18"]), "18")).toBe("⑤ 18");
+    expect(officialAnswerForDb(mcq(["① $5$", "② $6$", "③ $7$", "④ $8$", "⑤ $9$"]), "8")).toBe("④ $8$");
+    expect(officialAnswerForDb(
+      mcq(["① $\\frac76$", "② $\\frac43$", "③ $\\frac32$", "④ $\\frac53$", "⑤ $\\frac{11}{6}$"]),
+      "$\\dfrac{4}{3}$",
+    )).toBe("② $\\frac43$");
+    expect(officialAnswerForDb(mcq(["① 6", "② 9", "③ 12", "④ 15", "⑤ 18"]), "⑤")).toBe("⑤");
+  });
+
   it("verifies six targets, official evidence, hashes, counts, and stays read-only", () => {
     const files = fixture();
     const modifiedBefore = statSync(files.dbPath).mtimeMs;
@@ -309,11 +374,15 @@ describe("exam corpus verifier", () => {
 
   it("fails closed on exclusions, review rows, missing official explanation, duplicates, and count drift", () => {
     const files = fixture();
-    const mathClassification = join(files.stateDirs.math, "classification-chunks", `v2-0000-${DIGEST}.json`);
+    const mathClassification = join(files.stateDirs.math, "classification-chunks", `v3-0000-${DIGEST}.json`);
     const math = JSON.parse(readFileSync(mathClassification, "utf8"));
     math.items[0].achievement_codes = ["12미적Ⅱ-01-01"];
     writeJson(mathClassification, math);
-    const koreanClassification = join(files.stateDirs.korean, "classification-chunks", `v2-0000-${DIGEST}.json`);
+    const mathSolution = join(files.stateDirs.math, "solution-chunks", "v3-0001.json");
+    const solutionCheckpoint = JSON.parse(readFileSync(mathSolution, "utf8"));
+    solutionCheckpoint.ownedTo = 9;
+    writeJson(mathSolution, solutionCheckpoint);
+    const koreanClassification = join(files.stateDirs.korean, "classification-chunks", `v3-0000-${DIGEST}.json`);
     const korean = JSON.parse(readFileSync(koreanClassification, "utf8"));
     Object.assign(korean.items[0], {
       decision: "review",
@@ -347,6 +416,7 @@ describe("exam corpus verifier", () => {
     expect(codes.has("DUPLICATE_QUESTION")).toBe(true);
     expect(codes.has("COUNT_MISMATCH")).toBe(true);
     expect(codes.has("DB_FILE_EVIDENCE")).toBe(true);
+    expect(codes.has("SOLUTION_TOPOLOGY")).toBe(true);
 
     const stdout: string[] = [];
     const stderr: string[] = [];

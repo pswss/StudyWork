@@ -130,6 +130,7 @@ type ProblemQuestion = {
 type AcceptedQuestion = ProblemQuestion & {
   target: TargetSubject;
   officialAnswer: string;
+  officialRawAnswer: string;
   officialExplanation: string;
   solutionPage: number;
 };
@@ -177,6 +178,59 @@ function json(path: string): unknown {
 
 function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+const OFFICIAL_CIRCLED_ANSWERS = "①②③④⑤⑥⑦⑧⑨⑩";
+const normalizedAnswerText = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
+const strippedChoiceMarker = (value: string) => normalizedAnswerText(value)
+  .replace(/^[①-⑩]\s*/, "")
+  .replace(/^\d{1,2}\s*[.)]\s*/, "");
+
+function normalizedChoiceContent(value: string): string {
+  let normalized = strippedChoiceMarker(value).trim();
+  if (normalized.startsWith("$") && normalized.endsWith("$") && normalized.length >= 2) {
+    normalized = normalized.slice(1, -1);
+  } else if (normalized.startsWith("\\(") && normalized.endsWith("\\)")) {
+    normalized = normalized.slice(2, -2);
+  }
+  normalized = normalized.replace(/\\(?:dfrac|tfrac)/gu, "\\frac");
+  normalized = normalized.replace(
+    /\\frac\s*(?:\{([^{}]+)\}|([^\s{}]))\s*(?:\{([^{}]+)\}|([^\s{}]))/gu,
+    (_match, numeratorGroup: string | undefined, numeratorToken: string | undefined,
+      denominatorGroup: string | undefined, denominatorToken: string | undefined) =>
+      `\\frac{${numeratorGroup ?? numeratorToken}}{${denominatorGroup ?? denominatorToken}}`,
+  );
+  return normalized.toLowerCase().replace(/\s+/gu, "");
+}
+
+export function officialAnswerForDb(
+  question: { qtype: string; choices: string[] | null; printedNumber?: string },
+  rawAnswer: string,
+): string {
+  const official = rawAnswer.trim();
+  if (question.qtype !== "mcq") return official;
+  const choices = question.choices ?? [];
+  const exact = choices.filter((choice) => normalizedAnswerText(choice) === normalizedAnswerText(official));
+  if (exact.length === 1) return exact[0];
+
+  const officialContent = normalizedChoiceContent(official);
+  const contentMatches = officialContent
+    ? choices.filter((choice) => normalizedChoiceContent(choice) === officialContent)
+    : [];
+  if (contentMatches.length === 1) return contentMatches[0];
+
+  const circled = /^(?:정답\s*[:：]?\s*)?([①-⑩])(?:\s*번)?$/.exec(official)?.[1];
+  if (circled) {
+    const index = OFFICIAL_CIRCLED_ANSWERS.indexOf(circled);
+    if (index >= 0 && index < choices.length) return official;
+    throw new Error(`${question.printedNumber ?? "?"}: official MCQ marker is outside choices`);
+  }
+  const numeric = /^(?:정답\s*[:：]?\s*)?(\d{1,2})(?:\s*번)?$/.exec(official)?.[1];
+  if (numeric) {
+    const index = Number(numeric) - 1;
+    if (index >= 0 && index < choices.length) return official;
+  }
+  throw new Error(`${question.printedNumber ?? "?"}: official MCQ answer cannot resolve to choices`);
 }
 
 function hashFile(path: string): string {
@@ -421,7 +475,7 @@ function loadDecisions(
   const problemDir = join(stateDir, "problem-chunks");
   const classificationDir = join(stateDir, "classification-chunks");
   const problemFiles = listJson(problemDir, /^v2-\d{4}\.json$/);
-  const classificationFiles = listJson(classificationDir, /^v2-\d{4}-[a-f0-9]{16}\.json$/);
+  const classificationFiles = listJson(classificationDir, /^v3-\d{4}-[a-f0-9]{16}\.json$/);
   const problems = new Map<string, ProblemQuestion>();
   const accepted: DecisionSummary["accepted"] = [];
   const ranges: Array<{ from: number; to: number }> = [];
@@ -462,9 +516,9 @@ function loadDecisions(
       continue;
     }
 
-    const candidates = classificationFiles.filter((name) => name.startsWith(`v2-${index}-`));
+    const candidates = classificationFiles.filter((name) => name.startsWith(`v3-${index}-`));
     const selected = terminalDigest
-      ? candidates.find((name) => name === `v2-${index}-${terminalDigest}.json`)
+      ? candidates.find((name) => name === `v3-${index}-${terminalDigest}.json`)
       : candidates.length === 1 ? candidates[0] : undefined;
     if (!selected) {
       add({
@@ -479,7 +533,7 @@ function loadDecisions(
     const fileDigest = selected.slice(8, -5);
     try {
       if (
-        classification.version !== 2 || classification.sourceHash !== problemEvidence.sha256
+        classification.version !== 3 || classification.sourceHash !== problemEvidence.sha256
         || classification.from !== from || classification.to !== to || classification.rulesDigest !== fileDigest
         || classification.ownedFrom !== checkpoint.ownedFrom || classification.ownedTo !== checkpoint.ownedTo
         || classification.model !== "gpt-5.6-sol" || classification.reasoningEffort !== "high"
@@ -569,7 +623,7 @@ function loadDecisions(
   return { problems, accepted, rejected, reviews, rulesDigest: selectedDigest };
 }
 
-type OfficialSolution = { printedNumber: string; answer: string; explanation: string; page: number };
+type OfficialSolution = { printedNumber: string; rawAnswer: string; explanation: string; page: number };
 
 function loadSolutions(
   stateDir: string,
@@ -578,33 +632,43 @@ function loadSolutions(
   add: AddFailure,
 ): Map<string, OfficialSolution> {
   const dir = join(stateDir, "solution-chunks");
-  const files = listJson(dir, /^v2-\d{4}\.json$/);
+  const files = listJson(dir, /^v3-\d{4}\.json$/);
   const solutions = new Map<string, OfficialSolution>();
   const ranges: Array<{ from: number; to: number }> = [];
+  const topology: Array<{ from: number; to: number; ownedFrom: number; ownedTo: number }> = [];
   if (files.length === 0) add({ code: "CHUNK_MISSING", entryId: entry.id, message: "solution chunks are missing" });
-  for (const name of files) {
+  for (const [fileIndex, name] of files.entries()) {
+    if (name !== `v3-${String(fileIndex).padStart(4, "0")}.json`) {
+      add({ code: "SOLUTION_TOPOLOGY", entryId: entry.id, message: "solution checkpoint indexes are not contiguous" });
+    }
     const checkpoint = safeObject(join(dir, name), name, entry.id, add);
     if (!checkpoint) continue;
     try {
-      if (checkpoint.version !== 2 || checkpoint.sourceHash !== evidence.sha256
+      if (checkpoint.version !== 3 || checkpoint.sourceHash !== evidence.sha256
         || checkpoint.model !== "gpt-5.6-sol" || checkpoint.reasoningEffort !== "high") {
         throw new Error(`${name} metadata does not match solution download/import contract`);
       }
       const from = integer(checkpoint.from, `${name}.from`, 1);
       const to = integer(checkpoint.to, `${name}.to`, from);
+      const ownedFrom = integer(checkpoint.ownedFrom, `${name}.ownedFrom`, from);
+      const ownedTo = integer(checkpoint.ownedTo, `${name}.ownedTo`, ownedFrom);
+      if (to > evidence.pageCount || ownedTo > to) throw new Error(`${name} page range exceeds solution PDF`);
       if (!Array.isArray(checkpoint.items)) throw new Error(`${name}.items must be an array`);
-      ranges.push({ from, to });
+      ranges.push({ from: ownedFrom, to: ownedTo });
+      topology.push({ from, to, ownedFrom, ownedTo });
       for (const [index, value] of checkpoint.items.entries()) {
         const item = object(value, `${name}.items[${index}]`);
         const number = numericPrintedLocator(typeof item.number === "string" ? item.number : null);
         if (number === null) throw new Error(`${name}.items[${index}].number is invalid`);
         const page = integer(item.page, `${name}.items[${index}].page`, 1);
-        if (page < from || page > to) throw new Error(`${name}.items[${index}] is outside chunk pages`);
+        if (item.complete !== true || page < ownedFrom || page > ownedTo) {
+          throw new Error(`${name}.items[${index}] is incomplete or outside owned start pages`);
+        }
         const printedNumber = String(number);
         if (solutions.has(printedNumber)) throw new Error(`duplicate official solution number ${printedNumber}`);
         solutions.set(printedNumber, {
           printedNumber,
-          answer: typeof item.answer === "string" ? item.answer : "",
+          rawAnswer: typeof item.answer === "string" ? item.answer : "",
           explanation: typeof item.explanation === "string" ? item.explanation : "",
           page,
         });
@@ -614,6 +678,20 @@ function loadSolutions(
     }
   }
   validateRanges(ranges, evidence.pageCount, "solution", entry.id, add);
+  for (const [index, slice] of topology.entries()) {
+    const next = topology[index + 1];
+    const expectedFrom = index * 4 + 1;
+    const expectedTo = Math.min(expectedFrom + 5, evidence.pageCount);
+    const expectedOwnedTo = next ? next.from - 1 : slice.to;
+    if (
+      slice.from !== expectedFrom || slice.to !== expectedTo || (next && next.from !== slice.to - 1)
+      || slice.ownedFrom !== slice.from || slice.ownedTo !== expectedOwnedTo
+      || (!next && slice.to !== evidence.pageCount)
+    ) {
+      add({ code: "SOLUTION_TOPOLOGY", entryId: entry.id, message: "solution chunks do not have exact 6/4 owned-start coverage" });
+      break;
+    }
+  }
   return solutions;
 }
 
@@ -1095,17 +1173,35 @@ export function verifyExamCorpus(options: {
           add({ code: "OFFICIAL_SOLUTION_MISSING", entryId: entry.id, target: question.target, message: `${question.printedNumber}: official solution missing` });
           continue;
         }
-        if (!solution.answer.trim() || !solution.explanation.trim()) {
+        if (!solution.rawAnswer.trim() || !solution.explanation.trim()) {
           add({ code: "OFFICIAL_EXPLANATION", entryId: entry.id, target: question.target, message: `${question.printedNumber}: official answer/explanation empty` });
         }
         const choices = question.choices === null ? null : JSON.stringify(question.choices);
-        if (!gradeAnswer(question.qtype, question.answer, solution.answer, choices)) {
-          add({ code: "OFFICIAL_ANSWER_MISMATCH", entryId: entry.id, target: question.target, message: `${question.printedNumber}: extracted and official answers disagree` });
+        let officialAnswer: string;
+        try {
+          officialAnswer = officialAnswerForDb(question, solution.rawAnswer);
+        } catch (error) {
+          add({
+            code: "OFFICIAL_ANSWER_UNRESOLVED",
+            entryId: entry.id,
+            target: question.target,
+            message: error instanceof Error ? error.message : String(error),
+          });
+          continue;
+        }
+        if (question.qtype === "mcq") {
+          const gradingMatches = (question.choices ?? []).filter((choice) =>
+            gradeAnswer("mcq", officialAnswer, choice, choices),
+          );
+          if (gradingMatches.length !== 1) {
+            add({ code: "OFFICIAL_ANSWER_UNGRADABLE", entryId: entry.id, target: question.target, message: `${question.printedNumber}: mapped DB answer does not grade one exact choice` });
+          }
         }
         const group = expectedByTarget.get(question.target) ?? [];
         group.push({
           ...question,
-          officialAnswer: solution.answer,
+          officialAnswer,
+          officialRawAnswer: solution.rawAnswer,
           officialExplanation: solution.explanation,
           solutionPage: solution.page,
         });
