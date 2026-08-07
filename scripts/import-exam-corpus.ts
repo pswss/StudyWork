@@ -42,6 +42,8 @@ import { MAX_PDF_BYTES, MAX_PDF_PAGES, safeUploadName } from "../src/upload";
 export const IMPORT_MODEL = "gpt-5.6-sol";
 export const IMPORT_REASONING_EFFORT = "high" as const;
 export const IMPORT_CONCURRENCY = 10;
+export const PROBLEM_SLICE_PAGES = 20;
+export const PROBLEM_SLICE_STRIDE = 18;
 
 export const TARGET_SUBJECTS = [
   "수학 - 수학Ⅱ·미적분Ⅰ",
@@ -120,8 +122,8 @@ const ALLOWED_CANONICAL: Record<SourceSubject, readonly CanonicalSubject[]> = {
 
 const SUPPORTED_SOURCES = new Set<SourceSubject>(["국어", "수학", "통합사회", "통합과학"]);
 const SOURCE_SUBJECTS = new Set<SourceSubject>(["국어", "수학", "영어", "한국사", "통합사회", "통합과학"]);
-const CLASSIFIER_VERSION = 1;
-const CHECKPOINT_VERSION = 1;
+const CLASSIFIER_VERSION = 2;
+const CHECKPOINT_VERSION = 2;
 
 const CURRICULUM_RULES = `
 Classify each question from the complete attached passage, stem, choices, tables, and figures. Never classify from the filename or exam label alone.
@@ -200,6 +202,7 @@ export type CorpusManifestEntry = {
   examTitle: string;
   rawTitle: string;
   administrationDate: string;
+  administrationYear: number;
   variant: string | null;
   form: "odd" | "even" | null;
   sourcePageUrl: string;
@@ -291,12 +294,34 @@ function administrationDate(value: unknown, label: string): string {
   return date;
 }
 
+function administrationYear(value: unknown, label: string): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 2000 || Number(value) > 2100) {
+    throw new Error(`${label}: 2000-2100 사이 정수 연도가 아닙니다`);
+  }
+  return Number(value);
+}
+
 function nullableString(value: unknown, label: string): string | null {
   return value === null || value === undefined ? null : exactString(value, label, 100);
 }
 
-export function examBookTitle(entry: Pick<CorpusManifestEntry, "administrationDate" | "rawTitle">): string {
-  return `${entry.administrationDate} · ${entry.rawTitle}`;
+export function examBookTitle(entry: Pick<CorpusManifestEntry, "administrationYear" | "rawTitle">): string {
+  return `${entry.administrationYear}년 · ${entry.rawTitle}`;
+}
+
+export function problemOwnedRange(
+  slice: { from: number; to: number },
+  index: number,
+  nextFrom?: number
+): { from: number; to: number } {
+  return {
+    from: index === 0 ? slice.from : slice.from + 1,
+    to: nextFrom ?? slice.to,
+  };
+}
+
+export function problemChunkCount(pageCount: number): number {
+  return Math.max(1, Math.ceil((pageCount - (PROBLEM_SLICE_PAGES - PROBLEM_SLICE_STRIDE)) / PROBLEM_SLICE_STRIDE));
 }
 
 export function parseCorpusManifest(value: unknown): CorpusManifest {
@@ -305,6 +330,7 @@ export function parseCorpusManifest(value: unknown): CorpusManifest {
   if (!Array.isArray(raw.entries) || raw.entries.length === 0) throw new Error("manifest.entries가 비어 있습니다");
 
   const ids = new Set<string>();
+  const displayTitles = new Set<string>();
   const entries = raw.entries.map((entryValue, index): CorpusManifestEntry => {
     const entry = object(entryValue, `entries[${index}]`);
     const id = exactString(entry.id, `entries[${index}].id`, 200);
@@ -313,6 +339,7 @@ export function parseCorpusManifest(value: unknown): CorpusManifest {
     const examTitle = exactString(entry.examTitle, `entries[${index}].examTitle`, 500);
     const rawTitle = exactString(entry.rawTitle, `entries[${index}].rawTitle`, 500);
     const heldOn = administrationDate(entry.administrationDate, `entries[${index}].administrationDate`);
+    const heldYear = administrationYear(entry.administrationYear, `entries[${index}].administrationYear`);
     const variant = nullableString(entry.variant, `entries[${index}].variant`);
     const form = nullableString(entry.form, `entries[${index}].form`);
     if (form !== null && form !== "odd" && form !== "even") {
@@ -336,12 +363,16 @@ export function parseCorpusManifest(value: unknown): CorpusManifest {
     if (problemPdfUrl === solutionPdfUrl) throw new Error(`entries[${index}]: 문제와 해설 URL이 같습니다`);
     if (ids.has(id)) throw new Error(`중복 manifest id: ${id}`);
     ids.add(id);
+    const displayTitle = `${heldYear}\0${rawTitle}`;
+    if (displayTitles.has(displayTitle)) throw new Error(`중복 표시 제목: ${heldYear}년 · ${rawTitle}`);
+    displayTitles.add(displayTitle);
     return {
       id,
       subject,
       examTitle,
       rawTitle,
       administrationDate: heldOn,
+      administrationYear: heldYear,
       variant,
       form,
       sourcePageUrl,
@@ -626,17 +657,19 @@ async function extractAndClassifyProblems(
   evidence: PdfEvidence,
   stateDir: string
 ): Promise<ClassifiedQuestion[]> {
-  return withSlices(evidence, 20, 19, async (slices) => {
+  return withSlices(evidence, PROBLEM_SLICE_PAGES, PROBLEM_SLICE_STRIDE, async (slices) => {
     const combined: ClassifiedQuestion[] = [];
     for (const [index, slice] of slices.entries()) {
-      const extractionPath = join(stateDir, "problem-chunks", `${String(index).padStart(4, "0")}.json`);
+      const ownership = problemOwnedRange(slice, index, slices[index + 1]?.from);
+      const extractionPath = join(stateDir, "problem-chunks", `v${CHECKPOINT_VERSION}-${String(index).padStart(4, "0")}.json`);
       let questions: QuizItemEx[];
       if (existsSync(extractionPath)) {
         const checkpoint = object(JSON.parse(readFileSync(extractionPath, "utf8")), "문제 체크포인트");
         if (
           checkpoint.version !== CHECKPOINT_VERSION || checkpoint.sourceHash !== evidence.sha256 ||
           checkpoint.from !== slice.from || checkpoint.to !== slice.to || checkpoint.model !== IMPORT_MODEL ||
-          checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+          checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT || checkpoint.ownedFrom !== ownership.from ||
+          checkpoint.ownedTo !== ownership.to
         ) throw new Error(`문제 체크포인트 메타데이터가 다릅니다: ${extractionPath}`);
         questions = restoredQuizItems(checkpoint.items);
       } else {
@@ -645,14 +678,15 @@ async function extractAndClassifyProblems(
           contentPageCount: slice.to - slice.from + 1,
           selfContained: true,
         });
-        const nextFrom = slices[index + 1]?.from;
-        if (nextFrom !== undefined) questions = questions.filter((question) => question.page !== nextFrom);
+        questions = questions.filter((question) => question.page! >= ownership.from && question.page! <= ownership.to);
         for (const question of questions) questionKey(question);
         writeImmutableJson(extractionPath, {
           version: CHECKPOINT_VERSION,
           sourceHash: evidence.sha256,
           from: slice.from,
           to: slice.to,
+          ownedFrom: ownership.from,
+          ownedTo: ownership.to,
           model: IMPORT_MODEL,
           reasoningEffort: IMPORT_REASONING_EFFORT,
           items: questions,
@@ -665,7 +699,7 @@ async function extractAndClassifyProblems(
       const classificationPath = join(
         stateDir,
         "classification-chunks",
-        `${String(index).padStart(4, "0")}-${CLASSIFIER_DIGEST}.json`
+        `v${CLASSIFIER_VERSION}-${String(index).padStart(4, "0")}-${CLASSIFIER_DIGEST}.json`
       );
       let decisions: ClassificationDecision[];
       if (existsSync(classificationPath)) {
@@ -673,7 +707,8 @@ async function extractAndClassifyProblems(
         if (
           checkpoint.version !== CLASSIFIER_VERSION || checkpoint.sourceHash !== evidence.sha256 ||
           checkpoint.from !== slice.from || checkpoint.to !== slice.to || checkpoint.rulesDigest !== CLASSIFIER_DIGEST ||
-          checkpoint.model !== IMPORT_MODEL || checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+          checkpoint.model !== IMPORT_MODEL || checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+          checkpoint.ownedFrom !== ownership.from || checkpoint.ownedTo !== ownership.to
         ) throw new Error(`분류 체크포인트 메타데이터가 다릅니다: ${classificationPath}`);
         decisions = parseDecisions(checkpoint.items, questions, entry);
       } else {
@@ -683,6 +718,8 @@ async function extractAndClassifyProblems(
           sourceHash: evidence.sha256,
           from: slice.from,
           to: slice.to,
+          ownedFrom: ownership.from,
+          ownedTo: ownership.to,
           rulesDigest: CLASSIFIER_DIGEST,
           model: IMPORT_MODEL,
           reasoningEffort: IMPORT_REASONING_EFFORT,
@@ -705,7 +742,7 @@ async function extractSolutions(evidence: PdfEvidence, stateDir: string): Promis
   return withSlices(evidence, 6, 4, async (slices) => {
     const combined: SolutionItem[] = [];
     for (const [index, slice] of slices.entries()) {
-      const checkpointPath = join(stateDir, "solution-chunks", `${String(index).padStart(4, "0")}.json`);
+      const checkpointPath = join(stateDir, "solution-chunks", `v${CHECKPOINT_VERSION}-${String(index).padStart(4, "0")}.json`);
       let items: SolutionItem[];
       if (existsSync(checkpointPath)) {
         const checkpoint = object(JSON.parse(readFileSync(checkpointPath, "utf8")), "해설 체크포인트");
@@ -1024,7 +1061,7 @@ export async function commitCorpusEntry(
         keys.problem,
         problem.sha256,
         problem.pageCount,
-        Math.max(1, Math.ceil((problem.pageCount - 1) / 19)),
+        problemChunkCount(problem.pageCount),
       ).lastInsertRowid);
       const solutionFileId = Number(db.prepare(
         `INSERT INTO book_files
@@ -1117,14 +1154,14 @@ async function processEntry(
   const resultPath = join(stateDir, "result.json");
   if (existsSync(resultPath)) {
     const result = object(JSON.parse(readFileSync(resultPath, "utf8")), "result.json");
-    if (result.version !== 1 || result.status !== "filtered" || result.entryId !== entry.id) {
+    if (result.version !== 2 || result.status !== "filtered" || result.entryId !== entry.id) {
       throw new Error("기존 result.json이 유효하지 않습니다");
     }
     return { id: entry.id, status: "filtered", accepted: 0, message: String(result.reason ?? "filtered") };
   }
   if (["통합과학", "통합사회"].includes(entry.subject) && ![1, 2].includes(entry.grade ?? 0)) {
     writeImmutableJson(resultPath, {
-      version: 1,
+      version: 2,
       status: "filtered",
       entryId: entry.id,
       reason: "SOURCE_GRADE_OUT_OF_SCOPE",
@@ -1138,7 +1175,7 @@ async function processEntry(
   const problem = await downloadPdf(entry.problemPdfUrl, entry.sourcePageUrl, join(stateDir, "problem.pdf"));
   const solution = await downloadPdf(entry.solutionPdfUrl, entry.sourcePageUrl, join(stateDir, "solution.pdf"));
   writeImmutableJson(join(stateDir, "downloads.json"), {
-    version: 1,
+    version: 2,
     problem: {
       path: "problem.pdf",
       requestedUrl: problem.requestedUrl,
@@ -1163,7 +1200,7 @@ async function processEntry(
   const acceptedCount = classified.filter(({ classification }) => classification.decision === "accept").length;
   if (acceptedCount === 0) {
     writeImmutableJson(resultPath, {
-      version: 1,
+      version: 2,
       status: "filtered",
       entryId: entry.id,
       reason: "NO_IN_SCOPE_QUESTIONS",
@@ -1180,12 +1217,13 @@ async function processEntry(
   const imported = matchOfficialSolutions(classified, solutions);
   const receiptPath = join(stateDir, "receipt.json");
   const receipt = {
-    version: 1,
+    version: 2,
     status: "committed",
     entryId: entry.id,
     examTitle: entry.examTitle,
     rawTitle: entry.rawTitle,
     bookTitle: examBookTitle(entry),
+    administrationYear: entry.administrationYear,
     variant: entry.variant,
     form: entry.form,
     sourceSubject: entry.subject,
@@ -1197,6 +1235,11 @@ async function processEntry(
     reviewQuestionCount: 0,
     problemHash: problem.sha256,
     solutionHash: solution.sha256,
+    problemChunking: {
+      pages: PROBLEM_SLICE_PAGES,
+      stride: PROBLEM_SLICE_STRIDE,
+      overlap: PROBLEM_SLICE_PAGES - PROBLEM_SLICE_STRIDE,
+    },
     targetBooks: [...new Set(imported.map((question) => question.targetSubject))].sort().map((subject) => {
       const keys = evidenceKeys(entry, subject);
       return {

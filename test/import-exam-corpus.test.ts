@@ -8,6 +8,8 @@ import { LocalDB } from "../src/localdb";
 import { problemExtractionSelfContainedRule } from "../src/claude";
 import {
   TARGET_SUBJECTS,
+  PROBLEM_SLICE_PAGES,
+  PROBLEM_SLICE_STRIDE,
   assertImportSchema,
   commitCorpusEntry,
   ensureCanonicalSubjects,
@@ -15,6 +17,8 @@ import {
   isAllowedAchievementCode,
   matchOfficialSolutions,
   parseCorpusManifest,
+  problemChunkCount,
+  problemOwnedRange,
   type ClassificationDecision,
   type PdfEvidence,
 } from "../scripts/import-exam-corpus";
@@ -40,6 +44,7 @@ describe("exam corpus importer", () => {
           examTitle: "2026학년도 3월 전국연합학력평가 수학 영역",
           rawTitle: "2026학년도 3월 전국연합학력평가 수학 영역 미적분",
           administrationDate: "2026-03-24",
+          administrationYear: 2026,
           variant: "미적분",
           form: null,
           sourcePageUrl: "https://www.ebsi.co.kr/exam/1",
@@ -58,6 +63,7 @@ describe("exam corpus importer", () => {
             rawTitle: "2017학년도 대학수학능력시험 수학가형 홀수형",
             examTitle: "2017학년도 대학수학능력시험",
             administrationDate: "2016-11-17",
+            administrationYear: 2016,
             variant: "수학가형",
             form: "odd",
           },
@@ -67,6 +73,7 @@ describe("exam corpus importer", () => {
             rawTitle: "2017학년도 대학수학능력시험 수학나형 홀수형",
             examTitle: "2017학년도 대학수학능력시험",
             administrationDate: "2016-11-17",
+            administrationYear: 2016,
             variant: "수학나형",
             form: "odd",
             problemPdfUrl: "https://wdown.ebsi.co.kr/problem-na.pdf",
@@ -74,9 +81,34 @@ describe("exam corpus importer", () => {
           },
         ],
       }).entries;
-      expect(examBookTitle(historicalVariants[0])).toBe("2016-11-17 · 2017학년도 대학수학능력시험 수학가형 홀수형");
-      expect(examBookTitle(historicalVariants[1])).toBe("2016-11-17 · 2017학년도 대학수학능력시험 수학나형 홀수형");
+      expect(examBookTitle(historicalVariants[0])).toBe("2016년 · 2017학년도 대학수학능력시험 수학가형 홀수형");
+      expect(examBookTitle(historicalVariants[1])).toBe("2016년 · 2017학년도 대학수학능력시험 수학나형 홀수형");
       expect(examBookTitle(historicalVariants[0])).not.toBe(examBookTitle(historicalVariants[1]));
+      expect(examBookTitle({ administrationYear: 2025, rawTitle: "고2 3월 학평(서울) 국어" })).not.toBe(
+        examBookTitle({ administrationYear: 2017, rawTitle: "고2 3월 학평(서울) 국어" })
+      );
+      expect(() => parseCorpusManifest({
+        schemaVersion: 1,
+        entries: [
+          historicalVariants[0].raw,
+          {
+            ...historicalVariants[0].raw,
+            id: "ebsi:duplicate-title",
+            problemPdfUrl: "https://wdown.ebsi.co.kr/problem-duplicate.pdf",
+            solutionPdfUrl: "https://wdown.ebsi.co.kr/solution-duplicate.pdf",
+          },
+        ],
+      })).toThrow("중복 표시 제목");
+      expect([PROBLEM_SLICE_PAGES, PROBLEM_SLICE_STRIDE]).toEqual([20, 18]);
+      expect(problemOwnedRange({ from: 1, to: 20 }, 0, 19)).toEqual({ from: 1, to: 19 });
+      expect(problemOwnedRange({ from: 19, to: 38 }, 1, 37)).toEqual({ from: 20, to: 37 });
+      expect(problemOwnedRange({ from: 37, to: 45 }, 2)).toEqual({ from: 38, to: 45 });
+      expect([19, 20].map((page) => [
+        page >= 1 && page <= 19,
+        page >= 20 && page <= 37,
+      ].filter(Boolean).length)).toEqual([1, 1]);
+      expect([problemChunkCount(20), problemChunkCount(21), problemChunkCount(38), problemChunkCount(39)])
+        .toEqual([1, 2, 2, 3]);
       expect(() => parseCorpusManifest({
         schemaVersion: 1,
         entries: [{ ...entry.raw, problemPdfUrl: "https://example.test/problem.pdf" }],
