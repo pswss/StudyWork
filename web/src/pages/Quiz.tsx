@@ -21,6 +21,7 @@ import { useI18n, type Locale, type MessageKey, type Translate } from "../i18n";
 import SourcePicker from "./SourcePicker";
 import SingleSelectPicker from "./SingleSelectPicker";
 import QuizScratchpad, { QuizQuestionAnnotation } from "./QuizScratchpad";
+import TranscriptNarration from "../TranscriptNarration";
 import { AiPending } from "../Pending";
 import { getAnswerAttempt, type AnswerAttempt } from "../answer-attempt";
 import { useUndoDelete } from "../UndoDelete";
@@ -1040,6 +1041,9 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
             </a>
           )}
         </div>
+        {item.exam_section === "듣기" && item.passage && (
+          <TranscriptNarration text={item.passage} />
+        )}
         <QuizQuestionAnnotation questionId={item.id}>
           {item.passage && (
             <section className="quiz-passage" aria-label={t("problems.mock.passage")}>

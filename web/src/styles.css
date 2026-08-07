@@ -1220,6 +1220,11 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   font-size: 14px; line-height: 1.75;
 }
 .quiz-passage table { width: 100%; }
+.quiz-narration {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  max-width: 75ch; margin: 0 0 8px;
+}
+.quiz-narration-status { color: var(--ink-3); font-size: 12px; line-height: 1.5; }
 
 .quiz-list { display: flex; flex-direction: column; }
 .quiz-row { content-visibility: auto; contain-intrinsic-size: auto 68px; }

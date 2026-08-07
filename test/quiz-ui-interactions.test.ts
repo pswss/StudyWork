@@ -22,6 +22,7 @@ describe("quiz interaction polish", () => {
     expect(source).toContain('className="quiz-passage"');
     expect(source).toContain("points: item.exam_points");
     expect(source).toContain("quizResultScore(resultScores)");
+    expect(source).toContain('<TranscriptNarration text={item.passage} />');
   });
 
   it("모의고사는 문항 수가 아니라 배점으로 결과를 계산", () => {

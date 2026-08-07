@@ -53,5 +53,6 @@ describe("2028 수능형 모의고사 청사진", () => {
     const specs = getMockExamBlueprint("english").specs;
     expect(specs.slice(0, 17).every((spec) => spec.section === "듣기")).toBe(true);
     expect(specs.slice(17).every((spec) => spec.section === "읽기")).toBe(true);
+    expect(specs[0].passage_brief).toContain("Woman:");
   });
 });
