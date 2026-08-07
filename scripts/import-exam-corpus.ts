@@ -55,7 +55,7 @@ export const IMPORT_CONCURRENCY = 10;
 export const PROBLEM_SLICE_PAGES = 20;
 export const PROBLEM_SLICE_STRIDE = 18;
 export const PROBLEM_REPAIR_VERSION = 2;
-export const CLASSIFICATION_REPAIR_VERSION = 2;
+export const CLASSIFICATION_REPAIR_VERSION = 3;
 export const SEMANTIC_CHOICE_CHECK_VERSION = 2;
 export const ANSWER_AUDIT_VERSION = 1;
 export const ANSWER_ATTESTATION_VERSION = 1;
@@ -1477,6 +1477,7 @@ export function semanticExplanationWithoutMarkers(value: string): string {
     .replace(/\[\s*(?:정답|답)\s*\]\s*(?:[①-⑩]|(?:10|[1-9])(?!\d)(?:\s*번)?)/gu, "[CHOICE MARKER HIDDEN]")
     .replace(/(?:[①-⑩]|(?:10|[1-9])(?!\d))\s*번\s*(?:선택지\s*)?(?:이|가)?\s*(?:정답|답)(?:이다|입니다)?/gu, "[CHOICE MARKER HIDDEN]")
     .replace(/선택지\s*(?:[①-⑩]|(?:10|[1-9])(?!\d))(?:\s*번)?\s*(?:이|가)?\s*(?:정답|답)(?:이다|입니다)?/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/(?:정답|답)\s+(?:[①-⑩]|(?:10|[1-9])(?!\d))\s*번/gu, "[CHOICE MARKER HIDDEN]")
     .replace(/(?:정답|답)\s*(?:은|는|이|가|:|：|=)\s*(?:[①-⑩]|(?:10|[1-9])(?!\d))(?:\s*번)?/gu, "[CHOICE MARKER HIDDEN]")
     .replace(/[①-⑩]/gu, "[CHOICE MARKER HIDDEN]");
 }

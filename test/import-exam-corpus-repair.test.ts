@@ -332,7 +332,7 @@ describe("exam corpus targeted problem repair", () => {
       contextTo: 4,
       problemArtifact: { path: expect.stringMatching(/^problem-repairs\/v2-/u) },
     });
-    expect(repaired.repairs[0].classificationArtifact.path).toMatch(/^classification-repairs\/v2-/u);
+    expect(repaired.repairs[0].classificationArtifact.path).toMatch(/^classification-repairs\/v3-/u);
     expect(JSON.parse(readFileSync(join(root, repaired.repairs[0].problemArtifact.path), "utf8")))
       .toMatchObject({ contextFrom: 1, contextTo: 4, sourcePage: 4, printedNumber: "11" });
     expect(JSON.parse(readFileSync(join(root, repaired.repairs[0].classificationArtifact.path), "utf8")))
