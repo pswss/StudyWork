@@ -1,9 +1,10 @@
 import Database from "better-sqlite3";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { PDFDocument } from "pdf-lib";
 import { LocalDB } from "../src/localdb";
 import { problemExtractionSelfContainedRule } from "../src/claude";
 import {
@@ -17,10 +18,12 @@ import {
   isAllowedAchievementCode,
   matchOfficialSolutions,
   parseCorpusManifest,
+  parsePdfInfoOutput,
   problemChunkCount,
   problemOwnedRange,
   validateFilteredResult,
   validateProblemSliceTopology,
+  withImporterPdfForAnalysis,
   type ClassificationDecision,
   type PdfEvidence,
 } from "../scripts/import-exam-corpus";
@@ -219,6 +222,35 @@ describe("exam corpus importer", () => {
       expect(() => matchOfficialSolutions(entry, classified, officialSolutions.map((solution, index) =>
         index === 0 ? { ...solution, answer: "③" } : solution
       ))).toThrow("보기 범위를 벗어났습니다");
+
+      expect(parsePdfInfoOutput("Pages: 28\nEncrypted: yes (print:yes copy:yes change:no algorithm:AES)\n"))
+        .toEqual({ pages: 28, encrypted: true });
+      expect(() => parsePdfInfoOutput("Pages: 28\nEncrypted: yes (print:yes copy:no algorithm:AES)\n"))
+        .toThrow("인쇄와 복사가 모두 허용");
+      const sourcePdf = await PDFDocument.create();
+      sourcePdf.addPage();
+      sourcePdf.addPage();
+      const sourcePdfBytes = Buffer.from(await sourcePdf.save());
+      const sourcePdfPath = join(root, "normalization-source.pdf");
+      writeFileSync(sourcePdfPath, sourcePdfBytes);
+      let normalizedPath = "";
+      await expect(withImporterPdfForAnalysis({
+        path: sourcePdfPath,
+        sha256: createHash("sha256").update(sourcePdfBytes).digest("hex"),
+        bytes: sourcePdfBytes.length,
+        pageCount: 2,
+        requestedUrl: entry.solutionPdfUrl,
+        resolvedUrl: entry.solutionPdfUrl,
+        requiresNormalization: true,
+      }, async (analysis) => {
+        normalizedPath = analysis.path;
+        expect(analysis.path).not.toBe(sourcePdfPath);
+        expect(analysis.sha256).toBe(createHash("sha256").update(sourcePdfBytes).digest("hex"));
+        expect(analysis.pageCount).toBe(2);
+        expect(existsSync(analysis.path)).toBe(true);
+      })).resolves.toBeUndefined();
+      expect(existsSync(normalizedPath)).toBe(false);
+      expect(existsSync(sourcePdfPath)).toBe(true);
 
       const makeEvidence = (name: string, url: string): PdfEvidence => {
         const path = join(root, name);

@@ -1,12 +1,14 @@
 #!/usr/bin/env tsx
 
 import Database from "better-sqlite3";
+import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
   closeSync,
   constants,
   copyFileSync,
   existsSync,
+  mkdtempSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -18,8 +20,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { open as openFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import {
   extractProblemsFromFile,
   extractSolutionsFromFile,
@@ -44,6 +48,8 @@ export const IMPORT_REASONING_EFFORT = "high" as const;
 export const IMPORT_CONCURRENCY = 10;
 export const PROBLEM_SLICE_PAGES = 20;
 export const PROBLEM_SLICE_STRIDE = 18;
+
+const execFileP = promisify(execFile);
 
 export const TARGET_SUBJECTS = [
   "수학 - 수학Ⅱ·미적분Ⅰ",
@@ -244,6 +250,7 @@ export type PdfEvidence = {
   pageCount: number;
   requestedUrl: string;
   resolvedUrl: string;
+  requiresNormalization?: boolean;
 };
 
 export type ImportedQuestion = QuizItemEx & {
@@ -468,6 +475,73 @@ async function sha256File(path: string): Promise<string> {
   }
 }
 
+type ImportPdfInfo = {
+  pages: number;
+  encrypted: boolean;
+};
+
+export function parsePdfInfoOutput(output: string): ImportPdfInfo {
+  const pages = Number(/^Pages:\s+(\d+)\s*$/mi.exec(output)?.[1]);
+  const encrypted = /^Encrypted:\s+(yes|no)(.*)$/mi.exec(output);
+  if (!Number.isInteger(pages) || pages < 1 || !encrypted) {
+    throw new Error("pdfinfo 결과에 페이지 또는 암호화 정보가 없습니다");
+  }
+  const isEncrypted = encrypted[1].toLowerCase() === "yes";
+  if (isEncrypted && (!/\bprint:yes\b/i.test(encrypted[2]) || !/\bcopy:yes\b/i.test(encrypted[2]))) {
+    throw new Error("암호화 PDF는 인쇄와 복사가 모두 허용되어야 합니다");
+  }
+  return { pages, encrypted: isEncrypted };
+}
+
+function popplerCommand(name: "pdfinfo" | "pdftocairo"): string {
+  const homebrew = `/opt/homebrew/bin/${name}`;
+  return existsSync(homebrew) ? homebrew : name;
+}
+
+async function readImportPdfInfo(path: string): Promise<ImportPdfInfo> {
+  try {
+    const { stdout } = await execFileP(popplerCommand("pdfinfo"), [path], {
+      encoding: "utf8",
+      timeout: 30_000,
+      maxBuffer: 1024 * 1024,
+    });
+    return parsePdfInfoOutput(String(stdout));
+  } catch (error) {
+    if (error instanceof Error && /인쇄와 복사|pdfinfo 결과/.test(error.message)) throw error;
+    throw new Error("PDF가 암호로 잠겼거나 pdfinfo로 읽을 수 없습니다");
+  }
+}
+
+export async function withImporterPdfForAnalysis<T>(
+  evidence: PdfEvidence,
+  run: (analysisEvidence: PdfEvidence) => Promise<T>
+): Promise<T> {
+  const sharedCount = evidence.requiresNormalization ? null : await pdfPageCount(evidence.path);
+  if (!evidence.requiresNormalization && sharedCount === evidence.pageCount) return run(evidence);
+
+  const sourceInfo = await readImportPdfInfo(evidence.path);
+  if (sourceInfo.pages !== evidence.pageCount) throw new Error("공식 PDF의 pdfinfo 페이지 수가 evidence와 다릅니다");
+  const dir = mkdtempSync(join(tmpdir(), "studywork-ebsi-pdf-"));
+  const normalizedPath = join(dir, "normalized.pdf");
+  try {
+    await execFileP(popplerCommand("pdftocairo"), ["-pdf", evidence.path, normalizedPath], {
+      encoding: "utf8",
+      timeout: 2 * 60 * 1000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    const normalizedInfo = await readImportPdfInfo(normalizedPath);
+    if (normalizedInfo.encrypted || normalizedInfo.pages !== evidence.pageCount) {
+      throw new Error("정규화 PDF가 암호화됐거나 원본 페이지 수와 다릅니다");
+    }
+    if (await pdfPageCount(normalizedPath) !== evidence.pageCount) {
+      throw new Error("정규화 PDF를 StudyWork PDF parser로 검증할 수 없습니다");
+    }
+    return await run({ ...evidence, path: normalizedPath, requiresNormalization: false });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function inspectPdf(path: string, requestedUrl: string, resolvedUrl = requestedUrl): Promise<PdfEvidence> {
   const stat = statSync(path);
   if (!stat.isFile() || stat.size < 5 || stat.size > MAX_PDF_BYTES) {
@@ -482,15 +556,17 @@ async function inspectPdf(path: string, requestedUrl: string, resolvedUrl = requ
   } finally {
     closeSync(file);
   }
-  const pageCount = await pdfPageCount(path);
-  if (!pageCount || pageCount > MAX_PDF_PAGES) throw new Error(`PDF 페이지 수가 유효하지 않습니다: ${path}`);
+  const info = await readImportPdfInfo(path);
+  if (info.pages > MAX_PDF_PAGES) throw new Error(`PDF 페이지 수가 유효하지 않습니다: ${path}`);
+  const sharedCount = info.encrypted ? null : await pdfPageCount(path);
   return {
     path,
     sha256: await sha256File(path),
     bytes: stat.size,
-    pageCount,
+    pageCount: info.pages,
     requestedUrl,
     resolvedUrl,
+    requiresNormalization: info.encrypted || sharedCount !== info.pages,
   };
 }
 
@@ -691,6 +767,16 @@ async function extractAndClassifyProblems(
   evidence: PdfEvidence,
   stateDir: string
 ): Promise<ClassifiedQuestion[]> {
+  return withImporterPdfForAnalysis(evidence, (analysisEvidence) =>
+    extractAndClassifyAnalysisPdf(entry, analysisEvidence, stateDir)
+  );
+}
+
+async function extractAndClassifyAnalysisPdf(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  stateDir: string
+): Promise<ClassifiedQuestion[]> {
   return withSlices(evidence, PROBLEM_SLICE_PAGES, PROBLEM_SLICE_STRIDE, async (slices) => {
     const ownershipRanges = validateProblemSliceTopology(slices);
     const combined: ClassifiedQuestion[] = [];
@@ -774,6 +860,15 @@ async function extractAndClassifyProblems(
 }
 
 async function extractSolutions(evidence: PdfEvidence, stateDir: string): Promise<SolutionItem[]> {
+  return withImporterPdfForAnalysis(evidence, (analysisEvidence) =>
+    extractSolutionsFromAnalysisPdf(analysisEvidence, stateDir)
+  );
+}
+
+async function extractSolutionsFromAnalysisPdf(
+  evidence: PdfEvidence,
+  stateDir: string
+): Promise<SolutionItem[]> {
   return withSlices(evidence, 6, 4, async (slices) => {
     const combined: SolutionItem[] = [];
     for (const [index, slice] of slices.entries()) {
