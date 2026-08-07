@@ -1167,6 +1167,17 @@ export const QUIZ_EXTRACT_SPEC =
   `- box: when figure is true, [top,bottom] — the vertical span of the problem INCLUDING its figure as fractions of page height (e.g. [0.3,0.6]), be a bit generous; null otherwise\n` +
   `- Output ONLY the JSON array. Nothing else.`;
 
+export function problemExtractionSelfContainedRule(enabled: boolean): string {
+  if (!enabled) return "";
+  return (
+    `- SELF-CONTAINED CORPUS MODE: every question must be independently solvable outside this PDF. ` +
+    `Include in question the complete shared passage and every shared <보기>, dataset, quotation, table text, ` +
+    `or other written source required to answer it. Never replace source content with references such as ` +
+    `"윗글", "위 자료", "다음 글", or "<보기>" alone. Preserve required visual evidence through figure, ` +
+    `figure_description, box, and page fields as usual.\n`
+  );
+}
+
 export async function detectAnswerKeyPagesFromFile(
   absPath: string,
   sliceBase: number,
@@ -1249,6 +1260,7 @@ export async function extractProblemsFromFile(
     signal?: AbortSignal;
     contentPageCount?: number;
     answerKeyPages?: number[];
+    selfContained?: boolean;
   }
 ): Promise<QuizItemEx[]> {
   const pagesInFile = kind === "pdf" ? await pdfPageCount(absPath) : 1;
@@ -1269,11 +1281,12 @@ export async function extractProblemsFromFile(
   const readInstruction = kind === "pdf"
     ? `Read the first ${contentPageCount} attached page image(s) as original document pages ${firstPage}-${lastPage}; cover that content range without gaps.${answerKeyNote}`
     : `Read the attached file "${absPath}".`;
+  const selfContainedRule = problemExtractionSelfContainedRule(opts?.selfContained === true);
   const buildPrompt = (cont: string) =>
     `${readInstruction}\n\n${PERSONAL_USE_NOTE}` +
     `This file is a study workbook. Read all pages and transcribe EVERY problem you find as this strict JSON array:\n` +
     `Workbooks may print the SAME question text under DIFFERENT problem numbers on one page (progress-mapping duplicates). Each printed number is a separate item — transcribe all of them; never merge or skip a duplicate.\n` +
-    QUIZ_EXTRACT_SPEC + `\n` + pageRule + cont;
+    QUIZ_EXTRACT_SPEC + `\n` + pageRule + selfContainedRule + cont;
 
   const all: QuizItemEx[] = [];
   const seen = new Set<string>();
