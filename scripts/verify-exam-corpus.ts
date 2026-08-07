@@ -681,15 +681,16 @@ function parseClassificationEvidence(
   if (decision !== "accept" && decision !== "reject" && decision !== "review") {
     throw new CorpusValidationError("CLASSIFICATION_INVALID", `${key}: invalid decision`);
   }
-  const canonical = row.canonical_subject;
-  const canonicalSubject = canonical === null ? null : canonical as CanonicalSubject;
-  if (canonicalSubject !== null && !(canonicalSubject in TARGET_BY_CANONICAL)) {
+  const rawCanonical = row.canonical_subject;
+  if (rawCanonical !== null
+    && (typeof rawCanonical !== "string" || !(rawCanonical in TARGET_BY_CANONICAL))) {
     throw new CorpusValidationError("CLASSIFICATION_INVALID", `${key}: invalid canonical subject`);
   }
-  const curriculumCourse = row.curriculum_course === null
+  const rawCanonicalSubject = rawCanonical as CanonicalSubject | null;
+  const rawCurriculumCourse = row.curriculum_course === null
     ? null
     : exactString(row.curriculum_course, `${label}.curriculum_course`);
-  const domain = row.domain === null ? null : exactString(row.domain, `${label}.domain`);
+  const rawDomain = row.domain === null ? null : exactString(row.domain, `${label}.domain`);
   if (!Array.isArray(row.achievement_codes)
     || row.achievement_codes.some((code) => typeof code !== "string" || !code.trim() || code !== code.trim())) {
     throw new CorpusValidationError("CLASSIFICATION_INVALID", `${key}: invalid achievement codes`);
@@ -708,8 +709,12 @@ function parseClassificationEvidence(
   if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
     throw new CorpusValidationError("CLASSIFICATION_INVALID", `${key}: invalid confidence`);
   }
-  const achievementCodes = [...new Set(row.achievement_codes as string[])];
+  const rawAchievementCodes = [...new Set(row.achievement_codes as string[])];
   const reasonCodes = [...new Set(row.reason_codes as string[])];
+  const canonicalSubject = decision === "accept" ? rawCanonicalSubject : null;
+  const curriculumCourse = decision === "accept" ? rawCurriculumCourse : null;
+  const domain = decision === "accept" ? rawDomain : null;
+  const achievementCodes = decision === "accept" ? rawAchievementCodes : [];
   if (decision === "accept") {
     if (canonicalSubject === null || !CANONICAL_BY_SOURCE[entry.subject].includes(canonicalSubject)) {
       throw new CorpusValidationError("SUBJECT_EXCLUSION", `${key}: ${String(canonicalSubject)} is outside ${entry.subject}`);
@@ -728,8 +733,6 @@ function parseClassificationEvidence(
     if (invalidCode) {
       throw new CorpusValidationError("CURRICULUM_EXCLUSION", `${key}: excluded code ${invalidCode}`);
     }
-  } else if (canonicalSubject !== null || curriculumCourse !== null || domain !== null || achievementCodes.length > 0) {
-    throw new CorpusValidationError("CLASSIFICATION_INVALID", `${key}: reject/review must not assign a target`);
   }
   return {
     key,

@@ -1763,6 +1763,59 @@ describe("exam corpus verifier", () => {
     expect(report.failures.some((failure) => failure.code === "CLASSIFICATION_MISSING")).toBe(true);
   });
 
+  it("normalizes well-formed non-accept assignments but keeps accept validation strict", () => {
+    const rejectedFiles = fixture();
+    const rejectedPath = join(
+      rejectedFiles.stateDirs.math,
+      "classification-chunks",
+      `v4-0000-${DIGEST}.json`,
+    );
+    const rejected = JSON.parse(readFileSync(rejectedPath, "utf8"));
+    const rejectedItem = rejected.items.find((item: { decision: string }) => item.decision === "reject");
+    Object.assign(rejectedItem, {
+      canonical_subject: "math_B",
+      curriculum_course: "ignored course",
+      domain: "ignored domain",
+      achievement_codes: ["12수학Ⅰ01-01"],
+    });
+    writeJson(rejectedPath, rejected);
+    const normalizedReject = verifyExamCorpus(rejectedFiles);
+    expect(normalizedReject, JSON.stringify(normalizedReject.failures)).toMatchObject({ ok: true });
+
+    const reviewFiles = fixture();
+    const reviewPath = join(
+      reviewFiles.stateDirs.math,
+      "classification-chunks",
+      `v4-0000-${DIGEST}.json`,
+    );
+    const review = JSON.parse(readFileSync(reviewPath, "utf8"));
+    const reviewItem = review.items.find((item: { decision: string }) => item.decision === "reject");
+    Object.assign(reviewItem, {
+      decision: "review",
+      canonical_subject: "math_B",
+      curriculum_course: "ignored course",
+      domain: "ignored domain",
+      achievement_codes: ["12수학Ⅰ01-01"],
+    });
+    writeJson(reviewPath, review);
+    const normalizedReview = verifyExamCorpus(reviewFiles);
+    expect(normalizedReview.failures.some((failure) => failure.code === "CLASSIFICATION_INVALID")).toBe(false);
+    expect(normalizedReview.failures.some((failure) => failure.code === "REVIEW_COMMITTED")).toBe(true);
+
+    const invalidAcceptFiles = fixture();
+    const invalidAcceptPath = join(
+      invalidAcceptFiles.stateDirs.math,
+      "classification-chunks",
+      `v4-0000-${DIGEST}.json`,
+    );
+    const invalidAccept = JSON.parse(readFileSync(invalidAcceptPath, "utf8"));
+    const acceptedItem = invalidAccept.items.find((item: { decision: string }) => item.decision === "accept");
+    acceptedItem.canonical_subject = "math_Z";
+    writeJson(invalidAcceptPath, invalidAccept);
+    const invalid = verifyExamCorpus(invalidAcceptFiles);
+    expect(invalid.failures.some((failure) => failure.code === "CLASSIFICATION_INVALID")).toBe(true);
+  });
+
   it("fails closed on exclusions, review rows, missing official explanation, duplicates, and count drift", () => {
     const files = fixture();
     const mathClassification = join(files.stateDirs.math, "classification-chunks", `v4-0000-${DIGEST}.json`);
