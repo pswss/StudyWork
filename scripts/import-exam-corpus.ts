@@ -226,7 +226,8 @@ const CLASSIFICATION_SCHEMA: AIJsonSchema = {
 const SEMANTIC_CHOICE_RULES =
   `For each item, use only its official detailed explanation and answer-choice contents to identify the one ` +
   `choice semantically supported by the reasoning. The official answer marker and the problem extractor's answer ` +
-  `are intentionally hidden and must not be guessed. Return ambiguous when the explanation does not establish ` +
+  `are intentionally hidden and must not be guessed; ordinal markers inside explanations are redacted. ` +
+  `Return ambiguous when the explanation does not establish ` +
   `exactly one choice. choiceIndex is 1-based and evidence must briefly cite the decisive value or conclusion.`;
 
 const SEMANTIC_CHOICE_SCHEMA: AIJsonSchema = {
@@ -1284,7 +1285,7 @@ function schemaItems(text: string, label: string): unknown[] {
 
 function parseSemanticChoiceDecisions(
   value: unknown,
-  inputs: Array<{ key: string; choices: string[]; officialExplanation: string }>
+  inputs: Array<{ key: string; choices: string[]; detailedExplanation: string }>
 ): SemanticChoiceDecision[] {
   if (!Array.isArray(value)) throw new Error("semantic choice 결과가 배열이 아닙니다");
   const expected = new Map(inputs.map((input) => [input.key, input]));
@@ -1317,7 +1318,7 @@ async function semanticChoiceCheckpoint(
   solution: PdfEvidence,
   stateDir: string,
   effectiveCorpusHash: string,
-  inputs: Array<{ key: string; choices: string[]; officialExplanation: string }>
+  inputs: Array<{ key: string; choices: string[]; detailedExplanation: string }>
 ): Promise<{ decisions: SemanticChoiceDecision[]; path: string; sha256: string; inputHash: string }> {
   const inputHash = canonicalEvidenceHash(inputs);
   const relativePath = `semantic-choice-checks/v${SEMANTIC_CHOICE_CHECK_VERSION}-${inputHash}.json`;
@@ -1370,6 +1371,12 @@ async function semanticChoiceCheckpoint(
   const sha256 = await sha256File(path);
   if (sha256 !== canonicalEvidenceHash(checkpoint)) throw new Error(`semantic choice hash가 다릅니다: ${path}`);
   return { decisions, path: relativePath, sha256, inputHash };
+}
+
+function semanticExplanationWithoutMarkers(value: string): string {
+  return value
+    .replace(/[①-⑩]/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/((?:정답|답)\s*(?:은|:|：)?\s*)\d{1,2}\s*번/gu, "$1[CHOICE MARKER HIDDEN]");
 }
 
 async function repairClassifiedQuestion(
@@ -1610,7 +1617,11 @@ export async function repairAndAuditOfficialAnswers(
       if (resolution.mode !== "choice-marker") return [];
       const solution = byNumber.get(numericPrintedLocator(item.question.number)!)!;
       if (!solution.explanation.trim()) throw new Error(`${key} 공식 해설 본문이 비어 있습니다`);
-      return [{ key, choices: item.question.choices!, officialExplanation: solution.explanation }];
+      return [{
+        key,
+        choices: item.question.choices!,
+        detailedExplanation: semanticExplanationWithoutMarkers(solution.explanation),
+      }];
     });
     finalSemantic = markerInputs.length === 0 ? null : await semanticChoiceCheckpoint(
       entry,

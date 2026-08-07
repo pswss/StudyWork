@@ -167,7 +167,7 @@ describe("exam corpus targeted problem repair", () => {
         : question.number === "12" ? "②" : question.number!,
       explanation: question.number === "11"
         ? "근은 0, \\pi, \\frac{\\pi}{6}이므로 합은 \\frac{7\\pi}{6}이다."
-        : question.number === "12" ? "계산 결과는 2이다." : `${question.number}번 공식 해설`,
+        : question.number === "12" ? "계산 결과는 2이다. [정답] ②" : `${question.number}번 공식 해설`,
       page: 1,
       complete: true,
     }));
@@ -258,6 +258,8 @@ describe("exam corpus targeted problem repair", () => {
         calls.semantic++;
         expect(request.prompt).not.toContain("problemAnswer");
         expect(request.prompt).not.toContain("officialAnswer");
+        expect(request.prompt).not.toContain("[정답] ②");
+        expect(request.prompt).toContain("[CHOICE MARKER HIDDEN]");
         return {
           text: JSON.stringify([{
             key: "4:12",
