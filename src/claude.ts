@@ -1188,6 +1188,15 @@ export const TARGETED_PROBLEM_TRANSCRIPTION_RULES =
   `inequality endpoints, signs, coefficients, exponents, radicals, fractions, pi factors, and every answer choice. ` +
   `Do not preserve, infer from, or repair toward any prior transcription or supplied answer.`;
 
+export const TARGETED_SOLUTION_TRANSCRIPTION_VERSION = 1;
+export const TARGETED_SOLUTION_TRANSCRIPTION_RULES =
+  `TARGETED SOLUTION CORRECTION: Emit only the requested printed solution and no siblings. Inspect its entire ` +
+  `bounded attached context, including later pages where that solution continues. Re-read the official raw answer ` +
+  `and every character of the complete explanation from source pixels: signs, coefficients, exponents, roots, ` +
+  `fractions, formulas, tables, diagrams, and final steps. Preserve any source-required table or diagram as a ` +
+  `faithful textual [도형/표 설명] inside explanation. Locate the visible start page yourself; never assume a prior ` +
+  `page is correct. Never summarize, solve independently, or preserve a prior transcription.`;
+
 export function problemExtractionSelfContainedRule(enabled: boolean): string {
   if (!enabled) return "";
   return (
@@ -1404,6 +1413,8 @@ export async function extractSolutionsFromFile(
     signal?: AbortSignal;
     contentPageCount?: number;
     ownedStartPageRange?: SolutionStartPageRange;
+    target?: { page?: number; printedNumber: string };
+    reasoningEffort?: ReasoningEffort;
   }
 ): Promise<SolutionItem[]> {
   const pagesInFile = kind === "pdf" ? await pdfPageCount(absPath) : 1;
@@ -1415,13 +1426,24 @@ export async function extractSolutionsFromFile(
   const firstPage = opts?.sliceBase ?? 1;
   const lastPage = firstPage + contentPageCount - 1;
   const ownedStartPageRange = opts?.ownedStartPageRange;
+  const target = opts?.target;
+  const targetNumber = target ? numericPrintedLocator(target.printedNumber) : null;
   if (ownedStartPageRange && (
     !Number.isInteger(ownedStartPageRange.from) || !Number.isInteger(ownedStartPageRange.to) ||
     ownedStartPageRange.from < firstPage || ownedStartPageRange.to > lastPage ||
     ownedStartPageRange.to < ownedStartPageRange.from
   )) throw new AIProviderError("invalid_file", "해설 시작 페이지 소유 범위가 유효하지 않습니다");
+  if (target && (
+    targetNumber === null || target.page !== undefined && (
+      !Number.isInteger(target.page) || target.page < firstPage || target.page > lastPage
+    )
+  )) throw new AIProviderError("invalid_file", "해설 재전사 대상 페이지 또는 인쇄 번호가 유효하지 않습니다");
   const readInstruction = kind === "pdf"
-    ? `Read the first ${contentPageCount} attached page image(s) as original document pages ${firstPage}-${lastPage}.`
+    ? target
+      ? `Read the attached bounded solution context for original document pages ${firstPage}-${lastPage}, locate ` +
+        `printed solution ${targetNumber}${target.page === undefined ? "" : ` starting on page ${target.page}`}, ` +
+        `and follow only that solution through its final step.`
+      : `Read the first ${contentPageCount} attached page image(s) as original document pages ${firstPage}-${lastPage}.`
     : "Read the attached image.";
   const prompt =
     `${readInstruction}\n\n${PERSONAL_USE_NOTE}` +
@@ -1434,7 +1456,9 @@ export async function extractSolutionsFromFile(
     `- number: output only the visible printed problem number as ASCII digits, e.g. "17". Normalize Q17, [17], and 17번 문제 to "17". Never emit an unlabeled continuation or an item whose label is not visible.\n` +
     `- answer: the official final answer. Never solve or invent an answer.\n` +
     `- explanation: copy the complete official reasoning in Korean with formulas in LaTeX. Never summarize or invent steps. Use "" only when a labeled entry inside the detailed solution section genuinely prints an answer without any reasoning.\n` +
-    (ownedStartPageRange
+    (target
+      ? `- ${TARGETED_SOLUTION_TRANSCRIPTION_RULES}\n`
+      : ownedStartPageRange
       ? `- OWNED START PAGES: Emit only solutions whose printed label and start page is from ${ownedStartPageRange.from} through ${ownedStartPageRange.to}. Treat every other attached page solely as continuation lookahead for those owned solutions; never emit a solution that starts on a lookahead page.\n`
       : `- Emit an item only when its printed problem label and start are visible in the attached pages; ignore continuation fragments that began before ${firstPage}.\n`) +
     `- complete: true only when the full worked solution is visible through its final step and answer. Use false if it continues beyond page ${lastPage}.\n` +
@@ -1450,6 +1474,7 @@ export async function extractSolutionsFromFile(
     maxTurns: 16,
     signal: opts?.signal,
     lane: "bulk",
+    reasoningEffort: opts?.reasoningEffort,
   });
   let items: SolutionItem[];
   try {
@@ -1463,6 +1488,14 @@ export async function extractSolutionsFromFile(
         `해설 ${index + 1}: ${firstPage}-${lastPage} 범위를 벗어났습니다`
       );
     }
+  }
+  if (target && (
+    items.length !== 1 || numericPrintedLocator(items[0].number) !== targetNumber ||
+    target.page !== undefined && items[0].page !== target.page
+  )) {
+    throw new ProblemChunkValidationError(
+      `해설 재전사는 범위 ${firstPage}-${lastPage}쪽의 ${targetNumber}번을 정확히 한 번 반환해야 합니다`
+    );
   }
   return items;
 }

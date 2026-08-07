@@ -13,6 +13,9 @@ import {
   CLASSIFICATION_REPAIR_VERSION,
   CURRICULUM_RULES,
   SEMANTIC_CHOICE_CHECK_VERSION,
+  SOLUTION_FIDELITY_PROMPT_DIGEST,
+  SOLUTION_FIDELITY_RULES,
+  SOLUTION_FIDELITY_VERSION,
   TRANSCRIPTION_GATE_RULES,
   TRANSCRIPTION_GATE_VERSION,
   TRANSCRIPTION_PROMPT_DIGEST,
@@ -53,9 +56,14 @@ describe("exam corpus importer", () => {
     expect(CLASSIFIER_VERSION).toBe(4);
     expect(PROBLEM_REPAIR_VERSION).toBe(2);
     expect(CLASSIFICATION_REPAIR_VERSION).toBe(3);
-    expect(SEMANTIC_CHOICE_CHECK_VERSION).toBe(2);
+    expect(SEMANTIC_CHOICE_CHECK_VERSION).toBe(3);
     expect(TRANSCRIPTION_GATE_VERSION).toBe(1);
     expect(TRANSCRIPTION_PROMPT_DIGEST).toMatch(/^[a-f0-9]{64}$/u);
+    expect(SOLUTION_FIDELITY_VERSION).toBe(1);
+    expect(SOLUTION_FIDELITY_PROMPT_DIGEST).toMatch(/^[a-f0-9]{64}$/u);
+    expect(SOLUTION_FIDELITY_RULES).toContain("answerStatus is exact only when an explicit final answer is visible");
+    expect(SOLUTION_FIDELITY_RULES).toContain("explanationStatus is exact only when the full reasoning is faithful");
+    expect(SOLUTION_FIDELITY_RULES).toContain("missing source-required table/diagram description");
     expect(TRANSCRIPTION_GATE_RULES).toContain("complete shared passage");
     expect(TRANSCRIPTION_GATE_RULES).toContain("every answer choice and distractor");
     expect(TRANSCRIPTION_GATE_RULES).toContain("Base the curriculum decision on the source pixels");

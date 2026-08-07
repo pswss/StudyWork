@@ -115,6 +115,38 @@ describe("StudyWork Codex facade", () => {
     expect(request.prompt).toContain("Emit only the requested printed problem and no siblings");
   });
 
+  it("기존 쪽을 신뢰하지 않고 bounded context에서 지정 해설 번호만 high로 재전사함", async () => {
+    const document = await PDFDocument.create();
+    for (let page = 0; page < 6; page++) document.addPage([100, 100]);
+    const solution = join(dir, "Q27-solution-context.pdf");
+    writeFileSync(solution, await document.save());
+    providerMock.complete.mockResolvedValueOnce({
+      text: JSON.stringify([{
+        number: "27",
+        answer: "9",
+        explanation: "$m=3^2q^3$이므로 최솟값은 9이다.",
+        page: 5,
+        complete: true,
+      }]),
+      provider: "codex-cli",
+      model: "gpt-5.6-sol",
+    });
+
+    await expect(extractSolutionsFromFile(solution, "pdf", {
+      sliceBase: 1,
+      contentPageCount: 6,
+      target: { printedNumber: "27" },
+      reasoningEffort: "high",
+    })).resolves.toEqual([expect.objectContaining({ number: "27", page: 5, complete: true })]);
+
+    const request = providerMock.complete.mock.calls[0][0];
+    expect(request.reasoningEffort).toBe("high");
+    expect(request.prompt).toContain("bounded solution context for original document pages 1-6");
+    expect(request.prompt).toContain("printed solution 27");
+    expect(request.prompt).toContain("Locate the visible start page yourself");
+    expect(request.prompt).toContain("[도형/표 설명]");
+  });
+
   it("해설 lookahead 시작 항목은 버리고 다음 owned slice에서 한 번만 보존", async () => {
     const document = await PDFDocument.create();
     for (let page = 0; page < 6; page++) document.addPage([100, 100]);

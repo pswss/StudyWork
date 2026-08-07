@@ -20,6 +20,8 @@ import {
   CLASSIFIER_DIGEST,
   CLASSIFIER_VERSION,
   PROBLEM_REPAIR_VERSION,
+  SOLUTION_FIDELITY_VERSION,
+  SOLUTION_FIDELITY_PROMPT_DIGEST,
   TRANSCRIPTION_GATE_VERSION,
   TRANSCRIPTION_PROMPT_DIGEST,
   assertNoCommittedReceiptForFilteredResult,
@@ -224,7 +226,7 @@ describe("exam corpus targeted problem repair", () => {
     });
 
     let crashClassification = true;
-    const calls = { target: 0, classification: 0, semantic: 0 };
+    const calls = { target: 0, classification: 0, solutionFidelity: 0, semantic: 0 };
     providerMock.complete.mockImplementation(async (request: {
       schema?: { name?: string };
       prompt: string;
@@ -287,6 +289,24 @@ describe("exam corpus targeted problem repair", () => {
           model: "gpt-5.6-sol",
         };
       }
+      if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
+        calls.solutionFidelity++;
+        const inputs = JSON.parse(request.prompt.split("Accepted solutions:\n")[1]) as Array<{
+          key: string;
+          source_page: number;
+        }>;
+        return {
+          text: JSON.stringify(inputs.map((input) => ({
+            key: input.key,
+            sourcePage: input.source_page,
+            answerStatus: input.key === "4:12" ? "not_visible" : "exact",
+            explanationStatus: "exact",
+            evidence: `원본 ${input.source_page}쪽 공식 정답과 전체 해설이 일치한다.`,
+          }))),
+          provider: "codex-cli",
+          model: "gpt-5.6-sol",
+        };
+      }
       if (request.schema?.name === "studywork_exam_corpus_semantic_choice_check") {
         calls.semantic++;
         expect(request.prompt).not.toContain("problemAnswer");
@@ -315,13 +335,13 @@ describe("exam corpus targeted problem repair", () => {
       classified,
       solutions
     )).rejects.toThrow("simulated classification interruption");
-    expect(calls).toEqual({ target: 1, classification: 1, semantic: 0 });
+    expect(calls).toEqual({ target: 1, classification: 1, solutionFidelity: 0, semantic: 0 });
     expect(readdirSync(join(root, "problem-repairs"))).toHaveLength(1);
     expect(() => readdirSync(join(root, "classification-repairs"))).toThrow();
 
     crashClassification = false;
     const repaired = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
-    expect(calls).toEqual({ target: 1, classification: 2, semantic: 1 });
+    expect(calls).toEqual({ target: 1, classification: 2, solutionFidelity: 1, semantic: 1 });
     expect(repaired.repairs).toHaveLength(1);
     expect(PROBLEM_REPAIR_VERSION).toBe(2);
     expect(repaired.repairs[0]).toMatchObject({
@@ -337,7 +357,7 @@ describe("exam corpus targeted problem repair", () => {
       .toMatchObject({ contextFrom: 1, contextTo: 4, sourcePage: 4, printedNumber: "11" });
     expect(JSON.parse(readFileSync(join(root, repaired.repairs[0].classificationArtifact.path), "utf8")))
       .toMatchObject({ contextFrom: 1, contextTo: 4, key: "4:11" });
-    expect(repaired.auditPath).toMatch(/^answer-audit\/v1-[a-f0-9]{64}\.json$/u);
+    expect(repaired.auditPath).toMatch(/^answer-audit\/v2-[a-f0-9]{64}\.json$/u);
     expect(repaired.auditHash).toMatch(/^[a-f0-9]{64}$/u);
     const changedKeys = repaired.classified.flatMap((item, index) =>
       canonicalEvidenceHash(item) === canonicalEvidenceHash(classified[index]) ? [] : [item.classification.key]
@@ -353,11 +373,11 @@ describe("exam corpus targeted problem repair", () => {
       classification: { decision: "accept", canonical_subject: "math_B" },
     });
     expect(repaired.classified[10].question.question).toContain("0\\le x\\le\\pi");
-    const imported = matchOfficialSolutions(entry, repaired.classified, solutions);
+    const imported = matchOfficialSolutions(entry, repaired.classified, repaired.solutions);
     expect(imported.find((item) => item.printedNumber === "11")?.officialAnswer)
       .toBe("① $\\frac{7}{6}\\pi$");
     expect(imported).toHaveLength(2);
-    expect(readdirSync(join(root, "semantic-choice-checks"))[0]).toMatch(/^v2-/u);
+    expect(readdirSync(join(root, "semantic-choice-checks"))[0]).toMatch(/^v3-/u);
 
     expect(() => assertNoCommittedReceiptForFilteredResult(root)).not.toThrow();
     const receipt = { version: 2, status: "committed", entryId: entry.id };
@@ -369,13 +389,17 @@ describe("exam corpus targeted problem repair", () => {
       receipt,
       repaired
     );
-    expect(attestation.path).toMatch(/^answer-attestation\/v1-[a-f0-9]{64}\.json$/u);
+    expect(attestation.path).toMatch(/^answer-attestation\/v2-[a-f0-9]{64}\.json$/u);
     expect(attestation.sha256).toMatch(/^[a-f0-9]{64}$/u);
     const auditCheckpoint = JSON.parse(readFileSync(join(root, repaired.auditPath!), "utf8"));
     expect(auditCheckpoint).toMatchObject({
       classifierVersion: 4,
       transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
       transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      solutionFidelityVersion: SOLUTION_FIDELITY_VERSION,
+      solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      effectiveSolutionCorpusHash: repaired.effectiveSolutionCorpusHash,
+      derivedAnswerKeys: ["4:12"],
     });
     const attestationCheckpoint = JSON.parse(readFileSync(join(root, attestation.path), "utf8"));
     expect(attestationCheckpoint).toMatchObject({
@@ -387,7 +411,9 @@ describe("exam corpus targeted problem repair", () => {
         path: repaired.auditPath,
         sha256: repaired.auditHash,
         effectiveCorpusHash: repaired.effectiveCorpusHash,
+        effectiveSolutionCorpusHash: repaired.effectiveSolutionCorpusHash,
       },
+      solutionFidelityCheckpoints: [{ path: expect.stringMatching(/^solution-fidelity\/v1-/u) }],
       repairs: [{ key: "4:11", contextFrom: 1, contextTo: 4 }],
     });
     expect(() => assertNoCommittedReceiptForFilteredResult(root)).toThrow("명시적 migration");
@@ -397,7 +423,7 @@ describe("exam corpus targeted problem repair", () => {
     rmSync(join(root, "result.json"));
 
     const replay = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
-    expect(calls).toEqual({ target: 1, classification: 2, semantic: 1 });
+    expect(calls).toEqual({ target: 1, classification: 2, solutionFidelity: 1, semantic: 1 });
     expect(replay.auditHash).toBe(repaired.auditHash);
     await expect(writeAnswerAttestation(
       root,
