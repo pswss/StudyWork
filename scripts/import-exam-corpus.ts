@@ -37,7 +37,6 @@ import {
   getCodexProvider,
   type AIJsonSchema,
 } from "../src/codex-provider";
-import { gradeAnswer } from "../src/quiz";
 import { MAX_PDF_BYTES, MAX_PDF_PAGES, safeUploadName } from "../src/upload";
 
 export const IMPORT_MODEL = "gpt-5.6-sol";
@@ -757,10 +756,6 @@ export function matchOfficialSolutions(
     const number = numericPrintedLocator(question.number)!;
     const solution = byNumber.get(number);
     if (!solution) throw new Error(`${number}번 공식 해설이 없습니다`);
-    const choices = question.choices ? JSON.stringify(question.choices) : null;
-    if (!gradeAnswer(question.qtype, question.answer, solution.answer, choices)) {
-      throw new Error(`${number}번 추출 정답과 공식 해설 정답이 다릅니다`);
-    }
     if (classification.decision !== "accept") return [];
     if (!solution.explanation.trim()) throw new Error(`${number}번 공식 해설 본문이 비어 있습니다`);
     return [{

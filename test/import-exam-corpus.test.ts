@@ -110,7 +110,7 @@ describe("exam corpus importer", () => {
           difficulty: "중",
           question: "$2^x=2$일 때 $x$는?",
           choices: ["① 1", "② 2"],
-          answer: "① 1",
+          answer: "② 2",
           explanation: "",
           page: 2,
           figure: false,
@@ -119,6 +119,7 @@ describe("exam corpus importer", () => {
         },
         classification: decision,
       }], [{ number: "1", answer: "①", explanation: "$x=1$이다.", page: 3, complete: true }]);
+      expect(imported[0].officialAnswer).toBe("①");
       expect(() => matchOfficialSolutions([{
         question: { ...imported[0], answer: "① 1" },
         classification: decision,
