@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getMockExamBlueprint, MOCK_EXAM_AREAS } from "../src/mock-exam";
+import { getMockExamBlueprint, MOCK_EXAM_AREAS, validateMockExamChunk } from "../src/mock-exam";
 
 describe("2028 수능형 모의고사 청사진", () => {
   it.each(MOCK_EXAM_AREAS)("%s 문항 번호·총점·청크가 완결됨", (area) => {
@@ -31,6 +31,22 @@ describe("2028 수능형 모의고사 청사진", () => {
       3, 3, 3, 4, 4, 4, 4, 4, 4, 4,
       4, 3, 3, 3, 3, 4, 4, 4, 4, 4,
     ]);
+  });
+
+  it("수학 단답형은 수능 답란 범위의 정수만 허용", () => {
+    const spec = getMockExamBlueprint("math").specs[21];
+    expect(() => validateMockExamChunk([{
+      number: spec.number,
+      section: spec.section,
+      passage_group: null,
+      passage: null,
+      qtype: "short",
+      difficulty: spec.difficulty,
+      question: "조건을 만족하는 값을 구하시오.",
+      choices: null,
+      answer: "1/2",
+      explanation: "계산 결과는 1/2이다.",
+    }], [spec])).toThrow("0~999 정수");
   });
 
   it("영어는 45문항 중 앞 17문항이 듣기", () => {

@@ -325,8 +325,13 @@ export function validateMockExamChunk(
       if (choices.filter((choice) => normalize(choice) === normalize(answer)).length !== 1) {
         throw new Error(`모의고사 ${spec.number}번 정답이 보기 하나와 정확히 일치하지 않습니다`);
       }
-    } else if (question.choices !== null) {
-      throw new Error(`모의고사 ${spec.number}번 단답형의 choices는 null이어야 합니다`);
+    } else {
+      if (question.choices !== null) {
+        throw new Error(`모의고사 ${spec.number}번 단답형의 choices는 null이어야 합니다`);
+      }
+      if (!/^(?:0|[1-9]\d{0,2})$/.test(answer)) {
+        throw new Error(`모의고사 ${spec.number}번 단답형 정답은 0~999 정수여야 합니다`);
+      }
     }
 
     let passage: string | null = null;

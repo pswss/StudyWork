@@ -57,7 +57,9 @@ export default function JobTray({ jobs, fetchedAt, cancellingIds, onCancel }: Pr
               <span className="job-tray-kind">{jobKindLabel(job.kind, t)}</span>
               <span className="job-tray-label">{job.label ?? ""}</span>
               {running && job.progress !== null && (
-                <span className="job-tray-progress">{formatNumber(job.progress)}%</span>
+                <span className="job-tray-progress" role="status" aria-live="polite">
+                  {formatNumber(job.progress)}%
+                </span>
               )}
               {running ? (
                 <>
@@ -78,7 +80,11 @@ export default function JobTray({ jobs, fetchedAt, cancellingIds, onCancel }: Pr
                   )}
                 </>
               ) : (
-                <span className={`job-tray-state${job.status === "error" ? " bad" : ""}`}>
+                <span
+                  className={`job-tray-state${job.status === "error" ? " bad" : ""}`}
+                  role="status"
+                  aria-live="polite"
+                >
                   {job.status === "ready" ? t("shell.jobs.done") : t("shell.jobs.failed")}
                 </span>
               )}

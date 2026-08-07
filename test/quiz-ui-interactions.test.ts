@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { figureAlt, numberedQuestionText, quizShortcutChoice } from "../web/src/pages/Quiz";
+import { figureAlt, numberedQuestionText, quizResultScore, quizShortcutChoice } from "../web/src/pages/Quiz";
 
 describe("quiz interaction polish", () => {
   it("maps answer shortcuts and keeps setup progressively disclosed", () => {
@@ -20,6 +20,19 @@ describe("quiz interaction polish", () => {
     expect(source).toContain('"problems.mock.generate"');
     expect(source).toContain("ordered: true");
     expect(source).toContain('className="quiz-passage"');
+    expect(source).toContain("points: item.exam_points");
+    expect(source).toContain("quizResultScore(resultScores)");
+  });
+
+  it("모의고사는 문항 수가 아니라 배점으로 결과를 계산", () => {
+    expect(quizResultScore([
+      { correct: true, points: 4 },
+      { correct: false, points: 2 },
+    ])).toEqual({ weighted: true, score: 4, total: 6, pct: 67 });
+    expect(quizResultScore([
+      { correct: true, points: null },
+      { correct: false, points: null },
+    ])).toEqual({ weighted: false, score: 1, total: 2, pct: 50 });
   });
 
   it("uses extracted figure descriptions with a legacy fallback", () => {

@@ -28,6 +28,7 @@ describe("상세 화면 주소와 디자인 계약", () => {
     // 백그라운드 AI 작업(문제 생성·해설 생성·시험 계획)의 중단은 작업 트레이 한 곳으로 모았다
     expect(tray).toContain("중단");
     expect(tray).toContain("onCancel(job.id!)");
+    expect(tray).toContain('role="status"');
     expect(detail).toContain("cancelTrayJob");
     expect(detail).toContain("분석 중단");
   });

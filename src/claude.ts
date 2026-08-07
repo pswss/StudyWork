@@ -1715,6 +1715,9 @@ function mockExamRules(area: MockExamArea, subjectName: string): string {
     : area === "second-language"
       ? `Use ${JSON.stringify(subjectName)} as the target language or Hanja subject. Write directions and explanations in Korean.`
       : "Write passages, stems, choices, answers, and explanations in Korean.";
+  const curriculumRule = area === "math"
+    ? "- Use only the 2022 revised Algebra, Calculus I, and Probability and Statistics curricula. Every short-answer result must be a canonical base-10 integer from 0 to 999, with no sign, unit, fraction, or expression.\n"
+    : "";
   return (
     `Rules:\n` +
     `- Follow every exact_specs field exactly: number, section, passage_group, qtype, and difficulty. Do not output points.\n` +
@@ -1726,6 +1729,7 @@ function mockExamRules(area: MockExamArea, subjectName: string): string {
     `- Difficulty must come from reasoning depth, not obscure wording or tedious arithmetic. Make items within each section meaningfully different.\n` +
     `- Use only concepts supported by the source excerpts. Create fresh questions; do not copy a source exercise.\n` +
     `- Never require an unavailable image. Encode necessary visuals as Markdown tables, LaTeX, or fenced ASCII. Never output HTML, SVG, or Markdown images.\n` +
+    curriculumRule +
     `- ${languageRule}\n` +
     `- Output only the strict JSON array requested by the schema.`
   );

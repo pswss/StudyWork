@@ -39,6 +39,18 @@ interface PlayScore {
   correct: boolean;
   question: string;
   answer: string;
+  points: number | null;
+}
+
+export function quizResultScore(scores: readonly { correct: boolean; points: number | null }[]) {
+  const weighted = scores.length > 0 && scores.every(score => score.points != null);
+  const score = weighted
+    ? scores.reduce((sum, item) => sum + (item.correct ? item.points! : 0), 0)
+    : scores.filter(item => item.correct).length;
+  const total = weighted
+    ? scores.reduce((sum, item) => sum + item.points!, 0)
+    : scores.length;
+  return { weighted, score, total, pct: total > 0 ? Math.round((score / total) * 100) : 0 };
 }
 
 interface PlayState {
@@ -893,6 +905,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
             correct: res.correct,
             question: numberedQuestionText(item),
             answer: res.answer,
+            points: item.exam_points,
           }],
         };
       });
@@ -1187,14 +1200,17 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
 
   // ── 렌더: 결과 뷰 ─────────────────────────────────────────────────────────────
   if (view === "result") {
-    const correctCount = resultScores.filter(s => s.correct).length;
-    const pct = resultScores.length > 0 ? Math.round((correctCount / resultScores.length) * 100) : 0;
+    const { weighted, score, total: totalScore, pct } = quizResultScore(resultScores);
     const wrong = resultScores.filter(s => !s.correct);
     return (
       <div className="quiz-result" ref={resultRef} tabIndex={-1}>
         <div className="result-score">
-          <span className="result-num">{formatNumber(correctCount)}</span>
-          <span className="result-total">/ {formatNumber(resultScores.length)}</span>
+          <span className="result-num">
+            {weighted ? t("problems.mock.points", { points: formatNumber(score) }) : formatNumber(score)}
+          </span>
+          <span className="result-total">
+            / {weighted ? t("problems.mock.points", { points: formatNumber(totalScore) }) : formatNumber(totalScore)}
+          </span>
           <span className="result-pct">{formatNumber(pct)}%</span>
         </div>
         {wrong.length > 0 && (
@@ -1580,6 +1596,11 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                     >
                       {expanded.has(q.id) && (
                         <>
+                        {q.passage && (
+                          <section className="quiz-passage" aria-label={t("problems.mock.passage")}>
+                            <Md text={q.passage} />
+                          </section>
+                        )}
                         <Md className="quiz-row-full-q" text={numberedQuestionText(q)} />
                         {q.choices && (
                           <ol className="quiz-row-choices">
