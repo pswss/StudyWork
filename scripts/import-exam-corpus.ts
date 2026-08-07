@@ -136,13 +136,17 @@ const EXPECTED_QUESTION_COUNT: Record<SourceSubject, number> = {
   통합사회: 20,
   통합과학: 20,
 };
-const CLASSIFIER_VERSION = 2;
+export const CLASSIFIER_VERSION = 3;
 const CHECKPOINT_VERSION = 2;
 
-const CURRICULUM_RULES = `
+export const CURRICULUM_RULES = `
 Classify each question from the complete attached passage, stem, choices, tables, and figures. Never classify from the filename or exam label alone.
 
-Return decision accept, reject, or review. Ambiguous, mixed-scope, insufficient-evidence, or cross-target questions are review, never accept. An accept needs confidence >= 0.90, one canonical_subject, a curriculum_course, a domain, at least one achievement code, and reason codes. Emit achievement codes as exact bare codes shown below, without brackets, spaces, abbreviations, or invented ranges. Non-accept decisions use canonical_subject null. Keep every input key exactly once.
+Return decision accept, reject, or review. Scope is determined by every concept necessary to solve the question, not by the number of domains or achievement codes. If every necessary concept belongs to one canonical subject, accept under that canonical subject even when multiple domains or codes are required; combine the domain names in one descriptive string and return every applicable allowed achievement code. This is not mixed scope. For example, logarithms plus a finite sequence sum accepts as math_B.
+
+If solving necessarily depends on even one excluded or out-of-target concept, reject the whole question, even when another necessary component is in scope. If necessary concepts span two canonical subjects, reject because no single target contains the whole question. Examples that reject include coordinate geometry plus a sequence or logarithm; rational functions plus a sequence; binomial theorem or combinatorial counting plus math_A or math_B; and finite-set or bijection reasoning plus logarithms.
+
+Use review only for genuine ambiguity, missing or unclear visual/passage context, or uncertainty about whether an excluded concept is actually necessary. Do not use review merely because multiple domains or codes are required, and do not use it when a required excluded dependency is clear. An accept needs confidence >= 0.90, one canonical_subject, a curriculum_course, a domain, at least one achievement code, and reason codes. Emit achievement codes as exact bare codes shown below, without brackets, spaces, abbreviations, or invented ranges. Non-accept decisions use canonical_subject null. Keep every input key exactly once.
 
 MATH_A aliases 2015 수학Ⅱ and 2022 미적분Ⅰ. Accept 함수의 극한과 연속 [12미적Ⅰ-01-01..04] or legacy [12수학Ⅱ01-01..04], 미분 [12미적Ⅰ-02-01..10] or legacy [12수학Ⅱ02-01..11], 적분 [12미적Ⅰ-03-01..06] or legacy [12수학Ⅱ03-01..06]. Reject 2015 선택 미적분/2022 미적분Ⅱ-only content: 수열의 극한·급수, 지수·로그·삼각함수 미분, 합성·매개·음함수 미분, 치환·부분적분. 미적분Ⅰ differentiation/integration stays polynomial scope; motion applications stay straight-line.
 

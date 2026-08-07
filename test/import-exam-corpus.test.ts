@@ -8,6 +8,8 @@ import { PDFDocument } from "pdf-lib";
 import { LocalDB } from "../src/localdb";
 import { problemExtractionSelfContainedRule } from "../src/claude";
 import {
+  CLASSIFIER_VERSION,
+  CURRICULUM_RULES,
   TARGET_SUBJECTS,
   PROBLEM_SLICE_PAGES,
   PROBLEM_SLICE_STRIDE,
@@ -29,6 +31,23 @@ import {
 } from "../scripts/import-exam-corpus";
 
 describe("exam corpus importer", () => {
+  it("defines the q20 same-target and q29 excluded-dependency boundary", () => {
+    expect(CLASSIFIER_VERSION).toBe(3);
+    expect(CURRICULUM_RULES).toContain(
+      "If every necessary concept belongs to one canonical subject, accept under that canonical subject even when multiple domains or codes are required"
+    );
+    expect(CURRICULUM_RULES).toContain("logarithms plus a finite sequence sum accepts as math_B");
+    expect(CURRICULUM_RULES).toContain(
+      "If solving necessarily depends on even one excluded or out-of-target concept, reject the whole question"
+    );
+    expect(CURRICULUM_RULES).toContain("coordinate geometry plus a sequence or logarithm");
+    expect(CURRICULUM_RULES).toContain(
+      "Use review only for genuine ambiguity, missing or unclear visual/passage context"
+    );
+    expect(createHash("sha256").update(CURRICULUM_RULES).digest("hex").slice(0, 16))
+      .not.toBe("9dd042bc21faba5e");
+  });
+
   it("commits once, resumes without duplicates, and preserves same-title books", async () => {
     const root = mkdtempSync(join(tmpdir(), "studywork-corpus-test-"));
     const dbPath = join(root, "studywork.db");
