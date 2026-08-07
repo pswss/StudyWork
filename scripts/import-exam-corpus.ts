@@ -39,6 +39,9 @@ import {
   slicePdf,
   TARGETED_PROBLEM_TRANSCRIPTION_RULES,
   TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+  TARGETED_PROBLEM_REVISION_RULES,
+  TARGETED_PROBLEM_REVISION_VERSION,
+  TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX,
   TARGETED_SOLUTION_TRANSCRIPTION_RULES,
   TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
   validatePrintedQuestionSequence,
@@ -60,6 +63,8 @@ export const SOLUTION_SLICE_PAGES = 6;
 export const SOLUTION_SLICE_STRIDE = 4;
 export const PROBLEM_REPAIR_VERSION = 2;
 export const CLASSIFICATION_REPAIR_VERSION = 3;
+export const PROBLEM_REVISION_VERSION = 1;
+export const CLASSIFICATION_REVISION_VERSION = 1;
 export const SOLUTION_FIDELITY_VERSION = 1;
 export const SOLUTION_FIDELITY_SLICE_PAGES = 22;
 export const SOLUTION_FIDELITY_SLICE_STRIDE = 18;
@@ -410,6 +415,27 @@ export type ProblemRepairEvidence = {
   effectiveClassificationHash: string;
   baseSolutionItemHash: string;
   officialRawAnswerHash: string;
+  revision?: ProblemRevisionEvidence;
+};
+
+export type ProblemRevisionEvidence = {
+  baseProblemRepairArtifact: { path: string; sha256: string };
+  baseClassificationRepairArtifact: { path: string; sha256: string };
+  problemArtifact: { path: string; sha256: string };
+  classificationArtifact: {
+    path: string;
+    sha256: string;
+    rulesDigest: string;
+    transcriptionGateVersion: number;
+    transcriptionPromptDigest: string;
+    revisionPromptVersion: number;
+    revisionPromptDigest: string;
+  };
+  diagnosticEvidenceHash: string;
+  baseQuestionHash: string;
+  effectiveQuestionHash: string;
+  baseClassificationHash: string;
+  effectiveClassificationHash: string;
 };
 
 type EvidencePointer = { path: string; sha256: string };
@@ -722,6 +748,11 @@ export function canonicalEvidenceHash(value: unknown): string {
 const TARGETED_PROBLEM_PROMPT_DIGEST = sha256Text(
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`
 );
+export const TARGETED_PROBLEM_REVISION_PROMPT_DIGEST = sha256Text(
+  `${TARGETED_PROBLEM_REVISION_VERSION}\n${TARGETED_PROBLEM_REVISION_RULES}\n` +
+  `${TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX}\n` +
+  `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`
+);
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(
   `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`
 );
@@ -1007,7 +1038,8 @@ async function classifyQuestions(
   path: string,
   from: number,
   to: number,
-  questions: QuizItemEx[]
+  questions: QuizItemEx[],
+  opts?: { revisionEvidence?: string }
 ): Promise<ClassificationDecision[]> {
   if (questions.length === 0) return [];
   const input = questions.map((question) => ({
@@ -1024,11 +1056,16 @@ async function classifyQuestions(
   const allowedCodes = ALLOWED_CANONICAL[entry.subject]
     .flatMap((canonical) => [...ACHIEVEMENT_CODES[canonical]])
     .sort();
+  const revisionEvidence = opts?.revisionEvidence;
+  if (revisionEvidence !== undefined) exactString(revisionEvidence, "problem revision evidence", 2000);
+  const revisionRule = revisionEvidence === undefined ? "" :
+    `\n\n${TARGETED_PROBLEM_REVISION_RULES}\n` +
+    `${TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX} ${JSON.stringify(revisionEvidence)}`;
   const prompt =
     `Attached official problem PDF slice contains original pages ${from}-${to}. ` +
     `Exam source subject is ${entry.subject}; source school grade is ${entry.grade ?? "unknown"}. ` +
     `Inspect complete source passages and visual evidence, then classify every supplied question.\n\n` +
-    `${TRANSCRIPTION_GATE_RULES}\n\n${CURRICULUM_RULES}\n\n` +
+    `${TRANSCRIPTION_GATE_RULES}${revisionRule}\n\n${CURRICULUM_RULES}\n\n` +
     `Allowed exact achievement codes for this source: ${allowedCodes.join(", ")}\n\n` +
     `Questions:\n${JSON.stringify(input)}`;
   const result = await getCodexProvider({ model: IMPORT_MODEL, reasoningEffort: IMPORT_REASONING_EFFORT }).complete({
@@ -2412,6 +2449,230 @@ async function repairClassifiedQuestion(
   );
 }
 
+async function reviseClassifiedQuestion(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  stateDir: string,
+  current: ClassifiedQuestion,
+  repair: ProblemRepairEvidence
+): Promise<{ classified: ClassifiedQuestion; evidence: ProblemRevisionEvidence }> {
+  const key = questionKey(current.question);
+  const printedNumber = String(numericPrintedLocator(current.question.number));
+  const sourcePage = current.question.page!;
+  if (
+    key !== repair.key || printedNumber !== repair.printedNumber || sourcePage !== repair.sourcePage ||
+    current.classification.transcription_status === "exact" || repair.revision ||
+    canonicalEvidenceHash(current.question) !== repair.effectiveQuestionHash ||
+    canonicalEvidenceHash(current.classification) !== repair.effectiveClassificationHash
+  ) throw new Error(`${key} problem revision 입력이 첫 repair evidence와 다릅니다`);
+
+  const baseProblemRepairArtifact = repair.problemArtifact;
+  const baseClassificationRepairArtifact = {
+    path: repair.classificationArtifact.path,
+    sha256: repair.classificationArtifact.sha256,
+  };
+  for (const [label, pointer] of [
+    ["problem repair", baseProblemRepairArtifact],
+    ["classification repair", baseClassificationRepairArtifact],
+  ] as const) {
+    const path = confinedStateFile(stateDir, pointer.path, label);
+    if (await sha256File(path) !== pointer.sha256) throw new Error(`${key} ${label} hash가 다릅니다`);
+  }
+  const diagnosticEvidence = current.classification.transcription_evidence;
+  const diagnosticEvidenceHash = sha256Text(diagnosticEvidence);
+  const baseQuestionHash = canonicalEvidenceHash(current.question);
+  const baseClassificationHash = canonicalEvidenceHash(current.classification);
+  const revisionBasisHash = canonicalEvidenceHash({
+    baseProblemRepairArtifact,
+    baseClassificationRepairArtifact,
+    diagnosticEvidenceHash,
+    revisionPromptDigest: TARGETED_PROBLEM_REVISION_PROMPT_DIGEST,
+  });
+  const problemRelativePath =
+    `problem-revisions/v${PROBLEM_REVISION_VERSION}-${String(sourcePage).padStart(4, "0")}-` +
+    `${printedNumber.padStart(4, "0")}-${revisionBasisHash}.json`;
+  const problemPath = join(stateDir, problemRelativePath);
+
+  return withImporterPdfForAnalysis(problem, async (analysisProblem) =>
+    withProblemContextSlice(
+      analysisProblem.path,
+      repair.contextFrom,
+      repair.contextTo,
+      async (contextPath) => {
+        let revised: QuizItemEx;
+        let problemCheckpoint: Record<string, unknown>;
+        if (existsSync(problemPath)) {
+          problemCheckpoint = object(JSON.parse(readFileSync(problemPath, "utf8")), problemRelativePath);
+          if (
+            problemCheckpoint.version !== PROBLEM_REVISION_VERSION || problemCheckpoint.entryId !== entry.id ||
+            problemCheckpoint.key !== key || problemCheckpoint.sourcePage !== sourcePage ||
+            problemCheckpoint.printedNumber !== printedNumber || problemCheckpoint.sourceHash !== problem.sha256 ||
+            problemCheckpoint.contextFrom !== repair.contextFrom || problemCheckpoint.contextTo !== repair.contextTo ||
+            canonicalEvidenceHash(problemCheckpoint.baseProblemRepairArtifact) !==
+              canonicalEvidenceHash(baseProblemRepairArtifact) ||
+            canonicalEvidenceHash(problemCheckpoint.baseClassificationRepairArtifact) !==
+              canonicalEvidenceHash(baseClassificationRepairArtifact) ||
+            problemCheckpoint.baseQuestionHash !== baseQuestionHash ||
+            problemCheckpoint.baseClassificationHash !== baseClassificationHash ||
+            problemCheckpoint.diagnosticEvidence !== diagnosticEvidence ||
+            problemCheckpoint.diagnosticEvidenceHash !== diagnosticEvidenceHash ||
+            problemCheckpoint.promptVersion !== TARGETED_PROBLEM_REVISION_VERSION ||
+            problemCheckpoint.promptDigest !== TARGETED_PROBLEM_REVISION_PROMPT_DIGEST ||
+            problemCheckpoint.model !== IMPORT_MODEL ||
+            problemCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+          ) throw new Error(`기존 problem revision 체크포인트 메타데이터가 다릅니다: ${problemPath}`);
+          revised = restoredQuizItems([problemCheckpoint.item])[0];
+        } else {
+          revised = (await extractProblemsFromFile(contextPath, "pdf", {
+            sliceBase: repair.contextFrom,
+            contentPageCount: repair.contextTo - repair.contextFrom + 1,
+            selfContained: true,
+            target: { page: sourcePage, printedNumber },
+            revisionEvidence: diagnosticEvidence,
+            reasoningEffort: IMPORT_REASONING_EFFORT,
+          }))[0];
+          problemCheckpoint = {
+            version: PROBLEM_REVISION_VERSION,
+            entryId: entry.id,
+            key,
+            sourcePage,
+            printedNumber,
+            contextFrom: repair.contextFrom,
+            contextTo: repair.contextTo,
+            sourceHash: problem.sha256,
+            baseProblemRepairArtifact,
+            baseClassificationRepairArtifact,
+            baseQuestionHash,
+            baseClassificationHash,
+            diagnosticEvidence,
+            diagnosticEvidenceHash,
+            promptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+            promptDigest: TARGETED_PROBLEM_REVISION_PROMPT_DIGEST,
+            model: IMPORT_MODEL,
+            reasoningEffort: IMPORT_REASONING_EFFORT,
+            item: revised,
+          };
+          await writeImmutableEvidence(problemPath, problemCheckpoint);
+        }
+        if (
+          questionKey(revised) !== key || revised.page !== sourcePage ||
+          numericPrintedLocator(revised.number) !== Number(printedNumber)
+        ) throw new Error(`${key} problem revision이 원본 페이지·번호를 보존하지 않았습니다`);
+        const effectiveQuestionHash = canonicalEvidenceHash(revised);
+        const problemArtifactHash = await sha256File(problemPath);
+        if (problemArtifactHash !== canonicalEvidenceHash(problemCheckpoint)) {
+          throw new Error(`${key} problem revision artifact hash가 다릅니다`);
+        }
+
+        const classificationRelativePath =
+          `classification-revisions/v${CLASSIFICATION_REVISION_VERSION}-` +
+          `${String(sourcePage).padStart(4, "0")}-${printedNumber.padStart(4, "0")}-` +
+          `${problemArtifactHash}-${CLASSIFIER_DIGEST}.json`;
+        const classificationPath = join(stateDir, classificationRelativePath);
+        let classification: ClassificationDecision;
+        let classificationCheckpoint: Record<string, unknown>;
+        if (existsSync(classificationPath)) {
+          classificationCheckpoint = object(
+            JSON.parse(readFileSync(classificationPath, "utf8")),
+            classificationRelativePath
+          );
+          if (
+            classificationCheckpoint.version !== CLASSIFICATION_REVISION_VERSION ||
+            classificationCheckpoint.entryId !== entry.id || classificationCheckpoint.key !== key ||
+            classificationCheckpoint.sourceHash !== problem.sha256 ||
+            classificationCheckpoint.contextFrom !== repair.contextFrom ||
+            classificationCheckpoint.contextTo !== repair.contextTo ||
+            canonicalEvidenceHash(classificationCheckpoint.problemArtifact) !== canonicalEvidenceHash({
+              path: problemRelativePath,
+              sha256: problemArtifactHash,
+            }) ||
+            canonicalEvidenceHash(classificationCheckpoint.baseProblemRepairArtifact) !==
+              canonicalEvidenceHash(baseProblemRepairArtifact) ||
+            canonicalEvidenceHash(classificationCheckpoint.baseClassificationRepairArtifact) !==
+              canonicalEvidenceHash(baseClassificationRepairArtifact) ||
+            classificationCheckpoint.baseQuestionHash !== baseQuestionHash ||
+            classificationCheckpoint.baseClassificationHash !== baseClassificationHash ||
+            classificationCheckpoint.diagnosticEvidenceHash !== diagnosticEvidenceHash ||
+            classificationCheckpoint.effectiveQuestionHash !== effectiveQuestionHash ||
+            classificationCheckpoint.classifierVersion !== CLASSIFIER_VERSION ||
+            classificationCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+            classificationCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+            classificationCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+            classificationCheckpoint.revisionPromptVersion !== TARGETED_PROBLEM_REVISION_VERSION ||
+            classificationCheckpoint.revisionPromptDigest !== TARGETED_PROBLEM_REVISION_PROMPT_DIGEST ||
+            classificationCheckpoint.model !== IMPORT_MODEL ||
+            classificationCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+          ) throw new Error(`기존 classification revision 체크포인트 메타데이터가 다릅니다: ${classificationPath}`);
+          classification = parseDecisions([classificationCheckpoint.item], [revised], entry)[0];
+        } else {
+          classification = (await classifyQuestions(
+            entry,
+            contextPath,
+            repair.contextFrom,
+            repair.contextTo,
+            [revised],
+            { revisionEvidence: diagnosticEvidence }
+          ))[0];
+          classificationCheckpoint = {
+            version: CLASSIFICATION_REVISION_VERSION,
+            entryId: entry.id,
+            key,
+            sourceHash: problem.sha256,
+            contextFrom: repair.contextFrom,
+            contextTo: repair.contextTo,
+            problemArtifact: { path: problemRelativePath, sha256: problemArtifactHash },
+            baseProblemRepairArtifact,
+            baseClassificationRepairArtifact,
+            baseQuestionHash,
+            baseClassificationHash,
+            diagnosticEvidenceHash,
+            effectiveQuestionHash,
+            classifierVersion: CLASSIFIER_VERSION,
+            rulesDigest: CLASSIFIER_DIGEST,
+            transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+            transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+            revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+            revisionPromptDigest: TARGETED_PROBLEM_REVISION_PROMPT_DIGEST,
+            model: IMPORT_MODEL,
+            reasoningEffort: IMPORT_REASONING_EFFORT,
+            item: classification,
+          };
+          await writeImmutableEvidence(classificationPath, classificationCheckpoint);
+        }
+        const classificationArtifactHash = await sha256File(classificationPath);
+        if (classificationArtifactHash !== canonicalEvidenceHash(classificationCheckpoint)) {
+          throw new Error(`${key} classification revision artifact hash가 다릅니다`);
+        }
+        if (classification.transcription_status !== "exact") {
+          throw new Error(`${key} 두 번째 source-grounded revision도 exact가 아닙니다`);
+        }
+        return {
+          classified: { question: revised, classification },
+          evidence: {
+            baseProblemRepairArtifact,
+            baseClassificationRepairArtifact,
+            problemArtifact: { path: problemRelativePath, sha256: problemArtifactHash },
+            classificationArtifact: {
+              path: classificationRelativePath,
+              sha256: classificationArtifactHash,
+              rulesDigest: CLASSIFIER_DIGEST,
+              transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+              transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+              revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+              revisionPromptDigest: TARGETED_PROBLEM_REVISION_PROMPT_DIGEST,
+            },
+            diagnosticEvidenceHash,
+            baseQuestionHash,
+            effectiveQuestionHash,
+            baseClassificationHash,
+            effectiveClassificationHash: canonicalEvidenceHash(classification),
+          },
+        };
+      }
+    )
+  );
+}
+
 export async function repairAndAuditOfficialAnswers(
   entry: CorpusManifestEntry,
   problem: PdfEvidence,
@@ -2428,10 +2689,29 @@ export async function repairAndAuditOfficialAnswers(
   let finalSemantic: Awaited<ReturnType<typeof semanticChoiceCheckpoint>> | null = null;
   let finalSolutionAudit: Awaited<ReturnType<typeof auditAcceptedSolutions>> | null = null;
 
-  const applyRepairs = async (keys: string[]): Promise<boolean> => {
-    const pending = [...new Set(keys)].filter((key) => !repairs.has(key));
-    if (pending.length === 0) return false;
-    for (const key of pending) {
+  const applyRepairs = async (keys: string[], allowRevision = false): Promise<boolean> => {
+    let changed = false;
+    for (const key of new Set(keys)) {
+      const index = effective.findIndex((item) => questionKey(item.question) === key);
+      if (index < 0) throw new Error(`${key} effective corpus 교체 위치가 없습니다`);
+      const existing = repairs.get(key);
+      if (existing) {
+        if (
+          !allowRevision || existing.revision ||
+          effective[index].classification.transcription_status === "exact"
+        ) continue;
+        const revised = await reviseClassifiedQuestion(
+          entry,
+          problem,
+          stateDir,
+          effective[index],
+          existing
+        );
+        effective[index] = revised.classified;
+        repairs.set(key, { ...existing, revision: revised.evidence });
+        changed = true;
+        continue;
+      }
       const original = baseByKey.get(key);
       if (!original) throw new Error(`${key} repair 대상이 base corpus에 없습니다`);
       const number = numericPrintedLocator(original.question.number)!;
@@ -2445,10 +2725,9 @@ export async function repairAndAuditOfficialAnswers(
         original,
         officialSolution
       );
-      const index = effective.findIndex((item) => questionKey(item.question) === key);
-      if (index < 0) throw new Error(`${key} effective corpus 교체 위치가 없습니다`);
       effective[index] = repaired.classified;
       repairs.set(key, repaired.evidence);
+      changed = true;
     }
     const effectiveKeys = effective.map((item) => questionKey(item.question));
     if (
@@ -2456,14 +2735,14 @@ export async function repairAndAuditOfficialAnswers(
       effectiveKeys.some((key) => !baseByKey.has(key))
     ) throw new Error("문제 repair가 원본 key 집합을 바꾸었습니다");
     validateProblemNumberRange(entry, effective);
-    return true;
+    return changed;
   };
 
   for (;;) {
     officialSolutionsByNumber(entry, effective, solutions);
     const transcriptionIssues = transcriptionRepairKeys(effective);
     if (transcriptionIssues.length > 0) {
-      if (!await applyRepairs(transcriptionIssues)) {
+      if (!await applyRepairs(transcriptionIssues, true)) {
         throw new Error(
           `문제 재전사 후에도 원본 전사를 검증할 수 없습니다: ${transcriptionIssues.join(", ")}`
         );

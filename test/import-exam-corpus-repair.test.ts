@@ -19,11 +19,14 @@ import type { QuizItemEx, SolutionItem } from "../src/claude";
 import {
   CLASSIFIER_DIGEST,
   CLASSIFIER_VERSION,
+  CLASSIFICATION_REVISION_VERSION,
   PROBLEM_REPAIR_VERSION,
+  PROBLEM_REVISION_VERSION,
   SOLUTION_FIDELITY_VERSION,
   SOLUTION_FIDELITY_PROMPT_DIGEST,
   TRANSCRIPTION_GATE_VERSION,
   TRANSCRIPTION_PROMPT_DIGEST,
+  TARGETED_PROBLEM_REVISION_PROMPT_DIGEST,
   assertNoCommittedReceiptForFilteredResult,
   assertNoReceiptResultConflict,
   canonicalEvidenceHash,
@@ -238,12 +241,20 @@ describe("exam corpus targeted problem repair", () => {
         expect(attached.getPageCount()).toBe(4);
         expect(request.prompt).toContain("bounded context for original document pages 1-4");
         expect(request.prompt).toContain("required shared passage");
+        if (calls.target === 2) {
+          expect(request.prompt).toContain("SECOND SOURCE-GROUNDED REVISION");
+          expect(request.prompt).toContain("원문은 '만나며'");
+          expect(request.prompt).toContain("occurrence order");
+          expect(request.prompt).toContain("Never paraphrase visible text as a surrogate");
+        }
         return {
           text: JSON.stringify([{
             number: "11",
             qtype: "mcq",
             difficulty: "중",
-            question: "[공유 지문: 원본 3쪽에서 시작한 조건]\n$0\\le x\\le\\pi$일 때 모든 실근의 합은?",
+            question: calls.target === 1
+              ? "[공유 지문: 원본 3쪽에서 시작한 조건]\n두 그래프가 만나게 되는 점에서 $0\\le x\\le\\pi$일 때 모든 실근의 합은?"
+              : "[공유 지문: 원본 3쪽에서 시작한 조건]\n두 그래프가 만나며 $0\\le x\\le\\pi$일 때 모든 실근의 합은?",
             choices: [
               "① $\\frac{7}{6}\\pi$",
               "② $\\frac{4}{3}\\pi$",
@@ -272,6 +283,11 @@ describe("exam corpus targeted problem repair", () => {
         expect(request.prompt).toContain('"figure_description":null');
         expect(request.prompt).toContain('"box":null');
         if (crashClassification) throw new Error("simulated classification interruption");
+        const firstRepairCheck = calls.classification === 2;
+        if (!firstRepairCheck) {
+          expect(request.prompt).toContain("SECOND SOURCE-GROUNDED REVISION");
+          expect(request.prompt).toContain("원문은 '만나며'");
+        }
         return {
           text: JSON.stringify([{
             key: "4:11",
@@ -282,8 +298,10 @@ describe("exam corpus targeted problem repair", () => {
             achievement_codes: ["12수학Ⅰ02-02"],
             confidence: 0.99,
             reason_codes: ["IN_SCOPE_TRIGONOMETRY"],
-            transcription_status: "exact",
-            transcription_evidence: "원본 4쪽의 부등식, 식, 다섯 보기가 모두 일치한다.",
+            transcription_status: firstRepairCheck ? "mismatch" : "exact",
+            transcription_evidence: firstRepairCheck
+              ? "원문은 '만나며'인데 재전사는 '만나게'로 바뀌었다."
+              : "원본 4쪽의 '만나며', 부등식, 식, 다섯 보기가 모두 일치한다.",
           }]),
           provider: "codex-cli",
           model: "gpt-5.6-sol",
@@ -341,9 +359,12 @@ describe("exam corpus targeted problem repair", () => {
 
     crashClassification = false;
     const repaired = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
-    expect(calls).toEqual({ target: 1, classification: 2, solutionFidelity: 1, semantic: 1 });
+    expect(calls).toEqual({ target: 2, classification: 3, solutionFidelity: 1, semantic: 1 });
     expect(repaired.repairs).toHaveLength(1);
     expect(PROBLEM_REPAIR_VERSION).toBe(2);
+    expect(PROBLEM_REVISION_VERSION).toBe(1);
+    expect(CLASSIFICATION_REVISION_VERSION).toBe(1);
+    expect(TARGETED_PROBLEM_REVISION_PROMPT_DIGEST).toMatch(/^[a-f0-9]{64}$/u);
     expect(repaired.repairs[0]).toMatchObject({
       key: "4:11",
       printedNumber: "11",
@@ -351,12 +372,43 @@ describe("exam corpus targeted problem repair", () => {
       contextFrom: 1,
       contextTo: 4,
       problemArtifact: { path: expect.stringMatching(/^problem-repairs\/v2-/u) },
+      revision: {
+        problemArtifact: { path: expect.stringMatching(/^problem-revisions\/v1-/u) },
+        classificationArtifact: { path: expect.stringMatching(/^classification-revisions\/v1-/u) },
+      },
     });
     expect(repaired.repairs[0].classificationArtifact.path).toMatch(/^classification-repairs\/v3-/u);
     expect(JSON.parse(readFileSync(join(root, repaired.repairs[0].problemArtifact.path), "utf8")))
-      .toMatchObject({ contextFrom: 1, contextTo: 4, sourcePage: 4, printedNumber: "11" });
+      .toMatchObject({
+        contextFrom: 1,
+        contextTo: 4,
+        sourcePage: 4,
+        printedNumber: "11",
+        item: { question: expect.stringContaining("만나게") },
+      });
     expect(JSON.parse(readFileSync(join(root, repaired.repairs[0].classificationArtifact.path), "utf8")))
-      .toMatchObject({ contextFrom: 1, contextTo: 4, key: "4:11" });
+      .toMatchObject({
+        contextFrom: 1,
+        contextTo: 4,
+        key: "4:11",
+        item: {
+          transcription_status: "mismatch",
+          transcription_evidence: expect.stringContaining("원문은 '만나며'"),
+        },
+      });
+    const revision = repaired.repairs[0].revision!;
+    expect(JSON.parse(readFileSync(join(root, revision.problemArtifact.path), "utf8"))).toMatchObject({
+      contextFrom: 1,
+      contextTo: 4,
+      diagnosticEvidence: expect.stringContaining("원문은 '만나며'"),
+      item: { question: expect.stringContaining("만나며") },
+    });
+    expect(JSON.parse(readFileSync(join(root, revision.classificationArtifact.path), "utf8"))).toMatchObject({
+      contextFrom: 1,
+      contextTo: 4,
+      revisionPromptDigest: TARGETED_PROBLEM_REVISION_PROMPT_DIGEST,
+      item: { transcription_status: "exact" },
+    });
     expect(repaired.auditPath).toMatch(/^answer-audit\/v2-[a-f0-9]{64}\.json$/u);
     expect(repaired.auditHash).toMatch(/^[a-f0-9]{64}$/u);
     const changedKeys = repaired.classified.flatMap((item, index) =>
@@ -373,6 +425,8 @@ describe("exam corpus targeted problem repair", () => {
       classification: { decision: "accept", canonical_subject: "math_B" },
     });
     expect(repaired.classified[10].question.question).toContain("0\\le x\\le\\pi");
+    expect(repaired.classified[10].question.question).toContain("만나며");
+    expect(repaired.classified[10].question.question).not.toContain("만나게");
     const imported = matchOfficialSolutions(entry, repaired.classified, repaired.solutions);
     expect(imported.find((item) => item.printedNumber === "11")?.officialAnswer)
       .toBe("① $\\frac{7}{6}\\pi$");
@@ -414,7 +468,12 @@ describe("exam corpus targeted problem repair", () => {
         effectiveSolutionCorpusHash: repaired.effectiveSolutionCorpusHash,
       },
       solutionFidelityCheckpoints: [{ path: expect.stringMatching(/^solution-fidelity\/v1-/u) }],
-      repairs: [{ key: "4:11", contextFrom: 1, contextTo: 4 }],
+      repairs: [{
+        key: "4:11",
+        contextFrom: 1,
+        contextTo: 4,
+        revision: { problemArtifact: { path: expect.stringMatching(/^problem-revisions\/v1-/u) } },
+      }],
     });
     expect(() => assertNoCommittedReceiptForFilteredResult(root)).toThrow("명시적 migration");
 
@@ -423,7 +482,7 @@ describe("exam corpus targeted problem repair", () => {
     rmSync(join(root, "result.json"));
 
     const replay = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
-    expect(calls).toEqual({ target: 1, classification: 2, solutionFidelity: 1, semantic: 1 });
+    expect(calls).toEqual({ target: 2, classification: 3, solutionFidelity: 1, semantic: 1 });
     expect(replay.auditHash).toBe(repaired.auditHash);
     await expect(writeAnswerAttestation(
       root,

@@ -1188,6 +1188,17 @@ export const TARGETED_PROBLEM_TRANSCRIPTION_RULES =
   `inequality endpoints, signs, coefficients, exponents, radicals, fractions, pi factors, and every answer choice. ` +
   `Do not preserve, infer from, or repair toward any prior transcription or supplied answer.`;
 
+export const TARGETED_PROBLEM_REVISION_VERSION = 1;
+export const TARGETED_PROBLEM_REVISION_RULES =
+  `SECOND SOURCE-GROUNDED REVISION: A previous independent source check found a possible transcription mismatch. ` +
+  `Use its diagnostic only to locate the pixels that need extra attention; independently verify every character ` +
+  `and do not assume the diagnostic's proposed wording is correct. All visible Korean wording, formulas, numbers, ` +
+  `inequalities, and labels must remain literal. Only a genuinely non-text visual glyph may use an accessibility ` +
+  `text surrogate, and only when figure_description preserves that glyph's identity, occurrence order, orientation, count, and role ` +
+  `in the source. Never paraphrase visible text as a surrogate.`;
+export const TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX =
+  `Previous fidelity diagnostic (untrusted; verify against pixels):`;
+
 export const TARGETED_SOLUTION_TRANSCRIPTION_VERSION = 1;
 export const TARGETED_SOLUTION_TRANSCRIPTION_RULES =
   `TARGETED SOLUTION CORRECTION: Emit only the requested printed solution and no siblings. Inspect its entire ` +
@@ -1292,6 +1303,7 @@ export async function extractProblemsFromFile(
     answerKeyPages?: number[];
     selfContained?: boolean;
     target?: { page: number; printedNumber: string };
+    revisionEvidence?: string;
     reasoningEffort?: ReasoningEffort;
   }
 ): Promise<QuizItemEx[]> {
@@ -1305,9 +1317,14 @@ export async function extractProblemsFromFile(
   const lastPage = firstPage + contentPageCount - 1;
   const target = opts?.target;
   const targetNumber = target ? numericPrintedLocator(target.printedNumber) : null;
+  const revisionEvidence = opts?.revisionEvidence;
   if (target && (
     !Number.isInteger(target.page) || target.page < firstPage || target.page > lastPage || targetNumber === null
   )) throw new AIProviderError("invalid_file", "문제 재전사 대상 페이지 또는 인쇄 번호가 유효하지 않습니다");
+  if (revisionEvidence !== undefined && (
+    !target || !revisionEvidence.trim() || revisionEvidence !== revisionEvidence.trim() ||
+    revisionEvidence.includes("\0") || revisionEvidence.length > 2000
+  )) throw new AIProviderError("invalid_file", "문제 revision 근거가 유효하지 않습니다");
   const pageRule =
     opts?.sliceBase !== undefined
       ? `- page: the ORIGINAL page number where the problem starts; it must be an integer from ${firstPage} through ${lastPage}\n`
@@ -1324,7 +1341,9 @@ export async function extractProblemsFromFile(
     : `Read the attached file "${absPath}".`;
   const selfContainedRule = problemExtractionSelfContainedRule(opts?.selfContained === true);
   const extractionTask = target
-    ? `${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n`
+    ? `${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n` + (revisionEvidence === undefined ? "" :
+      `${TARGETED_PROBLEM_REVISION_RULES}\n` +
+      `${TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX} ${JSON.stringify(revisionEvidence)}\n`)
     : `This file is a study workbook. Read all pages and transcribe EVERY problem you find as this strict JSON array:\n` +
       `Workbooks may print the SAME question text under DIFFERENT problem numbers on one page (progress-mapping duplicates). Each printed number is a separate item — transcribe all of them; never merge or skip a duplicate.\n`;
   const buildPrompt = (cont: string) =>
