@@ -21,6 +21,9 @@ import {
   QUIZ_EXTRACT_SPEC,
   TARGETED_PROBLEM_TRANSCRIPTION_RULES,
   TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+  TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX,
+  TARGETED_PROBLEM_REVISION_RULES,
+  TARGETED_PROBLEM_REVISION_VERSION,
   TARGETED_SOLUTION_TRANSCRIPTION_RULES,
   TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
 } from "../src/claude";
@@ -248,6 +251,8 @@ export function compareCorpusQuestionKeys(left: string, right: string): number {
 const CLASSIFIER_VERSION = 4;
 const PROBLEM_REPAIR_VERSION = 2;
 const CLASSIFICATION_REPAIR_VERSION = 3;
+const PROBLEM_REVISION_VERSION = 1;
+const CLASSIFICATION_REVISION_VERSION = 1;
 const PROBLEM_SLICE_PAGES = 20;
 const SOLUTION_SLICE_PAGES = 6;
 const SOLUTION_SLICE_STRIDE = 4;
@@ -284,6 +289,11 @@ const LEGACY_SEMANTIC_CHOICE_PROMPT_DIGEST = sha256(
   `${LEGACY_SEMANTIC_CHOICE_VERSION}\n${SEMANTIC_CHOICE_RULES}`,
 );
 const TARGETED_PROBLEM_PROMPT_DIGEST = sha256(
+  `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
+);
+const TARGETED_PROBLEM_REVISION_PROMPT_DIGEST = sha256(
+  `${TARGETED_PROBLEM_REVISION_VERSION}\n${TARGETED_PROBLEM_REVISION_RULES}\n` +
+  `${TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX}\n` +
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256(
@@ -1062,6 +1072,189 @@ function semanticExplanationWithoutMarkers(value: string): string {
     .replace(/[①-⑩]/gu, "[CHOICE MARKER HIDDEN]");
 }
 
+function applyDeclaredProblemRevision(
+  value: unknown,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  rulesDigest: string,
+  base: ClassifiedEvidence,
+  currentQuestion: ProblemQuestion,
+  currentClassification: ClassificationEvidence,
+  expectedProblemRepairArtifact: EvidencePointer,
+  expectedClassificationRepairArtifact: EvidencePointer,
+): { classified: ClassifiedEvidence; evidence: Record<string, unknown> } {
+  const revision = object(value, `${base.question.key}.revision`);
+  const key = base.question.key;
+  const printedNumber = base.question.printedNumber;
+  const sourcePage = base.question.page;
+  const baseProblemRepairArtifact = evidencePointer(
+    revision.baseProblemRepairArtifact,
+    `${key}.revision.baseProblemRepairArtifact`,
+  );
+  const baseClassificationRepairArtifact = evidencePointer(
+    revision.baseClassificationRepairArtifact,
+    `${key}.revision.baseClassificationRepairArtifact`,
+  );
+  sameEvidencePointer(
+    baseProblemRepairArtifact,
+    expectedProblemRepairArtifact,
+    `${key}.revision.baseProblemRepairArtifact`,
+  );
+  sameEvidencePointer(
+    baseClassificationRepairArtifact,
+    expectedClassificationRepairArtifact,
+    `${key}.revision.baseClassificationRepairArtifact`,
+  );
+  const diagnosticEvidence = currentClassification.transcription_evidence;
+  const diagnosticEvidenceHash = sha256(diagnosticEvidence);
+  const baseQuestionHash = canonicalEvidenceHash(currentQuestion.evidence);
+  const baseClassificationHash = canonicalEvidenceHash(currentClassification);
+  if (revision.diagnosticEvidenceHash !== diagnosticEvidenceHash
+    || revision.baseQuestionHash !== baseQuestionHash
+    || revision.baseClassificationHash !== baseClassificationHash) {
+    throw new Error(`${key}: revision does not bind the first repair diagnostic and effective hashes`);
+  }
+  const revisionBasisHash = canonicalEvidenceHash({
+    baseProblemRepairArtifact,
+    baseClassificationRepairArtifact,
+    diagnosticEvidenceHash,
+    revisionPromptDigest: TARGETED_PROBLEM_REVISION_PROMPT_DIGEST,
+  });
+
+  const problemArtifact = evidencePointer(revision.problemArtifact, `${key}.revision.problemArtifact`);
+  const expectedProblemPath =
+    `problem-revisions/v${PROBLEM_REVISION_VERSION}-${String(sourcePage).padStart(4, "0")}-` +
+    `${printedNumber.padStart(4, "0")}-${revisionBasisHash}.json`;
+  if (problemArtifact.path !== expectedProblemPath) throw new Error(`${key}: problem revision path is invalid`);
+  const problemCheckpoint = readBoundEvidence(stateDir, problemArtifact, `${key} problem revision`);
+  const revised = parseProblem(problemCheckpoint.item, `${key} problem revision.item`);
+  if (revised.key !== key || revised.page !== sourcePage || revised.printedNumber !== printedNumber) {
+    throw new Error(`${key}: problem revision changed page/number identity`);
+  }
+  const effectiveQuestionHash = canonicalEvidenceHash(revised.evidence);
+  const expectedProblemCheckpoint = {
+    version: PROBLEM_REVISION_VERSION,
+    entryId: entry.id,
+    key,
+    sourcePage,
+    printedNumber,
+    contextFrom: base.contextFrom,
+    contextTo: base.contextTo,
+    sourceHash: problemEvidence.sha256,
+    baseProblemRepairArtifact,
+    baseClassificationRepairArtifact,
+    baseQuestionHash,
+    baseClassificationHash,
+    diagnosticEvidence,
+    diagnosticEvidenceHash,
+    promptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+    promptDigest: TARGETED_PROBLEM_REVISION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    item: revised.evidence,
+  };
+  if (!isDeepStrictEqual(problemCheckpoint, expectedProblemCheckpoint)) {
+    throw new Error(`${key}: problem revision metadata/content is stale or incomplete`);
+  }
+
+  const classificationArtifactRow = object(
+    revision.classificationArtifact,
+    `${key}.revision.classificationArtifact`,
+  );
+  const classificationArtifact = evidencePointer({
+    path: classificationArtifactRow.path,
+    sha256: classificationArtifactRow.sha256,
+  }, `${key}.revision.classificationArtifact`);
+  if (classificationArtifactRow.rulesDigest !== rulesDigest
+    || classificationArtifactRow.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION
+    || classificationArtifactRow.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST
+    || classificationArtifactRow.revisionPromptVersion !== TARGETED_PROBLEM_REVISION_VERSION
+    || classificationArtifactRow.revisionPromptDigest !== TARGETED_PROBLEM_REVISION_PROMPT_DIGEST) {
+    throw new Error(`${key}: classification revision metadata is stale`);
+  }
+  const expectedClassificationPath =
+    `classification-revisions/v${CLASSIFICATION_REVISION_VERSION}-${String(sourcePage).padStart(4, "0")}-` +
+    `${printedNumber.padStart(4, "0")}-${problemArtifact.sha256}-${rulesDigest}.json`;
+  if (classificationArtifact.path !== expectedClassificationPath) {
+    throw new Error(`${key}: classification revision path is invalid`);
+  }
+  const classificationCheckpoint = readBoundEvidence(
+    stateDir,
+    classificationArtifact,
+    `${key} classification revision`,
+  );
+  const revisedClassification = parseClassificationEvidence(
+    classificationCheckpoint.item,
+    revised,
+    entry,
+    `${key} classification revision.item`,
+  );
+  if (revisedClassification.transcription_status !== "exact") {
+    throw new Error(`${key}: second source-grounded revision is not exact`);
+  }
+  const effectiveClassificationHash = canonicalEvidenceHash(revisedClassification);
+  const expectedClassificationCheckpoint = {
+    version: CLASSIFICATION_REVISION_VERSION,
+    entryId: entry.id,
+    key,
+    sourceHash: problemEvidence.sha256,
+    contextFrom: base.contextFrom,
+    contextTo: base.contextTo,
+    problemArtifact,
+    baseProblemRepairArtifact,
+    baseClassificationRepairArtifact,
+    baseQuestionHash,
+    baseClassificationHash,
+    diagnosticEvidenceHash,
+    effectiveQuestionHash,
+    classifierVersion: CLASSIFIER_VERSION,
+    rulesDigest,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+    revisionPromptDigest: TARGETED_PROBLEM_REVISION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    item: revisedClassification,
+  };
+  if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)) {
+    throw new Error(`${key}: classification revision metadata/content is stale or incomplete`);
+  }
+  const expectedRevision = {
+    baseProblemRepairArtifact,
+    baseClassificationRepairArtifact,
+    problemArtifact,
+    classificationArtifact: {
+      ...classificationArtifact,
+      rulesDigest,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+      revisionPromptDigest: TARGETED_PROBLEM_REVISION_PROMPT_DIGEST,
+    },
+    diagnosticEvidenceHash,
+    baseQuestionHash,
+    effectiveQuestionHash,
+    baseClassificationHash,
+    effectiveClassificationHash,
+  };
+  if (!isDeepStrictEqual(revision, expectedRevision)) {
+    throw new Error(`${key}: revision evidence envelope does not match its exact chain`);
+  }
+  return {
+    classified: {
+      question: revised,
+      classification: revisedClassification,
+      problemCheckpoint: base.problemCheckpoint,
+      classificationCheckpoint: base.classificationCheckpoint,
+      contextFrom: base.contextFrom,
+      contextTo: base.contextTo,
+    },
+    evidence: expectedRevision,
+  };
+}
+
 function applyDeclaredRepair(
   value: unknown,
   stateDir: string,
@@ -1184,9 +1377,6 @@ function applyDeclaredRepair(
     `${key} classification repair.item`,
   );
   const effectiveClassificationHash = canonicalEvidenceHash(correctedClassification);
-  if (correctedClassification.transcription_status !== "exact") {
-    throw new Error(`${key}: repaired transcription is not exact`);
-  }
   const expectedClassificationCheckpoint = {
     version: CLASSIFICATION_REPAIR_VERSION,
     entryId: entry.id,
@@ -1232,8 +1422,7 @@ function applyDeclaredRepair(
     baseSolutionItemHash,
     officialRawAnswerHash,
   };
-  if (!isDeepStrictEqual(repair, expectedRepair)) throw new Error(`${key}: repair evidence envelope does not match artifacts`);
-  return {
+  const firstRepair = {
     question: corrected,
     classification: correctedClassification,
     problemCheckpoint: base.problemCheckpoint,
@@ -1241,6 +1430,33 @@ function applyDeclaredRepair(
     contextFrom: base.contextFrom,
     contextTo: base.contextTo,
   };
+  if (correctedClassification.transcription_status === "exact") {
+    if (repair.revision !== undefined) throw new Error(`${key}: exact first repair must not declare a revision`);
+    if (!isDeepStrictEqual(repair, expectedRepair)) {
+      throw new Error(`${key}: repair evidence envelope does not match artifacts`);
+    }
+    return firstRepair;
+  }
+  if (repair.revision === undefined) {
+    throw new Error(`${key}: non-exact first repair has no attested second revision`);
+  }
+  const revised = applyDeclaredProblemRevision(
+    repair.revision,
+    stateDir,
+    entry,
+    problemEvidence,
+    rulesDigest,
+    base,
+    corrected,
+    correctedClassification,
+    problemArtifact,
+    classificationArtifact,
+  );
+  const expectedRevisedRepair = { ...expectedRepair, revision: revised.evidence };
+  if (!isDeepStrictEqual(repair, expectedRevisedRepair)) {
+    throw new Error(`${key}: repair revision envelope does not match its exact chain`);
+  }
+  return revised.classified;
 }
 
 type SolutionFidelityInput = {

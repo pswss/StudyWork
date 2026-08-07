@@ -17,6 +17,9 @@ import {
   QUIZ_EXTRACT_SPEC,
   TARGETED_PROBLEM_TRANSCRIPTION_RULES,
   TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+  TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX,
+  TARGETED_PROBLEM_REVISION_RULES,
+  TARGETED_PROBLEM_REVISION_VERSION,
   TARGETED_SOLUTION_TRANSCRIPTION_RULES,
   TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
 } from "../src/claude";
@@ -60,6 +63,11 @@ Return transcription_status exact only when all source-required content is faith
 `.trim();
 const TRANSCRIPTION_PROMPT_DIGEST = hash(`1\n${TRANSCRIPTION_GATE_RULES}`);
 const TARGETED_PROMPT_DIGEST = hash(
+  `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
+);
+const TARGETED_REVISION_PROMPT_DIGEST = hash(
+  `${TARGETED_PROBLEM_REVISION_VERSION}\n${TARGETED_PROBLEM_REVISION_RULES}\n` +
+  `${TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX}\n` +
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
 const TARGETED_SOLUTION_PROMPT_DIGEST = hash(
@@ -690,7 +698,14 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
   return { root, dataDir, dbPath, manifestPath, stateDirs };
 }
 
-function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
+function installSyntheticRepair(
+  files: ReturnType<typeof fixture>,
+  withRevision = false,
+): {
+  classificationArtifact: string;
+  revisionProblemArtifact: string | null;
+  revisionClassificationArtifact: string | null;
+} {
   const stateDir = files.stateDirs.math;
   const entry = JSON.parse(readFileSync(join(stateDir, "entry.json"), "utf8")).entry;
   const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
@@ -711,7 +726,7 @@ function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
   baseClassification.key = "2:1";
   writeJson(join(stateDir, "downloads.json"), downloads);
   writeJson(problemPath, problemCheckpoint);
-  const correctedClassification = JSON.parse(JSON.stringify(baseClassification));
+  const finalClassification = JSON.parse(JSON.stringify(baseClassification));
   baseClassification.decision = "review";
   baseClassification.canonical_subject = null;
   baseClassification.curriculum_course = null;
@@ -721,13 +736,24 @@ function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
   baseClassification.transcription_status = "mismatch";
   baseClassification.transcription_evidence = "source pixels show a different stem";
   writeJson(classificationPath, classificationCheckpoint);
-  correctedClassification.transcription_status = "exact";
-  correctedClassification.transcription_evidence = "bounded-context reread matches the corrected complete transcription";
+  finalClassification.transcription_status = "exact";
+  finalClassification.transcription_evidence = "bounded-context reread matches the corrected complete transcription";
   const baseSolution = solutionCheckpoint.items.find((item: { number: string }) => item.number === "1");
-  const corrected = {
+  const finalQuestion = {
     ...baseQuestion,
-    question: "1쪽의 공유 지문 전체를 포함한 math corrected source transcription 1",
+    question: withRevision
+      ? "Q17의 상징 모양과 순서를 모두 보존한 second source-grounded transcription"
+      : "1쪽의 공유 지문 전체를 포함한 math corrected source transcription 1",
   };
+  const firstQuestion = withRevision ? {
+    ...baseQuestion,
+    question: "Q17의 상징을 문자로 잘못 바꾼 first targeted transcription",
+  } : finalQuestion;
+  const firstClassification = withRevision ? {
+    ...finalClassification,
+    transcription_status: "mismatch",
+    transcription_evidence: "Q17 source pixels retain a non-text glyph that the first repair paraphrased",
+  } : finalClassification;
   const baseProblemPointer = { path: "problem-chunks/v2-0000.json", sha256: hash(readFileSync(problemPath)) };
   const baseClassificationPointer = {
     path: `classification-chunks/v4-0000-${DIGEST}.json`,
@@ -753,7 +779,7 @@ function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
     promptDigest: TARGETED_PROMPT_DIGEST,
     model: "gpt-5.6-sol",
     reasoningEffort: "high",
-    item: corrected,
+    item: firstQuestion,
   };
   const problemArtifactPointer = {
     path: problemArtifactPath,
@@ -770,14 +796,14 @@ function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
     problemArtifact: problemArtifactPointer,
     baseClassificationCheckpoint: baseClassificationPointer,
     baseClassificationHash: canonicalEvidenceHash(baseClassification),
-    effectiveQuestionHash: canonicalEvidenceHash(corrected),
+    effectiveQuestionHash: canonicalEvidenceHash(firstQuestion),
     classifierVersion: 4,
     rulesDigest: DIGEST,
     transcriptionGateVersion: 1,
     transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
     model: "gpt-5.6-sol",
     reasoningEffort: "high",
-    item: correctedClassification,
+    item: firstClassification,
   };
   const classificationArtifactPointer = {
     path: classificationArtifactPath,
@@ -786,6 +812,101 @@ function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
     transcriptionGateVersion: 1,
     transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
   };
+  const baseClassificationRepairPointer = {
+    path: classificationArtifactPointer.path,
+    sha256: classificationArtifactPointer.sha256,
+  };
+  let revision: Record<string, unknown> | null = null;
+  let revisionProblemArtifact: string | null = null;
+  let revisionClassificationArtifact: string | null = null;
+  if (withRevision) {
+    const diagnosticEvidence = firstClassification.transcription_evidence;
+    const diagnosticEvidenceHash = hash(diagnosticEvidence);
+    const firstQuestionHash = canonicalEvidenceHash(firstQuestion);
+    const firstClassificationHash = canonicalEvidenceHash(firstClassification);
+    const revisionBasisHash = canonicalEvidenceHash({
+      baseProblemRepairArtifact: problemArtifactPointer,
+      baseClassificationRepairArtifact: baseClassificationRepairPointer,
+      diagnosticEvidenceHash,
+      revisionPromptDigest: TARGETED_REVISION_PROMPT_DIGEST,
+    });
+    const revisionProblemPath = `problem-revisions/v1-0002-0001-${revisionBasisHash}.json`;
+    const revisionProblem = {
+      version: 1,
+      entryId: entry.id,
+      key: "2:1",
+      sourcePage: 2,
+      printedNumber: "1",
+      contextFrom: 1,
+      contextTo: 2,
+      sourceHash: downloads.problem.sha256,
+      baseProblemRepairArtifact: problemArtifactPointer,
+      baseClassificationRepairArtifact: baseClassificationRepairPointer,
+      baseQuestionHash: firstQuestionHash,
+      baseClassificationHash: firstClassificationHash,
+      diagnosticEvidence,
+      diagnosticEvidenceHash,
+      promptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+      promptDigest: TARGETED_REVISION_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      item: finalQuestion,
+    };
+    const revisionProblemPointer = {
+      path: revisionProblemPath,
+      sha256: writeEvidence(join(stateDir, revisionProblemPath), revisionProblem),
+    };
+    const revisionClassificationPath =
+      `classification-revisions/v1-0002-0001-${revisionProblemPointer.sha256}-${DIGEST}.json`;
+    const revisionClassification = {
+      version: 1,
+      entryId: entry.id,
+      key: "2:1",
+      sourceHash: downloads.problem.sha256,
+      contextFrom: 1,
+      contextTo: 2,
+      problemArtifact: revisionProblemPointer,
+      baseProblemRepairArtifact: problemArtifactPointer,
+      baseClassificationRepairArtifact: baseClassificationRepairPointer,
+      baseQuestionHash: firstQuestionHash,
+      baseClassificationHash: firstClassificationHash,
+      diagnosticEvidenceHash,
+      effectiveQuestionHash: canonicalEvidenceHash(finalQuestion),
+      classifierVersion: 4,
+      rulesDigest: DIGEST,
+      transcriptionGateVersion: 1,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+      revisionPromptDigest: TARGETED_REVISION_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      item: finalClassification,
+    };
+    const revisionClassificationPointer = {
+      path: revisionClassificationPath,
+      sha256: writeEvidence(join(stateDir, revisionClassificationPath), revisionClassification),
+    };
+    revision = {
+      baseProblemRepairArtifact: problemArtifactPointer,
+      baseClassificationRepairArtifact: baseClassificationRepairPointer,
+      problemArtifact: revisionProblemPointer,
+      classificationArtifact: {
+        ...revisionClassificationPointer,
+        rulesDigest: DIGEST,
+        transcriptionGateVersion: 1,
+        transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+        revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+        revisionPromptDigest: TARGETED_REVISION_PROMPT_DIGEST,
+      },
+      diagnosticEvidenceHash,
+      baseQuestionHash: firstQuestionHash,
+      effectiveQuestionHash: canonicalEvidenceHash(finalQuestion),
+      baseClassificationHash: firstClassificationHash,
+      effectiveClassificationHash: canonicalEvidenceHash(finalClassification),
+    };
+    revisionProblemArtifact = join(stateDir, revisionProblemPath);
+    revisionClassificationArtifact = join(stateDir, revisionClassificationPath);
+  }
   const repair = {
     key: "2:1",
     printedNumber: "1",
@@ -798,15 +919,16 @@ function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
     problemArtifact: problemArtifactPointer,
     classificationArtifact: classificationArtifactPointer,
     baseQuestionHash: canonicalEvidenceHash(baseQuestion),
-    effectiveQuestionHash: canonicalEvidenceHash(corrected),
+    effectiveQuestionHash: canonicalEvidenceHash(firstQuestion),
     baseClassificationHash: canonicalEvidenceHash(baseClassification),
-    effectiveClassificationHash: canonicalEvidenceHash(correctedClassification),
+    effectiveClassificationHash: canonicalEvidenceHash(firstClassification),
     baseSolutionItemHash: canonicalEvidenceHash(baseSolution),
     officialRawAnswerHash: hash(baseSolution.answer),
+    ...(revision ? { revision } : {}),
   };
   const effectiveQuestions = problemCheckpoint.items.map((question: Record<string, unknown>, index: number) => ({
-    question: index === 0 ? corrected : question,
-    classification: index === 0 ? correctedClassification : classificationCheckpoint.items[index],
+    question: index === 0 ? finalQuestion : question,
+    classification: index === 0 ? finalClassification : classificationCheckpoint.items[index],
   })).sort((left: { question: Record<string, unknown> }, right: { question: Record<string, unknown> }) =>
     Number(left.question.page) - Number(right.question.page)
     || Number(left.question.number) - Number(right.question.number));
@@ -974,13 +1096,17 @@ function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
 
   const db = new Database(files.dbPath);
   db.prepare("UPDATE questions SET question = ?, src_page = 2 WHERE question = 'math question 1'")
-    .run(corrected.question);
+    .run(finalQuestion.question);
   db.prepare("UPDATE book_items SET content = ?, page = 2 WHERE category = '문제' AND content = 'math question 1'")
-    .run(corrected.question);
+    .run(finalQuestion.question);
   db.prepare("UPDATE book_files SET page_count = 2 WHERE r2_key LIKE 'corpus/%/problem.pdf' AND book_id IN (SELECT id FROM books WHERE title LIKE '%수학 미적분')")
     .run();
   db.close();
-  return join(stateDir, classificationArtifactPath);
+  return {
+    classificationArtifact: join(stateDir, classificationArtifactPath),
+    revisionProblemArtifact,
+    revisionClassificationArtifact,
+  };
 }
 
 function installQ27SolutionRepair(files: ReturnType<typeof fixture>): {
@@ -1416,6 +1542,39 @@ function rewriteBaselineFidelityAuthority(
   });
 }
 
+function rewriteProblemRepairAuthority(
+  files: ReturnType<typeof fixture>,
+  mutateRepair: (repair: Record<string, any>) => void,
+): void {
+  const stateDir = files.stateDirs.math;
+  const attestationDir = join(stateDir, "answer-attestation");
+  const attestationName = readdirSync(attestationDir).find((name) => /^v2-/u.test(name))!;
+  const attestation = JSON.parse(readFileSync(join(attestationDir, attestationName), "utf8"));
+  const audit = JSON.parse(readFileSync(join(stateDir, attestation.answerAudit.path), "utf8"));
+  mutateRepair(audit.repairs[0]);
+  const { version: _auditVersion, auditDigest: _oldAuditDigest, ...auditBasis } = audit;
+  const auditDigest = canonicalEvidenceHash(auditBasis);
+  const auditPath = `answer-audit/v2-${auditDigest}.json`;
+  for (const name of readdirSync(join(stateDir, "answer-audit"))) rmSync(join(stateDir, "answer-audit", name));
+  const auditHash = writeEvidence(join(stateDir, auditPath), { version: 2, auditDigest, ...auditBasis });
+
+  const { version: _attestationVersion, attestationDigest: _oldAttestationDigest, ...attestationBasis } = attestation;
+  attestationBasis.answerAudit = {
+    path: auditPath,
+    sha256: auditHash,
+    effectiveCorpusHash: audit.effectiveCorpusHash,
+    effectiveSolutionCorpusHash: audit.effectiveSolutionCorpusHash,
+  };
+  attestationBasis.repairs = audit.repairs;
+  const attestationDigest = canonicalEvidenceHash(attestationBasis);
+  for (const name of readdirSync(attestationDir)) rmSync(join(attestationDir, name));
+  writeEvidence(join(attestationDir, `v2-${attestationDigest}.json`), {
+    version: 2,
+    attestationDigest,
+    ...attestationBasis,
+  });
+}
+
 describe("exam corpus verifier", () => {
   it("uses localeCompare order for multi-digit page question keys", () => {
     const keys = ["10:25", "2:6", "1:1"];
@@ -1463,7 +1622,7 @@ describe("exam corpus verifier", () => {
 
   it("overlays one declared immutable repair and rejects artifact tampering", () => {
     const files = fixture();
-    const classificationArtifact = installSyntheticRepair(files);
+    const { classificationArtifact } = installSyntheticRepair(files);
     const repaired = verifyExamCorpus(files);
     expect(repaired, JSON.stringify(repaired.failures)).toMatchObject({ ok: true });
 
@@ -1473,6 +1632,64 @@ describe("exam corpus verifier", () => {
     const report = verifyExamCorpus(files);
     expect(report.ok).toBe(false);
     expect(report.failures.some((failure) => failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+  });
+
+  it("reconstructs one Q17 problem revision and rejects orphan, stale, tampered, or repeated chains", () => {
+    const files = fixture();
+    installSyntheticRepair(files, true);
+    const revised = verifyExamCorpus(files);
+    expect(revised, JSON.stringify(revised.failures)).toMatchObject({ ok: true });
+    const db = new Database(files.dbPath, { readonly: true, fileMustExist: true });
+    const row = db.prepare("SELECT question FROM questions WHERE printed_number = '1' AND question LIKE 'Q17%'")
+      .get() as { question: string };
+    db.close();
+    expect(row.question).toContain("second source-grounded transcription");
+
+    const priorTamperFiles = fixture();
+    const priorArtifacts = installSyntheticRepair(priorTamperFiles, true);
+    const prior = JSON.parse(readFileSync(priorArtifacts.classificationArtifact, "utf8"));
+    prior.item.transcription_evidence = "tampered prior mismatch";
+    writeJson(priorArtifacts.classificationArtifact, prior);
+    expect(verifyExamCorpus(priorTamperFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const revisionTamperFiles = fixture();
+    const revisionArtifacts = installSyntheticRepair(revisionTamperFiles, true);
+    const revision = JSON.parse(readFileSync(revisionArtifacts.revisionProblemArtifact!, "utf8"));
+    revision.item.question = "tampered second revision";
+    writeJson(revisionArtifacts.revisionProblemArtifact!, revision);
+    expect(verifyExamCorpus(revisionTamperFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const orphanFiles = fixture();
+    installSyntheticRepair(orphanFiles, true);
+    rewriteProblemRepairAuthority(orphanFiles, (repair) => delete repair.revision);
+    expect(verifyExamCorpus(orphanFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("no attested second revision"))).toBe(true);
+
+    const staleFiles = fixture();
+    installSyntheticRepair(staleFiles, true);
+    rewriteProblemRepairAuthority(staleFiles, (repair) => {
+      repair.revision.classificationArtifact.revisionPromptDigest = "0".repeat(64);
+    });
+    expect(verifyExamCorpus(staleFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("stale"))).toBe(true);
+
+    const repeatedFiles = fixture();
+    installSyntheticRepair(repeatedFiles, true);
+    rewriteProblemRepairAuthority(repeatedFiles, (repair) => {
+      repair.revision.revision = { unexpected: "second revision" };
+    });
+    expect(verifyExamCorpus(repeatedFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("exact chain"))).toBe(true);
+
+    const exactFirstFiles = fixture();
+    installSyntheticRepair(exactFirstFiles);
+    rewriteProblemRepairAuthority(exactFirstFiles, (repair) => {
+      repair.revision = { forbidden: true };
+    });
+    expect(verifyExamCorpus(exactFirstFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("must not declare"))).toBe(true);
   });
 
   it("overlays the Q27 3-squared solution repair into DB evidence and rejects tampering", () => {
