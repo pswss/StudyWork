@@ -1180,6 +1180,13 @@ export const QUIZ_EXTRACT_SPEC =
   `- box: when figure is true, [top,bottom] — the vertical span of the problem INCLUDING its figure as fractions of page height (e.g. [0.3,0.6]), be a bit generous; null otherwise\n` +
   `- Output ONLY the JSON array. Nothing else.`;
 
+export const TARGETED_PROBLEM_TRANSCRIPTION_VERSION = 1;
+export const TARGETED_PROBLEM_TRANSCRIPTION_RULES =
+  `TARGETED CORRECTION: Inspect only the requested original page and printed problem number. ` +
+  `Emit exactly that one complete problem and no siblings. Re-read every character from the source pixels: ` +
+  `inequality endpoints, signs, coefficients, exponents, radicals, fractions, pi factors, and every answer choice. ` +
+  `Do not preserve, infer from, or repair toward any prior transcription or supplied answer.`;
+
 export function problemExtractionSelfContainedRule(enabled: boolean): string {
   if (!enabled) return "";
   return (
@@ -1274,6 +1281,8 @@ export async function extractProblemsFromFile(
     contentPageCount?: number;
     answerKeyPages?: number[];
     selfContained?: boolean;
+    target?: { page: number; printedNumber: string };
+    reasoningEffort?: ReasoningEffort;
   }
 ): Promise<QuizItemEx[]> {
   const pagesInFile = kind === "pdf" ? await pdfPageCount(absPath) : 1;
@@ -1284,6 +1293,11 @@ export async function extractProblemsFromFile(
   }
   const firstPage = opts?.sliceBase ?? 1;
   const lastPage = firstPage + contentPageCount - 1;
+  const target = opts?.target;
+  const targetNumber = target ? numericPrintedLocator(target.printedNumber) : null;
+  if (target && (
+    !Number.isInteger(target.page) || target.page < firstPage || target.page > lastPage || targetNumber === null
+  )) throw new AIProviderError("invalid_file", "문제 재전사 대상 페이지 또는 인쇄 번호가 유효하지 않습니다");
   const pageRule =
     opts?.sliceBase !== undefined
       ? `- page: the ORIGINAL page number where the problem starts; it must be an integer from ${firstPage} through ${lastPage}\n`
@@ -1292,13 +1306,18 @@ export async function extractProblemsFromFile(
     ? ` The final ${opts.answerKeyPages.length} attached page image(s) show possible official answer-table pages from original PDF pages ${opts.answerKeyPages.join(", ")}. Use them only as answer references; never emit their rows as problems.`
     : "";
   const readInstruction = kind === "pdf"
-    ? `Read the first ${contentPageCount} attached page image(s) as original document pages ${firstPage}-${lastPage}; cover that content range without gaps.${answerKeyNote}`
+    ? target
+      ? `Read original document page ${target.page} in the attached PDF and locate printed problem ${targetNumber}.`
+      : `Read the first ${contentPageCount} attached page image(s) as original document pages ${firstPage}-${lastPage}; cover that content range without gaps.${answerKeyNote}`
     : `Read the attached file "${absPath}".`;
   const selfContainedRule = problemExtractionSelfContainedRule(opts?.selfContained === true);
+  const extractionTask = target
+    ? `${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n`
+    : `This file is a study workbook. Read all pages and transcribe EVERY problem you find as this strict JSON array:\n` +
+      `Workbooks may print the SAME question text under DIFFERENT problem numbers on one page (progress-mapping duplicates). Each printed number is a separate item — transcribe all of them; never merge or skip a duplicate.\n`;
   const buildPrompt = (cont: string) =>
     `${readInstruction}\n\n${PERSONAL_USE_NOTE}` +
-    `This file is a study workbook. Read all pages and transcribe EVERY problem you find as this strict JSON array:\n` +
-    `Workbooks may print the SAME question text under DIFFERENT problem numbers on one page (progress-mapping duplicates). Each printed number is a separate item — transcribe all of them; never merge or skip a duplicate.\n` +
+    extractionTask +
     QUIZ_EXTRACT_SPEC + `\n` + pageRule + selfContainedRule + cont;
 
   const all: QuizItemEx[] = [];
@@ -1319,6 +1338,7 @@ export async function extractProblemsFromFile(
       maxTurns: 16,
       signal: opts?.signal,
       lane: "bulk",
+      reasoningEffort: opts?.reasoningEffort,
     });
     const truncated = looksTruncated(result);
     let parsedItems: QuizItemEx[];
@@ -1362,6 +1382,13 @@ export async function extractProblemsFromFile(
     validatePrintedQuestionSequence(all);
   } catch (error) {
     throw new ProblemChunkValidationError(error instanceof Error ? error.message : "인쇄 문제 번호 검증 실패");
+  }
+  if (target && (
+    all.length !== 1 || numericPrintedLocator(all[0].number) !== targetNumber || all[0].page !== target.page
+  )) {
+    throw new ProblemChunkValidationError(
+      `문제 재전사는 원본 ${target.page}쪽 ${targetNumber}번을 정확히 한 번 반환해야 합니다`
+    );
   }
   return all;
 }

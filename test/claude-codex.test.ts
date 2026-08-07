@@ -16,6 +16,7 @@ vi.mock("../src/codex-provider", async (importOriginal) => {
 
 import {
   chat,
+  extractProblemsFromFile,
   extractQuestionsFromFile,
   extractSolutionsFromFile,
   generateFigureDescriptionsForQuestions,
@@ -58,6 +59,56 @@ afterEach(() => {
 });
 
 describe("StudyWork Codex facade", () => {
+  it("원본 페이지의 지정 문제만 high로 재전사하며 부등호와 선택지를 그대로 요구", async () => {
+    const document = await PDFDocument.create();
+    for (let page = 0; page < 4; page++) document.addPage([100, 100]);
+    const problem = join(dir, "Q11-target.pdf");
+    writeFileSync(problem, await document.save());
+    providerMock.complete.mockResolvedValueOnce({
+      text: JSON.stringify([{
+        number: "11",
+        qtype: "mcq",
+        difficulty: "중",
+        question: "$0\\le x\\le\\pi$일 때 모든 실근의 합은?",
+        choices: [
+          "① $\\frac{7}{6}\\pi$",
+          "② $\\frac{4}{3}\\pi$",
+          "③ $\\frac{3}{2}\\pi$",
+          "④ $\\frac{5}{3}\\pi$",
+          "⑤ $\\frac{11}{6}\\pi$",
+        ],
+        choiceCount: 5,
+        answer: "① $\\frac{7}{6}\\pi$",
+        explanation: "",
+        page: 4,
+        figure: false,
+        figure_description: null,
+        box: null,
+      }]),
+      provider: "codex-cli",
+      model: "gpt-5.6-sol",
+    });
+
+    await expect(extractProblemsFromFile(problem, "pdf", {
+      target: { page: 4, printedNumber: "11" },
+      selfContained: true,
+      reasoningEffort: "high",
+    })).resolves.toEqual([
+      expect.objectContaining({
+        number: "11",
+        page: 4,
+        question: expect.stringContaining("0\\le x\\le\\pi"),
+        choices: expect.arrayContaining(["① $\\frac{7}{6}\\pi$"]),
+      }),
+    ]);
+    const request = providerMock.complete.mock.calls[0][0];
+    expect(request.reasoningEffort).toBe("high");
+    expect(request.prompt).toContain("original document page 4");
+    expect(request.prompt).toContain("printed problem 11");
+    expect(request.prompt).toContain("inequality endpoints");
+    expect(request.prompt).toContain("Emit exactly that one complete problem and no siblings");
+  });
+
   it("해설 lookahead 시작 항목은 버리고 다음 owned slice에서 한 번만 보존", async () => {
     const document = await PDFDocument.create();
     for (let page = 0; page < 6; page++) document.addPage([100, 100]);

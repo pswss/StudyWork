@@ -15,6 +15,7 @@ import {
   PROBLEM_SLICE_PAGES,
   PROBLEM_SLICE_STRIDE,
   assertImportSchema,
+  canonicalEvidenceHash,
   commitCorpusEntry,
   ensureCanonicalSubjects,
   examBookTitle,
@@ -34,6 +35,11 @@ import {
 } from "../scripts/import-exam-corpus";
 
 describe("exam corpus importer", () => {
+  it("uses one stable canonical evidence hash vector", () => {
+    expect(canonicalEvidenceHash({ b: 1, a: ["x", null] }))
+      .toBe("2dccb31ca7d4b9dc00ebe9e1b2fca5314ca2563469fbf6ba1c69752939768835");
+  });
+
   it("defines the q20 same-target and q29 excluded-dependency boundary", () => {
     expect(CLASSIFIER_VERSION).toBe(3);
     expect(CURRICULUM_RULES).toContain(
@@ -80,6 +86,22 @@ describe("exam corpus importer", () => {
     expect(officialAnswerForStorage(question(["① 2", "② 7"]), "2")).toBe("① 2");
     expect(officialAnswerForStorage(question(["① 6", "② 9", "③ 12", "④ 15", "⑤ 18"]), "⑤"))
       .toBe("⑤");
+
+    const officialQ11 = "\\(\\frac{7\\pi}{6}\\)";
+    expect(() => officialAnswerForStorage(question([
+      "① $\\frac{1}{6}\\pi$",
+      "② $\\frac{1}{3}\\pi$",
+      "③ $\\frac{1}{2}\\pi$",
+      "④ $\\frac{2}{3}\\pi$",
+      "⑤ $\\frac{5}{6}\\pi$",
+    ]), officialQ11)).toThrow("보기에 대응할 수 없습니다");
+    expect(officialAnswerForStorage(question([
+      "① $\\frac{7}{6}\\pi$",
+      "② $\\frac{4}{3}\\pi$",
+      "③ $\\frac{3}{2}\\pi$",
+      "④ $\\frac{5}{3}\\pi$",
+      "⑤ $\\frac{11}{6}\\pi$",
+    ]), officialQ11)).toBe("① $\\frac{7}{6}\\pi$");
   });
 
   it("commits once, resumes without duplicates, and preserves same-title books", async () => {

@@ -11,6 +11,7 @@ import {
   mkdtempSync,
   mkdirSync,
   openSync,
+  readdirSync,
   readFileSync,
   readSync,
   renameSync,
@@ -32,7 +33,10 @@ import {
   parseQuizItemsEx,
   parseSolutionItems,
   pdfPageCount,
+  QUIZ_EXTRACT_SPEC,
   slicePdf,
+  TARGETED_PROBLEM_TRANSCRIPTION_RULES,
+  TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
   validatePrintedQuestionSequence,
   type QuizItemEx,
   type SolutionItem,
@@ -48,6 +52,10 @@ export const IMPORT_REASONING_EFFORT = "high" as const;
 export const IMPORT_CONCURRENCY = 10;
 export const PROBLEM_SLICE_PAGES = 20;
 export const PROBLEM_SLICE_STRIDE = 18;
+export const PROBLEM_REPAIR_VERSION = 1;
+export const CLASSIFICATION_REPAIR_VERSION = 1;
+export const SEMANTIC_CHOICE_CHECK_VERSION = 1;
+export const ANSWER_AUDIT_VERSION = 1;
 
 const execFileP = promisify(execFile);
 
@@ -162,7 +170,7 @@ INTEGRATED_SCIENCE accepts only source school grade 1 or 2 and one of: 통합과
 INTEGRATED_SOCIAL accepts only source school grade 1 or 2 and one of: 통합사회1 통합적 관점 [10통사1-01-01..02], 인간·사회·환경과 행복 [10통사1-02-01..02], 자연환경과 인간 [10통사1-03-01..03], 문화와 다양성 [10통사1-04-01..04], 생활공간과 사회 [10통사1-05-01..03]; 통합사회2 인권보장과 헌법 [10통사2-01-01..03], 사회정의와 불평등 [10통사2-02-01..03], 시장경제와 지속가능발전 [10통사2-03-01..04], 세계화와 평화 [10통사2-04-01..03], 미래와 지속가능한 삶 [10통사2-05-01..03]. Reject elective-depth-only geography/history/sociology/politics/law/economics. Detailed macro/micro models, elasticity calculations, advanced legal doctrine/procedure, named-region factual recall, sociology research methods, or philosopher-specific doctrine not supplied in the stimulus reject or review.
 `.trim();
 
-const CLASSIFIER_DIGEST = createHash("sha256").update(CURRICULUM_RULES).digest("hex").slice(0, 16);
+export const CLASSIFIER_DIGEST = createHash("sha256").update(CURRICULUM_RULES).digest("hex").slice(0, 16);
 
 const CLASSIFICATION_SCHEMA: AIJsonSchema = {
   name: "studywork_exam_corpus_classification",
@@ -206,6 +214,39 @@ const CLASSIFICATION_SCHEMA: AIJsonSchema = {
             "confidence",
             "reason_codes",
           ],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["items"],
+    additionalProperties: false,
+  },
+};
+
+const SEMANTIC_CHOICE_RULES =
+  `For each item, use only its official detailed explanation and answer-choice contents to identify the one ` +
+  `choice semantically supported by the reasoning. The official answer marker and the problem extractor's answer ` +
+  `are intentionally hidden and must not be guessed. Return ambiguous when the explanation does not establish ` +
+  `exactly one choice. choiceIndex is 1-based and evidence must briefly cite the decisive value or conclusion.`;
+
+const SEMANTIC_CHOICE_SCHEMA: AIJsonSchema = {
+  name: "studywork_exam_corpus_semantic_choice_check",
+  description: "Semantic choice indexes grounded only in official detailed explanations.",
+  outputKey: "items",
+  schema: {
+    type: "object",
+    properties: {
+      items: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            key: { type: "string" },
+            status: { type: "string", enum: ["resolved", "ambiguous"] },
+            choiceIndex: { type: ["integer", "null"], minimum: 1, maximum: 10 },
+            evidence: { type: "string" },
+          },
+          required: ["key", "status", "choiceIndex", "evidence"],
           additionalProperties: false,
         },
       },
@@ -270,6 +311,37 @@ export type ImportedQuestion = QuizItemEx & {
 type ClassifiedQuestion = {
   question: QuizItemEx;
   classification: ClassificationDecision;
+};
+
+export type ProblemRepairEvidence = {
+  key: string;
+  printedNumber: string;
+  sourcePage: number;
+  baseProblemCheckpoint: { path: string; sha256: string };
+  baseClassificationCheckpoint: { path: string; sha256: string };
+  baseSolutionCheckpoint: { path: string; sha256: string };
+  problemArtifact: { path: string; sha256: string };
+  classificationArtifact: { path: string; sha256: string; rulesDigest: string };
+  baseQuestionHash: string;
+  effectiveQuestionHash: string;
+  baseClassificationHash: string;
+  effectiveClassificationHash: string;
+  baseSolutionItemHash: string;
+  officialRawAnswerHash: string;
+};
+
+type SemanticChoiceDecision = {
+  key: string;
+  status: "resolved" | "ambiguous";
+  choiceIndex: number | null;
+  evidence: string;
+};
+
+type AnswerAuditResult = {
+  classified: ClassifiedQuestion[];
+  repairs: ProblemRepairEvidence[];
+  auditPath: string | null;
+  auditHash: string | null;
 };
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -476,6 +548,17 @@ function sha256Text(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+export function canonicalEvidenceHash(value: unknown): string {
+  return sha256Text(canonicalJson(value));
+}
+
+const TARGETED_PROBLEM_PROMPT_DIGEST = sha256Text(
+  `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`
+);
+const SEMANTIC_CHOICE_PROMPT_DIGEST = sha256Text(
+  `${SEMANTIC_CHOICE_CHECK_VERSION}\n${SEMANTIC_CHOICE_RULES}`
+);
+
 async function sha256File(path: string): Promise<string> {
   const hash = createHash("sha256");
   const file = await openFile(path, "r");
@@ -490,6 +573,14 @@ async function sha256File(path: string): Promise<string> {
   } finally {
     await file.close();
   }
+}
+
+async function writeImmutableEvidence(path: string, value: unknown): Promise<string> {
+  writeImmutableJson(path, value);
+  const expected = canonicalEvidenceHash(value);
+  const actual = await sha256File(path);
+  if (actual !== expected) throw new Error(`체크포인트 canonical hash가 다릅니다: ${path}`);
+  return actual;
 }
 
 type ImportPdfInfo = {
@@ -984,34 +1075,644 @@ function normalizedChoiceContent(value: string): string {
       denominatorToken: string | undefined
     ) => `\\frac{${numeratorGroup ?? numeratorToken}}{${denominatorGroup ?? denominatorToken}}`
   );
+  normalized = normalized.replace(
+    /\\frac\{([^{}]*?)\\pi\}\{([^{}]+)\}/gu,
+    (_match: string, coefficient: string, denominator: string) =>
+      `\\frac{${coefficient.trim() || "1"}}{${denominator}}\\pi`
+  );
   return normalized.toLowerCase().replace(/\s+/gu, "");
 }
 
-export function officialAnswerForStorage(question: QuizItemEx, answer: string): string {
+export class OfficialAnswerChoiceMismatchError extends Error {
+  constructor(public readonly printedNumber: string, public readonly officialAnswer: string, message: string) {
+    super(message);
+    this.name = "OfficialAnswerChoiceMismatchError";
+  }
+}
+
+export type OfficialAnswerResolution = {
+  storedAnswer: string;
+  choiceIndex: number | null;
+  mode: "raw" | "choice-content" | "choice-marker";
+};
+
+export function resolveOfficialAnswer(question: QuizItemEx, answer: string): OfficialAnswerResolution {
   const official = answer.trim();
-  if (question.qtype !== "mcq") return official;
+  if (question.qtype !== "mcq") return { storedAnswer: official, choiceIndex: null, mode: "raw" };
   const choices = question.choices ?? [];
   const exact = choices.filter((choice) => normalizedAnswerText(choice) === normalizedAnswerText(official));
-  if (exact.length === 1) return exact[0];
+  if (exact.length === 1) {
+    return { storedAnswer: exact[0], choiceIndex: choices.indexOf(exact[0]), mode: "choice-content" };
+  }
 
   const officialContent = normalizedChoiceContent(official);
   const contentMatches = officialContent
     ? choices.filter((choice) => normalizedChoiceContent(choice) === officialContent)
     : [];
-  if (contentMatches.length === 1) return contentMatches[0];
+  if (contentMatches.length === 1) {
+    return {
+      storedAnswer: contentMatches[0],
+      choiceIndex: choices.indexOf(contentMatches[0]),
+      mode: "choice-content",
+    };
+  }
 
   const circled = /^(?:정답\s*[:：]?\s*)?([①-⑩])(?:\s*번)?$/.exec(official)?.[1];
   if (circled) {
     const index = OFFICIAL_CIRCLED_ANSWERS.indexOf(circled);
-    if (index >= 0 && index < choices.length) return official;
-    throw new Error(`${question.number}번 공식 객관식 정답이 보기 범위를 벗어났습니다: ${official}`);
+    if (index >= 0 && index < choices.length) {
+      return { storedAnswer: official, choiceIndex: index, mode: "choice-marker" };
+    }
+    throw new OfficialAnswerChoiceMismatchError(
+      String(question.number ?? "?"),
+      official,
+      `${question.number}번 공식 객관식 정답이 보기 범위를 벗어났습니다: ${official}`
+    );
   }
   const numeric = /^(?:정답\s*[:：]?\s*)?(\d{1,2})(?:\s*번)?$/.exec(official)?.[1];
   if (numeric) {
     const index = Number(numeric) - 1;
-    if (index >= 0 && index < choices.length) return official;
+    if (index >= 0 && index < choices.length) {
+      return { storedAnswer: official, choiceIndex: index, mode: "choice-marker" };
+    }
   }
-  throw new Error(`${question.number}번 공식 객관식 정답을 보기에 대응할 수 없습니다: ${official}`);
+  throw new OfficialAnswerChoiceMismatchError(
+    String(question.number ?? "?"),
+    official,
+    `${question.number}번 공식 객관식 정답을 보기에 대응할 수 없습니다: ${official}`
+  );
+}
+
+export function officialAnswerForStorage(question: QuizItemEx, answer: string): string {
+  return resolveOfficialAnswer(question, answer).storedAnswer;
+}
+
+function officialSolutionsByNumber(
+  entry: Pick<CorpusManifestEntry, "subject">,
+  classified: ClassifiedQuestion[],
+  solutions: SolutionItem[]
+): Map<number, SolutionItem> {
+  const problemNumbers = validateProblemNumberRange(entry, classified);
+  const byNumber = new Map<number, SolutionItem>();
+  for (const solution of solutions) {
+    const number = numericPrintedLocator(solution.number);
+    if (number === null || byNumber.has(number)) {
+      throw new Error(`해설 인쇄 번호가 없거나 중복입니다: ${solution.number}`);
+    }
+    byNumber.set(number, solution);
+  }
+  if (
+    byNumber.size !== problemNumbers.size ||
+    [...problemNumbers].some((number) => !byNumber.has(number)) ||
+    [...byNumber].some(([number]) => !problemNumbers.has(number))
+  ) throw new Error("문제와 공식 해설의 인쇄 번호 집합이 다릅니다");
+  return byNumber;
+}
+
+type BaseQuestionEvidence = {
+  problem: { path: string; sha256: string };
+  classification: { path: string; sha256: string };
+  questionHash: string;
+  classificationHash: string;
+};
+
+type BaseSolutionEvidence = {
+  checkpoint: { path: string; sha256: string };
+  itemHash: string;
+};
+
+async function baseQuestionEvidence(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  stateDir: string,
+  classified: ClassifiedQuestion
+): Promise<BaseQuestionEvidence> {
+  const key = questionKey(classified.question);
+  const problemDir = join(stateDir, "problem-chunks");
+  const matches: Array<{ name: string; questions: QuizItemEx[]; checkpoint: Record<string, unknown> }> = [];
+  for (const name of readdirSync(problemDir).filter((value) => /^v2-\d{4}\.json$/.test(value)).sort()) {
+    const checkpoint = object(JSON.parse(readFileSync(join(problemDir, name), "utf8")), name);
+    const questions = restoredQuizItems(checkpoint.items);
+    if (questions.some((question) => questionKey(question) === key)) matches.push({ name, questions, checkpoint });
+  }
+  if (matches.length !== 1) throw new Error(`${key} base problem checkpoint가 정확히 하나가 아닙니다`);
+  const match = matches[0];
+  if (
+    match.checkpoint.version !== CHECKPOINT_VERSION || match.checkpoint.sourceHash !== evidence.sha256 ||
+    match.checkpoint.model !== IMPORT_MODEL || match.checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+  ) throw new Error(`${key} base problem checkpoint 메타데이터가 다릅니다`);
+  const original = match.questions.find((question) => questionKey(question) === key)!;
+  if (canonicalEvidenceHash(original) !== canonicalEvidenceHash(classified.question)) {
+    throw new Error(`${key} base problem checkpoint 항목이 현재 분류 입력과 다릅니다`);
+  }
+
+  const index = /^v2-(\d{4})\.json$/.exec(match.name)![1];
+  const classificationName = `v${CLASSIFIER_VERSION}-${index}-${CLASSIFIER_DIGEST}.json`;
+  const classificationPath = join(stateDir, "classification-chunks", classificationName);
+  if (!existsSync(classificationPath)) throw new Error(`${key} base classification checkpoint가 없습니다`);
+  const classificationCheckpoint = object(
+    JSON.parse(readFileSync(classificationPath, "utf8")),
+    classificationName
+  );
+  if (
+    classificationCheckpoint.version !== CLASSIFIER_VERSION ||
+    classificationCheckpoint.sourceHash !== evidence.sha256 ||
+    classificationCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+    classificationCheckpoint.model !== IMPORT_MODEL ||
+    classificationCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+  ) throw new Error(`${key} base classification checkpoint 메타데이터가 다릅니다`);
+  const decisions = parseDecisions(classificationCheckpoint.items, match.questions, entry);
+  const originalDecision = decisions.find((decision) => decision.key === key);
+  if (!originalDecision || canonicalEvidenceHash(originalDecision) !== canonicalEvidenceHash(classified.classification)) {
+    throw new Error(`${key} base classification checkpoint 항목이 현재 결정과 다릅니다`);
+  }
+
+  return {
+    problem: {
+      path: `problem-chunks/${match.name}`,
+      sha256: await sha256File(join(problemDir, match.name)),
+    },
+    classification: {
+      path: `classification-chunks/${classificationName}`,
+      sha256: await sha256File(classificationPath),
+    },
+    questionHash: canonicalEvidenceHash(original),
+    classificationHash: canonicalEvidenceHash(originalDecision),
+  };
+}
+
+async function baseSolutionEvidence(
+  evidence: PdfEvidence,
+  stateDir: string,
+  solution: SolutionItem
+): Promise<BaseSolutionEvidence> {
+  const number = numericPrintedLocator(solution.number);
+  if (number === null) throw new Error(`해설 인쇄 번호가 유효하지 않습니다: ${solution.number}`);
+  const solutionDir = join(stateDir, "solution-chunks");
+  const matches: Array<{ name: string; item: SolutionItem; checkpoint: Record<string, unknown> }> = [];
+  for (const name of readdirSync(solutionDir).filter((value) => /^v3-\d{4}\.json$/.test(value)).sort()) {
+    const checkpoint = object(JSON.parse(readFileSync(join(solutionDir, name), "utf8")), name);
+    const item = parseSolutionItems(JSON.stringify(checkpoint.items))
+      .find((candidate) => numericPrintedLocator(candidate.number) === number);
+    if (item) matches.push({ name, item, checkpoint });
+  }
+  if (matches.length !== 1) throw new Error(`${number}번 base solution checkpoint가 정확히 하나가 아닙니다`);
+  const match = matches[0];
+  if (
+    match.checkpoint.version !== SOLUTION_CHECKPOINT_VERSION || match.checkpoint.sourceHash !== evidence.sha256 ||
+    match.checkpoint.model !== IMPORT_MODEL || match.checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+  ) throw new Error(`${number}번 base solution checkpoint 메타데이터가 다릅니다`);
+  if (canonicalEvidenceHash(match.item) !== canonicalEvidenceHash(solution)) {
+    throw new Error(`${number}번 base solution checkpoint 항목이 현재 공식 해설과 다릅니다`);
+  }
+  return {
+    checkpoint: {
+      path: `solution-chunks/${match.name}`,
+      sha256: await sha256File(join(solutionDir, match.name)),
+    },
+    itemHash: canonicalEvidenceHash(match.item),
+  };
+}
+
+function schemaItems(text: string, label: string): unknown[] {
+  const parsed: unknown = JSON.parse(text);
+  if (Array.isArray(parsed)) return parsed;
+  const envelope = object(parsed, label);
+  if (!Array.isArray(envelope.items)) throw new Error(`${label}.items가 배열이 아닙니다`);
+  return envelope.items;
+}
+
+function parseSemanticChoiceDecisions(
+  value: unknown,
+  inputs: Array<{ key: string; choices: string[]; officialExplanation: string }>
+): SemanticChoiceDecision[] {
+  if (!Array.isArray(value)) throw new Error("semantic choice 결과가 배열이 아닙니다");
+  const expected = new Map(inputs.map((input) => [input.key, input]));
+  const seen = new Set<string>();
+  const decisions = value.map((raw, index) => {
+    const row = object(raw, `semantic choice ${index + 1}`);
+    const key = exactString(row.key, `semantic choice ${index + 1}.key`, 100);
+    const input = expected.get(key);
+    if (!input || seen.has(key)) throw new Error(`semantic choice key가 없거나 중복입니다: ${key}`);
+    seen.add(key);
+    if (row.status !== "resolved" && row.status !== "ambiguous") {
+      throw new Error(`semantic choice ${key}.status가 유효하지 않습니다`);
+    }
+    const evidence = exactString(row.evidence, `semantic choice ${key}.evidence`, 1000);
+    const choiceIndex = row.choiceIndex === null ? null : Number(row.choiceIndex);
+    if (
+      row.status === "resolved"
+        ? !Number.isInteger(choiceIndex) || choiceIndex! < 1 || choiceIndex! > input.choices.length
+        : choiceIndex !== null
+    ) throw new Error(`semantic choice ${key}.choiceIndex가 유효하지 않습니다`);
+    return { key, status: row.status, choiceIndex, evidence } as SemanticChoiceDecision;
+  });
+  if (seen.size !== expected.size) throw new Error("semantic choice 결과에 누락이 있습니다");
+  return decisions;
+}
+
+async function semanticChoiceCheckpoint(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  solution: PdfEvidence,
+  stateDir: string,
+  effectiveCorpusHash: string,
+  inputs: Array<{ key: string; choices: string[]; officialExplanation: string }>
+): Promise<{ decisions: SemanticChoiceDecision[]; path: string; sha256: string; inputHash: string }> {
+  const inputHash = canonicalEvidenceHash(inputs);
+  const relativePath = `semantic-choice-checks/v${SEMANTIC_CHOICE_CHECK_VERSION}-${inputHash}.json`;
+  const path = join(stateDir, relativePath);
+  let checkpoint: Record<string, unknown>;
+  let decisions: SemanticChoiceDecision[];
+  if (existsSync(path)) {
+    checkpoint = object(JSON.parse(readFileSync(path, "utf8")), relativePath);
+    if (
+      checkpoint.version !== SEMANTIC_CHOICE_CHECK_VERSION || checkpoint.entryId !== entry.id ||
+      checkpoint.problemHash !== problem.sha256 || checkpoint.solutionHash !== solution.sha256 ||
+      checkpoint.classifierVersion !== CLASSIFIER_VERSION || checkpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+      checkpoint.effectiveCorpusHash !== effectiveCorpusHash || checkpoint.inputHash !== inputHash ||
+      checkpoint.promptDigest !== SEMANTIC_CHOICE_PROMPT_DIGEST || checkpoint.model !== IMPORT_MODEL ||
+      checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+      canonicalEvidenceHash(checkpoint.inputs) !== canonicalEvidenceHash(inputs)
+    ) throw new Error(`기존 semantic choice 체크포인트 메타데이터가 다릅니다: ${path}`);
+    decisions = parseSemanticChoiceDecisions(checkpoint.items, inputs);
+  } else {
+    const prompt = `${SEMANTIC_CHOICE_RULES}\n\nItems:\n${JSON.stringify(inputs)}`;
+    const result = await getCodexProvider({
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+    }).complete({
+      operation: "problem-extract",
+      prompt,
+      schema: SEMANTIC_CHOICE_SCHEMA,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      lane: "bulk",
+    });
+    decisions = parseSemanticChoiceDecisions(schemaItems(result.text, "semantic choice 응답"), inputs);
+    checkpoint = {
+      version: SEMANTIC_CHOICE_CHECK_VERSION,
+      entryId: entry.id,
+      problemHash: problem.sha256,
+      solutionHash: solution.sha256,
+      classifierVersion: CLASSIFIER_VERSION,
+      rulesDigest: CLASSIFIER_DIGEST,
+      effectiveCorpusHash,
+      inputHash,
+      promptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      inputs,
+      items: decisions,
+    };
+    await writeImmutableEvidence(path, checkpoint);
+  }
+  const sha256 = await sha256File(path);
+  if (sha256 !== canonicalEvidenceHash(checkpoint)) throw new Error(`semantic choice hash가 다릅니다: ${path}`);
+  return { decisions, path: relativePath, sha256, inputHash };
+}
+
+async function repairClassifiedQuestion(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  solutionEvidence: PdfEvidence,
+  stateDir: string,
+  original: ClassifiedQuestion,
+  officialSolution: SolutionItem
+): Promise<{ classified: ClassifiedQuestion; evidence: ProblemRepairEvidence }> {
+  const key = questionKey(original.question);
+  const printedNumber = String(numericPrintedLocator(original.question.number));
+  const sourcePage = original.question.page!;
+  const baseQuestion = await baseQuestionEvidence(entry, problem, stateDir, original);
+  const baseSolution = await baseSolutionEvidence(solutionEvidence, stateDir, officialSolution);
+  const problemRelativePath =
+    `problem-repairs/v${PROBLEM_REPAIR_VERSION}-${String(sourcePage).padStart(4, "0")}-${printedNumber.padStart(4, "0")}.json`;
+  const problemPath = join(stateDir, problemRelativePath);
+
+  return withImporterPdfForAnalysis(problem, async (analysisProblem) => {
+    let corrected: QuizItemEx;
+    let problemCheckpoint: Record<string, unknown>;
+    if (existsSync(problemPath)) {
+      problemCheckpoint = object(JSON.parse(readFileSync(problemPath, "utf8")), problemRelativePath);
+      if (
+        problemCheckpoint.version !== PROBLEM_REPAIR_VERSION || problemCheckpoint.entryId !== entry.id ||
+        problemCheckpoint.key !== key || problemCheckpoint.sourcePage !== sourcePage ||
+        problemCheckpoint.printedNumber !== printedNumber || problemCheckpoint.sourceHash !== problem.sha256 ||
+        canonicalEvidenceHash(problemCheckpoint.baseProblemCheckpoint) !== canonicalEvidenceHash(baseQuestion.problem) ||
+        problemCheckpoint.baseQuestionHash !== baseQuestion.questionHash ||
+        canonicalEvidenceHash(problemCheckpoint.baseSolutionCheckpoint) !== canonicalEvidenceHash(baseSolution.checkpoint) ||
+        problemCheckpoint.baseSolutionItemHash !== baseSolution.itemHash ||
+        problemCheckpoint.officialRawAnswerHash !== sha256Text(officialSolution.answer) ||
+        problemCheckpoint.promptVersion !== TARGETED_PROBLEM_TRANSCRIPTION_VERSION ||
+        problemCheckpoint.promptDigest !== TARGETED_PROBLEM_PROMPT_DIGEST ||
+        problemCheckpoint.model !== IMPORT_MODEL || problemCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+      ) throw new Error(`기존 문제 repair 체크포인트 메타데이터가 다릅니다: ${problemPath}`);
+      corrected = restoredQuizItems([problemCheckpoint.item])[0];
+    } else {
+      const extracted = await extractProblemsFromFile(analysisProblem.path, "pdf", {
+        selfContained: true,
+        target: { page: sourcePage, printedNumber },
+        reasoningEffort: IMPORT_REASONING_EFFORT,
+      });
+      corrected = extracted[0];
+      problemCheckpoint = {
+        version: PROBLEM_REPAIR_VERSION,
+        entryId: entry.id,
+        key,
+        sourcePage,
+        printedNumber,
+        sourceHash: problem.sha256,
+        baseProblemCheckpoint: baseQuestion.problem,
+        baseQuestionHash: baseQuestion.questionHash,
+        baseSolutionCheckpoint: baseSolution.checkpoint,
+        baseSolutionItemHash: baseSolution.itemHash,
+        officialRawAnswerHash: sha256Text(officialSolution.answer),
+        promptVersion: TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+        promptDigest: TARGETED_PROBLEM_PROMPT_DIGEST,
+        model: IMPORT_MODEL,
+        reasoningEffort: IMPORT_REASONING_EFFORT,
+        item: corrected,
+      };
+      await writeImmutableEvidence(problemPath, problemCheckpoint);
+    }
+    if (
+      questionKey(corrected) !== key || corrected.page !== sourcePage ||
+      numericPrintedLocator(corrected.number) !== Number(printedNumber) ||
+      corrected.qtype !== "mcq" || !corrected.choices || corrected.choices.length < 2
+    ) throw new Error(`${key} 문제 repair가 원본 페이지·번호·객관식 구조를 보존하지 않았습니다`);
+    const effectiveQuestionHash = canonicalEvidenceHash(corrected);
+    const problemArtifactHash = await sha256File(problemPath);
+    if (problemArtifactHash !== canonicalEvidenceHash(problemCheckpoint)) {
+      throw new Error(`${key} 문제 repair artifact hash가 다릅니다`);
+    }
+
+    const classificationRelativePath =
+      `classification-repairs/v${CLASSIFICATION_REPAIR_VERSION}-${String(sourcePage).padStart(4, "0")}-` +
+      `${printedNumber.padStart(4, "0")}-${CLASSIFIER_DIGEST}.json`;
+    const classificationPath = join(stateDir, classificationRelativePath);
+    let classification: ClassificationDecision;
+    let classificationCheckpoint: Record<string, unknown>;
+    if (existsSync(classificationPath)) {
+      classificationCheckpoint = object(
+        JSON.parse(readFileSync(classificationPath, "utf8")),
+        classificationRelativePath
+      );
+      if (
+        classificationCheckpoint.version !== CLASSIFICATION_REPAIR_VERSION ||
+        classificationCheckpoint.entryId !== entry.id || classificationCheckpoint.key !== key ||
+        classificationCheckpoint.sourceHash !== problem.sha256 ||
+        canonicalEvidenceHash(classificationCheckpoint.problemArtifact) !== canonicalEvidenceHash({
+          path: problemRelativePath,
+          sha256: problemArtifactHash,
+        }) ||
+        canonicalEvidenceHash(classificationCheckpoint.baseClassificationCheckpoint) !==
+          canonicalEvidenceHash(baseQuestion.classification) ||
+        classificationCheckpoint.baseClassificationHash !== baseQuestion.classificationHash ||
+        classificationCheckpoint.effectiveQuestionHash !== effectiveQuestionHash ||
+        classificationCheckpoint.classifierVersion !== CLASSIFIER_VERSION ||
+        classificationCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+        classificationCheckpoint.model !== IMPORT_MODEL ||
+        classificationCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+      ) throw new Error(`기존 classification repair 체크포인트 메타데이터가 다릅니다: ${classificationPath}`);
+      classification = parseDecisions([classificationCheckpoint.item], [corrected], entry)[0];
+    } else {
+      classification = (await classifyQuestions(
+        entry,
+        analysisProblem.path,
+        1,
+        analysisProblem.pageCount,
+        [corrected]
+      ))[0];
+      classificationCheckpoint = {
+        version: CLASSIFICATION_REPAIR_VERSION,
+        entryId: entry.id,
+        key,
+        sourceHash: problem.sha256,
+        problemArtifact: { path: problemRelativePath, sha256: problemArtifactHash },
+        baseClassificationCheckpoint: baseQuestion.classification,
+        baseClassificationHash: baseQuestion.classificationHash,
+        effectiveQuestionHash,
+        classifierVersion: CLASSIFIER_VERSION,
+        rulesDigest: CLASSIFIER_DIGEST,
+        model: IMPORT_MODEL,
+        reasoningEffort: IMPORT_REASONING_EFFORT,
+        item: classification,
+      };
+      await writeImmutableEvidence(classificationPath, classificationCheckpoint);
+    }
+    const classificationArtifactHash = await sha256File(classificationPath);
+    if (classificationArtifactHash !== canonicalEvidenceHash(classificationCheckpoint)) {
+      throw new Error(`${key} classification repair artifact hash가 다릅니다`);
+    }
+    return {
+      classified: { question: corrected, classification },
+      evidence: {
+        key,
+        printedNumber,
+        sourcePage,
+        baseProblemCheckpoint: baseQuestion.problem,
+        baseClassificationCheckpoint: baseQuestion.classification,
+        baseSolutionCheckpoint: baseSolution.checkpoint,
+        problemArtifact: { path: problemRelativePath, sha256: problemArtifactHash },
+        classificationArtifact: {
+          path: classificationRelativePath,
+          sha256: classificationArtifactHash,
+          rulesDigest: CLASSIFIER_DIGEST,
+        },
+        baseQuestionHash: baseQuestion.questionHash,
+        effectiveQuestionHash,
+        baseClassificationHash: baseQuestion.classificationHash,
+        effectiveClassificationHash: canonicalEvidenceHash(classification),
+        baseSolutionItemHash: baseSolution.itemHash,
+        officialRawAnswerHash: sha256Text(officialSolution.answer),
+      },
+    };
+  });
+}
+
+export async function repairAndAuditOfficialAnswers(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  solutionEvidence: PdfEvidence,
+  stateDir: string,
+  initial: ClassifiedQuestion[],
+  solutions: SolutionItem[]
+): Promise<AnswerAuditResult> {
+  const baseByKey = new Map(initial.map((item) => [questionKey(item.question), item]));
+  if (baseByKey.size !== initial.length) throw new Error("base 문제 key가 중복입니다");
+  let effective = [...initial];
+  const repairs = new Map<string, ProblemRepairEvidence>();
+  let finalSemantic: Awaited<ReturnType<typeof semanticChoiceCheckpoint>> | null = null;
+
+  const applyRepairs = async (keys: string[], byNumber: Map<number, SolutionItem>): Promise<boolean> => {
+    const pending = [...new Set(keys)].filter((key) => !repairs.has(key));
+    if (pending.length === 0) return false;
+    for (const key of pending) {
+      const original = baseByKey.get(key);
+      if (!original) throw new Error(`${key} repair 대상이 base corpus에 없습니다`);
+      const number = numericPrintedLocator(original.question.number)!;
+      const officialSolution = byNumber.get(number);
+      if (!officialSolution) throw new Error(`${key} repair 대상 공식 해설이 없습니다`);
+      const repaired = await repairClassifiedQuestion(
+        entry,
+        problem,
+        solutionEvidence,
+        stateDir,
+        original,
+        officialSolution
+      );
+      const index = effective.findIndex((item) => questionKey(item.question) === key);
+      if (index < 0) throw new Error(`${key} effective corpus 교체 위치가 없습니다`);
+      effective[index] = repaired.classified;
+      repairs.set(key, repaired.evidence);
+    }
+    const effectiveKeys = effective.map((item) => questionKey(item.question));
+    if (
+      effectiveKeys.length !== initial.length || new Set(effectiveKeys).size !== effectiveKeys.length ||
+      effectiveKeys.some((key) => !baseByKey.has(key))
+    ) throw new Error("문제 repair가 원본 key 집합을 바꾸었습니다");
+    validateProblemNumberRange(entry, effective);
+    return true;
+  };
+
+  for (;;) {
+    if (effective.some(({ classification }) => classification.decision === "review")) {
+      return { classified: effective, repairs: [...repairs.values()], auditPath: null, auditHash: null };
+    }
+    const byNumber = officialSolutionsByNumber(entry, effective, solutions);
+    const acceptedMcq = effective.filter(
+      ({ question, classification }) => classification.decision === "accept" && question.qtype === "mcq"
+    );
+    const resolutions = new Map<string, OfficialAnswerResolution>();
+    const unresolved: string[] = [];
+    for (const item of acceptedMcq) {
+      const key = questionKey(item.question);
+      const solution = byNumber.get(numericPrintedLocator(item.question.number)!);
+      if (!solution) throw new Error(`${key} 공식 해설이 없습니다`);
+      try {
+        resolutions.set(key, resolveOfficialAnswer(item.question, solution.answer));
+      } catch (error) {
+        if (!(error instanceof OfficialAnswerChoiceMismatchError)) throw error;
+        unresolved.push(key);
+      }
+    }
+    if (unresolved.length > 0) {
+      if (!await applyRepairs(unresolved, byNumber)) {
+        throw new Error(`문제 재전사 후에도 공식 의미값이 보기에 대응하지 않습니다: ${unresolved.join(", ")}`);
+      }
+      finalSemantic = null;
+      continue;
+    }
+
+    const markerInputs = acceptedMcq.flatMap((item) => {
+      const key = questionKey(item.question);
+      const resolution = resolutions.get(key)!;
+      if (resolution.mode !== "choice-marker") return [];
+      const solution = byNumber.get(numericPrintedLocator(item.question.number)!)!;
+      if (!solution.explanation.trim()) throw new Error(`${key} 공식 해설 본문이 비어 있습니다`);
+      return [{ key, choices: item.question.choices!, officialExplanation: solution.explanation }];
+    });
+    finalSemantic = markerInputs.length === 0 ? null : await semanticChoiceCheckpoint(
+      entry,
+      problem,
+      solutionEvidence,
+      stateDir,
+      canonicalEvidenceHash(effective),
+      markerInputs
+    );
+    const semanticByKey = new Map(finalSemantic?.decisions.map((item) => [item.key, item]) ?? []);
+    const semanticMismatch = markerInputs.flatMap((input) => {
+      const semantic = semanticByKey.get(input.key)!;
+      const resolution = resolutions.get(input.key)!;
+      return semantic.status !== "resolved" || semantic.choiceIndex !== resolution.choiceIndex! + 1
+        ? [input.key]
+        : [];
+    });
+    if (semanticMismatch.length > 0) {
+      if (!await applyRepairs(semanticMismatch, byNumber)) {
+        throw new Error(`문제 재전사 후에도 공식 marker와 상세 해설 의미가 불일치합니다: ${semanticMismatch.join(", ")}`);
+      }
+      finalSemantic = null;
+      continue;
+    }
+    break;
+  }
+
+  const finalByNumber = officialSolutionsByNumber(entry, effective, solutions);
+  const finalMcq = effective.filter(
+    ({ question, classification }) => classification.decision === "accept" && question.qtype === "mcq"
+  );
+  const semanticByKey = new Map(finalSemantic?.decisions.map((item) => [item.key, item]) ?? []);
+  const auditItems = finalMcq.map((item) => {
+    const key = questionKey(item.question);
+    const solution = finalByNumber.get(numericPrintedLocator(item.question.number)!)!;
+    const resolution = resolveOfficialAnswer(item.question, solution.answer);
+    const semantic = semanticByKey.get(key) ?? null;
+    if (resolution.choiceIndex === null) throw new Error(`${key} 객관식 공식 정답 index가 없습니다`);
+    if (resolution.mode === "choice-marker" && (
+      !semantic || semantic.status !== "resolved" || semantic.choiceIndex !== resolution.choiceIndex + 1
+    )) throw new Error(`${key} marker-only 공식 정답의 semantic 검증이 없습니다`);
+    return {
+      key,
+      printedNumber: String(numericPrintedLocator(item.question.number)),
+      sourcePage: item.question.page,
+      officialRawAnswerHash: sha256Text(solution.answer),
+      storedAnswerHash: sha256Text(resolution.storedAnswer),
+      mode: resolution.mode,
+      choiceIndex: resolution.choiceIndex + 1,
+      semantic: semantic && {
+        status: semantic.status,
+        choiceIndex: semantic.choiceIndex,
+        evidence: semantic.evidence,
+      },
+    };
+  });
+  const repairList = [...repairs.values()].sort((a, b) => a.key.localeCompare(b.key));
+  const effectiveCorpusHash = canonicalEvidenceHash(effective);
+  const accepted = effective.filter(({ classification }) => classification.decision === "accept");
+  const reviews = effective.filter(({ classification }) => classification.decision === "review");
+  const targetQuestionCounts = Object.fromEntries(
+    TARGET_SUBJECTS.map((target) => [
+      target,
+      accepted.filter(({ classification }) =>
+        TARGET_BY_CANONICAL[classification.canonical_subject!] === target
+      ).length,
+    ]).filter(([, count]) => count !== 0)
+  );
+  const auditBasis = {
+    entryId: entry.id,
+    problemHash: problem.sha256,
+    solutionHash: solutionEvidence.sha256,
+    classifierVersion: CLASSIFIER_VERSION,
+    rulesDigest: CLASSIFIER_DIGEST,
+    semanticChoiceVersion: SEMANTIC_CHOICE_CHECK_VERSION,
+    semanticPromptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
+    sourceQuestionCount: effective.length,
+    acceptedQuestionCount: accepted.length,
+    rejectedQuestionCount: effective.length - accepted.length - reviews.length,
+    reviewQuestionCount: reviews.length,
+    targetQuestionCounts,
+    acceptedMcqKeys: auditItems.map((item) => item.key).sort(),
+    effectiveCorpusHash,
+    semanticCheckpoint: finalSemantic && {
+      path: finalSemantic.path,
+      sha256: finalSemantic.sha256,
+      inputHash: finalSemantic.inputHash,
+    },
+    repairs: repairList,
+    items: auditItems.sort((a, b) => a.key.localeCompare(b.key)),
+  };
+  const auditDigest = canonicalEvidenceHash(auditBasis);
+  const auditRelativePath = `answer-audit/v${ANSWER_AUDIT_VERSION}-${auditDigest}.json`;
+  const auditPath = join(stateDir, auditRelativePath);
+  const auditCheckpoint = { version: ANSWER_AUDIT_VERSION, auditDigest, ...auditBasis };
+  const auditHash = await writeImmutableEvidence(auditPath, auditCheckpoint);
+  return {
+    classified: effective,
+    repairs: repairList,
+    auditPath: auditRelativePath,
+    auditHash,
+  };
 }
 
 export function matchOfficialSolutions(
@@ -1019,20 +1720,7 @@ export function matchOfficialSolutions(
   classified: ClassifiedQuestion[],
   solutions: SolutionItem[]
 ): ImportedQuestion[] {
-  const problemNumbers = validateProblemNumberRange(entry, classified);
-  const byNumber = new Map<number, SolutionItem>();
-  for (const solution of solutions) {
-    const number = numericPrintedLocator(solution.number);
-    if (number === null || byNumber.has(number)) throw new Error(`해설 인쇄 번호가 없거나 중복입니다: ${solution.number}`);
-    byNumber.set(number, solution);
-  }
-  if (
-    byNumber.size !== problemNumbers.size ||
-    [...problemNumbers].some((number) => !byNumber.has(number)) ||
-    [...byNumber].some(([number]) => !problemNumbers.has(number))
-  ) {
-    throw new Error("문제와 공식 해설의 인쇄 번호 집합이 다릅니다");
-  }
+  const byNumber = officialSolutionsByNumber(entry, classified, solutions);
   return classified.flatMap(({ question, classification }) => {
     const number = numericPrintedLocator(question.number)!;
     const solution = byNumber.get(number);
@@ -1448,7 +2136,7 @@ async function processEntry(
     },
   });
 
-  const classified = await extractAndClassifyProblems(entry, problem, stateDir);
+  let classified = await extractAndClassifyProblems(entry, problem, stateDir);
   validateProblemNumberRange(entry, classified);
   const reviews = classified.filter(({ classification }) => classification.decision === "review");
   if (reviews.length > 0) {
@@ -1471,6 +2159,43 @@ async function processEntry(
   }
 
   const solutions = await extractSolutions(solution, stateDir);
+  const answerAudit = await repairAndAuditOfficialAnswers(
+    entry,
+    problem,
+    solution,
+    stateDir,
+    classified,
+    solutions
+  );
+  classified = answerAudit.classified;
+  validateProblemNumberRange(entry, classified);
+  const repairedReviews = classified.filter(({ classification }) => classification.decision === "review");
+  if (repairedReviews.length > 0) {
+    return { id: entry.id, status: "review", accepted: 0, message: `${repairedReviews.length}문항 수동 검토 필요` };
+  }
+  const repairedAcceptedCount = classified.filter(
+    ({ classification }) => classification.decision === "accept"
+  ).length;
+  if (repairedAcceptedCount === 0) {
+    writeImmutableJson(resultPath, {
+      version: 2,
+      status: "filtered",
+      entryId: entry.id,
+      reason: "NO_IN_SCOPE_QUESTIONS",
+      rulesDigest: CLASSIFIER_DIGEST,
+      sourceQuestionCount: classified.length,
+      acceptedQuestionCount: 0,
+      rejectedQuestionCount: classified.length,
+      reviewQuestionCount: 0,
+      ...(answerAudit.repairs.length > 0 ? {
+        answerAudit: { path: answerAudit.auditPath, sha256: answerAudit.auditHash },
+      } : {}),
+    });
+    return { id: entry.id, status: "filtered", accepted: 0 };
+  }
+  if (!answerAudit.auditPath || !answerAudit.auditHash) {
+    throw new Error("accepted corpus의 terminal answer audit이 없습니다");
+  }
   const imported = matchOfficialSolutions(entry, classified, solutions);
   const receiptPath = join(stateDir, "receipt.json");
   const receipt = {
