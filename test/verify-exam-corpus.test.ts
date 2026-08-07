@@ -1,10 +1,30 @@
 import Database from "better-sqlite3";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { officialAnswerForDb, runCli, TARGET_SUBJECTS, verifyExamCorpus } from "../scripts/verify-exam-corpus";
+import {
+  QUIZ_EXTRACT_SPEC,
+  TARGETED_PROBLEM_TRANSCRIPTION_RULES,
+  TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+} from "../src/claude";
+import {
+  canonicalEvidenceHash,
+  officialAnswerForDb,
+  runCli,
+  TARGET_SUBJECTS,
+  verifyExamCorpus,
+} from "../scripts/verify-exam-corpus";
 
 type Target = (typeof TARGET_SUBJECTS)[number];
 type Accepted = { canonical: string; target: Target; code: string };
@@ -17,6 +37,22 @@ type AnswerCase = {
 };
 
 const DIGEST = "1234567890abcdef";
+const SEMANTIC_RULES =
+  `For each item, use only its official detailed explanation and answer-choice contents to identify the one ` +
+  `choice semantically supported by the reasoning. The official answer marker and the problem extractor's answer ` +
+  `are intentionally hidden and must not be guessed; ordinal markers inside explanations are redacted. ` +
+  `Return ambiguous when the explanation does not establish ` +
+  `exactly one choice. choiceIndex is 1-based and evidence must briefly cite the decisive value or conclusion.`;
+const SEMANTIC_PROMPT_DIGEST = hash(`2\n${SEMANTIC_RULES}`);
+const TRANSCRIPTION_GATE_RULES = `
+Independently compare every supplied transcription with the attached official source pixels. Check the complete shared passage and source material, the full stem, every answer choice and distractor, inequalities, signs, coefficients, exponents, fractions, formulas, tables, qtype, and all figure or visual dependencies including figure_description. Check that box plausibly covers the source problem and figure, without requiring pixel-perfect crop decimals. Do not infer fidelity from plausibility or from the proposed answer. Base the curriculum decision on the source pixels, not on an inaccurate supplied transcription.
+
+Return transcription_status exact only when all source-required content is faithfully represented. Return mismatch when any omission, substitution, changed bound/sign/value/formula/choice, wrong qtype, or inaccurate visual description is visible. Return unverifiable when the pixels or required context do not let you decide confidently; never guess exact. Give concise page-grounded transcription_evidence. Curriculum decision and transcription fidelity are independent, so reject and review items still require this source check.
+`.trim();
+const TRANSCRIPTION_PROMPT_DIGEST = hash(`1\n${TRANSCRIPTION_GATE_RULES}`);
+const TARGETED_PROMPT_DIGEST = hash(
+  `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
+);
 const SOURCE_COUNTS: Record<string, number> = { 국어: 45, 수학: 30, 통합과학: 20, 통합사회: 20 };
 const CASES: Array<{ id: string; subject: string; grade: number; rawTitle: string; accepted: Accepted[] }> = [
   {
@@ -88,7 +124,23 @@ function answerCase(id: string, index: number): AnswerCase {
   return { qtype: "short", choices: null, problemAnswer: answer, officialRaw: answer, storedAnswer: answer };
 }
 
-function hash(value: string): string {
+function explanationCase(id: string, index: number): string {
+  return id === "korean" && index === 1
+    ? "계산 결과는 18이다. 답은 20개. 정답은 1359. 5번 선택지가 정답이다. 답 5번."
+    : `${id} official explanation ${index + 1}`;
+}
+
+function redactedExplanation(value: string): string {
+  return value
+    .replace(/\[\s*(?:정답|답)\s*\]\s*(?:[①-⑩]|(?:10|[1-9])(?!\d)(?:\s*번)?)/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/(?:[①-⑩]|(?:10|[1-9])(?!\d))\s*번\s*(?:선택지\s*)?(?:이|가)?\s*(?:정답|답)(?:이다|입니다)?/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/선택지\s*(?:[①-⑩]|(?:10|[1-9])(?!\d))(?:\s*번)?\s*(?:이|가)?\s*(?:정답|답)(?:이다|입니다)?/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/(?:정답|답)\s+(?:[①-⑩]|(?:10|[1-9])(?!\d))\s*번/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/(?:정답|답)\s*(?:은|는|이|가|:|：|=)\s*(?:[①-⑩]|(?:10|[1-9])(?!\d))(?:\s*번)?/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/[①-⑩]/gu, "[CHOICE MARKER HIDDEN]");
+}
+
+function hash(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
@@ -99,6 +151,22 @@ function token(value: string, length: number): string {
 function writeJson(path: string, value: unknown): void {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, canonicalize(item)]));
+  }
+  return value;
+}
+
+function writeEvidence(path: string, value: unknown): string {
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(canonicalize(value), null, 2)}\n`);
+  return canonicalEvidenceHash(value);
 }
 
 function schema(db: Database.Database): void {
@@ -205,14 +273,16 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
       reasoningEffort: "high",
       items: problems,
     });
-    writeJson(join(stateDir, "classification-chunks", `v3-0000-${DIGEST}.json`), {
-      version: 3,
+    writeJson(join(stateDir, "classification-chunks", `v4-0000-${DIGEST}.json`), {
+      version: 4,
       sourceHash: problemHash,
       from: 1,
       to: 1,
       ownedFrom: 1,
       ownedTo: 1,
       rulesDigest: DIGEST,
+      transcriptionGateVersion: 1,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
       model: "gpt-5.6-sol",
       reasoningEffort: "high",
       items: problems.map((_problem, index) => {
@@ -226,6 +296,8 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
           achievement_codes: [accepted.code],
           confidence: 0.99,
           reason_codes: ["IN_SCOPE"],
+          transcription_status: "exact",
+          transcription_evidence: "source pixels match the complete transcription",
         } : {
           key: `1:${index + 1}`,
           decision: "reject",
@@ -235,13 +307,15 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
           achievement_codes: [],
           confidence: 0.99,
           reason_codes: ["OUT_OF_SCOPE"],
+          transcription_status: "exact",
+          transcription_evidence: "source pixels match the complete transcription",
         };
       }),
     });
     const solutionItems = problems.map((_problemItem, index) => ({
         number: String(index + 1),
         answer: answerCases[index].officialRaw,
-        explanation: `${testCase.id} official explanation ${index + 1}`,
+        explanation: explanationCase(testCase.id, index),
         page: solutionPageCount === 1 ? 1 : index % solutionPageCount + 1,
         complete: true,
     }));
@@ -263,6 +337,127 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
       });
     }
 
+    const effectiveCorpus = problems.map((question, index) => ({
+      question,
+      classification: testCase.accepted[index] ? {
+        key: `1:${index + 1}`,
+        decision: "accept",
+        canonical_subject: testCase.accepted[index].canonical,
+        curriculum_course: "course",
+        domain: "domain",
+        achievement_codes: [testCase.accepted[index].code],
+        confidence: 0.99,
+        reason_codes: ["IN_SCOPE"],
+        transcription_status: "exact",
+        transcription_evidence: "source pixels match the complete transcription",
+      } : {
+        key: `1:${index + 1}`,
+        decision: "reject",
+        canonical_subject: null,
+        curriculum_course: null,
+        domain: null,
+        achievement_codes: [],
+        confidence: 0.99,
+        reason_codes: ["OUT_OF_SCOPE"],
+        transcription_status: "exact",
+        transcription_evidence: "source pixels match the complete transcription",
+      },
+    }));
+    const effectiveCorpusHash = canonicalEvidenceHash(effectiveCorpus);
+    const markerInputs: Array<{ key: string; choices: string[]; detailedExplanation: string }> = [];
+    const auditItems = testCase.accepted.flatMap((_accepted, index) => {
+      const answer = answerCases[index];
+      if (answer.qtype !== "mcq") return [];
+      const marker = /^([①-⑩])$/u.exec(answer.officialRaw)?.[1];
+      const choiceIndex = marker
+        ? "①②③④⑤⑥⑦⑧⑨⑩".indexOf(marker) + 1
+        : answer.choices!.indexOf(answer.storedAnswer) + 1;
+      const mode = marker ? "choice-marker" : "choice-content";
+      const semantic = marker ? {
+        status: "resolved",
+        choiceIndex,
+        evidence: `official explanation resolves choice ${choiceIndex}`,
+      } : null;
+      if (marker) {
+        markerInputs.push({
+          key: `1:${index + 1}`,
+          choices: answer.choices!,
+          detailedExplanation: redactedExplanation(explanationCase(testCase.id, index)),
+        });
+      }
+      return [{
+        key: `1:${index + 1}`,
+        printedNumber: String(index + 1),
+        sourcePage: 1,
+        officialRawAnswerHash: hash(answer.officialRaw),
+        storedAnswerHash: hash(answer.storedAnswer),
+        mode,
+        choiceIndex,
+        semantic,
+      }];
+    }).sort((left, right) => left.key.localeCompare(right.key));
+    let semanticCheckpoint: { path: string; sha256: string; inputHash: string } | null = null;
+    if (markerInputs.length > 0) {
+      const inputHash = canonicalEvidenceHash(markerInputs);
+      const relativePath = `semantic-choice-checks/v2-${inputHash}.json`;
+      const checkpoint = {
+        version: 2,
+        entryId: entry.id,
+        problemHash,
+        solutionHash,
+        classifierVersion: 4,
+        rulesDigest: DIGEST,
+        transcriptionGateVersion: 1,
+        transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+        effectiveCorpusHash,
+        inputHash,
+        promptDigest: SEMANTIC_PROMPT_DIGEST,
+        model: "gpt-5.6-sol",
+        reasoningEffort: "high",
+        inputs: markerInputs,
+        items: markerInputs.map((input) => ({
+          key: input.key,
+          status: "resolved",
+          choiceIndex: 5,
+          evidence: "official explanation resolves choice 5",
+        })),
+      };
+      semanticCheckpoint = {
+        path: relativePath,
+        sha256: writeEvidence(join(stateDir, relativePath), checkpoint),
+        inputHash,
+      };
+    }
+    const targetQuestionCounts = Object.fromEntries(testCase.accepted.map((accepted) => [accepted.target, 1]));
+    const auditBasis = {
+      entryId: entry.id,
+      problemHash,
+      solutionHash,
+      classifierVersion: 4,
+      rulesDigest: DIGEST,
+      transcriptionGateVersion: 1,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      semanticChoiceVersion: 2,
+      semanticPromptDigest: SEMANTIC_PROMPT_DIGEST,
+      sourceQuestionCount: problems.length,
+      acceptedQuestionCount: testCase.accepted.length,
+      rejectedQuestionCount: problems.length - testCase.accepted.length,
+      reviewQuestionCount: 0,
+      targetQuestionCounts,
+      acceptedMcqKeys: auditItems.map((item) => item.key).sort(),
+      effectiveCorpusHash,
+      semanticCheckpoint,
+      repairs: [],
+      items: auditItems,
+    };
+    const auditDigest = canonicalEvidenceHash(auditBasis);
+    const auditRelativePath = `answer-audit/v1-${auditDigest}.json`;
+    const auditHash = writeEvidence(join(stateDir, auditRelativePath), {
+      version: 1,
+      auditDigest,
+      ...auditBasis,
+    });
+
     const displayTitle = `2025년 · ${testCase.rawTitle}`;
     const targetBooks = testCase.accepted.map((accepted, index) => {
       const prefix = `corpus/${token(entry.id, 24)}/${token(accepted.target, 16)}`;
@@ -281,7 +476,7 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
         .run(problemFileId, targetBookId, problemR2Key, problemHash);
       db.prepare("INSERT INTO book_files (id, book_id, r2_key, content_hash, page_count, status) VALUES (?, ?, ?, ?, ?, 'ready')")
         .run(solutionFileId, targetBookId, solutionR2Key, solutionHash, solutionPageCount);
-      const officialExplanation = `${testCase.id} official explanation ${index + 1}`;
+      const officialExplanation = explanationCase(testCase.id, index);
       const answer = answerCases[index];
       const id = ++questionId;
       db.prepare(
@@ -315,7 +510,7 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
         solutionR2Key,
       };
     });
-    writeJson(join(stateDir, "receipt.json"), {
+    const receipt = {
       version: 2,
       status: "committed",
       entryId: entry.id,
@@ -336,6 +531,29 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
       solutionHash,
       problemChunking: { pages: 20, stride: 18, overlap: 2 },
       targetBooks,
+    };
+    const receiptHash = writeEvidence(join(stateDir, "receipt.json"), receipt);
+    const attestationBasis = {
+      entryId: entry.id,
+      problemHash,
+      solutionHash,
+      classifierVersion: 4,
+      rulesDigest: DIGEST,
+      transcriptionGateVersion: 1,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      receipt: { path: "receipt.json", sha256: receiptHash },
+      answerAudit: {
+        path: auditRelativePath,
+        sha256: auditHash,
+        effectiveCorpusHash,
+      },
+      repairs: [],
+    };
+    const attestationDigest = canonicalEvidenceHash(attestationBasis);
+    writeEvidence(join(stateDir, "answer-attestation", `v1-${attestationDigest}.json`), {
+      version: 1,
+      attestationDigest,
+      ...attestationBasis,
     });
   }
   db.close();
@@ -348,8 +566,204 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
   return { root, dataDir, dbPath, manifestPath, stateDirs };
 }
 
+function installSyntheticRepair(files: ReturnType<typeof fixture>): string {
+  const stateDir = files.stateDirs.math;
+  const entry = JSON.parse(readFileSync(join(stateDir, "entry.json"), "utf8")).entry;
+  const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
+  const problemPath = join(stateDir, "problem-chunks", "v2-0000.json");
+  const classificationPath = join(stateDir, "classification-chunks", `v4-0000-${DIGEST}.json`);
+  const solutionPath = join(stateDir, "solution-chunks", "v3-0000.json");
+  const problemCheckpoint = JSON.parse(readFileSync(problemPath, "utf8"));
+  const classificationCheckpoint = JSON.parse(readFileSync(classificationPath, "utf8"));
+  const solutionCheckpoint = JSON.parse(readFileSync(solutionPath, "utf8"));
+  const baseQuestion = problemCheckpoint.items[0];
+  const baseClassification = classificationCheckpoint.items[0];
+  downloads.problem.pageCount = 2;
+  problemCheckpoint.to = 2;
+  problemCheckpoint.ownedTo = 2;
+  baseQuestion.page = 2;
+  classificationCheckpoint.to = 2;
+  classificationCheckpoint.ownedTo = 2;
+  baseClassification.key = "2:1";
+  writeJson(join(stateDir, "downloads.json"), downloads);
+  writeJson(problemPath, problemCheckpoint);
+  const correctedClassification = JSON.parse(JSON.stringify(baseClassification));
+  baseClassification.decision = "review";
+  baseClassification.canonical_subject = null;
+  baseClassification.curriculum_course = null;
+  baseClassification.domain = null;
+  baseClassification.achievement_codes = [];
+  baseClassification.reason_codes = ["TRANSCRIPTION_MISMATCH"];
+  baseClassification.transcription_status = "mismatch";
+  baseClassification.transcription_evidence = "source pixels show a different stem";
+  writeJson(classificationPath, classificationCheckpoint);
+  correctedClassification.transcription_status = "exact";
+  correctedClassification.transcription_evidence = "bounded-context reread matches the corrected complete transcription";
+  const baseSolution = solutionCheckpoint.items.find((item: { number: string }) => item.number === "1");
+  const corrected = {
+    ...baseQuestion,
+    question: "1쪽의 공유 지문 전체를 포함한 math corrected source transcription 1",
+  };
+  const baseProblemPointer = { path: "problem-chunks/v2-0000.json", sha256: hash(readFileSync(problemPath)) };
+  const baseClassificationPointer = {
+    path: `classification-chunks/v4-0000-${DIGEST}.json`,
+    sha256: hash(readFileSync(classificationPath)),
+  };
+  const baseSolutionPointer = { path: "solution-chunks/v3-0000.json", sha256: hash(readFileSync(solutionPath)) };
+  const problemArtifactPath = "problem-repairs/v2-0002-0001.json";
+  const problemArtifact = {
+    version: 2,
+    entryId: entry.id,
+    key: "2:1",
+    sourcePage: 2,
+    printedNumber: "1",
+    contextFrom: 1,
+    contextTo: 2,
+    sourceHash: downloads.problem.sha256,
+    baseProblemCheckpoint: baseProblemPointer,
+    baseQuestionHash: canonicalEvidenceHash(baseQuestion),
+    baseSolutionCheckpoint: baseSolutionPointer,
+    baseSolutionItemHash: canonicalEvidenceHash(baseSolution),
+    officialRawAnswerHash: hash(baseSolution.answer),
+    promptVersion: TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+    promptDigest: TARGETED_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    item: corrected,
+  };
+  const problemArtifactPointer = {
+    path: problemArtifactPath,
+    sha256: writeEvidence(join(stateDir, problemArtifactPath), problemArtifact),
+  };
+  const classificationArtifactPath = `classification-repairs/v3-0002-0001-${DIGEST}.json`;
+  const classificationArtifact = {
+    version: 3,
+    entryId: entry.id,
+    key: "2:1",
+    sourceHash: downloads.problem.sha256,
+    contextFrom: 1,
+    contextTo: 2,
+    problemArtifact: problemArtifactPointer,
+    baseClassificationCheckpoint: baseClassificationPointer,
+    baseClassificationHash: canonicalEvidenceHash(baseClassification),
+    effectiveQuestionHash: canonicalEvidenceHash(corrected),
+    classifierVersion: 4,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 1,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    item: correctedClassification,
+  };
+  const classificationArtifactPointer = {
+    path: classificationArtifactPath,
+    sha256: writeEvidence(join(stateDir, classificationArtifactPath), classificationArtifact),
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 1,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+  };
+  const repair = {
+    key: "2:1",
+    printedNumber: "1",
+    sourcePage: 2,
+    contextFrom: 1,
+    contextTo: 2,
+    baseProblemCheckpoint: baseProblemPointer,
+    baseClassificationCheckpoint: baseClassificationPointer,
+    baseSolutionCheckpoint: baseSolutionPointer,
+    problemArtifact: problemArtifactPointer,
+    classificationArtifact: classificationArtifactPointer,
+    baseQuestionHash: canonicalEvidenceHash(baseQuestion),
+    effectiveQuestionHash: canonicalEvidenceHash(corrected),
+    baseClassificationHash: canonicalEvidenceHash(baseClassification),
+    effectiveClassificationHash: canonicalEvidenceHash(correctedClassification),
+    baseSolutionItemHash: canonicalEvidenceHash(baseSolution),
+    officialRawAnswerHash: hash(baseSolution.answer),
+  };
+  const effectiveQuestions = problemCheckpoint.items.map((question: Record<string, unknown>, index: number) => ({
+    question: index === 0 ? corrected : question,
+    classification: index === 0 ? correctedClassification : classificationCheckpoint.items[index],
+  })).sort((left: { question: Record<string, unknown> }, right: { question: Record<string, unknown> }) =>
+    Number(left.question.page) - Number(right.question.page)
+    || Number(left.question.number) - Number(right.question.number));
+  const effectiveCorpusHash = canonicalEvidenceHash(effectiveQuestions);
+  const answers = [answerCase("math", 0), answerCase("math", 1)];
+  const items = answers.map((answer, index) => ({
+    key: index === 0 ? "2:1" : "1:2",
+    printedNumber: String(index + 1),
+    sourcePage: index === 0 ? 2 : 1,
+    officialRawAnswerHash: hash(answer.officialRaw),
+    storedAnswerHash: hash(answer.storedAnswer),
+    mode: "choice-content",
+    choiceIndex: answer.choices!.indexOf(answer.storedAnswer) + 1,
+    semantic: null,
+  })).sort((left, right) => left.key.localeCompare(right.key));
+  const auditBasis = {
+    entryId: entry.id,
+    problemHash: downloads.problem.sha256,
+    solutionHash: downloads.solution.sha256,
+    classifierVersion: 4,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 1,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    semanticChoiceVersion: 2,
+    semanticPromptDigest: SEMANTIC_PROMPT_DIGEST,
+    sourceQuestionCount: 30,
+    acceptedQuestionCount: 2,
+    rejectedQuestionCount: 28,
+    reviewQuestionCount: 0,
+    targetQuestionCounts: {
+      "수학 - 수학Ⅱ·미적분Ⅰ": 1,
+      "수학 - 수학Ⅰ·대수": 1,
+    },
+    acceptedMcqKeys: ["1:2", "2:1"],
+    effectiveCorpusHash,
+    semanticCheckpoint: null,
+    repairs: [repair],
+    items,
+  };
+  const auditDir = join(stateDir, "answer-audit");
+  for (const name of readdirSync(auditDir)) rmSync(join(auditDir, name));
+  const auditDigest = canonicalEvidenceHash(auditBasis);
+  const auditRelativePath = `answer-audit/v1-${auditDigest}.json`;
+  const auditHash = writeEvidence(join(stateDir, auditRelativePath), { version: 1, auditDigest, ...auditBasis });
+  const attestationDir = join(stateDir, "answer-attestation");
+  for (const name of readdirSync(attestationDir)) rmSync(join(attestationDir, name));
+  const receiptHash = hash(readFileSync(join(stateDir, "receipt.json")));
+  const attestationBasis = {
+    entryId: entry.id,
+    problemHash: downloads.problem.sha256,
+    solutionHash: downloads.solution.sha256,
+    classifierVersion: 4,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 1,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    receipt: { path: "receipt.json", sha256: receiptHash },
+    answerAudit: { path: auditRelativePath, sha256: auditHash, effectiveCorpusHash },
+    repairs: [repair],
+  };
+  const attestationDigest = canonicalEvidenceHash(attestationBasis);
+  writeEvidence(join(attestationDir, `v1-${attestationDigest}.json`), {
+    version: 1,
+    attestationDigest,
+    ...attestationBasis,
+  });
+
+  const db = new Database(files.dbPath);
+  db.prepare("UPDATE questions SET question = ?, src_page = 2 WHERE question = 'math question 1'")
+    .run(corrected.question);
+  db.prepare("UPDATE book_items SET content = ?, page = 2 WHERE category = '문제' AND content = 'math question 1'")
+    .run(corrected.question);
+  db.prepare("UPDATE book_files SET page_count = 2 WHERE r2_key LIKE 'corpus/%/problem.pdf' AND book_id IN (SELECT id FROM books WHERE title LIKE '%수학 미적분')")
+    .run();
+  db.close();
+  return join(stateDir, classificationArtifactPath);
+}
+
 describe("exam corpus verifier", () => {
   it("independently maps official MCQ values, fractions, and markers to DB answers", () => {
+    expect(canonicalEvidenceHash({ b: 1, a: ["x", null] }))
+      .toBe("2dccb31ca7d4b9dc00ebe9e1b2fca5314ca2563469fbf6ba1c69752939768835");
     const mcq = (choices: string[]) => ({ qtype: "mcq", choices, printedNumber: "1" });
     expect(officialAnswerForDb(mcq(["① 6", "② 9", "③ 12", "④ 15", "⑤ 18"]), "18")).toBe("⑤ 18");
     expect(officialAnswerForDb(mcq(["① $5$", "② $6$", "③ $7$", "④ $8$", "⑤ $9$"]), "8")).toBe("④ $8$");
@@ -357,6 +771,19 @@ describe("exam corpus verifier", () => {
       mcq(["① $\\frac76$", "② $\\frac43$", "③ $\\frac32$", "④ $\\frac53$", "⑤ $\\frac{11}{6}$"]),
       "$\\dfrac{4}{3}$",
     )).toBe("② $\\frac43$");
+    expect(officialAnswerForDb(mcq(["① 5", "② 0.5"]), "0.5")).toBe("② 0.5");
+    expect(() => officialAnswerForDb(mcq(["① 5", "② 7"]), "0.5"))
+      .toThrow("cannot resolve to choices");
+    expect(officialAnswerForDb(
+      mcq([
+        "① $\\frac{7}{6}\\pi$",
+        "② $\\frac{4}{3}\\pi$",
+        "③ $\\frac{3}{2}\\pi$",
+        "④ $\\frac{5}{3}\\pi$",
+        "⑤ $\\frac{11}{6}\\pi$",
+      ]),
+      "\\(\\frac{7\\pi}{6}\\)",
+    )).toBe("① $\\frac{7}{6}\\pi$");
     expect(officialAnswerForDb(mcq(["① 6", "② 9", "③ 12", "④ 15", "⑤ 18"]), "⑤")).toBe("⑤");
   });
 
@@ -372,9 +799,45 @@ describe("exam corpus verifier", () => {
     expect(statSync(files.dbPath).mtimeMs).toBe(modifiedBefore);
   });
 
+  it("overlays one declared immutable repair and rejects artifact tampering", () => {
+    const files = fixture();
+    const classificationArtifact = installSyntheticRepair(files);
+    const repaired = verifyExamCorpus(files);
+    expect(repaired, JSON.stringify(repaired.failures)).toMatchObject({ ok: true });
+
+    const tampered = JSON.parse(readFileSync(classificationArtifact, "utf8"));
+    tampered.item.domain = "tampered";
+    writeJson(classificationArtifact, tampered);
+    const report = verifyExamCorpus(files);
+    expect(report.ok).toBe(false);
+    expect(report.failures.some((failure) => failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+  });
+
+  it("requires exactly one post-commit answer attestation for every receipt", () => {
+    const files = fixture();
+    const attestationDir = join(files.stateDirs.math, "answer-attestation");
+    for (const name of readdirSync(attestationDir)) rmSync(join(attestationDir, name));
+    const report = verifyExamCorpus(files);
+    expect(report.ok).toBe(false);
+    expect(report.failures.some((failure) => failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
+  });
+
+  it("rejects legacy v3 classifications instead of bypassing the source-fidelity gate", () => {
+    const files = fixture();
+    const current = join(files.stateDirs.math, "classification-chunks", `v4-0000-${DIGEST}.json`);
+    const legacy = join(files.stateDirs.math, "classification-chunks", `v3-0000-${DIGEST}.json`);
+    renameSync(current, legacy);
+    const checkpoint = JSON.parse(readFileSync(legacy, "utf8"));
+    checkpoint.version = 3;
+    writeJson(legacy, checkpoint);
+    const report = verifyExamCorpus(files);
+    expect(report.ok).toBe(false);
+    expect(report.failures.some((failure) => failure.code === "CLASSIFICATION_MISSING")).toBe(true);
+  });
+
   it("fails closed on exclusions, review rows, missing official explanation, duplicates, and count drift", () => {
     const files = fixture();
-    const mathClassification = join(files.stateDirs.math, "classification-chunks", `v3-0000-${DIGEST}.json`);
+    const mathClassification = join(files.stateDirs.math, "classification-chunks", `v4-0000-${DIGEST}.json`);
     const math = JSON.parse(readFileSync(mathClassification, "utf8"));
     math.items[0].achievement_codes = ["12미적Ⅱ-01-01"];
     writeJson(mathClassification, math);
@@ -382,7 +845,7 @@ describe("exam corpus verifier", () => {
     const solutionCheckpoint = JSON.parse(readFileSync(mathSolution, "utf8"));
     solutionCheckpoint.ownedTo = 9;
     writeJson(mathSolution, solutionCheckpoint);
-    const koreanClassification = join(files.stateDirs.korean, "classification-chunks", `v3-0000-${DIGEST}.json`);
+    const koreanClassification = join(files.stateDirs.korean, "classification-chunks", `v4-0000-${DIGEST}.json`);
     const korean = JSON.parse(readFileSync(koreanClassification, "utf8"));
     Object.assign(korean.items[0], {
       decision: "review",
@@ -396,7 +859,7 @@ describe("exam corpus verifier", () => {
     writeFileSync(join(files.dataDir, "files", mathReceipt.targetBooks[0].problemR2Key), "corrupt");
 
     const db = new Database(files.dbPath);
-    db.prepare("UPDATE questions SET explanation = '' WHERE id = 1").run();
+    db.prepare("UPDATE questions SET explanation = '' WHERE question = 'science question 1'").run();
     db.exec(`
       INSERT INTO questions
       (subject_id, source, qtype, question, choices, answer, explanation, book_id,
@@ -411,12 +874,10 @@ describe("exam corpus verifier", () => {
     const codes = new Set(report.failures.map((failure) => failure.code));
     expect(report.ok).toBe(false);
     expect(codes.has("CURRICULUM_EXCLUSION")).toBe(true);
-    expect(codes.has("REVIEW_PENDING")).toBe(true);
+    expect(codes.has("REVIEW_COMMITTED")).toBe(true);
     expect(codes.has("OFFICIAL_EXPLANATION")).toBe(true);
     expect(codes.has("DUPLICATE_QUESTION")).toBe(true);
-    expect(codes.has("COUNT_MISMATCH")).toBe(true);
-    expect(codes.has("DB_FILE_EVIDENCE")).toBe(true);
-    expect(codes.has("SOLUTION_TOPOLOGY")).toBe(true);
+    expect(report.failureCount).toBeGreaterThan(codes.size);
 
     const stdout: string[] = [];
     const stderr: string[] = [];

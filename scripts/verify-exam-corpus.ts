@@ -2,12 +2,26 @@
 
 import Database from "better-sqlite3";
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { isDeepStrictEqual } from "node:util";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gradeAnswer } from "../src/quiz";
-import { numericPrintedLocator } from "../src/claude";
+import {
+  numericPrintedLocator,
+  QUIZ_EXTRACT_SPEC,
+  TARGETED_PROBLEM_TRANSCRIPTION_RULES,
+  TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+} from "../src/claude";
 
 export const TARGET_SUBJECTS = [
   "수학 - 수학Ⅱ·미적분Ⅰ",
@@ -125,6 +139,31 @@ type ProblemQuestion = {
   question: string;
   choices: string[] | null;
   answer: string;
+  evidence: Record<string, unknown>;
+};
+
+type ClassificationEvidence = {
+  key: string;
+  decision: "accept" | "reject" | "review";
+  canonical_subject: CanonicalSubject | null;
+  curriculum_course: string | null;
+  domain: string | null;
+  achievement_codes: string[];
+  confidence: number;
+  reason_codes: string[];
+  transcription_status: "exact" | "mismatch" | "unverifiable";
+  transcription_evidence: string;
+};
+
+type EvidencePointer = { path: string; sha256: string };
+
+type ClassifiedEvidence = {
+  question: ProblemQuestion;
+  classification: ClassificationEvidence;
+  problemCheckpoint: EvidencePointer;
+  classificationCheckpoint: EvidencePointer;
+  contextFrom: number;
+  contextTo: number;
 };
 
 type AcceptedQuestion = ProblemQuestion & {
@@ -180,11 +219,54 @@ function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, item]) => [key, canonicalize(item)]),
+    );
+  }
+  return value;
+}
+
+function canonicalJson(value: unknown): string {
+  return `${JSON.stringify(canonicalize(value), null, 2)}\n`;
+}
+
+export function canonicalEvidenceHash(value: unknown): string {
+  return sha256(canonicalJson(value));
+}
+
+const CLASSIFIER_VERSION = 4;
+const PROBLEM_REPAIR_VERSION = 2;
+const CLASSIFICATION_REPAIR_VERSION = 3;
+const PROBLEM_SLICE_PAGES = 20;
+const TRANSCRIPTION_GATE_VERSION = 1;
+const TRANSCRIPTION_GATE_RULES = `
+Independently compare every supplied transcription with the attached official source pixels. Check the complete shared passage and source material, the full stem, every answer choice and distractor, inequalities, signs, coefficients, exponents, fractions, formulas, tables, qtype, and all figure or visual dependencies including figure_description. Check that box plausibly covers the source problem and figure, without requiring pixel-perfect crop decimals. Do not infer fidelity from plausibility or from the proposed answer. Base the curriculum decision on the source pixels, not on an inaccurate supplied transcription.
+
+Return transcription_status exact only when all source-required content is faithfully represented. Return mismatch when any omission, substitution, changed bound/sign/value/formula/choice, wrong qtype, or inaccurate visual description is visible. Return unverifiable when the pixels or required context do not let you decide confidently; never guess exact. Give concise page-grounded transcription_evidence. Curriculum decision and transcription fidelity are independent, so reject and review items still require this source check.
+`.trim();
+const TRANSCRIPTION_PROMPT_DIGEST = sha256(`${TRANSCRIPTION_GATE_VERSION}\n${TRANSCRIPTION_GATE_RULES}`);
+const SEMANTIC_CHOICE_VERSION = 2;
+const SEMANTIC_CHOICE_RULES =
+  `For each item, use only its official detailed explanation and answer-choice contents to identify the one ` +
+  `choice semantically supported by the reasoning. The official answer marker and the problem extractor's answer ` +
+  `are intentionally hidden and must not be guessed; ordinal markers inside explanations are redacted. ` +
+  `Return ambiguous when the explanation does not establish ` +
+  `exactly one choice. choiceIndex is 1-based and evidence must briefly cite the decisive value or conclusion.`;
+const SEMANTIC_CHOICE_PROMPT_DIGEST = sha256(`${SEMANTIC_CHOICE_VERSION}\n${SEMANTIC_CHOICE_RULES}`);
+const TARGETED_PROBLEM_PROMPT_DIGEST = sha256(
+  `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
+);
+
 const OFFICIAL_CIRCLED_ANSWERS = "①②③④⑤⑥⑦⑧⑨⑩";
 const normalizedAnswerText = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
 const strippedChoiceMarker = (value: string) => normalizedAnswerText(value)
   .replace(/^[①-⑩]\s*/, "")
-  .replace(/^\d{1,2}\s*[.)]\s*/, "");
+  .replace(/^\d{1,2}\s*(?:\)|\.(?!\d))\s*/, "");
 
 function normalizedChoiceContent(value: string): string {
   let normalized = strippedChoiceMarker(value).trim();
@@ -200,37 +282,67 @@ function normalizedChoiceContent(value: string): string {
       denominatorGroup: string | undefined, denominatorToken: string | undefined) =>
       `\\frac{${numeratorGroup ?? numeratorToken}}{${denominatorGroup ?? denominatorToken}}`,
   );
+  normalized = normalized.replace(
+    /\\frac\{([^{}]*?)\\pi\}\{([^{}]+)\}/gu,
+    (_match, coefficient: string, denominator: string) =>
+      `\\frac{${coefficient.trim() || "1"}}{${denominator}}\\pi`,
+  );
   return normalized.toLowerCase().replace(/\s+/gu, "");
+}
+
+type OfficialAnswerResolution = {
+  storedAnswer: string;
+  choiceIndex: number | null;
+  mode: "raw" | "choice-content" | "choice-marker";
+};
+
+function resolveOfficialAnswerForDb(
+  question: { qtype: string; choices: string[] | null; printedNumber?: string },
+  rawAnswer: string,
+): OfficialAnswerResolution {
+  const official = rawAnswer.trim();
+  if (question.qtype !== "mcq") return { storedAnswer: official, choiceIndex: null, mode: "raw" };
+  const choices = question.choices ?? [];
+  const exact = choices.filter((choice) => normalizedAnswerText(choice) === normalizedAnswerText(official));
+  if (exact.length === 1) {
+    return { storedAnswer: exact[0], choiceIndex: choices.indexOf(exact[0]), mode: "choice-content" };
+  }
+
+  const officialContent = normalizedChoiceContent(official);
+  const contentMatches = officialContent
+    ? choices.filter((choice) => normalizedChoiceContent(choice) === officialContent)
+    : [];
+  if (contentMatches.length === 1) {
+    return {
+      storedAnswer: contentMatches[0],
+      choiceIndex: choices.indexOf(contentMatches[0]),
+      mode: "choice-content",
+    };
+  }
+
+  const circled = /^(?:정답\s*[:：]?\s*)?([①-⑩])(?:\s*번)?$/.exec(official)?.[1];
+  if (circled) {
+    const index = OFFICIAL_CIRCLED_ANSWERS.indexOf(circled);
+    if (index >= 0 && index < choices.length) {
+      return { storedAnswer: official, choiceIndex: index, mode: "choice-marker" };
+    }
+    throw new Error(`${question.printedNumber ?? "?"}: official MCQ marker is outside choices`);
+  }
+  const numeric = /^(?:정답\s*[:：]?\s*)?(\d{1,2})(?:\s*번)?$/.exec(official)?.[1];
+  if (numeric) {
+    const index = Number(numeric) - 1;
+    if (index >= 0 && index < choices.length) {
+      return { storedAnswer: official, choiceIndex: index, mode: "choice-marker" };
+    }
+  }
+  throw new Error(`${question.printedNumber ?? "?"}: official MCQ answer cannot resolve to choices`);
 }
 
 export function officialAnswerForDb(
   question: { qtype: string; choices: string[] | null; printedNumber?: string },
   rawAnswer: string,
 ): string {
-  const official = rawAnswer.trim();
-  if (question.qtype !== "mcq") return official;
-  const choices = question.choices ?? [];
-  const exact = choices.filter((choice) => normalizedAnswerText(choice) === normalizedAnswerText(official));
-  if (exact.length === 1) return exact[0];
-
-  const officialContent = normalizedChoiceContent(official);
-  const contentMatches = officialContent
-    ? choices.filter((choice) => normalizedChoiceContent(choice) === officialContent)
-    : [];
-  if (contentMatches.length === 1) return contentMatches[0];
-
-  const circled = /^(?:정답\s*[:：]?\s*)?([①-⑩])(?:\s*번)?$/.exec(official)?.[1];
-  if (circled) {
-    const index = OFFICIAL_CIRCLED_ANSWERS.indexOf(circled);
-    if (index >= 0 && index < choices.length) return official;
-    throw new Error(`${question.printedNumber ?? "?"}: official MCQ marker is outside choices`);
-  }
-  const numeric = /^(?:정답\s*[:：]?\s*)?(\d{1,2})(?:\s*번)?$/.exec(official)?.[1];
-  if (numeric) {
-    const index = Number(numeric) - 1;
-    if (index >= 0 && index < choices.length) return official;
-  }
-  throw new Error(`${question.printedNumber ?? "?"}: official MCQ answer cannot resolve to choices`);
+  return resolveOfficialAnswerForDb(question, rawAnswer).storedAnswer;
 }
 
 function hashFile(path: string): string {
@@ -434,26 +546,71 @@ function validateRanges(
 function parseProblem(value: unknown, label: string): ProblemQuestion {
   const row = object(value, label);
   const rawNumber = row.number;
-  const number = numericPrintedLocator(typeof rawNumber === "string" ? rawNumber : null);
+  const normalizedNumber = exactString(rawNumber, `${label}.number`);
+  const number = numericPrintedLocator(normalizedNumber);
   if (number === null) throw new Error(`${label}.number is not a printed integer`);
   const page = integer(row.page, `${label}.page`, 1);
   const qtype = row.qtype;
   if (qtype !== "mcq" && qtype !== "short" && qtype !== "ox") throw new Error(`${label}.qtype is invalid`);
+  const difficulty = row.difficulty;
+  if (difficulty !== "하" && difficulty !== "중" && difficulty !== "상") {
+    throw new Error(`${label}.difficulty is invalid`);
+  }
   let choices: string[] | null = null;
   if (row.choices !== null) {
     if (!Array.isArray(row.choices) || row.choices.some((choice) => typeof choice !== "string" || !choice.trim())) {
       throw new Error(`${label}.choices is invalid`);
     }
-    choices = row.choices as string[];
+    choices = (row.choices as string[]).map((choice, index) => exactString(choice, `${label}.choices[${index}]`));
   }
+  if ((qtype === "mcq") !== (choices !== null && choices.length >= 2)) {
+    throw new Error(`${label}.choices does not match qtype`);
+  }
+  const question = exactString(row.question, `${label}.question`);
+  const answer = exactString(row.answer, `${label}.answer`);
+  if (typeof row.explanation !== "string" || row.explanation !== row.explanation.trim()) {
+    throw new Error(`${label}.explanation must be a trimmed string`);
+  }
+  if (typeof row.figure !== "boolean") throw new Error(`${label}.figure must be boolean`);
+  let figureDescription: string | null = null;
+  if (row.figure) {
+    figureDescription = exactString(row.figure_description, `${label}.figure_description`);
+  } else if (row.figure_description !== null) {
+    throw new Error(`${label}.figure_description must be null without a figure`);
+  }
+  let box: [number, number] | null = null;
+  if (row.figure && Array.isArray(row.box) && row.box.length === 2) {
+    const top = Number(row.box[0]);
+    const bottom = Number(row.box[1]);
+    if (Number.isFinite(top) && Number.isFinite(bottom) && top >= 0 && bottom <= 1 && top < bottom) {
+      box = [top, bottom];
+    }
+  } else if (row.box !== null) {
+    throw new Error(`${label}.box is invalid`);
+  }
+  const normalizedAnswer = qtype === "ox" ? answer.toLowerCase() : answer;
+  const evidence = {
+    number: normalizedNumber,
+    qtype,
+    difficulty,
+    question,
+    choices,
+    answer: normalizedAnswer,
+    explanation: row.explanation,
+    page,
+    figure: row.figure,
+    figure_description: figureDescription,
+    box,
+  };
   return {
     key: `${page}:${number}`,
     page,
     printedNumber: String(number),
     qtype,
-    question: exactString(row.question, `${label}.question`),
+    question,
     choices,
-    answer: exactString(row.answer, `${label}.answer`),
+    answer: normalizedAnswer,
+    evidence,
   };
 }
 
@@ -463,7 +620,119 @@ type DecisionSummary = {
   rejected: number;
   reviews: number;
   rulesDigest: string | null;
+  order: string[];
+  records: Map<string, ClassifiedEvidence>;
 };
+
+class CorpusValidationError extends Error {
+  constructor(public readonly code: string, message: string) {
+    super(message);
+  }
+}
+
+function parseClassificationEvidence(
+  value: unknown,
+  question: ProblemQuestion,
+  entry: ManifestEntry,
+  label: string,
+): ClassificationEvidence {
+  const row = object(value, label);
+  const key = exactString(row.key, `${label}.key`);
+  if (key !== question.key) throw new CorpusValidationError("CLASSIFICATION_INVALID", `${key}: key does not match problem`);
+  const decision = row.decision;
+  if (decision !== "accept" && decision !== "reject" && decision !== "review") {
+    throw new CorpusValidationError("CLASSIFICATION_INVALID", `${key}: invalid decision`);
+  }
+  const canonical = row.canonical_subject;
+  const canonicalSubject = canonical === null ? null : canonical as CanonicalSubject;
+  if (canonicalSubject !== null && !(canonicalSubject in TARGET_BY_CANONICAL)) {
+    throw new CorpusValidationError("CLASSIFICATION_INVALID", `${key}: invalid canonical subject`);
+  }
+  const curriculumCourse = row.curriculum_course === null
+    ? null
+    : exactString(row.curriculum_course, `${label}.curriculum_course`);
+  const domain = row.domain === null ? null : exactString(row.domain, `${label}.domain`);
+  if (!Array.isArray(row.achievement_codes)
+    || row.achievement_codes.some((code) => typeof code !== "string" || !code.trim() || code !== code.trim())) {
+    throw new CorpusValidationError("CLASSIFICATION_INVALID", `${key}: invalid achievement codes`);
+  }
+  if (!Array.isArray(row.reason_codes) || row.reason_codes.length === 0
+    || row.reason_codes.some((code) => typeof code !== "string" || !code.trim() || code !== code.trim())) {
+    throw new CorpusValidationError("CLASSIFICATION_INVALID", `${key}: invalid reason codes`);
+  }
+  const transcriptionStatus = row.transcription_status;
+  if (transcriptionStatus !== "exact" && transcriptionStatus !== "mismatch"
+    && transcriptionStatus !== "unverifiable") {
+    throw new CorpusValidationError("TRANSCRIPTION_GATE", `${key}: invalid transcription status`);
+  }
+  const transcriptionEvidence = exactString(row.transcription_evidence, `${label}.transcription_evidence`);
+  const confidence = Number(row.confidence);
+  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+    throw new CorpusValidationError("CLASSIFICATION_INVALID", `${key}: invalid confidence`);
+  }
+  const achievementCodes = [...new Set(row.achievement_codes as string[])];
+  const reasonCodes = [...new Set(row.reason_codes as string[])];
+  if (decision === "accept") {
+    if (canonicalSubject === null || !CANONICAL_BY_SOURCE[entry.subject].includes(canonicalSubject)) {
+      throw new CorpusValidationError("SUBJECT_EXCLUSION", `${key}: ${String(canonicalSubject)} is outside ${entry.subject}`);
+    }
+    if ((canonicalSubject === "integrated_science" || canonicalSubject === "integrated_social")
+      && ![1, 2].includes(entry.grade)) {
+      throw new CorpusValidationError("GRADE_GATE", `${key}: integrated source grade ${entry.grade} is forbidden`);
+    }
+    if (confidence < 0.9 || curriculumCourse === null || domain === null) {
+      throw new CorpusValidationError("CLASSIFICATION_INVALID", `${key}: accept lacks confidence/course/domain evidence`);
+    }
+    if (achievementCodes.length === 0) {
+      throw new CorpusValidationError("CURRICULUM_EXCLUSION", `${key}: accept lacks achievement codes`);
+    }
+    const invalidCode = achievementCodes.find((code) => !ALLOWED_CODES[canonicalSubject].has(code));
+    if (invalidCode) {
+      throw new CorpusValidationError("CURRICULUM_EXCLUSION", `${key}: excluded code ${invalidCode}`);
+    }
+  } else if (canonicalSubject !== null || curriculumCourse !== null || domain !== null || achievementCodes.length > 0) {
+    throw new CorpusValidationError("CLASSIFICATION_INVALID", `${key}: reject/review must not assign a target`);
+  }
+  return {
+    key,
+    decision,
+    canonical_subject: canonicalSubject,
+    curriculum_course: curriculumCourse,
+    domain,
+    achievement_codes: achievementCodes,
+    confidence,
+    reason_codes: reasonCodes,
+    transcription_status: transcriptionStatus,
+    transcription_evidence: transcriptionEvidence,
+  };
+}
+
+function summarizeDecisions(
+  records: Map<string, ClassifiedEvidence>,
+  order: string[],
+  rulesDigest: string | null,
+): DecisionSummary {
+  const problems = new Map<string, ProblemQuestion>();
+  const accepted: DecisionSummary["accepted"] = [];
+  let rejected = 0;
+  let reviews = 0;
+  for (const key of order) {
+    const record = records.get(key);
+    if (!record) continue;
+    problems.set(key, record.question);
+    if (record.classification.decision === "accept") {
+      accepted.push({
+        ...record.question,
+        target: TARGET_BY_CANONICAL[record.classification.canonical_subject!],
+      });
+    } else if (record.classification.decision === "reject") {
+      rejected += 1;
+    } else {
+      reviews += 1;
+    }
+  }
+  return { problems, accepted, rejected, reviews, rulesDigest, order, records };
+}
 
 function loadDecisions(
   stateDir: string,
@@ -475,13 +744,11 @@ function loadDecisions(
   const problemDir = join(stateDir, "problem-chunks");
   const classificationDir = join(stateDir, "classification-chunks");
   const problemFiles = listJson(problemDir, /^v2-\d{4}\.json$/);
-  const classificationFiles = listJson(classificationDir, /^v3-\d{4}-[a-f0-9]{16}\.json$/);
-  const problems = new Map<string, ProblemQuestion>();
-  const accepted: DecisionSummary["accepted"] = [];
+  const classificationFiles = listJson(classificationDir, /^v4-\d{4}-[a-f0-9]{16}\.json$/);
+  const records = new Map<string, ClassifiedEvidence>();
+  const order: string[] = [];
   const ranges: Array<{ from: number; to: number }> = [];
   const topology: Array<{ from: number; to: number; ownedFrom: number; ownedTo: number }> = [];
-  let rejected = 0;
-  let reviews = 0;
   let selectedDigest: string | null = terminalDigest;
 
   if (problemFiles.length === 0) add({ code: "CHUNK_MISSING", entryId: entry.id, message: "problem chunks are missing" });
@@ -516,9 +783,9 @@ function loadDecisions(
       continue;
     }
 
-    const candidates = classificationFiles.filter((name) => name.startsWith(`v3-${index}-`));
+    const candidates = classificationFiles.filter((name) => name.startsWith(`v${CLASSIFIER_VERSION}-${index}-`));
     const selected = terminalDigest
-      ? candidates.find((name) => name === `v3-${index}-${terminalDigest}.json`)
+      ? candidates.find((name) => name === `v4-${index}-${terminalDigest}.json`)
       : candidates.length === 1 ? candidates[0] : undefined;
     if (!selected) {
       add({
@@ -533,9 +800,11 @@ function loadDecisions(
     const fileDigest = selected.slice(8, -5);
     try {
       if (
-        classification.version !== 3 || classification.sourceHash !== problemEvidence.sha256
+        classification.version !== CLASSIFIER_VERSION || classification.sourceHash !== problemEvidence.sha256
         || classification.from !== from || classification.to !== to || classification.rulesDigest !== fileDigest
         || classification.ownedFrom !== checkpoint.ownedFrom || classification.ownedTo !== checkpoint.ownedTo
+        || classification.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION
+        || classification.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST
         || classification.model !== "gpt-5.6-sol" || classification.reasoningEffort !== "high"
       ) throw new Error(`${selected} metadata does not match problem checkpoint`);
       if (selectedDigest !== null && selectedDigest !== fileDigest) throw new Error(`${selected} rules digest does not match terminal record`);
@@ -544,63 +813,56 @@ function loadDecisions(
       const expectedKeys = new Set(chunkProblems.map((question) => question.key));
       const seen = new Set<string>();
       const byKey = new Map(chunkProblems.map((question) => [question.key, question]));
+      const decisionsByKey = new Map<string, ClassificationEvidence>();
       for (const [decisionIndex, value] of classification.items.entries()) {
-        const decision = object(value, `${selected}.items[${decisionIndex}]`);
-        const key = exactString(decision.key, `${selected}.items[${decisionIndex}].key`);
+        const rawDecision = object(value, `${selected}.items[${decisionIndex}]`);
+        const key = exactString(rawDecision.key, `${selected}.items[${decisionIndex}].key`);
         if (!expectedKeys.has(key) || seen.has(key)) throw new Error(`${selected} has missing, extra, or duplicate key ${key}`);
         seen.add(key);
-        const kind = decision.decision;
-        if (kind !== "accept" && kind !== "reject" && kind !== "review") throw new Error(`${key}: invalid decision`);
-        if (kind === "review") {
-          reviews += 1;
-          add({ code: "REVIEW_PENDING", entryId: entry.id, message: `${key} requires review` });
-          continue;
-        }
-        if (kind === "reject") {
-          rejected += 1;
-          if (decision.canonical_subject !== null) {
-            add({ code: "CLASSIFICATION_INVALID", entryId: entry.id, message: `${key}: reject must not assign a target` });
-          }
-          continue;
-        }
-
-        const canonical = decision.canonical_subject as CanonicalSubject;
-        if (!(canonical in TARGET_BY_CANONICAL) || !CANONICAL_BY_SOURCE[entry.subject].includes(canonical)) {
-          add({ code: "SUBJECT_EXCLUSION", entryId: entry.id, message: `${key}: ${String(canonical)} is outside ${entry.subject}` });
-          continue;
-        }
-        if ((canonical === "integrated_science" || canonical === "integrated_social") && ![1, 2].includes(entry.grade)) {
-          add({ code: "GRADE_GATE", entryId: entry.id, message: `${key}: integrated source grade ${entry.grade} is forbidden` });
-        }
-        const confidence = Number(decision.confidence);
-        if (!Number.isFinite(confidence) || confidence < 0.9 || typeof decision.curriculum_course !== "string"
-          || !decision.curriculum_course.trim() || typeof decision.domain !== "string" || !decision.domain.trim()) {
-          add({ code: "CLASSIFICATION_INVALID", entryId: entry.id, message: `${key}: accept lacks confidence/course/domain evidence` });
-        }
-        if (!Array.isArray(decision.reason_codes) || decision.reason_codes.length === 0
-          || decision.reason_codes.some((code) => typeof code !== "string" || !code.trim())) {
-          add({ code: "CLASSIFICATION_INVALID", entryId: entry.id, message: `${key}: accept lacks reason codes` });
-        }
-        if (!Array.isArray(decision.achievement_codes) || decision.achievement_codes.length === 0) {
-          add({ code: "CURRICULUM_EXCLUSION", entryId: entry.id, message: `${key}: accept lacks achievement codes` });
-        } else {
-          for (const code of decision.achievement_codes) {
-            if (typeof code !== "string" || !ALLOWED_CODES[canonical].has(code)) {
-              add({ code: "CURRICULUM_EXCLUSION", entryId: entry.id, message: `${key}: excluded code ${String(code)}` });
-            }
-          }
-        }
-        accepted.push({ ...byKey.get(key)!, target: TARGET_BY_CANONICAL[canonical] });
+        const question = byKey.get(key)!;
+        const decision = parseClassificationEvidence(
+          rawDecision,
+          question,
+          entry,
+          `${selected}.items[${decisionIndex}]`,
+        );
+        decisionsByKey.set(key, decision);
       }
       if (seen.size !== expectedKeys.size) throw new Error(`${selected} omits ${expectedKeys.size - seen.size} questions`);
+      const problemCheckpoint = {
+        path: `problem-chunks/${problemName}`,
+        sha256: hashFile(join(problemDir, problemName)),
+      };
+      const classificationCheckpoint = {
+        path: `classification-chunks/${selected}`,
+        sha256: hashFile(join(classificationDir, selected)),
+      };
       for (const question of chunkProblems) {
-        if (problems.has(question.key)) throw new Error(`duplicate extracted question key ${question.key}`);
-        problems.set(question.key, question);
+        const key = question.key;
+        if (records.has(key)) throw new Error(`duplicate extracted question key ${key}`);
+        records.set(key, {
+          question,
+          classification: decisionsByKey.get(key)!,
+          problemCheckpoint,
+          classificationCheckpoint,
+          contextFrom: from,
+          contextTo: to,
+        });
+        order.push(key);
       }
     } catch (error) {
-      add({ code: "CLASSIFICATION_INVALID", entryId: entry.id, message: error instanceof Error ? error.message : String(error) });
+      add({
+        code: error instanceof CorpusValidationError ? error.code : "CLASSIFICATION_INVALID",
+        entryId: entry.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   }
+  order.sort((left, right) => {
+    const a = records.get(left)!.question;
+    const b = records.get(right)!.question;
+    return a.page - b.page || Number(a.printedNumber) - Number(b.printedNumber);
+  });
   validateRanges(ranges, problemEvidence.pageCount, "problem", entry.id, add);
   for (const [index, slice] of topology.entries()) {
     const next = topology[index + 1];
@@ -616,14 +878,22 @@ function loadDecisions(
     }
   }
   const expectedCount = EXPECTED_SOURCE_QUESTIONS[entry.subject];
-  const printed = new Set([...problems.values()].map((question) => Number(question.printedNumber)));
+  const summary = summarizeDecisions(records, order, selectedDigest);
+  const printed = new Set([...summary.problems.values()].map((question) => Number(question.printedNumber)));
   if (printed.size !== expectedCount || Array.from({ length: expectedCount }, (_, index) => index + 1).some((number) => !printed.has(number))) {
     add({ code: "PROBLEM_NUMBER_SET", entryId: entry.id, message: `${entry.subject} must contain printed numbers 1-${expectedCount} exactly once` });
   }
-  return { problems, accepted, rejected, reviews, rulesDigest: selectedDigest };
+  return summary;
 }
 
-type OfficialSolution = { printedNumber: string; rawAnswer: string; explanation: string; page: number };
+type OfficialSolution = {
+  printedNumber: string;
+  rawAnswer: string;
+  explanation: string;
+  page: number;
+  evidence: Record<string, unknown>;
+  checkpoint: EvidencePointer;
+};
 
 function loadSolutions(
   stateDir: string,
@@ -658,19 +928,35 @@ function loadSolutions(
       topology.push({ from, to, ownedFrom, ownedTo });
       for (const [index, value] of checkpoint.items.entries()) {
         const item = object(value, `${name}.items[${index}]`);
-        const number = numericPrintedLocator(typeof item.number === "string" ? item.number : null);
+        const normalizedNumber = exactString(item.number, `${name}.items[${index}].number`);
+        const number = numericPrintedLocator(normalizedNumber);
         if (number === null) throw new Error(`${name}.items[${index}].number is invalid`);
         const page = integer(item.page, `${name}.items[${index}].page`, 1);
         if (item.complete !== true || page < ownedFrom || page > ownedTo) {
           throw new Error(`${name}.items[${index}] is incomplete or outside owned start pages`);
         }
+        const rawAnswer = exactString(item.answer, `${name}.items[${index}].answer`);
+        if (typeof item.explanation !== "string" || item.explanation !== item.explanation.trim()) {
+          throw new Error(`${name}.items[${index}].explanation must be a trimmed string`);
+        }
         const printedNumber = String(number);
         if (solutions.has(printedNumber)) throw new Error(`duplicate official solution number ${printedNumber}`);
         solutions.set(printedNumber, {
           printedNumber,
-          rawAnswer: typeof item.answer === "string" ? item.answer : "",
-          explanation: typeof item.explanation === "string" ? item.explanation : "",
+          rawAnswer,
+          explanation: item.explanation,
           page,
+          evidence: {
+            number: normalizedNumber,
+            answer: rawAnswer,
+            explanation: item.explanation,
+            page,
+            complete: true,
+          },
+          checkpoint: {
+            path: `solution-chunks/${name}`,
+            sha256: hashFile(join(dir, name)),
+          },
         });
       }
     } catch (error) {
@@ -693,6 +979,686 @@ function loadSolutions(
     }
   }
   return solutions;
+}
+
+function evidencePointer(value: unknown, label: string): EvidencePointer {
+  const row = object(value, label);
+  if (Object.keys(row).sort().join(",") !== "path,sha256") throw new Error(`${label} has unexpected fields`);
+  const path = exactString(row.path, `${label}.path`);
+  const digest = exactString(row.sha256, `${label}.sha256`);
+  if (!/^[a-f0-9]{64}$/u.test(digest)) throw new Error(`${label}.sha256 is invalid`);
+  if (path.includes("\\") || path.startsWith("/")
+    || path.split("/").some((part) => !part || part === "." || part === "..")) {
+    throw new Error(`${label}.path is not a confined relative path`);
+  }
+  return { path, sha256: digest };
+}
+
+function confinedEvidencePath(stateDir: string, pointer: EvidencePointer, label: string): string {
+  const root = realpathSync(stateDir);
+  const path = resolve(root, pointer.path);
+  if (!path.startsWith(`${root}/`)) throw new Error(`${label} escapes entry state`);
+  const actual = realpathSync(path);
+  if (actual !== path || !statSync(actual).isFile()) throw new Error(`${label} must be a regular non-symlink file`);
+  return actual;
+}
+
+function readBoundEvidence(stateDir: string, pointer: EvidencePointer, label: string): Record<string, unknown> {
+  const path = confinedEvidencePath(stateDir, pointer, label);
+  const actualHash = hashFile(path);
+  if (actualHash !== pointer.sha256) throw new Error(`${label} file hash mismatch`);
+  const value = object(json(path), label);
+  if (canonicalEvidenceHash(value) !== actualHash) throw new Error(`${label} is not canonical immutable JSON`);
+  return value;
+}
+
+function sameEvidencePointer(actual: EvidencePointer, expected: EvidencePointer, label: string): void {
+  if (!isDeepStrictEqual(actual, expected)) throw new Error(`${label} does not bind the selected base checkpoint`);
+}
+
+function semanticExplanationWithoutMarkers(value: string): string {
+  return value
+    .replace(/\[\s*(?:정답|답)\s*\]\s*(?:[①-⑩]|(?:10|[1-9])(?!\d)(?:\s*번)?)/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/(?:[①-⑩]|(?:10|[1-9])(?!\d))\s*번\s*(?:선택지\s*)?(?:이|가)?\s*(?:정답|답)(?:이다|입니다)?/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/선택지\s*(?:[①-⑩]|(?:10|[1-9])(?!\d))(?:\s*번)?\s*(?:이|가)?\s*(?:정답|답)(?:이다|입니다)?/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/(?:정답|답)\s+(?:[①-⑩]|(?:10|[1-9])(?!\d))\s*번/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/(?:정답|답)\s*(?:은|는|이|가|:|：|=)\s*(?:[①-⑩]|(?:10|[1-9])(?!\d))(?:\s*번)?/gu, "[CHOICE MARKER HIDDEN]")
+    .replace(/[①-⑩]/gu, "[CHOICE MARKER HIDDEN]");
+}
+
+function applyDeclaredRepair(
+  value: unknown,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  rulesDigest: string,
+  base: ClassifiedEvidence,
+  solution: OfficialSolution,
+): ClassifiedEvidence {
+  const repair = object(value, "answer audit repair");
+  const key = exactString(repair.key, "repair.key");
+  const printedNumber = exactString(repair.printedNumber, "repair.printedNumber");
+  const sourcePage = integer(repair.sourcePage, "repair.sourcePage", 1);
+  const contextFrom = integer(repair.contextFrom, "repair.contextFrom", 1);
+  const contextTo = integer(repair.contextTo, "repair.contextTo", contextFrom);
+  if (key !== base.question.key || printedNumber !== base.question.printedNumber
+    || sourcePage !== base.question.page || solution.printedNumber !== printedNumber) {
+    throw new Error(`${key}: repair identity does not match base problem/solution`);
+  }
+  if (contextFrom !== base.contextFrom || contextTo !== base.contextTo
+    || sourcePage < contextFrom || sourcePage > contextTo
+    || contextTo - contextFrom + 1 > PROBLEM_SLICE_PAGES) {
+    throw new Error(`${key}: repair context does not match its owning bounded base chunk`);
+  }
+  const baseProblemCheckpoint = evidencePointer(repair.baseProblemCheckpoint, `${key}.baseProblemCheckpoint`);
+  const baseClassificationCheckpoint = evidencePointer(
+    repair.baseClassificationCheckpoint,
+    `${key}.baseClassificationCheckpoint`,
+  );
+  const baseSolutionCheckpoint = evidencePointer(repair.baseSolutionCheckpoint, `${key}.baseSolutionCheckpoint`);
+  sameEvidencePointer(baseProblemCheckpoint, base.problemCheckpoint, `${key}.baseProblemCheckpoint`);
+  sameEvidencePointer(baseClassificationCheckpoint, base.classificationCheckpoint, `${key}.baseClassificationCheckpoint`);
+  sameEvidencePointer(baseSolutionCheckpoint, solution.checkpoint, `${key}.baseSolutionCheckpoint`);
+  for (const [label, pointer] of [
+    ["base problem", baseProblemCheckpoint],
+    ["base classification", baseClassificationCheckpoint],
+    ["base solution", baseSolutionCheckpoint],
+  ] as const) {
+    const path = confinedEvidencePath(stateDir, pointer, `${key} ${label}`);
+    if (hashFile(path) !== pointer.sha256) throw new Error(`${key} ${label} hash mismatch`);
+  }
+
+  const baseQuestionHash = canonicalEvidenceHash(base.question.evidence);
+  const baseClassificationHash = canonicalEvidenceHash(base.classification);
+  const baseSolutionItemHash = canonicalEvidenceHash(solution.evidence);
+  const officialRawAnswerHash = sha256(solution.rawAnswer);
+  if (repair.baseQuestionHash !== baseQuestionHash
+    || repair.baseClassificationHash !== baseClassificationHash
+    || repair.baseSolutionItemHash !== baseSolutionItemHash
+    || repair.officialRawAnswerHash !== officialRawAnswerHash) {
+    throw new Error(`${key}: repair base item hashes do not match immutable checkpoints`);
+  }
+
+  const problemArtifact = evidencePointer(repair.problemArtifact, `${key}.problemArtifact`);
+  const expectedProblemPath =
+    `problem-repairs/v${PROBLEM_REPAIR_VERSION}-${String(sourcePage).padStart(4, "0")}-` +
+    `${printedNumber.padStart(4, "0")}.json`;
+  if (problemArtifact.path !== expectedProblemPath) throw new Error(`${key}: problem repair path is invalid`);
+  const problemCheckpoint = readBoundEvidence(stateDir, problemArtifact, `${key} problem repair`);
+  const corrected = parseProblem(problemCheckpoint.item, `${key} problem repair.item`);
+  if (corrected.key !== key || corrected.page !== sourcePage || corrected.printedNumber !== printedNumber) {
+    throw new Error(`${key}: problem repair changed page/number identity`);
+  }
+  const effectiveQuestionHash = canonicalEvidenceHash(corrected.evidence);
+  const expectedProblemCheckpoint = {
+    version: PROBLEM_REPAIR_VERSION,
+    entryId: entry.id,
+    key,
+    sourcePage,
+    printedNumber,
+    contextFrom,
+    contextTo,
+    sourceHash: problemEvidence.sha256,
+    baseProblemCheckpoint,
+    baseQuestionHash,
+    baseSolutionCheckpoint,
+    baseSolutionItemHash,
+    officialRawAnswerHash,
+    promptVersion: TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+    promptDigest: TARGETED_PROBLEM_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    item: corrected.evidence,
+  };
+  if (!isDeepStrictEqual(problemCheckpoint, expectedProblemCheckpoint)) {
+    throw new Error(`${key}: problem repair metadata/content is stale or incomplete`);
+  }
+
+  const classificationArtifactRow = object(repair.classificationArtifact, `${key}.classificationArtifact`);
+  if (Object.keys(classificationArtifactRow).sort().join(",")
+    !== "path,rulesDigest,sha256,transcriptionGateVersion,transcriptionPromptDigest") {
+    throw new Error(`${key}.classificationArtifact has unexpected fields`);
+  }
+  const classificationArtifact = evidencePointer({
+    path: classificationArtifactRow.path,
+    sha256: classificationArtifactRow.sha256,
+  }, `${key}.classificationArtifact`);
+  if (classificationArtifactRow.rulesDigest !== rulesDigest) {
+    throw new Error(`${key}: classification repair rules digest is stale`);
+  }
+  if (classificationArtifactRow.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION
+    || classificationArtifactRow.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST) {
+    throw new Error(`${key}: classification repair transcription gate is stale`);
+  }
+  const expectedClassificationPath =
+    `classification-repairs/v${CLASSIFICATION_REPAIR_VERSION}-${String(sourcePage).padStart(4, "0")}-` +
+    `${printedNumber.padStart(4, "0")}-${rulesDigest}.json`;
+  if (classificationArtifact.path !== expectedClassificationPath) {
+    throw new Error(`${key}: classification repair path is invalid`);
+  }
+  const classificationCheckpoint = readBoundEvidence(
+    stateDir,
+    classificationArtifact,
+    `${key} classification repair`,
+  );
+  const correctedClassification = parseClassificationEvidence(
+    classificationCheckpoint.item,
+    corrected,
+    entry,
+    `${key} classification repair.item`,
+  );
+  const effectiveClassificationHash = canonicalEvidenceHash(correctedClassification);
+  if (correctedClassification.transcription_status !== "exact") {
+    throw new Error(`${key}: repaired transcription is not exact`);
+  }
+  const expectedClassificationCheckpoint = {
+    version: CLASSIFICATION_REPAIR_VERSION,
+    entryId: entry.id,
+    key,
+    sourceHash: problemEvidence.sha256,
+    contextFrom,
+    contextTo,
+    problemArtifact,
+    baseClassificationCheckpoint,
+    baseClassificationHash,
+    effectiveQuestionHash,
+    classifierVersion: CLASSIFIER_VERSION,
+    rulesDigest,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    item: correctedClassification,
+  };
+  if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)) {
+    throw new Error(`${key}: classification repair metadata/content is stale or incomplete`);
+  }
+  const expectedRepair = {
+    key,
+    printedNumber,
+    sourcePage,
+    contextFrom,
+    contextTo,
+    baseProblemCheckpoint,
+    baseClassificationCheckpoint,
+    baseSolutionCheckpoint,
+    problemArtifact,
+    classificationArtifact: {
+      ...classificationArtifact,
+      rulesDigest,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    },
+    baseQuestionHash,
+    effectiveQuestionHash,
+    baseClassificationHash,
+    effectiveClassificationHash,
+    baseSolutionItemHash,
+    officialRawAnswerHash,
+  };
+  if (!isDeepStrictEqual(repair, expectedRepair)) throw new Error(`${key}: repair evidence envelope does not match artifacts`);
+  return {
+    question: corrected,
+    classification: correctedClassification,
+    problemCheckpoint: base.problemCheckpoint,
+    classificationCheckpoint: base.classificationCheckpoint,
+    contextFrom: base.contextFrom,
+    contextTo: base.contextTo,
+  };
+}
+
+type SemanticDecision = {
+  key: string;
+  status: "resolved" | "ambiguous";
+  choiceIndex: number | null;
+  evidence: string;
+};
+
+function verifySemanticCheckpoint(
+  value: unknown,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  solutionEvidence: DownloadEvidence,
+  rulesDigest: string,
+  effectiveCorpusHash: string,
+  inputs: Array<{ key: string; choices: string[]; detailedExplanation: string }>,
+): Map<string, SemanticDecision> {
+  const inputHash = canonicalEvidenceHash(inputs);
+  if (value === null) {
+    if (inputs.length > 0) throw new Error("marker-only MCQs have no semantic checkpoint");
+    return new Map();
+  }
+  const envelope = object(value, "answer audit semanticCheckpoint");
+  if (Object.keys(envelope).sort().join(",") !== "inputHash,path,sha256") {
+    throw new Error("semanticCheckpoint has unexpected fields");
+  }
+  if (envelope.inputHash !== inputHash) throw new Error("semanticCheckpoint input hash does not match marker inputs");
+  const pointer = evidencePointer({ path: envelope.path, sha256: envelope.sha256 }, "semanticCheckpoint");
+  if (pointer.path !== `semantic-choice-checks/v${SEMANTIC_CHOICE_VERSION}-${inputHash}.json`) {
+    throw new Error("semantic checkpoint path does not match input hash");
+  }
+  const checkpoint = readBoundEvidence(stateDir, pointer, "semantic choice checkpoint");
+  if (!Array.isArray(checkpoint.items)) throw new Error("semantic choice checkpoint items must be an array");
+  const expectedInputs = new Map(inputs.map((input) => [input.key, input]));
+  const decisions = new Map<string, SemanticDecision>();
+  const items = checkpoint.items.map((raw, index) => {
+    const row = object(raw, `semantic choice items[${index}]`);
+    const key = exactString(row.key, `semantic choice items[${index}].key`);
+    const input = expectedInputs.get(key);
+    if (!input || decisions.has(key)) throw new Error(`semantic choice key is missing/extra/duplicate: ${key}`);
+    const status = row.status;
+    if (status !== "resolved" && status !== "ambiguous") throw new Error(`${key}: invalid semantic status`);
+    const choiceIndex = row.choiceIndex === null ? null : integer(row.choiceIndex, `${key}.choiceIndex`, 1);
+    if (status === "resolved" ? choiceIndex! > input.choices.length : choiceIndex !== null) {
+      throw new Error(`${key}: invalid semantic choice index`);
+    }
+    const decision = {
+      key,
+      status,
+      choiceIndex,
+      evidence: exactString(row.evidence, `${key}.semantic evidence`),
+    } as SemanticDecision;
+    decisions.set(key, decision);
+    return decision;
+  });
+  if (decisions.size !== inputs.length) throw new Error("semantic choice checkpoint omits marker inputs");
+  const expectedCheckpoint = {
+    version: SEMANTIC_CHOICE_VERSION,
+    entryId: entry.id,
+    problemHash: problemEvidence.sha256,
+    solutionHash: solutionEvidence.sha256,
+    classifierVersion: CLASSIFIER_VERSION,
+    rulesDigest,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    effectiveCorpusHash,
+    inputHash,
+    promptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    inputs,
+    items,
+  };
+  if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)) {
+    throw new Error("semantic choice checkpoint metadata/input/output is stale or incomplete");
+  }
+  return decisions;
+}
+
+function verifyAnswerAudit(
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  solutionEvidence: DownloadEvidence,
+  base: DecisionSummary,
+  solutions: Map<string, OfficialSolution>,
+  terminal: Record<string, unknown>,
+  add: AddFailure,
+): DecisionSummary {
+  const rulesDigest = base.rulesDigest;
+  if (!rulesDigest) {
+    add({ code: "ANSWER_AUDIT_INVALID", entryId: entry.id, message: "selected classification rules digest is missing" });
+    return base;
+  }
+  const receiptHash = canonicalEvidenceHash(terminal);
+  try {
+    const receiptPath = confinedEvidencePath(
+      stateDir,
+      { path: "receipt.json", sha256: receiptHash },
+      "committed receipt",
+    );
+    if (hashFile(receiptPath) !== receiptHash) throw new Error("receipt file is not canonical immutable JSON");
+  } catch (error) {
+    add({
+      code: "ANSWER_ATTESTATION_INVALID",
+      entryId: entry.id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return base;
+  }
+  const attestationDir = join(stateDir, "answer-attestation");
+  const names = listJson(attestationDir, /^v1-[a-f0-9]{64}\.json$/u);
+  const candidates: Array<{ name: string; path: string; value: Record<string, unknown> }> = [];
+  for (const name of names) {
+    try {
+      const path = confinedEvidencePath(
+        stateDir,
+        { path: `answer-attestation/${name}`, sha256: "0".repeat(64) },
+        name,
+      );
+      const value = object(json(path), name);
+      const receipt = object(value.receipt, `${name}.receipt`);
+      const looksCurrent = value.entryId === entry.id
+        && value.problemHash === problemEvidence.sha256
+        && value.solutionHash === solutionEvidence.sha256
+        && value.classifierVersion === CLASSIFIER_VERSION
+        && value.rulesDigest === rulesDigest
+        && value.transcriptionGateVersion === TRANSCRIPTION_GATE_VERSION
+        && value.transcriptionPromptDigest === TRANSCRIPTION_PROMPT_DIGEST
+        && receipt.path === "receipt.json"
+        && receipt.sha256 === receiptHash;
+      if (looksCurrent) candidates.push({ name, path, value });
+    } catch (error) {
+      add({ code: "ANSWER_ATTESTATION_INVALID", entryId: entry.id, message: `${name}: ${error instanceof Error ? error.message : String(error)}` });
+    }
+  }
+  if (candidates.length !== 1) {
+    add({
+      code: candidates.length === 0 ? "ANSWER_ATTESTATION_MISSING" : "ANSWER_ATTESTATION_AMBIGUOUS",
+      entryId: entry.id,
+      message: `expected one current post-commit answer attestation, found ${candidates.length}`,
+    });
+    return base;
+  }
+
+  try {
+    const { name, path: attestationPath, value: attestation } = candidates[0];
+    const attestationDigest = exactString(attestation.attestationDigest, "answer attestation.digest");
+    if (attestation.version !== 1 || name !== `v1-${attestationDigest}.json`
+      || !/^[a-f0-9]{64}$/u.test(attestationDigest)) {
+      throw new Error("answer attestation version/name/digest is invalid");
+    }
+    const { version: _attestationVersion, attestationDigest: _attestationDigest, ...attestationBasis } = attestation;
+    if (canonicalEvidenceHash(attestationBasis) !== attestationDigest
+      || hashFile(attestationPath) !== canonicalEvidenceHash(attestation)) {
+      throw new Error("answer attestation canonical digest or file hash is invalid");
+    }
+    const receiptPointer = evidencePointer(attestation.receipt, "answer attestation receipt");
+    if (receiptPointer.path !== "receipt.json" || receiptPointer.sha256 !== receiptHash) {
+      throw new Error("answer attestation does not bind the committed canonical receipt");
+    }
+    const auditEnvelope = object(attestation.answerAudit, "answer attestation audit");
+    if (Object.keys(auditEnvelope).sort().join(",") !== "effectiveCorpusHash,path,sha256") {
+      throw new Error("answer attestation audit pointer has unexpected fields");
+    }
+    const auditPointer = evidencePointer(
+      { path: auditEnvelope.path, sha256: auditEnvelope.sha256 },
+      "answer attestation audit",
+    );
+    const auditPathMatch = /^answer-audit\/v1-([a-f0-9]{64})\.json$/u.exec(auditPointer.path);
+    if (!auditPathMatch || !/^[a-f0-9]{64}$/u.test(String(auditEnvelope.effectiveCorpusHash))) {
+      throw new Error("answer attestation audit path/effective corpus hash is invalid");
+    }
+    const audit = readBoundEvidence(stateDir, auditPointer, "attested answer audit");
+    const auditDigest = exactString(audit.auditDigest, "answer audit.digest");
+    if (audit.version !== 1 || auditPathMatch[1] !== auditDigest || !/^[a-f0-9]{64}$/u.test(auditDigest)) {
+      throw new Error("answer audit version/name/digest is invalid");
+    }
+    const { version: _version, auditDigest: _auditDigest, ...auditBasis } = audit;
+    if (canonicalEvidenceHash(auditBasis) !== auditDigest) {
+      throw new Error("answer audit canonical digest or file hash is invalid");
+    }
+    if (!Array.isArray(audit.repairs)) throw new Error("answer audit repairs must be an array");
+    if (auditEnvelope.effectiveCorpusHash !== audit.effectiveCorpusHash) {
+      throw new Error("answer attestation effective corpus hash does not match its audit");
+    }
+    const expectedAttestationBasis = {
+      entryId: entry.id,
+      problemHash: problemEvidence.sha256,
+      solutionHash: solutionEvidence.sha256,
+      classifierVersion: CLASSIFIER_VERSION,
+      rulesDigest,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      receipt: receiptPointer,
+      answerAudit: {
+        ...auditPointer,
+        effectiveCorpusHash: auditEnvelope.effectiveCorpusHash,
+      },
+      repairs: audit.repairs,
+    };
+    if (!isDeepStrictEqual(attestationBasis, expectedAttestationBasis)) {
+      throw new Error("answer attestation does not exactly bind receipt/audit/repairs");
+    }
+    const records = new Map(base.records);
+    const repairedKeys = new Set<string>();
+    for (const rawRepair of audit.repairs) {
+      const repair = object(rawRepair, "answer audit repair");
+      const key = exactString(repair.key, "answer audit repair.key");
+      if (repairedKeys.has(key)) throw new Error(`duplicate declared repair: ${key}`);
+      const baseRecord = base.records.get(key);
+      const solution = baseRecord && solutions.get(baseRecord.question.printedNumber);
+      if (!baseRecord || !solution) throw new Error(`repair has no base problem/solution: ${key}`);
+      records.set(key, applyDeclaredRepair(
+        repair,
+        stateDir,
+        entry,
+        problemEvidence,
+        rulesDigest,
+        baseRecord,
+        solution,
+      ));
+      repairedKeys.add(key);
+    }
+    const effective = summarizeDecisions(records, base.order, rulesDigest);
+    if (effective.order.length !== base.order.length || effective.records.size !== base.records.size
+      || effective.order.some((key) => !base.records.has(key))) {
+      throw new Error("repair changed the immutable base key set");
+    }
+    const effectiveCorpus = effective.order.map((key) => {
+      const record = effective.records.get(key)!;
+      return { question: record.question.evidence, classification: record.classification };
+    });
+    const effectiveCorpusHash = canonicalEvidenceHash(effectiveCorpus);
+    const nonExact = effective.order.filter((key) =>
+      effective.records.get(key)!.classification.transcription_status !== "exact");
+    if (nonExact.length > 0) {
+      throw new Error(`terminal corpus has non-exact source transcriptions: ${nonExact.join(", ")}`);
+    }
+    if (auditEnvelope.effectiveCorpusHash !== effectiveCorpusHash) {
+      throw new Error("attested effective corpus hash does not match reconstructed corpus");
+    }
+    const acceptedRecords = effective.order.map((key) => effective.records.get(key)!)
+      .filter((record) => record.classification.decision === "accept");
+    const acceptedMcq = acceptedRecords.filter((record) => record.question.qtype === "mcq");
+    const markerInputs: Array<{ key: string; choices: string[]; detailedExplanation: string }> = [];
+    const resolutions = new Map<string, OfficialAnswerResolution>();
+    for (const record of acceptedMcq) {
+      const solution = solutions.get(record.question.printedNumber);
+      if (!solution) throw new Error(`${record.question.key}: official solution is missing`);
+      const resolution = resolveOfficialAnswerForDb(record.question, solution.rawAnswer);
+      if (resolution.choiceIndex === null) throw new Error(`${record.question.key}: MCQ has no resolved choice index`);
+      resolutions.set(record.question.key, resolution);
+      if (resolution.mode === "choice-marker") {
+        markerInputs.push({
+          key: record.question.key,
+          choices: record.question.choices!,
+          detailedExplanation: semanticExplanationWithoutMarkers(solution.explanation),
+        });
+      }
+    }
+    const semanticByKey = verifySemanticCheckpoint(
+      audit.semanticCheckpoint,
+      stateDir,
+      entry,
+      problemEvidence,
+      solutionEvidence,
+      rulesDigest,
+      effectiveCorpusHash,
+      markerInputs,
+    );
+    const auditItems = acceptedMcq.map((record) => {
+      const solution = solutions.get(record.question.printedNumber)!;
+      const resolution = resolutions.get(record.question.key)!;
+      const semantic = semanticByKey.get(record.question.key) ?? null;
+      if (resolution.mode === "choice-marker" && (
+        semantic?.status !== "resolved" || semantic.choiceIndex !== resolution.choiceIndex! + 1
+      )) throw new Error(`${record.question.key}: marker-only answer lacks matching semantic proof`);
+      return {
+        key: record.question.key,
+        printedNumber: record.question.printedNumber,
+        sourcePage: record.question.page,
+        officialRawAnswerHash: sha256(solution.rawAnswer),
+        storedAnswerHash: sha256(resolution.storedAnswer),
+        mode: resolution.mode,
+        choiceIndex: resolution.choiceIndex! + 1,
+        semantic: semantic && {
+          status: semantic.status,
+          choiceIndex: semantic.choiceIndex,
+          evidence: semantic.evidence,
+        },
+      };
+    }).sort((left, right) => left.key.localeCompare(right.key));
+    const targetQuestionCounts = Object.fromEntries(TARGET_SUBJECTS.flatMap((target) => {
+      const count = acceptedRecords.filter((record) =>
+        TARGET_BY_CANONICAL[record.classification.canonical_subject!] === target).length;
+      return count === 0 ? [] : [[target, count]];
+    }));
+    const semanticEnvelope = audit.semanticCheckpoint === null ? null : object(audit.semanticCheckpoint, "semanticCheckpoint");
+    const expectedBasis = {
+      entryId: entry.id,
+      problemHash: problemEvidence.sha256,
+      solutionHash: solutionEvidence.sha256,
+      classifierVersion: CLASSIFIER_VERSION,
+      rulesDigest,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      semanticChoiceVersion: SEMANTIC_CHOICE_VERSION,
+      semanticPromptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
+      sourceQuestionCount: effective.problems.size,
+      acceptedQuestionCount: effective.accepted.length,
+      rejectedQuestionCount: effective.rejected,
+      reviewQuestionCount: effective.reviews,
+      targetQuestionCounts,
+      acceptedMcqKeys: auditItems.map((item) => item.key).sort(),
+      effectiveCorpusHash,
+      semanticCheckpoint: semanticEnvelope,
+      repairs: [...audit.repairs].sort((left, right) =>
+        exactString(object(left, "repair").key, "repair.key")
+          .localeCompare(exactString(object(right, "repair").key, "repair.key"))),
+      items: auditItems,
+    };
+    if (!isDeepStrictEqual(auditBasis, expectedBasis)) {
+      throw new Error("answer audit metadata/counts/items do not match the effective corpus");
+    }
+    if (terminal.sourceQuestionCount !== effective.problems.size
+      || terminal.acceptedQuestionCount !== effective.accepted.length
+      || terminal.rejectedQuestionCount !== effective.rejected
+      || terminal.reviewQuestionCount !== effective.reviews) {
+      throw new Error("terminal receipt/result counts do not match answer audit effective corpus");
+    }
+    return effective;
+  } catch (error) {
+    add({
+      code: error instanceof CorpusValidationError ? error.code : "ANSWER_AUDIT_INVALID",
+      entryId: entry.id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return base;
+  }
+}
+
+function verifyFilteredAnswerAudit(
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  solutionEvidence: DownloadEvidence,
+  base: DecisionSummary,
+  solutions: Map<string, OfficialSolution>,
+  result: Record<string, unknown>,
+  add: AddFailure,
+): DecisionSummary {
+  const nonExactBase = base.order.filter((key) =>
+    base.records.get(key)!.classification.transcription_status !== "exact");
+  if (result.answerAudit === undefined) {
+    if (nonExactBase.length > 0) {
+      add({
+        code: "TRANSCRIPTION_GATE",
+        entryId: entry.id,
+        message: `filtered result has unverified source transcriptions: ${nonExactBase.join(", ")}`,
+      });
+    }
+    return base;
+  }
+  try {
+    const rulesDigest = base.rulesDigest;
+    if (!rulesDigest) throw new Error("selected classification rules digest is missing");
+    const problemNumbers = new Set([...base.problems.values()].map((question) => question.printedNumber));
+    if (solutions.size !== problemNumbers.size || [...problemNumbers].some((number) => !solutions.has(number))
+      || [...solutions].some(([number]) => !problemNumbers.has(number))) {
+      throw new Error("filtered repair audit problem/solution number sets differ");
+    }
+    const pointer = evidencePointer(result.answerAudit, "filtered result answerAudit");
+    const pathMatch = /^answer-audit\/v1-([a-f0-9]{64})\.json$/u.exec(pointer.path);
+    if (!pathMatch) throw new Error("filtered answer audit path is invalid");
+    const audit = readBoundEvidence(stateDir, pointer, "filtered answer audit");
+    const auditDigest = exactString(audit.auditDigest, "filtered answer audit.digest");
+    if (audit.version !== 1 || pathMatch[1] !== auditDigest) {
+      throw new Error("filtered answer audit version/name/digest is invalid");
+    }
+    const { version: _version, auditDigest: _digest, ...auditBasis } = audit;
+    if (canonicalEvidenceHash(auditBasis) !== auditDigest || !Array.isArray(audit.repairs)) {
+      throw new Error("filtered answer audit canonical digest/repairs are invalid");
+    }
+    const records = new Map(base.records);
+    const repaired = new Set<string>();
+    for (const rawRepair of audit.repairs) {
+      const repair = object(rawRepair, "filtered answer audit repair");
+      const key = exactString(repair.key, "filtered answer audit repair.key");
+      if (repaired.has(key)) throw new Error(`duplicate declared repair: ${key}`);
+      const baseRecord = base.records.get(key);
+      const solution = baseRecord && solutions.get(baseRecord.question.printedNumber);
+      if (!baseRecord || !solution) throw new Error(`repair has no base problem/solution: ${key}`);
+      records.set(key, applyDeclaredRepair(
+        repair,
+        stateDir,
+        entry,
+        problemEvidence,
+        rulesDigest,
+        baseRecord,
+        solution,
+      ));
+      repaired.add(key);
+    }
+    const effective = summarizeDecisions(records, base.order, rulesDigest);
+    const effectiveCorpusHash = canonicalEvidenceHash(effective.order.map((key) => {
+      const record = effective.records.get(key)!;
+      return { question: record.question.evidence, classification: record.classification };
+    }));
+    const nonExact = effective.order.filter((key) =>
+      effective.records.get(key)!.classification.transcription_status !== "exact");
+    if (nonExact.length > 0) throw new Error(`filtered corpus remains non-exact: ${nonExact.join(", ")}`);
+    const expectedBasis = {
+      entryId: entry.id,
+      problemHash: problemEvidence.sha256,
+      solutionHash: solutionEvidence.sha256,
+      classifierVersion: CLASSIFIER_VERSION,
+      rulesDigest,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      semanticChoiceVersion: SEMANTIC_CHOICE_VERSION,
+      semanticPromptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
+      sourceQuestionCount: effective.problems.size,
+      acceptedQuestionCount: 0,
+      rejectedQuestionCount: effective.rejected,
+      reviewQuestionCount: effective.reviews,
+      targetQuestionCounts: {},
+      acceptedMcqKeys: [],
+      effectiveCorpusHash,
+      semanticCheckpoint: null,
+      repairs: [...audit.repairs].sort((left, right) =>
+        exactString(object(left, "repair").key, "repair.key")
+          .localeCompare(exactString(object(right, "repair").key, "repair.key"))),
+      items: [],
+    };
+    if (!isDeepStrictEqual(auditBasis, expectedBasis)
+      || effective.accepted.length !== 0 || effective.reviews !== 0
+      || result.sourceQuestionCount !== effective.problems.size
+      || result.acceptedQuestionCount !== 0
+      || result.rejectedQuestionCount !== effective.rejected
+      || result.reviewQuestionCount !== 0) {
+      throw new Error("filtered answer audit/result does not match the exact effective corpus");
+    }
+    return effective;
+  } catch (error) {
+    add({
+      code: error instanceof CorpusValidationError ? error.code : "ANSWER_AUDIT_INVALID",
+      entryId: entry.id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return base;
+  }
 }
 
 const REQUIRED_SCHEMA: Record<string, readonly string[]> = {
@@ -1108,24 +2074,39 @@ export function verifyExamCorpus(options: {
       verifyFile(join(stateDir, problemEvidence.path), problemEvidence.sha256, problemEvidence.bytes, "DOWNLOAD_EVIDENCE", entry.id, add, hashCache);
       verifyFile(join(stateDir, solutionEvidence.path), solutionEvidence.sha256, solutionEvidence.bytes, "DOWNLOAD_EVIDENCE", entry.id, add, hashCache);
 
-      const decisions = loadDecisions(stateDir, entry, problemEvidence, terminalDigest, add);
-      if (decisions.reviews > 0) {
-        report.manifest.review += 1;
-        if (hasReceipt || hasResult) add({ code: "REVIEW_COMMITTED", entryId: entry.id, message: "review decisions must have no terminal commit/result" });
-      }
-      const acceptedCounts = new Map<TargetSubject, number>();
-      for (const question of decisions.accepted) {
-        acceptedCounts.set(question.target, (acceptedCounts.get(question.target) ?? 0) + 1);
-        report.targets[question.target].expected += 1;
-      }
+      let decisions = loadDecisions(stateDir, entry, problemEvidence, terminalDigest, add);
 
       if (result) {
+        const needsFilteredAudit = result.answerAudit !== undefined || decisions.order.some((key) =>
+          decisions.records.get(key)!.classification.transcription_status !== "exact");
+        if (needsFilteredAudit) {
+          const filteredSolutions = loadSolutions(stateDir, entry, solutionEvidence, add);
+          decisions = verifyFilteredAnswerAudit(
+            stateDir,
+            entry,
+            problemEvidence,
+            solutionEvidence,
+            decisions,
+            filteredSolutions,
+            result,
+            add,
+          );
+        }
+        if (decisions.reviews > 0) {
+          report.manifest.review += 1;
+          add({ code: "REVIEW_COMMITTED", entryId: entry.id, message: "review decisions must have no terminal result" });
+        }
+        const noScopeGateMatches = result.reason === "NO_IN_SCOPE_QUESTIONS" && (
+          result.classifierVersion === CLASSIFIER_VERSION
+          && result.transcriptionGateVersion === TRANSCRIPTION_GATE_VERSION
+          && result.transcriptionPromptDigest === TRANSCRIPTION_PROMPT_DIGEST
+        );
         if (
           result.version !== 2 || result.status !== "filtered" || result.entryId !== entry.id
           || result.acceptedQuestionCount !== 0 || result.reviewQuestionCount !== 0
           || result.sourceQuestionCount !== decisions.problems.size || result.rejectedQuestionCount !== decisions.rejected
           || decisions.accepted.length !== 0 || decisions.reviews !== 0
-          || result.rulesDigest !== decisions.rulesDigest
+          || result.rulesDigest !== decisions.rulesDigest || !noScopeGateMatches
         ) {
           add({ code: "RESULT_INVALID", entryId: entry.id, message: "filtered result does not match complete classifications" });
         }
@@ -1133,8 +2114,45 @@ export function verifyExamCorpus(options: {
       }
 
       if (!receipt) {
+        if (decisions.reviews > 0) {
+          report.manifest.review += 1;
+          add({ code: "REVIEW_PENDING", entryId: entry.id, message: `${decisions.reviews} questions require review` });
+        }
+        for (const question of decisions.accepted) report.targets[question.target].expected += 1;
         if (decisions.accepted.length > 0) add({ code: "RECEIPT_MISSING", entryId: entry.id, message: "accepted questions have no receipt" });
         continue;
+      }
+
+      const solutions = loadSolutions(stateDir, entry, solutionEvidence, add);
+      const baseProblemNumbers = new Set([...decisions.problems.values()].map((question) => question.printedNumber));
+      if (
+        solutions.size !== baseProblemNumbers.size || [...baseProblemNumbers].some((number) => !solutions.has(number))
+        || [...solutions].some(([number]) => !baseProblemNumbers.has(number))
+      ) {
+        add({
+          code: "SOLUTION_NUMBER_SET",
+          entryId: entry.id,
+          message: "problem and official solution printed-number sets differ",
+        });
+      }
+      decisions = verifyAnswerAudit(
+        stateDir,
+        entry,
+        problemEvidence,
+        solutionEvidence,
+        decisions,
+        solutions,
+        receipt,
+        add,
+      );
+      if (decisions.reviews > 0) {
+        report.manifest.review += 1;
+        add({ code: "REVIEW_COMMITTED", entryId: entry.id, message: "effective repair classifications require review" });
+      }
+      const acceptedCounts = new Map<TargetSubject, number>();
+      for (const question of decisions.accepted) {
+        acceptedCounts.set(question.target, (acceptedCounts.get(question.target) ?? 0) + 1);
+        report.targets[question.target].expected += 1;
       }
       if (
         receipt.version !== 2 || receipt.status !== "committed" || receipt.entryId !== entry.id
@@ -1154,7 +2172,6 @@ export function verifyExamCorpus(options: {
         add({ code: "RECEIPT_INVALID", entryId: entry.id, message: "committed receipt has no accepted questions" });
       }
 
-      const solutions = loadSolutions(stateDir, entry, solutionEvidence, add);
       const problemNumbers = new Set([...decisions.problems.values()].map((question) => question.printedNumber));
       if (
         solutions.size !== problemNumbers.size || [...problemNumbers].some((number) => !solutions.has(number))
