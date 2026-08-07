@@ -26,6 +26,7 @@ import {
   PROBLEM_REPAIR_VERSION,
   assertImportSchema,
   canonicalEvidenceHash,
+  compareCorpusQuestionKeys,
   commitCorpusEntry,
   ensureCanonicalSubjects,
   examBookTitle,
@@ -50,6 +51,8 @@ describe("exam corpus importer", () => {
   it("uses one stable canonical evidence hash vector", () => {
     expect(canonicalEvidenceHash({ b: 1, a: ["x", null] }))
       .toBe("2dccb31ca7d4b9dc00ebe9e1b2fca5314ca2563469fbf6ba1c69752939768835");
+    expect(["1:1", "2:6", "10:25"].sort(compareCorpusQuestionKeys))
+      .toEqual(["1:1", "10:25", "2:6"]);
   });
 
   it("defines the q20 same-target and q29 excluded-dependency boundary", () => {

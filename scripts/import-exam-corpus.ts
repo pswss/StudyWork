@@ -909,6 +909,10 @@ function questionKey(question: QuizItemEx): string {
   return `${question.page}:${number}`;
 }
 
+export function compareCorpusQuestionKeys(left: string, right: string): number {
+  return left.localeCompare(right, "en");
+}
+
 function restoredQuizItems(value: unknown): QuizItemEx[] {
   if (!Array.isArray(value)) throw new Error("문제 체크포인트 items가 배열이 아닙니다");
   return parseQuizItemsEx(JSON.stringify(value.map((item) => {
@@ -2101,12 +2105,12 @@ async function auditAcceptedSolutions(
   const effectiveSolutionCorpus = accepted.map((item) => {
     const number = numericPrintedLocator(item.question.number)!;
     return { key: questionKey(item.question), solution: effectiveByNumber.get(number)! };
-  }).sort((a, b) => a.key.localeCompare(b.key));
+  }).sort((a, b) => compareCorpusQuestionKeys(a.key, b.key));
   return {
     solutions: effectiveSolutions,
     checkpoints: checkpoints.sort((a, b) => a.path.localeCompare(b.path)),
-    items: [...terminalItems.values()].sort((a, b) => a.key.localeCompare(b.key)),
-    repairs: repairs.sort((a, b) => a.key.localeCompare(b.key)),
+    items: [...terminalItems.values()].sort((a, b) => compareCorpusQuestionKeys(a.key, b.key)),
+    repairs: repairs.sort((a, b) => compareCorpusQuestionKeys(a.key, b.key)),
     effectiveSolutionCorpusHash: canonicalEvidenceHash(effectiveSolutionCorpus),
   };
 }
@@ -2607,22 +2611,25 @@ export async function repairAndAuditOfficialAnswers(
       },
     };
   });
-  const repairList = [...repairs.values()].sort((a, b) => a.key.localeCompare(b.key));
+  const repairList = [...repairs.values()].sort((a, b) => compareCorpusQuestionKeys(a.key, b.key));
   const effectiveCorpusHash = canonicalEvidenceHash(effective);
   const accepted = effective.filter(({ classification }) => classification.decision === "accept");
   const reviews = effective.filter(({ classification }) => classification.decision === "review");
-  const acceptedSolutionKeys = accepted.map((item) => questionKey(item.question)).sort();
-  const solutionFidelityItems = [...finalSolutionAudit.items].sort((a, b) => a.key.localeCompare(b.key));
+  const acceptedSolutionKeys = accepted.map((item) => questionKey(item.question)).sort(compareCorpusQuestionKeys);
+  const solutionFidelityItems = [...finalSolutionAudit.items]
+    .sort((a, b) => compareCorpusQuestionKeys(a.key, b.key));
   if (
     canonicalEvidenceHash(solutionFidelityItems.map((item) => item.key)) !==
       canonicalEvidenceHash(acceptedSolutionKeys)
   ) throw new Error("accepted 문제와 terminal 해설 fidelity key 집합이 다릅니다");
   const solutionFidelityCheckpoints = [...finalSolutionAudit.checkpoints]
     .sort((a, b) => a.path.localeCompare(b.path));
-  const solutionRepairs = [...finalSolutionAudit.repairs].sort((a, b) => a.key.localeCompare(b.key));
+  const solutionRepairs = [...finalSolutionAudit.repairs]
+    .sort((a, b) => compareCorpusQuestionKeys(a.key, b.key));
   const derivedAnswerKeys = solutionFidelityItems
     .filter((item) => item.answerStatus === "not_visible")
-    .map((item) => item.key);
+    .map((item) => item.key)
+    .sort(compareCorpusQuestionKeys);
   const targetQuestionCounts = Object.fromEntries(
     TARGET_SUBJECTS.map((target) => [
       target,
@@ -2649,9 +2656,9 @@ export async function repairAndAuditOfficialAnswers(
     reviewQuestionCount: reviews.length,
     targetQuestionCounts,
     acceptedSolutionKeys,
-    solutionRepairKeys: solutionRepairs.map((repair) => repair.key),
+    solutionRepairKeys: solutionRepairs.map((repair) => repair.key).sort(compareCorpusQuestionKeys),
     derivedAnswerKeys,
-    acceptedMcqKeys: auditItems.map((item) => item.key).sort(),
+    acceptedMcqKeys: auditItems.map((item) => item.key).sort(compareCorpusQuestionKeys),
     effectiveCorpusHash,
     effectiveSolutionCorpusHash: finalSolutionAudit.effectiveSolutionCorpusHash,
     solutionFidelityCheckpoints,
@@ -2664,7 +2671,7 @@ export async function repairAndAuditOfficialAnswers(
       effectiveSolutionCorpusHash: finalSolutionAudit.effectiveSolutionCorpusHash,
     },
     repairs: repairList,
-    items: auditItems.sort((a, b) => a.key.localeCompare(b.key)),
+    items: auditItems.sort((a, b) => compareCorpusQuestionKeys(a.key, b.key)),
   };
   const auditDigest = canonicalEvidenceHash(auditBasis);
   const auditRelativePath = `answer-audit/v${ANSWER_AUDIT_VERSION}-${auditDigest}.json`;
