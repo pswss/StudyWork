@@ -122,6 +122,14 @@ const ALLOWED_CANONICAL: Record<SourceSubject, readonly CanonicalSubject[]> = {
 
 const SUPPORTED_SOURCES = new Set<SourceSubject>(["국어", "수학", "통합사회", "통합과학"]);
 const SOURCE_SUBJECTS = new Set<SourceSubject>(["국어", "수학", "영어", "한국사", "통합사회", "통합과학"]);
+const EXPECTED_QUESTION_COUNT: Record<SourceSubject, number> = {
+  국어: 45,
+  수학: 30,
+  영어: 45,
+  한국사: 20,
+  통합사회: 20,
+  통합과학: 20,
+};
 const CLASSIFIER_VERSION = 2;
 const CHECKPOINT_VERSION = 2;
 
@@ -201,8 +209,8 @@ export type CorpusManifestEntry = {
   subject: SourceSubject;
   examTitle: string;
   rawTitle: string;
-  administrationDate: string;
-  administrationYear: number;
+  sourceRecordDate: string;
+  sourceRecordYear: number;
   variant: string | null;
   form: "odd" | "even" | null;
   sourcePageUrl: string;
@@ -213,7 +221,7 @@ export type CorpusManifestEntry = {
 };
 
 export type CorpusManifest = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   entries: CorpusManifestEntry[];
   raw: Record<string, unknown>;
 };
@@ -285,7 +293,7 @@ function manifestGrade(value: unknown): number | null {
   return Number(match[1]);
 }
 
-function administrationDate(value: unknown, label: string): string {
+function sourceRecordDate(value: unknown, label: string): string {
   const date = exactString(value, label, 10);
   const parsed = new Date(`${date}T00:00:00Z`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== date) {
@@ -294,7 +302,7 @@ function administrationDate(value: unknown, label: string): string {
   return date;
 }
 
-function administrationYear(value: unknown, label: string): number {
+function sourceRecordYear(value: unknown, label: string): number {
   if (!Number.isSafeInteger(value) || Number(value) < 2000 || Number(value) > 2100) {
     throw new Error(`${label}: 2000-2100 사이 정수 연도가 아닙니다`);
   }
@@ -305,8 +313,8 @@ function nullableString(value: unknown, label: string): string | null {
   return value === null || value === undefined ? null : exactString(value, label, 100);
 }
 
-export function examBookTitle(entry: Pick<CorpusManifestEntry, "administrationYear" | "rawTitle">): string {
-  return `${entry.administrationYear}년 · ${entry.rawTitle}`;
+export function examBookTitle(entry: Pick<CorpusManifestEntry, "sourceRecordYear" | "rawTitle">): string {
+  return `${entry.sourceRecordYear}년 · ${entry.rawTitle}`;
 }
 
 export function problemOwnedRange(
@@ -320,13 +328,39 @@ export function problemOwnedRange(
   };
 }
 
+export function validateProblemSliceTopology(
+  slices: Array<{ from: number; to: number }>
+): Array<{ from: number; to: number }> {
+  if (slices.length === 0) throw new Error("문제 PDF slice가 비어 있습니다");
+  const ownership = slices.map((slice, index) => {
+    if (!Number.isInteger(slice.from) || !Number.isInteger(slice.to) || slice.from < 1 || slice.to < slice.from) {
+      throw new Error("문제 PDF slice 범위가 유효하지 않습니다");
+    }
+    const next = slices[index + 1];
+    if (next && next.from !== slice.to - 1) {
+      throw new Error("문제 PDF slice가 정확한 2쪽 overlap topology가 아닙니다");
+    }
+    const range = problemOwnedRange(slice, index, next?.from);
+    if (range.from < slice.from || range.to > slice.to || range.from > range.to) {
+      throw new Error("문제 PDF slice ownership이 원본 범위를 벗어났습니다");
+    }
+    return range;
+  });
+  for (let index = 1; index < ownership.length; index++) {
+    if (ownership[index].from !== ownership[index - 1].to + 1) {
+      throw new Error("문제 PDF slice ownership에 누락 또는 중복이 있습니다");
+    }
+  }
+  return ownership;
+}
+
 export function problemChunkCount(pageCount: number): number {
   return Math.max(1, Math.ceil((pageCount - (PROBLEM_SLICE_PAGES - PROBLEM_SLICE_STRIDE)) / PROBLEM_SLICE_STRIDE));
 }
 
 export function parseCorpusManifest(value: unknown): CorpusManifest {
   const raw = object(value, "manifest");
-  if (raw.schemaVersion !== 1) throw new Error("manifest.schemaVersion은 1이어야 합니다");
+  if (raw.schemaVersion !== 2) throw new Error("manifest.schemaVersion은 2여야 합니다");
   if (!Array.isArray(raw.entries) || raw.entries.length === 0) throw new Error("manifest.entries가 비어 있습니다");
 
   const ids = new Set<string>();
@@ -338,8 +372,8 @@ export function parseCorpusManifest(value: unknown): CorpusManifest {
     if (!SOURCE_SUBJECTS.has(subject)) throw new Error(`entries[${index}].subject: 지원하지 않는 원본 과목입니다`);
     const examTitle = exactString(entry.examTitle, `entries[${index}].examTitle`, 500);
     const rawTitle = exactString(entry.rawTitle, `entries[${index}].rawTitle`, 500);
-    const heldOn = administrationDate(entry.administrationDate, `entries[${index}].administrationDate`);
-    const heldYear = administrationYear(entry.administrationYear, `entries[${index}].administrationYear`);
+    const recordDate = sourceRecordDate(entry.sourceRecordDate, `entries[${index}].sourceRecordDate`);
+    const recordYear = sourceRecordYear(entry.sourceRecordYear, `entries[${index}].sourceRecordYear`);
     const variant = nullableString(entry.variant, `entries[${index}].variant`);
     const form = nullableString(entry.form, `entries[${index}].form`);
     if (form !== null && form !== "odd" && form !== "even") {
@@ -363,16 +397,16 @@ export function parseCorpusManifest(value: unknown): CorpusManifest {
     if (problemPdfUrl === solutionPdfUrl) throw new Error(`entries[${index}]: 문제와 해설 URL이 같습니다`);
     if (ids.has(id)) throw new Error(`중복 manifest id: ${id}`);
     ids.add(id);
-    const displayTitle = `${heldYear}\0${rawTitle}`;
-    if (displayTitles.has(displayTitle)) throw new Error(`중복 표시 제목: ${heldYear}년 · ${rawTitle}`);
+    const displayTitle = `${recordYear}\0${rawTitle}`;
+    if (displayTitles.has(displayTitle)) throw new Error(`중복 표시 제목: ${recordYear}년 · ${rawTitle}`);
     displayTitles.add(displayTitle);
     return {
       id,
       subject,
       examTitle,
       rawTitle,
-      administrationDate: heldOn,
-      administrationYear: heldYear,
+      sourceRecordDate: recordDate,
+      sourceRecordYear: recordYear,
       variant,
       form,
       sourcePageUrl,
@@ -382,7 +416,7 @@ export function parseCorpusManifest(value: unknown): CorpusManifest {
       raw: entry,
     };
   });
-  return { schemaVersion: 1, entries, raw };
+  return { schemaVersion: 2, entries, raw };
 }
 
 function canonicalize(value: unknown): unknown {
@@ -658,9 +692,10 @@ async function extractAndClassifyProblems(
   stateDir: string
 ): Promise<ClassifiedQuestion[]> {
   return withSlices(evidence, PROBLEM_SLICE_PAGES, PROBLEM_SLICE_STRIDE, async (slices) => {
+    const ownershipRanges = validateProblemSliceTopology(slices);
     const combined: ClassifiedQuestion[] = [];
     for (const [index, slice] of slices.entries()) {
-      const ownership = problemOwnedRange(slice, index, slices[index + 1]?.from);
+      const ownership = ownershipRanges[index];
       const extractionPath = join(stateDir, "problem-chunks", `v${CHECKPOINT_VERSION}-${String(index).padStart(4, "0")}.json`);
       let questions: QuizItemEx[];
       if (existsSync(extractionPath)) {
@@ -776,18 +811,80 @@ async function extractSolutions(evidence: PdfEvidence, stateDir: string): Promis
   });
 }
 
+function validateProblemNumberRange(
+  entry: Pick<CorpusManifestEntry, "subject">,
+  classified: ClassifiedQuestion[]
+): Set<number> {
+  const numbers = new Set<number>();
+  for (const { question } of classified) {
+    const number = numericPrintedLocator(question.number);
+    if (number === null) throw new Error("문제 인쇄 번호가 숫자가 아닙니다");
+    if (numbers.has(number)) throw new Error(`문제 인쇄 번호가 중복입니다: ${number}`);
+    numbers.add(number);
+  }
+  const expectedCount = EXPECTED_QUESTION_COUNT[entry.subject];
+  const missing = Array.from({ length: expectedCount }, (_, index) => index + 1)
+    .filter((number) => !numbers.has(number));
+  const extra = [...numbers].filter((number) => number < 1 || number > expectedCount);
+  if (numbers.size !== expectedCount || missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      `${entry.subject} 문제 인쇄 번호 범위 불일치: ` +
+      `기대 1-${expectedCount}, 누락 ${missing.join(",") || "없음"}, 초과 ${extra.join(",") || "없음"}`
+    );
+  }
+  return numbers;
+}
+
+const OFFICIAL_CIRCLED_ANSWERS = "①②③④⑤⑥⑦⑧⑨⑩";
+const normalizedAnswerText = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
+const strippedChoiceMarker = (value: string) => normalizedAnswerText(value)
+  .replace(/^[①-⑩]\s*/, "")
+  .replace(/^\d{1,2}\s*[.)]\s*/, "");
+
+function officialAnswerForStorage(question: QuizItemEx, answer: string): string {
+  const official = answer.trim();
+  if (question.qtype !== "mcq") return official;
+  const choices = question.choices ?? [];
+  const exact = choices.filter((choice) => normalizedAnswerText(choice) === normalizedAnswerText(official));
+  if (exact.length === 1) return official;
+
+  const circled = /^(?:정답\s*[:：]?\s*)?([①-⑩])(?:\s*번)?$/.exec(official)?.[1];
+  if (circled) {
+    const index = OFFICIAL_CIRCLED_ANSWERS.indexOf(circled);
+    if (index >= 0 && index < choices.length) return official;
+    throw new Error(`${question.number}번 공식 객관식 정답이 보기 범위를 벗어났습니다: ${official}`);
+  }
+  const numeric = /^(?:정답\s*[:：]?\s*)?(\d{1,2})(?:\s*번)?$/.exec(official)?.[1];
+  if (numeric) {
+    const index = Number(numeric) - 1;
+    if (index >= 0 && index < choices.length) return official;
+    throw new Error(`${question.number}번 공식 객관식 정답이 보기 범위를 벗어났습니다: ${official}`);
+  }
+  const stripped = choices.filter(
+    (choice) => strippedChoiceMarker(choice) === strippedChoiceMarker(official)
+  );
+  if (stripped.length === 1) return official;
+  throw new Error(`${question.number}번 공식 객관식 정답을 보기에 대응할 수 없습니다: ${official}`);
+}
+
 export function matchOfficialSolutions(
+  entry: Pick<CorpusManifestEntry, "subject">,
   classified: ClassifiedQuestion[],
   solutions: SolutionItem[]
 ): ImportedQuestion[] {
+  const problemNumbers = validateProblemNumberRange(entry, classified);
   const byNumber = new Map<number, SolutionItem>();
   for (const solution of solutions) {
     const number = numericPrintedLocator(solution.number);
     if (number === null || byNumber.has(number)) throw new Error(`해설 인쇄 번호가 없거나 중복입니다: ${solution.number}`);
     byNumber.set(number, solution);
   }
-  if (byNumber.size !== classified.length) {
-    throw new Error(`문제/해설 수 불일치: 문제 ${classified.length}, 해설 ${byNumber.size}`);
+  if (
+    byNumber.size !== problemNumbers.size ||
+    [...problemNumbers].some((number) => !byNumber.has(number)) ||
+    [...byNumber].some(([number]) => !problemNumbers.has(number))
+  ) {
+    throw new Error("문제와 공식 해설의 인쇄 번호 집합이 다릅니다");
   }
   return classified.flatMap(({ question, classification }) => {
     const number = numericPrintedLocator(question.number)!;
@@ -798,7 +895,7 @@ export function matchOfficialSolutions(
     return [{
       ...question,
       printedNumber: String(number),
-      officialAnswer: solution.answer,
+      officialAnswer: officialAnswerForStorage(question, solution.answer),
       officialExplanation: solution.explanation,
       solutionPage: solution.page,
       targetSubject: TARGET_BY_CANONICAL[classification.canonical_subject!],
@@ -1142,6 +1239,21 @@ type EntryResult = {
   message?: string;
 };
 
+export function validateFilteredResult(value: unknown, entryId: string): string {
+  const result = object(value, "result.json");
+  if (result.version !== 2 || result.status !== "filtered" || result.entryId !== entryId) {
+    throw new Error("기존 result.json이 유효하지 않습니다");
+  }
+  const reason = exactString(result.reason, "result.json.reason", 100);
+  if (reason === "NO_IN_SCOPE_QUESTIONS" && result.rulesDigest !== CLASSIFIER_DIGEST) {
+    throw new Error("기존 filtered result의 classifier rulesDigest가 오래되었습니다");
+  }
+  if (reason !== "NO_IN_SCOPE_QUESTIONS" && reason !== "SOURCE_GRADE_OUT_OF_SCOPE") {
+    throw new Error("기존 result.json reason이 유효하지 않습니다");
+  }
+  return reason;
+}
+
 async function processEntry(
   db: Database.Database,
   dataDir: string,
@@ -1150,14 +1262,11 @@ async function processEntry(
   if (!SUPPORTED_SOURCES.has(entry.subject)) return { id: entry.id, status: "skipped", accepted: 0 };
   const stateDir = join(dataDir, "import-exam-corpus", entryToken(entry));
   mkdirSync(stateDir, { recursive: true });
-  writeImmutableJson(join(stateDir, "entry.json"), { schemaVersion: 1, entry: entry.raw });
+  writeImmutableJson(join(stateDir, "entry.json"), { schemaVersion: 2, entry: entry.raw });
   const resultPath = join(stateDir, "result.json");
   if (existsSync(resultPath)) {
-    const result = object(JSON.parse(readFileSync(resultPath, "utf8")), "result.json");
-    if (result.version !== 2 || result.status !== "filtered" || result.entryId !== entry.id) {
-      throw new Error("기존 result.json이 유효하지 않습니다");
-    }
-    return { id: entry.id, status: "filtered", accepted: 0, message: String(result.reason ?? "filtered") };
+    const reason = validateFilteredResult(JSON.parse(readFileSync(resultPath, "utf8")), entry.id);
+    return { id: entry.id, status: "filtered", accepted: 0, message: reason };
   }
   if (["통합과학", "통합사회"].includes(entry.subject) && ![1, 2].includes(entry.grade ?? 0)) {
     writeImmutableJson(resultPath, {
@@ -1193,6 +1302,7 @@ async function processEntry(
   });
 
   const classified = await extractAndClassifyProblems(entry, problem, stateDir);
+  validateProblemNumberRange(entry, classified);
   const reviews = classified.filter(({ classification }) => classification.decision === "review");
   if (reviews.length > 0) {
     return { id: entry.id, status: "review", accepted: 0, message: `${reviews.length}문항 수동 검토 필요` };
@@ -1214,7 +1324,7 @@ async function processEntry(
   }
 
   const solutions = await extractSolutions(solution, stateDir);
-  const imported = matchOfficialSolutions(classified, solutions);
+  const imported = matchOfficialSolutions(entry, classified, solutions);
   const receiptPath = join(stateDir, "receipt.json");
   const receipt = {
     version: 2,
@@ -1223,7 +1333,7 @@ async function processEntry(
     examTitle: entry.examTitle,
     rawTitle: entry.rawTitle,
     bookTitle: examBookTitle(entry),
-    administrationYear: entry.administrationYear,
+    sourceRecordYear: entry.sourceRecordYear,
     variant: entry.variant,
     form: entry.form,
     sourceSubject: entry.subject,

@@ -19,6 +19,8 @@ import {
   parseCorpusManifest,
   problemChunkCount,
   problemOwnedRange,
+  validateFilteredResult,
+  validateProblemSliceTopology,
   type ClassificationDecision,
   type PdfEvidence,
 } from "../scripts/import-exam-corpus";
@@ -37,14 +39,14 @@ describe("exam corpus importer", () => {
       expect([...subjects.keys()]).toEqual(TARGET_SUBJECTS);
 
       const entry = parseCorpusManifest({
-        schemaVersion: 1,
+        schemaVersion: 2,
         entries: [{
           id: "ebsi:paper-1",
           subject: "수학",
           examTitle: "2026학년도 3월 전국연합학력평가 수학 영역",
           rawTitle: "2026학년도 3월 전국연합학력평가 수학 영역 미적분",
-          administrationDate: "2026-03-24",
-          administrationYear: 2026,
+          sourceRecordDate: "2026-03-24",
+          sourceRecordYear: 2026,
           variant: "미적분",
           form: null,
           sourcePageUrl: "https://www.ebsi.co.kr/exam/1",
@@ -55,15 +57,15 @@ describe("exam corpus importer", () => {
         }],
       }).entries[0];
       const historicalVariants = parseCorpusManifest({
-        schemaVersion: 1,
+        schemaVersion: 2,
         entries: [
           {
             ...entry.raw,
             id: "ebsi:ga",
             rawTitle: "2017학년도 대학수학능력시험 수학가형 홀수형",
             examTitle: "2017학년도 대학수학능력시험",
-            administrationDate: "2016-11-17",
-            administrationYear: 2016,
+            sourceRecordDate: "2016-11-17",
+            sourceRecordYear: 2016,
             variant: "수학가형",
             form: "odd",
           },
@@ -72,8 +74,8 @@ describe("exam corpus importer", () => {
             id: "ebsi:na",
             rawTitle: "2017학년도 대학수학능력시험 수학나형 홀수형",
             examTitle: "2017학년도 대학수학능력시험",
-            administrationDate: "2016-11-17",
-            administrationYear: 2016,
+            sourceRecordDate: "2016-11-17",
+            sourceRecordYear: 2016,
             variant: "수학나형",
             form: "odd",
             problemPdfUrl: "https://wdown.ebsi.co.kr/problem-na.pdf",
@@ -84,11 +86,11 @@ describe("exam corpus importer", () => {
       expect(examBookTitle(historicalVariants[0])).toBe("2016년 · 2017학년도 대학수학능력시험 수학가형 홀수형");
       expect(examBookTitle(historicalVariants[1])).toBe("2016년 · 2017학년도 대학수학능력시험 수학나형 홀수형");
       expect(examBookTitle(historicalVariants[0])).not.toBe(examBookTitle(historicalVariants[1]));
-      expect(examBookTitle({ administrationYear: 2025, rawTitle: "고2 3월 학평(서울) 국어" })).not.toBe(
-        examBookTitle({ administrationYear: 2017, rawTitle: "고2 3월 학평(서울) 국어" })
+      expect(examBookTitle({ sourceRecordYear: 2025, rawTitle: "고2 3월 학평(서울) 국어" })).not.toBe(
+        examBookTitle({ sourceRecordYear: 2017, rawTitle: "고2 3월 학평(서울) 국어" })
       );
       expect(() => parseCorpusManifest({
-        schemaVersion: 1,
+        schemaVersion: 2,
         entries: [
           historicalVariants[0].raw,
           {
@@ -109,8 +111,26 @@ describe("exam corpus importer", () => {
       ].filter(Boolean).length)).toEqual([1, 1]);
       expect([problemChunkCount(20), problemChunkCount(21), problemChunkCount(38), problemChunkCount(39)])
         .toEqual([1, 2, 2, 3]);
+      expect(validateProblemSliceTopology([
+        { from: 1, to: 20 }, { from: 19, to: 38 }, { from: 37, to: 45 },
+      ])).toEqual([{ from: 1, to: 19 }, { from: 20, to: 37 }, { from: 38, to: 45 }]);
+      expect(() => validateProblemSliceTopology([{ from: 1, to: 10 }, { from: 11, to: 20 }]))
+        .toThrow("2쪽 overlap topology");
+      expect(validateFilteredResult({
+        version: 2,
+        status: "filtered",
+        entryId: entry.id,
+        reason: "SOURCE_GRADE_OUT_OF_SCOPE",
+      }, entry.id)).toBe("SOURCE_GRADE_OUT_OF_SCOPE");
+      expect(() => validateFilteredResult({
+        version: 2,
+        status: "filtered",
+        entryId: entry.id,
+        reason: "NO_IN_SCOPE_QUESTIONS",
+        rulesDigest: "stale",
+      }, entry.id)).toThrow("rulesDigest가 오래되었습니다");
       expect(() => parseCorpusManifest({
-        schemaVersion: 1,
+        schemaVersion: 2,
         entries: [{ ...entry.raw, problemPdfUrl: "https://example.test/problem.pdf" }],
       })).toThrow("wdown.ebsi.co.kr");
       expect(problemExtractionSelfContainedRule(false)).toBe("");
@@ -135,29 +155,70 @@ describe("exam corpus importer", () => {
         confidence: 0.99,
         reason_codes: ["IN_SCOPE"],
       };
-      const imported = matchOfficialSolutions([{
-        question: {
-          number: "1",
-          qtype: "mcq",
-          difficulty: "중",
-          question: "$2^x=2$일 때 $x$는?",
-          choices: ["① 1", "② 2"],
-          answer: "② 2",
-          explanation: "",
-          page: 2,
-          figure: false,
-          figure_description: null,
-          box: null,
-        },
-        classification: decision,
-      }], [{ number: "1", answer: "①", explanation: "$x=1$이다.", page: 3, complete: true }]);
+      const classified = Array.from({ length: 30 }, (_, index) => {
+        const number = index + 1;
+        const page = 2 + Math.floor(index / 5);
+        return {
+          question: number === 1 ? {
+            number: "1",
+            qtype: "mcq" as const,
+            difficulty: "중" as const,
+            question: "$2^x=2$일 때 $x$는?",
+            choices: ["① 1", "② 2"],
+            answer: "② 2",
+            explanation: "",
+            page,
+            figure: false,
+            figure_description: null,
+            box: null,
+          } : {
+            number: String(number),
+            qtype: "short" as const,
+            difficulty: "중" as const,
+            question: `${number}번 제외 문항`,
+            choices: null,
+            answer: String(number),
+            explanation: "",
+            page,
+            figure: false,
+            figure_description: null,
+            box: null,
+          },
+          classification: number === 1 ? decision : {
+            key: `${page}:${number}`,
+            decision: "reject" as const,
+            canonical_subject: null,
+            curriculum_course: null,
+            domain: null,
+            achievement_codes: [],
+            confidence: 0.99,
+            reason_codes: ["OUT_OF_SCOPE"],
+          },
+        };
+      });
+      const officialSolutions = Array.from({ length: 30 }, (_, index) => ({
+        number: String(index + 1),
+        answer: index === 0 ? "①" : String(index + 1),
+        explanation: index === 0 ? "$x=1$이다." : "",
+        page: 3 + Math.floor(index / 5),
+        complete: true as const,
+      }));
+      const imported = matchOfficialSolutions(entry, classified, officialSolutions);
       expect(imported[0].officialAnswer).toBe("①");
-      expect(() => matchOfficialSolutions([{
-        question: { ...imported[0], answer: "① 1" },
-        classification: decision,
-      }], [{ number: "1", answer: "①", explanation: "", page: 3, complete: true }])).toThrow(
+      expect(() => matchOfficialSolutions(entry, classified, officialSolutions.map((solution, index) =>
+        index === 0 ? { ...solution, explanation: "" } : solution
+      ))).toThrow(
         "공식 해설 본문이 비어 있습니다"
       );
+      expect(() => matchOfficialSolutions(entry, classified.map((item, index) =>
+        index === 29 ? { ...item, question: { ...item.question, number: "29" } } : item
+      ), officialSolutions)).toThrow("문제 인쇄 번호가 중복입니다");
+      expect(() => matchOfficialSolutions(entry, classified, officialSolutions.map((solution, index) =>
+        index === 29 ? { ...solution, number: "31" } : solution
+      ))).toThrow("인쇄 번호 집합이 다릅니다");
+      expect(() => matchOfficialSolutions(entry, classified, officialSolutions.map((solution, index) =>
+        index === 0 ? { ...solution, answer: "③" } : solution
+      ))).toThrow("보기 범위를 벗어났습니다");
 
       const makeEvidence = (name: string, url: string): PdfEvidence => {
         const path = join(root, name);
