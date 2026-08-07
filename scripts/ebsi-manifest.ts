@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
-export const CUTOFF_DATE = "2026-08-07";
+export const SOURCE_RECORD_CUTOFF_DATE = "2026-08-07";
 export const SUBJECTS = ["국어", "수학", "통합사회", "통합과학"] as const;
 export type Subject = (typeof SUBJECTS)[number];
 export type TargetCd = "D100" | "D200" | "D300";
@@ -28,9 +28,9 @@ export interface RawPaper {
   queryYear: number;
   paperId: string;
   irecord: string;
-  administrationDate: string;
-  administrationYear: number;
-  month: number;
+  sourceRecordDate: string;
+  sourceRecordYear: number;
+  sourceRecordMonth: number;
   grade: 1 | 2 | 3;
   examKind: "mock" | "csat";
   subject: Subject;
@@ -48,9 +48,9 @@ export interface ManifestEntry {
   id: string;
   paperId: string;
   irecord: string;
-  administrationDate: string;
-  administrationYear: number;
-  month: number;
+  sourceRecordDate: string;
+  sourceRecordYear: number;
+  sourceRecordMonth: number;
   grade: 1 | 2 | 3;
   examKind: "mock" | "csat";
   subject: Subject;
@@ -70,7 +70,7 @@ interface SliceProgress {
 }
 
 interface Checkpoint {
-  schemaVersion: 1;
+  schemaVersion: 2;
   signature: string;
   slices: Record<string, SliceProgress>;
   records: RawPaper[];
@@ -83,18 +83,20 @@ export interface PageResult {
 }
 
 export interface Manifest {
-  schemaVersion: 1;
+  schemaVersion: 2;
   generatedAt: string;
-  cutoffDate: string;
+  sourceRecordCutoffDate: string;
   source: {
     listEndpoint: string;
     downloadOrigin: string;
+    dateSemantics: "sourceRecordDate is derived from EBSi irecord and is not a verified exam administration date";
   };
   selection: {
     subjects: readonly Subject[];
     currentKoreanVariant: "언어와 매체";
     currentMathVariant: "미적분";
     csatForm: "odd";
+    cutoffBasis: "sourceRecordDate";
   };
   summary: ReturnType<typeof summarize>;
   entries: ManifestEntry[];
@@ -204,6 +206,28 @@ function validDate(value: string): boolean {
   return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
 }
 
+function validateTitleYear(
+  rawTitle: string,
+  examKind: "mock" | "csat",
+  sourceRecordYear: number,
+  queryYear: number,
+): void {
+  if (sourceRecordYear !== queryYear) {
+    throw new Error(`${rawTitle}: source record year ${sourceRecordYear} differs from query year ${queryYear}`);
+  }
+  if (examKind === "csat") {
+    const academicYear = rawTitle.match(/(\d{4})학년도\s*대학수학능력시험/)?.[1];
+    if (!academicYear || Number(academicYear) !== sourceRecordYear + 1) {
+      throw new Error(`${rawTitle}: CSAT academic year does not match source record year ${sourceRecordYear}`);
+    }
+    return;
+  }
+  const calendarYear = rawTitle.match(/\b(20\d{2})년(?!도)/)?.[1];
+  if (calendarYear && Number(calendarYear) !== sourceRecordYear) {
+    throw new Error(`${rawTitle}: visible year does not match source record year ${sourceRecordYear}`);
+  }
+}
+
 export function parsePage(html: string, source: Slice): PageResult {
   const totalMatch = html.match(/총\s*<em[^>]*>([\d,]+)개<\/em>/);
   if (!totalMatch) throw new Error(`${source.key}: EBSi total count missing`);
@@ -224,20 +248,23 @@ export function parsePage(html: string, source: Slice): PageResult {
     if (!/^\d+$/.test(paperId) || !/^\d{8,}$/.test(irecord)) {
       throw new Error(`${source.key}: invalid paperId/irecord for ${rawTitle}`);
     }
-    const administrationDate = `${irecord.slice(0, 4)}-${irecord.slice(4, 6)}-${irecord.slice(6, 8)}`;
-    if (!validDate(administrationDate)) throw new Error(`${source.key}: invalid date ${administrationDate}`);
+    const sourceRecordDate = `${irecord.slice(0, 4)}-${irecord.slice(4, 6)}-${irecord.slice(6, 8)}`;
+    if (!validDate(sourceRecordDate)) throw new Error(`${source.key}: invalid source record date ${sourceRecordDate}`);
+    const sourceRecordYear = Number(irecord.slice(0, 4));
     const parsedTitle = parseTitle(rawTitle);
+    const examKind = parsedTitle.examTitle.includes("대학수학능력시험") ? "csat" : "mock";
+    validateTitleYear(rawTitle, examKind, sourceRecordYear, source.year);
     records.push({
       sliceKey: source.key,
       targetCd: source.targetCd,
       queryYear: source.year,
       paperId,
       irecord,
-      administrationDate,
-      administrationYear: Number(irecord.slice(0, 4)),
-      month: Number(irecord.slice(4, 6)),
+      sourceRecordDate,
+      sourceRecordYear,
+      sourceRecordMonth: Number(irecord.slice(4, 6)),
       grade: gradeFor(source.targetCd),
-      examKind: parsedTitle.examTitle.includes("대학수학능력시험") ? "csat" : "mock",
+      examKind,
       ...parsedTitle,
       rawTitle,
       isEven: problem[6] === "1" || parsedTitle.form === "even",
@@ -250,10 +277,10 @@ export function parsePage(html: string, source: Slice): PageResult {
   return { totalPages, totalRows, records };
 }
 
-function inScope(row: RawPaper, cutoffDate: string): boolean {
-  if (row.administrationDate > cutoffDate) return false;
-  if (row.examKind === "csat") return row.grade === 3 && row.administrationYear >= 2016 && row.administrationYear <= 2025;
-  if (row.administrationYear < 2017 || row.administrationYear > 2026) return false;
+function inScope(row: RawPaper, sourceRecordCutoffDate: string): boolean {
+  if (row.sourceRecordDate > sourceRecordCutoffDate) return false;
+  if (row.examKind === "csat") return row.grade === 3 && row.sourceRecordYear >= 2016 && row.sourceRecordYear <= 2025;
+  if (row.sourceRecordYear < 2017 || row.sourceRecordYear > 2026) return false;
   if (row.grade === 1) return row.subject === "통합사회" || row.subject === "통합과학";
   return row.grade === 2 || row.grade === 3;
 }
@@ -279,11 +306,11 @@ function variantPriority(row: RawPaper): number {
   return priorities[row.rawSubject] ?? 0;
 }
 
-export function selectEntries(rows: RawPaper[], cutoffDate = CUTOFF_DATE): ManifestEntry[] {
-  if (!validDate(cutoffDate)) throw new Error(`Invalid cutoff date: ${cutoffDate}`);
+export function selectEntries(rows: RawPaper[], sourceRecordCutoffDate = SOURCE_RECORD_CUTOFF_DATE): ManifestEntry[] {
+  if (!validDate(sourceRecordCutoffDate)) throw new Error(`Invalid source record cutoff date: ${sourceRecordCutoffDate}`);
   const selected = new Map<string, RawPaper>();
   for (const row of rows) {
-    if (!inScope(row, cutoffDate) || row.isEven) continue;
+    if (!inScope(row, sourceRecordCutoffDate) || row.isEven) continue;
     const key = [row.irecord, row.grade, row.examTitle, row.subject, variantGroup(row)].join("|");
     const current = selected.get(key);
     if (!current || variantPriority(row) < variantPriority(current)) selected.set(key, row);
@@ -297,9 +324,9 @@ export function selectEntries(rows: RawPaper[], cutoffDate = CUTOFF_DATE): Manif
       id: `ebsi:${row.paperId}`,
       paperId: row.paperId,
       irecord: row.irecord,
-      administrationDate: row.administrationDate,
-      administrationYear: row.administrationYear,
-      month: row.month,
+      sourceRecordDate: row.sourceRecordDate,
+      sourceRecordYear: row.sourceRecordYear,
+      sourceRecordMonth: row.sourceRecordMonth,
       grade: row.grade,
       examKind: row.examKind,
       subject: row.subject,
@@ -315,7 +342,7 @@ export function selectEntries(rows: RawPaper[], cutoffDate = CUTOFF_DATE): Manif
 
   const subjectOrder = new Map(SUBJECTS.map((subject, index) => [subject, index]));
   entries.sort((a, b) =>
-    a.administrationDate.localeCompare(b.administrationDate)
+    a.sourceRecordDate.localeCompare(b.sourceRecordDate)
       || a.grade - b.grade
       || a.examTitle.localeCompare(b.examTitle, "ko")
       || (subjectOrder.get(a.subject) ?? 99) - (subjectOrder.get(b.subject) ?? 99)
@@ -335,20 +362,107 @@ function assertUnique(entries: ManifestEntry[], field: "id" | "problemPdfUrl" | 
   }
 }
 
+function groupEntries(
+  entries: ManifestEntry[],
+  key: (entry: ManifestEntry) => string,
+): Map<string, ManifestEntry[]> {
+  const groups = new Map<string, ManifestEntry[]>();
+  for (const entry of entries) groups.set(key(entry), [...(groups.get(key(entry)) ?? []), entry]);
+  return groups;
+}
+
+function assertSubjectCounts(
+  label: string,
+  entries: ManifestEntry[],
+  expected: Partial<Record<Subject, number>>,
+): void {
+  for (const subject of SUBJECTS) {
+    const actual = entries.filter((entry) => entry.subject === subject).length;
+    const wanted = expected[subject] ?? 0;
+    if (actual !== wanted) throw new Error(`${label}: ${subject} expected ${wanted}, got ${actual}`);
+  }
+}
+
+function assertVariants(label: string, entries: ManifestEntry[], subject: Subject, expected: Array<string | null>): void {
+  const actual = entries
+    .filter((entry) => entry.subject === subject)
+    .map((entry) => entry.variant)
+    .sort((a, b) => (a ?? "").localeCompare(b ?? "", "ko"));
+  const wanted = [...expected].sort((a, b) => (a ?? "").localeCompare(b ?? "", "ko"));
+  if (JSON.stringify(actual) !== JSON.stringify(wanted)) {
+    throw new Error(`${label}: ${subject} variants expected ${JSON.stringify(wanted)}, got ${JSON.stringify(actual)}`);
+  }
+}
+
+function expectedMockIdentities(grade: 1 | 2 | 3, sourceRecordYear: number): number {
+  if (grade === 1) return sourceRecordYear === 2017 ? 0 : sourceRecordYear === 2026 ? 2 : 4;
+  if (grade === 2) return sourceRecordYear === 2026 ? 2 : 4;
+  return sourceRecordYear === 2026 ? 4 : 6;
+}
+
+export function validateCoverage(entries: ManifestEntry[]): void {
+  const csat = entries.filter((entry) => entry.examKind === "csat");
+  for (const sourceRecordYear of range(2016, 2025)) {
+    const yearly = csat.filter((entry) => entry.sourceRecordYear === sourceRecordYear);
+    const identities = new Set(yearly.map((entry) => `${entry.irecord}|${entry.examTitle}`));
+    if (identities.size !== 1) throw new Error(`CSAT ${sourceRecordYear}: expected 1 identity, got ${identities.size}`);
+    if (yearly.some((entry) => entry.form !== "odd")) throw new Error(`CSAT ${sourceRecordYear}: odd form required`);
+    const historical = sourceRecordYear <= 2020;
+    assertSubjectCounts(`CSAT ${sourceRecordYear}`, yearly, { 국어: 1, 수학: historical ? 2 : 1 });
+    assertVariants(`CSAT ${sourceRecordYear}`, yearly, "국어", [historical ? null : "언어와 매체"]);
+    assertVariants(`CSAT ${sourceRecordYear}`, yearly, "수학", historical ? ["수학가형", "수학나형"] : ["미적분"]);
+  }
+  const csatYears = new Set(csat.map((entry) => entry.sourceRecordYear));
+  if (csatYears.size !== 10) throw new Error(`CSAT coverage: expected 10 source record years, got ${csatYears.size}`);
+
+  const mockGroups = groupEntries(
+    entries.filter((entry) => entry.examKind === "mock"),
+    (entry) => `${entry.irecord}|${entry.grade}|${entry.examTitle}`,
+  );
+  for (const grade of [1, 2, 3] as const) {
+    for (const sourceRecordYear of range(2017, 2026)) {
+      const groups = [...mockGroups.values()].filter(
+        (group) => group[0].grade === grade && group[0].sourceRecordYear === sourceRecordYear,
+      );
+      const expectedIdentities = expectedMockIdentities(grade, sourceRecordYear);
+      if (groups.length !== expectedIdentities) {
+        throw new Error(`Mock grade ${grade} ${sourceRecordYear}: expected ${expectedIdentities} identities, got ${groups.length}`);
+      }
+      for (const group of groups) {
+        const label = `Mock ${group[0].irecord} ${group[0].examTitle}`;
+        if (grade === 1) {
+          assertSubjectCounts(label, group, { 통합사회: 1, 통합과학: 1 });
+          continue;
+        }
+        const historicalMath = (grade === 2 && sourceRecordYear <= 2019)
+          || (grade === 3 && sourceRecordYear <= 2020);
+        const expected: Partial<Record<Subject, number>> = { 국어: 1, 수학: historicalMath ? 2 : 1 };
+        if (grade === 2 && sourceRecordYear === 2026) {
+          expected.통합사회 = 1;
+          expected.통합과학 = 1;
+        }
+        assertSubjectCounts(label, group, expected);
+        assertVariants(label, group, "수학", historicalMath ? ["수학가형", "수학나형"] : [grade === 3 ? "미적분" : null]);
+        assertVariants(label, group, "국어", [grade === 3 && sourceRecordYear >= 2021 ? "언어와 매체" : null]);
+      }
+    }
+  }
+}
+
 function summarize(entries: ManifestEntry[], rawRows: number) {
-  const administrations = new Set(entries.map((entry) => `${entry.irecord}|${entry.grade}|${entry.examTitle}`));
-  const csatAdministrations = new Set(
+  const identities = new Set(entries.map((entry) => `${entry.irecord}|${entry.grade}|${entry.examTitle}`));
+  const csatIdentities = new Set(
     entries.filter((entry) => entry.examKind === "csat").map((entry) => `${entry.irecord}|${entry.examTitle}`),
   );
-  const mockAdministrations = new Set(
+  const mockIdentities = new Set(
     entries.filter((entry) => entry.examKind === "mock").map((entry) => `${entry.irecord}|${entry.grade}|${entry.examTitle}`),
   );
   return {
     rawRows,
     entries: entries.length,
-    examAdministrations: administrations.size,
-    mockExamAdministrations: mockAdministrations.size,
-    csatAdministrations: csatAdministrations.size,
+    examIdentities: identities.size,
+    mockExamIdentities: mockIdentities.size,
+    csatIdentities: csatIdentities.size,
     byGrade: Object.fromEntries([1, 2, 3].map((grade) => [grade, entries.filter((entry) => entry.grade === grade).length])),
     bySubject: Object.fromEntries(SUBJECTS.map((subject) => [subject, entries.filter((entry) => entry.subject === subject).length])),
   };
@@ -356,21 +470,22 @@ function summarize(entries: ManifestEntry[], rawRows: number) {
 
 export function buildManifest(rows: RawPaper[], generatedAt = new Date().toISOString()): Manifest {
   const entries = selectEntries(rows);
-  const csatYears = [...new Set(entries.filter((entry) => entry.examKind === "csat").map((entry) => entry.administrationYear))].sort();
-  const expectedCsatYears = range(2016, 2025);
-  if (csatYears.join(",") !== expectedCsatYears.join(",")) {
-    throw new Error(`CSAT coverage mismatch: expected ${expectedCsatYears.join(",")}, got ${csatYears.join(",")}`);
-  }
+  validateCoverage(entries);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAt,
-    cutoffDate: CUTOFF_DATE,
-    source: { listEndpoint: LIST_ENDPOINT, downloadOrigin: DOWNLOAD_ORIGIN },
+    sourceRecordCutoffDate: SOURCE_RECORD_CUTOFF_DATE,
+    source: {
+      listEndpoint: LIST_ENDPOINT,
+      downloadOrigin: DOWNLOAD_ORIGIN,
+      dateSemantics: "sourceRecordDate is derived from EBSi irecord and is not a verified exam administration date",
+    },
     selection: {
       subjects: SUBJECTS,
       currentKoreanVariant: "언어와 매체",
       currentMathVariant: "미적분",
       csatForm: "odd",
+      cutoffBasis: "sourceRecordDate",
     },
     summary: summarize(entries, rows.length),
     entries,
@@ -378,20 +493,26 @@ export function buildManifest(rows: RawPaper[], generatedAt = new Date().toISOSt
 }
 
 function stateSignature(slices: Slice[]): string {
-  return JSON.stringify({ schemaVersion: 1, cutoffDate: CUTOFF_DATE, endpoint: LIST_ENDPOINT, months: MONTHS, slices });
+  return JSON.stringify({
+    schemaVersion: 2,
+    sourceRecordCutoffDate: SOURCE_RECORD_CUTOFF_DATE,
+    endpoint: LIST_ENDPOINT,
+    months: MONTHS,
+    slices,
+  });
 }
 
 async function loadCheckpoint(path: string, slices: Slice[]): Promise<Checkpoint> {
   try {
     const parsed = JSON.parse(await readFile(path, "utf8")) as Partial<Checkpoint>;
-    if (parsed.schemaVersion !== 1 || parsed.signature !== stateSignature(slices)
+    if (parsed.schemaVersion !== 2 || parsed.signature !== stateSignature(slices)
       || !parsed.slices || !Array.isArray(parsed.records)) {
       throw new Error(`Checkpoint does not match collector scope: ${path}`);
     }
     return parsed as Checkpoint;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    return { schemaVersion: 1, signature: stateSignature(slices), slices: {}, records: [] };
+    return { schemaVersion: 2, signature: stateSignature(slices), slices: {}, records: [] };
   }
 }
 

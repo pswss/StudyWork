@@ -9,6 +9,7 @@ import {
   parsePage,
   selectEntries,
   SUBJECTS,
+  validateCoverage,
   type RawPaper,
   type Slice,
 } from "../scripts/ebsi-manifest";
@@ -43,18 +44,18 @@ function page(rows: string[], totalRows = rows.length, totalPages = 1): string {
 }
 
 function raw(overrides: Partial<RawPaper> & Pick<RawPaper, "paperId" | "rawSubject" | "subject">): RawPaper {
-  const administrationDate = overrides.administrationDate ?? "2025-11-13";
+  const sourceRecordDate = overrides.sourceRecordDate ?? "2025-11-13";
   const grade = overrides.grade ?? 3;
   const examTitle = overrides.examTitle ?? "2026학년도 대학수학능력시험";
   return {
-    sliceKey: overrides.sliceKey ?? `D${grade}00:${administrationDate.slice(0, 4)}`,
+    sliceKey: overrides.sliceKey ?? `D${grade}00:${sourceRecordDate.slice(0, 4)}`,
     targetCd: overrides.targetCd ?? (grade === 1 ? "D100" : grade === 2 ? "D200" : "D300"),
-    queryYear: overrides.queryYear ?? Number(administrationDate.slice(0, 4)),
+    queryYear: overrides.queryYear ?? Number(sourceRecordDate.slice(0, 4)),
     paperId: overrides.paperId,
-    irecord: overrides.irecord ?? `${administrationDate.replaceAll("-", "")}${grade}`,
-    administrationDate,
-    administrationYear: overrides.administrationYear ?? Number(administrationDate.slice(0, 4)),
-    month: overrides.month ?? Number(administrationDate.slice(5, 7)),
+    irecord: overrides.irecord ?? `${sourceRecordDate.replaceAll("-", "")}${grade}`,
+    sourceRecordDate,
+    sourceRecordYear: overrides.sourceRecordYear ?? Number(sourceRecordDate.slice(0, 4)),
+    sourceRecordMonth: overrides.sourceRecordMonth ?? Number(sourceRecordDate.slice(5, 7)),
     grade,
     examKind: overrides.examKind ?? "csat",
     subject: overrides.subject,
@@ -69,6 +70,69 @@ function raw(overrides: Partial<RawPaper> & Pick<RawPaper, "paperId" | "rawSubje
   };
 }
 
+function validCoverageEntries() {
+  const rows: RawPaper[] = [];
+  let nextId = 1_000;
+  const add = (overrides: Omit<Parameters<typeof raw>[0], "paperId">) => {
+    rows.push(raw({ ...overrides, paperId: String(nextId++) }));
+  };
+
+  for (let year = 2016; year <= 2025; year += 1) {
+    const sourceRecordDate = `${year}-11-15`;
+    const common = {
+      grade: 3 as const,
+      examKind: "csat" as const,
+      sourceRecordDate,
+      sourceRecordYear: year,
+      irecord: `${year}11153`,
+      examTitle: `${year + 1}학년도 대학수학능력시험`,
+      form: "odd" as const,
+    };
+    add({ ...common, subject: "국어", rawSubject: year <= 2020 ? "국어" : "언어와 매체" });
+    for (const rawSubject of year <= 2020 ? ["수학가형", "수학나형"] : ["미적분"]) {
+      add({ ...common, subject: "수학", rawSubject });
+    }
+  }
+
+  for (const grade of [1, 2, 3] as const) {
+    for (let year = 2017; year <= 2026; year += 1) {
+      const months = grade === 1
+        ? year === 2017 ? [] : year === 2026 ? [3, 6] : [3, 6, 9, 11]
+        : grade === 2
+          ? year === 2026 ? [3, 6] : [3, 6, 9, 11]
+          : year === 2026 ? [3, 5, 6, 7] : [3, 4, 6, 7, 9, 10];
+      for (const month of months) {
+        const mm = String(month).padStart(2, "0");
+        const common = {
+          grade,
+          examKind: "mock" as const,
+          sourceRecordDate: `${year}-${mm}-01`,
+          sourceRecordYear: year,
+          sourceRecordMonth: month,
+          irecord: `${year}${mm}01${grade}`,
+          examTitle: `고${grade} ${month}월 학평`,
+          form: null,
+        };
+        if (grade === 1) {
+          add({ ...common, subject: "통합사회", rawSubject: "통합사회" });
+          add({ ...common, subject: "통합과학", rawSubject: "통합과학" });
+          continue;
+        }
+        add({ ...common, subject: "국어", rawSubject: grade === 3 && year >= 2021 ? "언어와 매체" : "국어" });
+        const historicalMath = (grade === 2 && year <= 2019) || (grade === 3 && year <= 2020);
+        for (const rawSubject of historicalMath ? ["수학가형", "수학나형"] : [grade === 3 ? "미적분" : "수학"]) {
+          add({ ...common, subject: "수학", rawSubject });
+        }
+        if (grade === 2 && year === 2026) {
+          add({ ...common, subject: "통합사회", rawSubject: "통합사회" });
+          add({ ...common, subject: "통합과학", rawSubject: "통합과학" });
+        }
+      }
+    }
+  }
+  return selectEntries(rows);
+}
+
 describe("EBSi manifest parser", () => {
   it("parses exact identity and official PDF links from AJAX HTML", () => {
     const result = parsePage(page([
@@ -79,7 +143,9 @@ describe("EBSi manifest parser", () => {
     expect(result.records[0]).toMatchObject({
       paperId: "26111848",
       irecord: "202511133",
-      administrationDate: "2025-11-13",
+      sourceRecordDate: "2025-11-13",
+      sourceRecordYear: 2025,
+      sourceRecordMonth: 11,
       grade: 3,
       examKind: "csat",
       subject: "국어",
@@ -90,6 +156,20 @@ describe("EBSi manifest parser", () => {
       problemPdfUrl: "https://wdown.ebsi.co.kr/W61001/01exam/20251113/go3/26111848_mun.pdf",
       solutionPdfUrl: "https://wdown.ebsi.co.kr/W61001/01exam/20251113/go3/26111848_hsj.pdf",
     });
+    expect(result.records[0]).not.toHaveProperty("administrationDate");
+  });
+
+  it("validates source-record year against query and visible CSAT year", () => {
+    const html = page([
+      row({ title: "2026학년도 대학수학능력시험 언어와 매체 홀수형", paperId: "26111848" }),
+    ]);
+    expect(() => parsePage(html, { ...slice, key: "D300:2024", year: 2024 })).toThrow("differs from query year");
+    expect(() => parsePage(page([
+      row({ title: "2025학년도 대학수학능력시험 언어와 매체 홀수형", paperId: "26111848" }),
+    ]), slice)).toThrow("academic year does not match");
+    expect(() => parsePage(page([
+      row({ title: "2024년 고3 3월 학평 국어", paperId: "26111848" }),
+    ]), slice)).toThrow("visible year does not match");
   });
 
   it("posts every AJAX parameter and all twelve hidden month values", () => {
@@ -119,8 +199,8 @@ describe("EBSi manifest parser", () => {
       raw({ paperId: "4", subject: "수학", rawSubject: "확률과 통계" }),
       raw({ paperId: "5", subject: "수학", rawSubject: "미적분" }),
       raw({ paperId: "6", subject: "수학", rawSubject: "기하" }),
-      raw({ paperId: "7", subject: "수학", rawSubject: "수학가형", administrationDate: "2020-12-03", administrationYear: 2020, irecord: "202012033" }),
-      raw({ paperId: "8", subject: "수학", rawSubject: "수학나형", administrationDate: "2020-12-03", administrationYear: 2020, irecord: "202012033" }),
+      raw({ paperId: "7", subject: "수학", rawSubject: "수학가형", sourceRecordDate: "2020-12-03", sourceRecordYear: 2020, irecord: "202012033" }),
+      raw({ paperId: "8", subject: "수학", rawSubject: "수학나형", sourceRecordDate: "2020-12-03", sourceRecordYear: 2020, irecord: "202012033" }),
     ];
 
     expect(selectEntries(rows).map((entry) => entry.paperId)).toEqual(["7", "8", "2", "5"]);
@@ -128,14 +208,34 @@ describe("EBSi manifest parser", () => {
 
   it("applies grade, year, kind, integrated-subject, and cutoff scope", () => {
     const rows = [
-      raw({ paperId: "1", grade: 1, subject: "국어", rawSubject: "국어", examKind: "mock", administrationDate: "2025-03-01" }),
-      raw({ paperId: "2", grade: 1, subject: "통합과학", rawSubject: "통합과학", examKind: "mock", administrationDate: "2025-03-01" }),
-      raw({ paperId: "3", grade: 2, subject: "국어", rawSubject: "국어", examKind: "mock", administrationDate: "2026-09-01" }),
-      raw({ paperId: "4", grade: 3, subject: "국어", rawSubject: "국어", examKind: "mock", administrationDate: "2016-06-01" }),
-      raw({ paperId: "5", grade: 3, subject: "국어", rawSubject: "국어", examKind: "csat", administrationDate: "2016-11-17", administrationYear: 2016 }),
+      raw({ paperId: "1", grade: 1, subject: "국어", rawSubject: "국어", examKind: "mock", sourceRecordDate: "2025-03-01" }),
+      raw({ paperId: "2", grade: 1, subject: "통합과학", rawSubject: "통합과학", examKind: "mock", sourceRecordDate: "2025-03-01" }),
+      raw({ paperId: "3", grade: 2, subject: "국어", rawSubject: "국어", examKind: "mock", sourceRecordDate: "2026-09-01" }),
+      raw({ paperId: "4", grade: 3, subject: "국어", rawSubject: "국어", examKind: "mock", sourceRecordDate: "2016-06-01" }),
+      raw({ paperId: "5", grade: 3, subject: "국어", rawSubject: "국어", examKind: "csat", sourceRecordDate: "2016-11-17", sourceRecordYear: 2016 }),
     ];
 
     expect(selectEntries(rows).map((entry) => entry.paperId)).toEqual(["5", "2"]);
+  });
+
+  it("rejects missing required subjects and wrong canonical variants", () => {
+    const entries = validCoverageEntries();
+    expect(() => validateCoverage(entries)).not.toThrow();
+    expect(() => validateCoverage(entries.filter(
+      (entry) => !(entry.examKind === "csat" && entry.sourceRecordYear === 2025 && entry.subject === "수학"),
+    ))).toThrow("CSAT 2025: 수학 expected 1, got 0");
+    expect(() => validateCoverage(entries.map((entry) =>
+      entry.examKind === "csat" && entry.sourceRecordYear === 2025 && entry.subject === "국어"
+        ? { ...entry, variant: "화법과 작문" }
+        : entry,
+    ))).toThrow("국어 variants expected");
+    expect(() => validateCoverage(entries.map((entry) =>
+      entry.examKind === "csat" && entry.sourceRecordYear === 2025 ? { ...entry, form: null } : entry,
+    ))).toThrow("odd form required");
+    const missingMock = entries.find(
+      (entry) => entry.examKind === "mock" && entry.grade === 1 && entry.subject === "통합사회",
+    )?.id;
+    expect(() => validateCoverage(entries.filter((entry) => entry.id !== missingMock))).toThrow("통합사회 expected 1, got 0");
   });
 
   it("resumes after the last atomically checkpointed page", async () => {
