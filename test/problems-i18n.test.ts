@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { I18nProvider, LOCALES, translate, type Locale } from "../web/src/i18n";
 import { figureAlt } from "../web/src/pages/Quiz";
-import QuizScratchpad from "../web/src/pages/QuizScratchpad";
+import QuizScratchpad, { QuizQuestionAnnotation } from "../web/src/pages/QuizScratchpad";
 
 const expected = {
   ko: { start: "문제 풀기", scratch: "풀이판" },
@@ -25,6 +25,17 @@ describe("문제 도메인 다국어", () => {
     expect(html).toContain(translate(locale, "problems.scratch.undo"));
     expect(html).toContain(translate(locale, "problems.scratch.memoLabel"));
     expect(html).toContain("<textarea");
+
+    const annotation = renderToStaticMarkup(createElement(I18nProvider, {
+      initialLocale: locale,
+      children: createElement(QuizQuestionAnnotation, {
+        questionId: 42,
+        children: createElement("p", null, "원문 passage"),
+      }),
+    }));
+    expect(annotation).toContain(translate(locale, "problems.annotation.start"));
+    expect(annotation).toContain(translate(locale, "problems.annotation.help"));
+    expect(annotation).toContain("원문 passage");
   });
 
   it("문제·보기·정답·해설·파일명은 번역하지 않고 UI 보간값으로 그대로 둔다", () => {

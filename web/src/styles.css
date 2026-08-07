@@ -1410,6 +1410,30 @@ a.q-chip:hover { color: var(--ink); border-color: var(--lime-dim); background: r
   margin-bottom: 26px; letter-spacing: -.01em;
 }
 
+/* 지문·도형 위 필기 — 읽기 모드에서는 투명 캔버스가 입력을 가로채지 않는다. */
+.quiz-annotation { margin: 0 0 18px; }
+.quiz-annotation-toolbar {
+  position: sticky; top: max(8px, env(safe-area-inset-top)); z-index: 2;
+  margin-bottom: 8px; padding: 6px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel);
+}
+.quiz-annotation-mode[aria-pressed="true"] {
+  color: var(--lime); border-color: var(--lime-dim); background: rgba(217, 255, 63, .06);
+}
+.quiz-annotation-help {
+  margin: 0 2px 10px; color: var(--ink-3); font-size: 11.5px; line-height: 1.5;
+}
+.quiz-annotation-surface { position: relative; min-width: 0; }
+.quiz-annotation-content { display: flow-root; position: relative; }
+.quiz-annotation-canvas {
+  position: absolute; inset: 0; z-index: 1; display: block; width: 100%; height: 100%;
+  pointer-events: none;
+}
+.quiz-annotation.active .quiz-annotation-canvas {
+  pointer-events: auto; cursor: crosshair; touch-action: none; user-select: none;
+}
+.quiz-annotation-canvas.erasing { cursor: cell; }
+
 /* 문제별 임시 풀이판 — 실제 필기 캔버스라 미세 격자가 기능적 배경으로 쓰인다. */
 .quiz-scratchpad {
   margin: 0 0 26px; border: 1px solid var(--line); border-radius: 8px;
@@ -1433,22 +1457,23 @@ a.q-chip:hover { color: var(--ink); border-color: var(--lime-dim); background: r
   padding: 12px; border-top: 1px solid var(--line);
   animation: panelIn .2s var(--ease) both;
 }
-.quiz-scratchpad-toolbar {
-  min-height: 44px; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+.quiz-ink-toolbar {
+  min-height: 44px; display: flex; align-items: center; gap: 6px;
 }
-.quiz-scratchpad-toolbar button {
+.quiz-scratchpad-toolbar { margin-bottom: 8px; }
+.quiz-ink-toolbar button {
   min-height: 44px; padding: 0 13px; border: 1px solid var(--line);
   border-radius: 6px; background: transparent; color: var(--ink-2);
   font: 600 12px var(--body); cursor: pointer;
   transition: color .18s var(--ease), border-color .18s var(--ease), background .18s var(--ease);
 }
-.quiz-scratchpad-toolbar button:hover:not(:disabled) { color: var(--ink); border-color: var(--line-strong); }
-.quiz-scratchpad-toolbar button:active:not(:disabled) { background: rgba(217, 255, 63, .08); }
-.quiz-scratchpad-toolbar button.active {
+.quiz-ink-toolbar button:hover:not(:disabled) { color: var(--ink); border-color: var(--line-strong); }
+.quiz-ink-toolbar button:active:not(:disabled) { background: rgba(217, 255, 63, .08); }
+.quiz-ink-toolbar button.active {
   color: var(--bg); border-color: var(--lime); background: var(--lime);
 }
-.quiz-scratchpad-toolbar button:disabled { opacity: .35; cursor: not-allowed; }
-.quiz-scratchpad-toolbar-gap { flex: 1; }
+.quiz-ink-toolbar button:disabled { opacity: .35; cursor: not-allowed; }
+.quiz-ink-toolbar-gap { flex: 1; }
 .quiz-scratchpad-help { margin: 0 2px 10px; color: var(--ink-3); font-size: 11.5px; line-height: 1.5; }
 .quiz-scratchpad-canvas {
   display: block; width: 100%; height: clamp(260px, 36vw, 380px);
@@ -1799,8 +1824,8 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
     -webkit-line-clamp: 2; overflow: hidden;
   }
   .quiz-question-text { font-size: 20px; }
-  .quiz-scratchpad-toolbar { flex-wrap: wrap; }
-  .quiz-scratchpad-toolbar-gap { display: none; }
+  .quiz-ink-toolbar { flex-wrap: wrap; }
+  .quiz-ink-toolbar-gap { display: none; }
   .quiz-scratchpad-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ox-btn { max-width: 100%; }
   .exam-card-header { flex-direction: column; align-items: flex-start; }

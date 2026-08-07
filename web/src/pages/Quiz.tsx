@@ -18,7 +18,7 @@ import { escapeHtmlText, Md, MdInline, MdInlineText, mdInlineHtml } from "../md"
 import { useI18n, type Locale, type MessageKey, type Translate } from "../i18n";
 import SourcePicker from "./SourcePicker";
 import SingleSelectPicker from "./SingleSelectPicker";
-import QuizScratchpad from "./QuizScratchpad";
+import QuizScratchpad, { QuizQuestionAnnotation } from "./QuizScratchpad";
 import { AiPending } from "../Pending";
 import { getAnswerAttempt, type AnswerAttempt } from "../answer-attempt";
 import { useUndoDelete } from "../UndoDelete";
@@ -914,18 +914,20 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
             </a>
           )}
         </div>
-        <Md className="quiz-question-text" text={numberedQuestionText(item)} />
-        {item.src_file_id && item.has_figure && (
-          <img
-            className="quiz-figure"
-            width={1200}
-            height={900}
-            src={pageImageUrl(item.src_file_id, item.src_page, item.figure_box)}
-            alt={figureAlt(item.figure_description, item.src_page, undefined, t, formatNumber)}
-            loading="eager"
-            fetchPriority="high"
-          />
-        )}
+        <QuizQuestionAnnotation questionId={item.id}>
+          <Md className="quiz-question-text" text={numberedQuestionText(item)} />
+          {item.src_file_id && item.has_figure && (
+            <img
+              className="quiz-figure"
+              width={1200}
+              height={900}
+              src={pageImageUrl(item.src_file_id, item.src_page, item.figure_box)}
+              alt={figureAlt(item.figure_description, item.src_page, undefined, t, formatNumber)}
+              loading="eager"
+              fetchPriority="high"
+            />
+          )}
+        </QuizQuestionAnnotation>
         <QuizScratchpad key={`${item.id}-${play.index}`} questionId={item.id} />
 
         {!play.answered && (

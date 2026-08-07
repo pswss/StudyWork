@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  annotationStorageKey,
   decodeScratchpadState,
   encodeScratchpadState,
   recordScratchpadChange,
@@ -51,6 +52,12 @@ describe("문제 풀이판 기록", () => {
     expect(scratchpadStorageKey(17)).toBe("studywork:quiz-scratchpad:17");
     expect(scratchpadStorageKey(18)).not.toBe(scratchpadStorageKey(17));
     expect(decodeScratchpadState(encodeScratchpadState(state))).toEqual(state);
+  });
+
+  it("문제 위 필기는 풀이판과 겹치지 않는 문제별 키를 쓴다", () => {
+    expect(annotationStorageKey(17)).toBe("studywork:quiz-annotation:17");
+    expect(annotationStorageKey(17)).not.toBe(scratchpadStorageKey(17));
+    expect(annotationStorageKey(18)).not.toBe(annotationStorageKey(17));
   });
 
   it("기존 필기 배열 저장값도 메모 없이 복원한다", () => {

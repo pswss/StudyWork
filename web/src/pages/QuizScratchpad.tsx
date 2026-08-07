@@ -4,6 +4,7 @@ import {
   useId,
   useRef,
   useState,
+  type ReactNode,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useI18n, type MessageKey } from "../i18n";
@@ -40,9 +41,14 @@ const MAX_POINTS_PER_STROKE = 1_200;
 const MAX_HISTORY = 50;
 const MAX_MEMO_LENGTH = 8_000;
 const SCRATCHPAD_STORAGE_PREFIX = "studywork:quiz-scratchpad:";
+const ANNOTATION_STORAGE_PREFIX = "studywork:quiz-annotation:";
 
 export function scratchpadStorageKey(questionId: number): string {
   return `${SCRATCHPAD_STORAGE_PREFIX}${questionId}`;
+}
+
+export function annotationStorageKey(questionId: number): string {
+  return `${ANNOTATION_STORAGE_PREFIX}${questionId}`;
 }
 
 function normalizeScratchpadStrokes(value: unknown): ScratchpadStroke[] {
@@ -151,25 +157,27 @@ export function scratchpadStrokeWidth(tool: ScratchpadTool, pressure: number): n
   return (tool === "eraser" ? 18 : 2.4) * (0.65 + normalized * 0.7);
 }
 
-function paintStroke(
+function paintStrokeLayer(
   context: CanvasRenderingContext2D,
   stroke: ScratchpadStroke,
   width: number,
   height: number,
+  color: string,
+  extraWidth = 0,
 ): void {
   const points = stroke.points;
   if (points.length === 0) return;
 
   context.save();
   context.globalCompositeOperation = stroke.tool === "eraser" ? "destination-out" : "source-over";
-  context.strokeStyle = "#202327";
-  context.fillStyle = "#202327";
+  context.strokeStyle = color;
+  context.fillStyle = color;
   context.lineCap = "round";
   context.lineJoin = "round";
 
   if (points.length === 1) {
     const point = points[0];
-    const radius = scratchpadStrokeWidth(stroke.tool, point.pressure) / 2;
+    const radius = (scratchpadStrokeWidth(stroke.tool, point.pressure) + extraWidth) / 2;
     context.beginPath();
     context.arc(point.x * width, point.y * height, radius, 0, Math.PI * 2);
     context.fill();
@@ -181,7 +189,7 @@ function paintStroke(
     const before = points[index - 1];
     const point = points[index];
     context.beginPath();
-    context.lineWidth = scratchpadStrokeWidth(stroke.tool, (before.pressure + point.pressure) / 2);
+    context.lineWidth = scratchpadStrokeWidth(stroke.tool, (before.pressure + point.pressure) / 2) + extraWidth;
     context.moveTo(before.x * width, before.y * height);
     context.lineTo(point.x * width, point.y * height);
     context.stroke();
@@ -189,29 +197,56 @@ function paintStroke(
   context.restore();
 }
 
-export default function QuizScratchpad({ questionId }: QuizScratchpadProps) {
-  const { t } = useI18n();
-  const initialStateRef = useRef<ScratchpadStoredState | null>(null);
-  if (initialStateRef.current === null) initialStateRef.current = restoreScratchpad(questionId);
+function paintStroke(
+  context: CanvasRenderingContext2D,
+  stroke: ScratchpadStroke,
+  width: number,
+  height: number,
+  color: string,
+  outlineColor?: string,
+): void {
+  if (stroke.tool === "pen" && outlineColor) {
+    paintStrokeLayer(context, stroke, width, height, outlineColor, 3);
+  }
+  paintStrokeLayer(context, stroke, width, height, color);
+}
+
+interface InkMessages {
+  ready: MessageKey;
+  penStroke: MessageKey;
+  eraserStroke: MessageKey;
+  undone: MessageKey;
+  cleared: MessageKey;
+  penSelected: MessageKey;
+  eraserSelected: MessageKey;
+}
+
+interface UseInkCanvasOptions {
+  initialStrokes: ScratchpadStroke[];
+  visible: boolean;
+  color: string;
+  outlineColor?: string;
+  messages: InkMessages;
+  onChange: (strokes: ScratchpadStroke[]) => void;
+}
+
+function useInkCanvas({
+  initialStrokes,
+  visible,
+  color,
+  outlineColor,
+  messages,
+  onChange,
+}: UseInkCanvasOptions) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const strokesRef = useRef<ScratchpadStroke[]>(initialStateRef.current.strokes);
+  const strokesRef = useRef<ScratchpadStroke[]>(initialStrokes);
   const historyRef = useRef<ScratchpadStroke[][]>([]);
   const activeRef = useRef<{ pointerId: number; stroke: ScratchpadStroke } | null>(null);
   const metricsRef = useRef({ width: 1, height: 1, dpr: 1 });
-  const memoRef = useRef(initialStateRef.current.memo);
-  const helpId = useId();
-  const memoId = useId();
-  const memoHelpId = useId();
   const [tool, setTool] = useState<ScratchpadTool>("pen");
-  const [strokeCount, setStrokeCount] = useState(initialStateRef.current.strokes.length);
+  const [strokeCount, setStrokeCount] = useState(initialStrokes.length);
   const [undoCount, setUndoCount] = useState(0);
-  const [memo, setMemo] = useState(initialStateRef.current.memo);
-  const [statusKey, setStatusKey] = useState<MessageKey>("problems.scratch.ready");
-  const [open, setOpen] = useState(
-    () => typeof window !== "undefined"
-      && typeof window.matchMedia === "function"
-      && window.matchMedia("(pointer: coarse)").matches,
-  );
+  const [statusKey, setStatusKey] = useState<MessageKey>(messages.ready);
 
   const repaint = useCallback(() => {
     const canvas = canvasRef.current;
@@ -222,9 +257,13 @@ export default function QuizScratchpad({ questionId }: QuizScratchpadProps) {
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
-    for (const stroke of strokesRef.current) paintStroke(context, stroke, width, height);
-    if (activeRef.current) paintStroke(context, activeRef.current.stroke, width, height);
-  }, []);
+    for (const stroke of strokesRef.current) {
+      paintStroke(context, stroke, width, height, color, outlineColor);
+    }
+    if (activeRef.current) {
+      paintStroke(context, activeRef.current.stroke, width, height, color, outlineColor);
+    }
+  }, [color, outlineColor]);
 
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -256,10 +295,10 @@ export default function QuizScratchpad({ questionId }: QuizScratchpadProps) {
   }, [resizeCanvas]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!visible) return;
     const frame = requestAnimationFrame(resizeCanvas);
     return () => cancelAnimationFrame(frame);
-  }, [open, resizeCanvas]);
+  }, [visible, resizeCanvas]);
 
   const applyHistory = useCallback((model: ScratchpadHistory, message: MessageKey) => {
     strokesRef.current = model.strokes;
@@ -267,9 +306,9 @@ export default function QuizScratchpad({ questionId }: QuizScratchpadProps) {
     setStrokeCount(model.strokes.length);
     setUndoCount(model.history.length);
     setStatusKey(message);
-    persistScratchpad(questionId, { strokes: model.strokes, memo: memoRef.current });
+    onChange(model.strokes);
     repaint();
-  }, [questionId, repaint]);
+  }, [onChange, repaint]);
 
   const pointFromEvent = useCallback((event: PointerEvent): ScratchpadPoint | null => {
     const canvas = canvasRef.current;
@@ -292,8 +331,15 @@ export default function QuizScratchpad({ questionId }: QuizScratchpadProps) {
     const { width, height, dpr } = metricsRef.current;
     context.setTransform(dpr, 0, 0, dpr, 0, 0);
     const points = active.stroke.points;
-    paintStroke(context, { ...active.stroke, points: points.slice(-2) }, width, height);
-  }, []);
+    paintStroke(
+      context,
+      { ...active.stroke, points: points.slice(-2) },
+      width,
+      height,
+      color,
+      outlineColor,
+    );
+  }, [color, outlineColor]);
 
   const appendSamples = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
     const active = activeRef.current;
@@ -345,7 +391,7 @@ export default function QuizScratchpad({ questionId }: QuizScratchpadProps) {
     );
     applyHistory(
       model,
-      active.stroke.tool === "pen" ? "problems.scratch.penStroke" : "problems.scratch.eraserStroke",
+      active.stroke.tool === "pen" ? messages.penStroke : messages.eraserStroke,
     );
   }
 
@@ -353,7 +399,7 @@ export default function QuizScratchpad({ questionId }: QuizScratchpadProps) {
     if (historyRef.current.length === 0) return;
     applyHistory(
       undoScratchpadChange(strokesRef.current, historyRef.current),
-      "problems.scratch.undone",
+      messages.undone,
     );
   }
 
@@ -361,15 +407,163 @@ export default function QuizScratchpad({ questionId }: QuizScratchpadProps) {
     if (strokesRef.current.length === 0) return;
     applyHistory(
       recordScratchpadChange(strokesRef.current, historyRef.current, []),
-      "problems.scratch.cleared",
+      messages.cleared,
     );
   }
+
+  function selectTool(next: ScratchpadTool) {
+    setTool(next);
+    setStatusKey(next === "pen" ? messages.penSelected : messages.eraserSelected);
+  }
+
+  return {
+    canvasRef,
+    clear,
+    resizeCanvas,
+    selectTool,
+    setStatusKey,
+    statusKey,
+    strokeCount,
+    strokesRef,
+    tool,
+    undo,
+    undoCount,
+    appendSamples,
+    finishStroke,
+    startStroke,
+  };
+}
+
+type InkCanvasController = ReturnType<typeof useInkCanvas>;
+
+interface InkToolbarProps {
+  ariaLabel: string;
+  className: string;
+  controller: InkCanvasController;
+  clearAria: string;
+  undoAria: string;
+  before?: ReactNode;
+  drawingDisabled?: boolean;
+}
+
+function InkToolbar({
+  ariaLabel,
+  className,
+  controller,
+  clearAria,
+  undoAria,
+  before,
+  drawingDisabled = false,
+}: InkToolbarProps) {
+  const { t } = useI18n();
+  return (
+    <div className={`${className} quiz-ink-toolbar`} role="toolbar" aria-label={ariaLabel}>
+      {before}
+      <button
+        type="button"
+        className={controller.tool === "pen" ? "active" : ""}
+        aria-label={t("problems.scratch.penAria")}
+        aria-pressed={controller.tool === "pen"}
+        disabled={drawingDisabled}
+        onClick={() => controller.selectTool("pen")}
+      >
+        {t("problems.scratch.pen")}
+      </button>
+      <button
+        type="button"
+        className={controller.tool === "eraser" ? "active" : ""}
+        aria-label={t("problems.scratch.eraserAria")}
+        aria-pressed={controller.tool === "eraser"}
+        disabled={drawingDisabled}
+        onClick={() => controller.selectTool("eraser")}
+      >
+        {t("problems.scratch.eraser")}
+      </button>
+      <span className="quiz-ink-toolbar-gap" />
+      <button
+        type="button"
+        onClick={controller.undo}
+        disabled={controller.undoCount === 0}
+        aria-label={undoAria}
+      >
+        {t("problems.scratch.undo")}
+      </button>
+      <button
+        type="button"
+        onClick={controller.clear}
+        disabled={controller.strokeCount === 0}
+        aria-label={clearAria}
+      >
+        {t("problems.scratch.clear")}
+      </button>
+    </div>
+  );
+}
+
+function restoreAnnotation(questionId: number): ScratchpadStroke[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return decodeScratchpadState(window.localStorage.getItem(annotationStorageKey(questionId))).strokes;
+  } catch {
+    return [];
+  }
+}
+
+function persistAnnotation(questionId: number, strokes: ScratchpadStroke[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    const key = annotationStorageKey(questionId);
+    if (strokes.length === 0) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    window.localStorage.setItem(key, encodeScratchpadState({ strokes, memo: "" }));
+  } catch {
+    // 저장 공간이 없거나 로컬 저장소가 차단돼도 필기 기능은 유지한다.
+  }
+}
+
+const scratchpadMessages: InkMessages = {
+  ready: "problems.scratch.ready",
+  penStroke: "problems.scratch.penStroke",
+  eraserStroke: "problems.scratch.eraserStroke",
+  undone: "problems.scratch.undone",
+  cleared: "problems.scratch.cleared",
+  penSelected: "problems.scratch.penSelected",
+  eraserSelected: "problems.scratch.eraserSelected",
+};
+
+export default function QuizScratchpad({ questionId }: QuizScratchpadProps) {
+  const { t } = useI18n();
+  const initialStateRef = useRef<ScratchpadStoredState | null>(null);
+  if (initialStateRef.current === null) initialStateRef.current = restoreScratchpad(questionId);
+  const initialState = initialStateRef.current;
+  const memoRef = useRef(initialState.memo);
+  const helpId = useId();
+  const memoId = useId();
+  const memoHelpId = useId();
+  const [memo, setMemo] = useState(initialState.memo);
+  const [open, setOpen] = useState(
+    () => typeof window !== "undefined"
+      && typeof window.matchMedia === "function"
+      && window.matchMedia("(pointer: coarse)").matches,
+  );
+  const saveStrokes = useCallback((strokes: ScratchpadStroke[]) => {
+    persistScratchpad(questionId, { strokes, memo: memoRef.current });
+  }, [questionId]);
+  const controller = useInkCanvas({
+    initialStrokes: initialState.strokes,
+    visible: open,
+    color: "#202327",
+    messages: scratchpadMessages,
+    onChange: saveStrokes,
+  });
 
   function changeMemo(value: string) {
     const next = value.slice(0, MAX_MEMO_LENGTH);
     memoRef.current = next;
     setMemo(next);
-    persistScratchpad(questionId, { strokes: strokesRef.current, memo: next });
+    persistScratchpad(questionId, { strokes: controller.strokesRef.current, memo: next });
   }
 
   return (
@@ -383,53 +577,23 @@ export default function QuizScratchpad({ questionId }: QuizScratchpadProps) {
         <span className="quiz-scratchpad-summary">{t("problems.scratch.summary")}</span>
       </summary>
       <div className="quiz-scratchpad-panel">
-        <div className="quiz-scratchpad-toolbar" role="toolbar" aria-label={t("problems.scratch.toolbarAria")}>
-          <button
-            type="button"
-            className={tool === "pen" ? "active" : ""}
-            aria-label={t("problems.scratch.penAria")}
-            aria-pressed={tool === "pen"}
-            onClick={() => { setTool("pen"); setStatusKey("problems.scratch.penSelected"); }}
-          >
-            {t("problems.scratch.pen")}
-          </button>
-          <button
-            type="button"
-            className={tool === "eraser" ? "active" : ""}
-            aria-label={t("problems.scratch.eraserAria")}
-            aria-pressed={tool === "eraser"}
-            onClick={() => { setTool("eraser"); setStatusKey("problems.scratch.eraserSelected"); }}
-          >
-            {t("problems.scratch.eraser")}
-          </button>
-          <span className="quiz-scratchpad-toolbar-gap" />
-          <button
-            type="button"
-            onClick={undo}
-            disabled={undoCount === 0}
-            aria-label={t("problems.scratch.undoAria")}
-          >
-            {t("problems.scratch.undo")}
-          </button>
-          <button
-            type="button"
-            onClick={clear}
-            disabled={strokeCount === 0}
-            aria-label={t("problems.scratch.clearAria")}
-          >
-            {t("problems.scratch.clear")}
-          </button>
-        </div>
+        <InkToolbar
+          ariaLabel={t("problems.scratch.toolbarAria")}
+          className="quiz-scratchpad-toolbar"
+          controller={controller}
+          clearAria={t("problems.scratch.clearAria")}
+          undoAria={t("problems.scratch.undoAria")}
+        />
         <p className="quiz-scratchpad-help" id={helpId}>{t("problems.scratch.help")}</p>
         <canvas
-          ref={canvasRef}
-          className={`quiz-scratchpad-canvas${tool === "eraser" ? " erasing" : ""}`}
+          ref={controller.canvasRef}
+          className={`quiz-scratchpad-canvas${controller.tool === "eraser" ? " erasing" : ""}`}
           aria-label={t("problems.scratch.canvasAria")}
           aria-describedby={helpId}
-          onPointerDown={startStroke}
-          onPointerMove={appendSamples}
-          onPointerUp={event => finishStroke(event, true)}
-          onPointerCancel={event => finishStroke(event, false)}
+          onPointerDown={controller.startStroke}
+          onPointerMove={controller.appendSamples}
+          onPointerUp={event => controller.finishStroke(event, true)}
+          onPointerCancel={event => controller.finishStroke(event, false)}
           onContextMenu={event => event.preventDefault()}
         >
           {t("problems.scratch.unsupported")}
@@ -450,14 +614,97 @@ export default function QuizScratchpad({ questionId }: QuizScratchpadProps) {
             placeholder={t("problems.scratch.memoPlaceholder")}
             aria-describedby={memoHelpId}
             onChange={event => changeMemo(event.currentTarget.value)}
-            onBlur={() => setStatusKey("problems.scratch.memoSaved")}
+            onBlur={() => controller.setStatusKey("problems.scratch.memoSaved")}
           />
           <p className="quiz-scratchpad-help" id={memoHelpId}>
             {t("problems.scratch.memoHelp")}
           </p>
         </div>
-        <span className="quiz-scratchpad-status" role="status" aria-live="polite">{t(statusKey)}</span>
+        <span className="quiz-scratchpad-status" role="status" aria-live="polite">{t(controller.statusKey)}</span>
       </div>
     </details>
+  );
+}
+
+interface QuizQuestionAnnotationProps {
+  questionId: number;
+  children: ReactNode;
+}
+
+const annotationMessages: InkMessages = {
+  ...scratchpadMessages,
+  ready: "problems.annotation.inactive",
+  cleared: "problems.annotation.cleared",
+};
+
+export function QuizQuestionAnnotation({ questionId, children }: QuizQuestionAnnotationProps) {
+  const { t } = useI18n();
+  const initialStrokesRef = useRef<ScratchpadStroke[] | null>(null);
+  if (initialStrokesRef.current === null) initialStrokesRef.current = restoreAnnotation(questionId);
+  const helpId = useId();
+  const [active, setActive] = useState(false);
+  const saveStrokes = useCallback((strokes: ScratchpadStroke[]) => {
+    persistAnnotation(questionId, strokes);
+  }, [questionId]);
+  const controller = useInkCanvas({
+    initialStrokes: initialStrokesRef.current,
+    visible: true,
+    color: "#d9ff3f",
+    outlineColor: "rgba(14, 14, 16, .88)",
+    messages: annotationMessages,
+    onChange: saveStrokes,
+  });
+
+  function toggleActive() {
+    setActive(current => {
+      const next = !current;
+      controller.setStatusKey(next ? "problems.annotation.active" : "problems.annotation.inactive");
+      return next;
+    });
+  }
+
+  return (
+    <section
+      className={`quiz-annotation${active ? " active" : ""}`}
+      aria-label={t("problems.annotation.toolbarAria")}
+    >
+      <InkToolbar
+        ariaLabel={t("problems.annotation.toolbarAria")}
+        className="quiz-annotation-toolbar"
+        controller={controller}
+        clearAria={t("problems.annotation.clearAria")}
+        undoAria={t("problems.annotation.undoAria")}
+        drawingDisabled={!active}
+        before={(
+          <button
+            type="button"
+            className="quiz-annotation-mode"
+            aria-pressed={active}
+            onClick={toggleActive}
+          >
+            {t(active ? "problems.annotation.stop" : "problems.annotation.start")}
+          </button>
+        )}
+      />
+      <p className="quiz-annotation-help" id={helpId}>{t("problems.annotation.help")}</p>
+      <div className="quiz-annotation-surface">
+        <div className="quiz-annotation-content">{children}</div>
+        <canvas
+          ref={controller.canvasRef}
+          className={`quiz-annotation-canvas${controller.tool === "eraser" ? " erasing" : ""}`}
+          aria-label={t("problems.annotation.canvasAria")}
+          aria-describedby={helpId}
+          aria-hidden={!active}
+          onPointerDown={controller.startStroke}
+          onPointerMove={controller.appendSamples}
+          onPointerUp={event => controller.finishStroke(event, true)}
+          onPointerCancel={event => controller.finishStroke(event, false)}
+          onContextMenu={event => event.preventDefault()}
+        >
+          {t("problems.scratch.unsupported")}
+        </canvas>
+      </div>
+      <span className="quiz-scratchpad-status" role="status" aria-live="polite">{t(controller.statusKey)}</span>
+    </section>
   );
 }
