@@ -60,6 +60,7 @@ const SEMANTIC_RULES =
   `exactly one choice. choiceIndex is 1-based and evidence must briefly cite the decisive value or conclusion.`;
 const SEMANTIC_PROMPT_DIGEST = hash(`3\n${SEMANTIC_RULES}`);
 const CURRENT_SEMANTIC_PROMPT_DIGEST = hash(`4\n${SEMANTIC_RULES}`);
+const V5_SEMANTIC_PROMPT_DIGEST = hash(`5\n${SEMANTIC_RULES}`);
 const SOLUTION_FIDELITY_RULES = `
 Independently compare every supplied accepted official solution with the attached official solution PDF pixels. Report the visible page where that numbered solution starts. Check the supplied raw final answer separately from the complete explanation through its final step. Compare every sign, coefficient, exponent, root index, fraction, formula, table, diagram, and conclusion. LaTeX normalization is allowed only when it preserves every mathematical and Korean source detail.
 
@@ -749,6 +750,9 @@ function upgradeEntryToV3(
     staleTriggerBase?: boolean;
     crossPageBatchRepair?: boolean;
     problemRecovery?: boolean;
+    terminalRecovery?: boolean;
+    mixedTerminalRecovery?: boolean;
+    answerV5?: boolean;
     terminalScope?: "authorized-reject" | "scope-accept" | "terminal-exact" | "low-confidence"
       | "accepted-scope-reject";
   } = {},
@@ -798,6 +802,7 @@ function upgradeEntryToV3(
   }
   const mixedTerminal = options.mixedTerminal || options.staleTriggerBase;
   const repairNumbers = options.batchRepair || options.crossPageBatchRepair || options.problemRecovery
+    || options.terminalRecovery || options.mixedTerminalRecovery
     || options.terminalRevision || options.classificationRevision || mixedTerminal
     ? [3, 10]
     : [];
@@ -811,6 +816,18 @@ function upgradeEntryToV3(
   if (options.terminalScope && options.terminalScope !== "accepted-scope-reject") {
     classification.items[2].transcription_status = "mismatch";
     classification.items[2].transcription_evidence = "base transcription omitted source detail for rejected Q3";
+  }
+  if (options.mixedTerminalRecovery) {
+    Object.assign(classification.items[19], {
+      decision: "reject",
+      canonical_subject: null,
+      curriculum_course: null,
+      domain: null,
+      achievement_codes: [],
+      reason_codes: ["OUT_OF_SCOPE"],
+      transcription_status: "mismatch",
+      transcription_evidence: "the unrepaired rejected sibling remains intentionally abbreviated",
+    });
   }
   const classificationName = legacyClassificationName.replace(/^v4-/u, "v5-");
   const classificationPath = join(stateDir, "classification-chunks", classificationName);
@@ -1103,7 +1120,8 @@ function upgradeEntryToV3(
       compareCorpusQuestionKeys(String(left.key), String(right.key))));
   }
 
-  if (options.terminalRevision || options.classificationRevision || options.problemRecovery || mixedTerminal) {
+  if (options.terminalRevision || options.classificationRevision || options.problemRecovery
+    || options.terminalRecovery || options.mixedTerminalRecovery || mixedTerminal) {
     const targetKey = "1:3";
     const targetIndex = 2;
     const targetRepair = repairs.find((repair) => repair.key === targetKey)!;
@@ -1137,11 +1155,14 @@ function upgradeEntryToV3(
       const triggerInputHash = canonicalEvidenceHash(triggerInputs);
       const triggerItems = triggerInputs.map((input: { key: string }) => ({
         key: input.key,
-        status: input.key === targetKey || mixedTerminal && input.key === "1:10" ? "mismatch" : "exact",
+        status: input.key === targetKey || mixedTerminal && input.key === "1:10"
+          || options.mixedTerminalRecovery && input.key === "1:20" ? "mismatch" : "exact",
         evidence: input.key === targetKey
           ? "the terminal source gate found one omitted literal transition"
           : mixedTerminal && input.key === "1:10"
             ? "the terminal source gate found an abbreviated sibling source"
+          : options.mixedTerminalRecovery && input.key === "1:20"
+            ? "the independent scope gate authorizes this unrepaired rejected mismatch"
           : "the final transcription is exact",
         ...(options.terminalScope ? {
           scopeDecision: effectiveClassifications[Number(input.key.split(":")[1]) - 1].decision,
@@ -1406,6 +1427,308 @@ function upgradeEntryToV3(
       };
       effectiveProblems[targetIndex] = recoveredQuestion;
       effectiveClassifications[targetIndex] = recoveredClassification;
+    } else if (options.terminalRecovery || options.mixedTerminalRecovery) {
+      if (!options.terminalScope) throw new Error("terminal recovery fixture requires terminal scope v2");
+      effectiveProblems[targetIndex] = revisionQuestion;
+      effectiveClassifications[targetIndex] = revisionClassification;
+      const preRecoveryCorpus = effectiveProblems.map((question: Record<string, unknown>, index: number) => ({
+        question,
+        classification: effectiveClassifications[index],
+      }));
+      const preRecoveryEffectiveCorpusHash = canonicalEvidenceHash(preRecoveryCorpus);
+      const recoveryTerminalInputs = effectiveProblems.map((question: Record<string, unknown>) => ({
+        key: `${question.page}:${question.number}`,
+        printed_number: String(question.number),
+        source_page: question.page,
+        qtype: question.qtype,
+        question: question.question,
+        choices: question.choices,
+        figure: question.figure,
+        figure_description: question.figure_description,
+        box: question.box,
+      }));
+      const recoveryTerminalItems = recoveryTerminalInputs.map((input: { key: string }) => ({
+        key: input.key,
+        status: input.key === targetKey || options.mixedTerminalRecovery && ["1:10", "1:20"].includes(input.key)
+          ? "mismatch" : "exact",
+        evidence: input.key === targetKey
+          ? "the fresh terminal gate found one remaining source-pixel mismatch"
+          : options.mixedTerminalRecovery && input.key === "1:10"
+            ? "the same terminal gate found a new sibling source-pixel mismatch"
+          : options.mixedTerminalRecovery && input.key === "1:20"
+            ? "the independent scope gate authorizes this unrepaired rejected mismatch"
+          : "the final transcription is exact",
+        scopeDecision: effectiveClassifications[Number(input.key.split(":")[1]) - 1].decision,
+        scopeConfidence: 0.99,
+        scopeEvidence: "the official source page independently establishes the curriculum scope",
+      })).sort((left: { key: string }, right: { key: string }) =>
+        compareCorpusQuestionKeys(left.key, right.key));
+      const recoveryTerminalInputHash = canonicalEvidenceHash(recoveryTerminalInputs);
+      const recoveryTerminalPath = `problem-terminal-fidelity/v2-0000-` +
+        `${preRecoveryEffectiveCorpusHash}-${recoveryTerminalInputHash}.json`;
+      const recoveryTerminalHash = writeEvidence(join(stateDir, recoveryTerminalPath), {
+        version: 2,
+        entryId: entry.id,
+        sourceHash: downloads.problem.sha256,
+        from: 1,
+        to: contextTo,
+        ownedFrom: 1,
+        ownedTo: contextTo,
+        effectiveCorpusHash: preRecoveryEffectiveCorpusHash,
+        inputHash: recoveryTerminalInputHash,
+        transcriptionGateVersion: 2,
+        transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+        rulesDigest: DIGEST,
+        scopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+        model: "gpt-5.6-sol",
+        reasoningEffort: "high",
+        inputs: recoveryTerminalInputs,
+        items: recoveryTerminalItems,
+      });
+      const recoveryTerminalItem = recoveryTerminalItems.find((item: { key: string }) =>
+        item.key === targetKey)!;
+      const recoveryTerminalPointer = {
+        path: recoveryTerminalPath,
+        sha256: recoveryTerminalHash,
+        from: 1,
+        to: contextTo,
+        ownedFrom: 1,
+        ownedTo: contextTo,
+        inputHash: recoveryTerminalInputHash,
+      };
+      const recoveryTrigger = {
+        kind: "terminal",
+        evidenceHash: hash(recoveryTerminalItem.evidence),
+        terminalCheckpoint: recoveryTerminalPointer,
+        terminalItemHash: canonicalEvidenceHash(recoveryTerminalItem),
+        terminalItem: recoveryTerminalItem,
+        preRecoveryEffectiveCorpusHash,
+      };
+      const baseProblemRevisionArtifact = { path: revisionProblemPath, sha256: revisionProblemHash };
+      const baseClassificationRevisionArtifact = {
+        path: revisionClassificationPath,
+        sha256: revisionClassificationHash,
+      };
+      const problemBasis = {
+        key: targetKey,
+        printedNumber: "3",
+        sourcePage: 1,
+        sourceHash: downloads.problem.sha256,
+        contextFrom: 1,
+        contextTo: 1,
+        baseProblemRepairArtifact,
+        baseProblemRepairItemHash: targetRepair.problemArtifactItemHash,
+        baseClassificationRepairArtifact,
+        baseClassificationRepairItemHash: targetRepair.classificationArtifactItemHash,
+        baseProblemRevisionArtifact,
+        baseProblemRevisionItemHash: revisionQuestionHash,
+        baseClassificationRevisionArtifact,
+        baseClassificationRevisionItemHash: canonicalEvidenceHash(revisionClassification),
+        baseQuestionHash: revisionQuestionHash,
+        baseClassificationHash: canonicalEvidenceHash(revisionClassification),
+        trigger: recoveryTrigger,
+      };
+      const basisDigest = canonicalEvidenceHash(problemBasis);
+      const recoveredQuestion = {
+        ...revisionQuestion,
+        question: `${revisionQuestion.question} [terminal recovery restores the final source pixels]`,
+      };
+      const problemRecoveryPath = `problem-recoveries/v2-0001-0003-${basisDigest}.json`;
+      const problemRecoveryHash = writeEvidence(join(stateDir, problemRecoveryPath), {
+        version: 2,
+        entryId: entry.id,
+        basisDigest,
+        basis: problemBasis,
+        promptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+        promptDigest: TARGETED_RECOVERY_PROMPT_DIGEST,
+        model: "gpt-5.6-sol",
+        reasoningEffort: "high",
+        item: recoveredQuestion,
+      });
+      problemRecoveryArtifact = join(stateDir, problemRecoveryPath);
+      const problemRecoveryPointer = { path: problemRecoveryPath, sha256: problemRecoveryHash };
+      const recoveredQuestionHash = canonicalEvidenceHash(recoveredQuestion);
+      const classificationBasis = {
+        ...problemBasis,
+        problemArtifact: problemRecoveryPointer,
+        problemArtifactItemHash: recoveredQuestionHash,
+        effectiveQuestionHash: recoveredQuestionHash,
+      };
+      const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+      const recoveredClassification = {
+        ...revisionClassification,
+        transcription_evidence: "the terminal recovery exactly matches every official source pixel",
+      };
+      const classificationRecoveryPath =
+        `classification-recoveries/v2-0001-0003-${classificationBasisDigest}-${DIGEST}.json`;
+      const classificationRecoveryHash = writeEvidence(join(stateDir, classificationRecoveryPath), {
+        version: 2,
+        entryId: entry.id,
+        basisDigest: classificationBasisDigest,
+        basis: classificationBasis,
+        classifierVersion: 5,
+        rulesDigest: DIGEST,
+        transcriptionGateVersion: 2,
+        transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+        recoveryPromptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+        recoveryPromptDigest: TARGETED_RECOVERY_PROMPT_DIGEST,
+        model: "gpt-5.6-sol",
+        reasoningEffort: "high",
+        items: [recoveredClassification],
+      });
+      classificationRecoveryArtifact = join(stateDir, classificationRecoveryPath);
+      const recoveredClassificationHash = canonicalEvidenceHash(recoveredClassification);
+      (targetRepair.revision as Record<string, unknown>).recovery = {
+        key: targetKey,
+        printedNumber: "3",
+        sourcePage: 1,
+        sourceHash: downloads.problem.sha256,
+        contextFrom: 1,
+        contextTo: 1,
+        baseProblemRepairArtifact,
+        baseProblemRepairItemHash: targetRepair.problemArtifactItemHash,
+        baseClassificationRepairArtifact,
+        baseClassificationRepairItemHash: targetRepair.classificationArtifactItemHash,
+        baseProblemRevisionArtifact,
+        baseProblemRevisionItemHash: revisionQuestionHash,
+        baseClassificationRevisionArtifact,
+        baseClassificationRevisionItemHash: canonicalEvidenceHash(revisionClassification),
+        problemArtifact: problemRecoveryPointer,
+        problemArtifactItemHash: recoveredQuestionHash,
+        classificationArtifact: {
+          path: classificationRecoveryPath,
+          sha256: classificationRecoveryHash,
+          rulesDigest: DIGEST,
+          transcriptionGateVersion: 2,
+          transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+          recoveryPromptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+          recoveryPromptDigest: TARGETED_RECOVERY_PROMPT_DIGEST,
+        },
+        classificationArtifactItemHash: recoveredClassificationHash,
+        trigger: recoveryTrigger,
+        baseQuestionHash: revisionQuestionHash,
+        effectiveQuestionHash: recoveredQuestionHash,
+        baseClassificationHash: canonicalEvidenceHash(revisionClassification),
+        effectiveClassificationHash: recoveredClassificationHash,
+      };
+      effectiveProblems[targetIndex] = recoveredQuestion;
+      effectiveClassifications[targetIndex] = recoveredClassification;
+      if (options.mixedTerminalRecovery) {
+        const siblingIndex = 9;
+        const siblingKey = "1:10";
+        const siblingRepair = repairs.find((repair) => repair.key === siblingKey)!;
+        const siblingTerminalItem = recoveryTerminalItems.find((item: { key: string }) =>
+          item.key === siblingKey)!;
+        const siblingTrigger = {
+          kind: "terminal",
+          evidenceHash: hash(siblingTerminalItem.evidence),
+          terminalCheckpoint: recoveryTerminalPointer,
+          terminalItemHash: canonicalEvidenceHash(siblingTerminalItem),
+        };
+        const siblingBaseQuestion = effectiveProblems[siblingIndex];
+        const siblingBaseClassification = effectiveClassifications[siblingIndex];
+        const siblingProblemRepairArtifact = siblingRepair.problemArtifact as { path: string; sha256: string };
+        const siblingClassificationRepairArtifact = {
+          path: (siblingRepair.classificationArtifact as Record<string, unknown>).path,
+          sha256: (siblingRepair.classificationArtifact as Record<string, unknown>).sha256,
+        };
+        const siblingMember = {
+          key: siblingKey,
+          printedNumber: "10",
+          sourcePage: 1,
+          baseProblemRepairArtifact: siblingProblemRepairArtifact,
+          baseProblemRepairItemHash: siblingRepair.problemArtifactItemHash,
+          baseClassificationRepairArtifact: siblingClassificationRepairArtifact,
+          baseClassificationRepairItemHash: siblingRepair.classificationArtifactItemHash,
+          baseQuestionHash: canonicalEvidenceHash(siblingBaseQuestion),
+          baseClassificationHash: canonicalEvidenceHash(siblingBaseClassification),
+          trigger: siblingTrigger,
+        };
+        const siblingMembersDigest = canonicalEvidenceHash([siblingMember]);
+        const siblingQuestion = {
+          ...siblingBaseQuestion,
+          question: `${siblingBaseQuestion.question} [same-pass terminal revision]`,
+        };
+        const siblingProblemPath =
+          `problem-revision-batches/v1-0001-0001-0001-${siblingMembersDigest}.json`;
+        const siblingProblemHash = writeEvidence(join(stateDir, siblingProblemPath), {
+          version: 1,
+          entryId: entry.id,
+          sourceHash: downloads.problem.sha256,
+          contextFrom: 1,
+          contextTo: 1,
+          sourcePage: 1,
+          membersDigest: siblingMembersDigest,
+          members: [siblingMember],
+          batchPromptVersion: TARGETED_PROBLEM_BATCH_VERSION,
+          batchPromptDigest: TARGETED_BATCH_PROMPT_DIGEST,
+          revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+          revisionPromptDigest: TARGETED_BATCH_REVISION_PROMPT_DIGEST,
+          model: "gpt-5.6-sol",
+          reasoningEffort: "high",
+          items: [siblingQuestion],
+        });
+        const siblingQuestionHash = canonicalEvidenceHash(siblingQuestion);
+        const siblingClassificationMember = {
+          key: siblingKey,
+          problemAuthority: {
+            key: siblingKey,
+            path: siblingProblemPath,
+            sha256: siblingProblemHash,
+            itemHash: siblingQuestionHash,
+          },
+          effectiveQuestionHash: siblingQuestionHash,
+          baseClassificationRepairArtifact: siblingClassificationRepairArtifact,
+          baseClassificationRepairItemHash: siblingRepair.classificationArtifactItemHash,
+          triggerHash: canonicalEvidenceHash(siblingTrigger),
+        };
+        const siblingOverlayDigest = canonicalEvidenceHash([siblingClassificationMember]);
+        const siblingClassification = {
+          ...siblingBaseClassification,
+          transcription_status: "exact",
+          transcription_evidence: "the same-pass terminal revision is exact",
+        };
+        const siblingClassificationPath =
+          `classification-revision-batches/v1-0001-0001-${siblingOverlayDigest}-${DIGEST}.json`;
+        const siblingClassificationHash = writeEvidence(join(stateDir, siblingClassificationPath), {
+          version: 1,
+          entryId: entry.id,
+          sourceHash: downloads.problem.sha256,
+          contextFrom: 1,
+          contextTo: 1,
+          overlayDigest: siblingOverlayDigest,
+          classifierVersion: 5,
+          rulesDigest: DIGEST,
+          transcriptionGateVersion: 2,
+          transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+          model: "gpt-5.6-sol",
+          reasoningEffort: "high",
+          members: [siblingClassificationMember],
+          items: [siblingClassification],
+        });
+        siblingRepair.revision = {
+          baseProblemRepairArtifact: siblingProblemRepairArtifact,
+          baseClassificationRepairArtifact: siblingClassificationRepairArtifact,
+          problemArtifact: { path: siblingProblemPath, sha256: siblingProblemHash },
+          classificationArtifact: {
+            path: siblingClassificationPath,
+            sha256: siblingClassificationHash,
+            rulesDigest: DIGEST,
+            transcriptionGateVersion: 2,
+            transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+          },
+          diagnosticEvidenceHash: siblingTrigger.evidenceHash,
+          baseQuestionHash: siblingMember.baseQuestionHash,
+          effectiveQuestionHash: siblingQuestionHash,
+          baseClassificationHash: siblingMember.baseClassificationHash,
+          effectiveClassificationHash: canonicalEvidenceHash(siblingClassification),
+          problemArtifactItemHash: siblingQuestionHash,
+          classificationArtifactItemHash: canonicalEvidenceHash(siblingClassification),
+          trigger: siblingTrigger,
+        };
+        effectiveProblems[siblingIndex] = siblingQuestion;
+        effectiveClassifications[siblingIndex] = siblingClassification;
+      }
     } else {
       effectiveProblems[targetIndex] = revisionQuestion;
       effectiveClassifications[targetIndex] = revisionClassification;
@@ -1418,7 +1741,8 @@ function upgradeEntryToV3(
   }));
   const effectiveCorpusHash = canonicalEvidenceHash(effectiveCorpus);
   const terminalVersion = options.terminalScope ? 2 : 1;
-  const answerAuditVersion = options.terminalScope ? 4 : 3;
+  if (options.answerV5 && !options.terminalScope) throw new Error("answer v5 fixture requires terminal scope v2");
+  const answerAuditVersion = options.answerV5 ? 5 : options.terminalScope ? 4 : 3;
   const terminalInputs = effectiveProblems.map((question: Record<string, unknown>) => ({
     key: `${question.page}:${question.number}`,
     printed_number: String(question.number),
@@ -1438,8 +1762,10 @@ function upgradeEntryToV3(
       status: "exact",
       evidence: "final transcription exactly matches every official source pixel",
     };
-    const targetReject = number === 3 && classificationItem.transcription_status === "mismatch"
-      && options.terminalScope !== "accepted-scope-reject";
+    const targetReject = (
+      number === 3 && classificationItem.transcription_status === "mismatch"
+      && options.terminalScope !== "accepted-scope-reject"
+    ) || Boolean(options.mixedTerminalRecovery && number === 20);
     const acceptedScopeReject = number === 1 && options.terminalScope === "accepted-scope-reject";
     const scopeDecision = targetReject && options.terminalScope === "scope-accept"
       ? "accept"
@@ -1519,6 +1845,29 @@ function upgradeEntryToV3(
       return { path: pointer.path, sha256: pointer.sha256 };
     })(),
   }));
+  const semanticCheckpoint = (() => {
+    if (legacyAudit.semanticCheckpoint === null) return null;
+    const legacyPointer = legacyAudit.semanticCheckpoint as Record<string, unknown>;
+    const child = JSON.parse(readFileSync(join(stateDir, String(legacyPointer.path)), "utf8"));
+    const semanticVersion = options.answerV5 ? 5 : 4;
+    child.version = semanticVersion;
+    child.classifierVersion = 5;
+    child.transcriptionGateVersion = 2;
+    child.transcriptionPromptDigest = CURRENT_TRANSCRIPTION_PROMPT_DIGEST;
+    child.effectiveCorpusHash = effectiveCorpusHash;
+    child.promptDigest = options.answerV5 ? V5_SEMANTIC_PROMPT_DIGEST : CURRENT_SEMANTIC_PROMPT_DIGEST;
+    const relativePath = options.answerV5
+      ? `semantic-choice-checks/v5-${effectiveCorpusHash}-` +
+        `${legacyAudit.effectiveSolutionCorpusHash}-${child.inputHash}.json`
+      : `semantic-choice-checks/v4-${child.inputHash}.json`;
+    return {
+      path: relativePath,
+      sha256: writeEvidence(join(stateDir, relativePath), child),
+      inputHash: child.inputHash,
+      ...(options.answerV5 ? { effectiveCorpusHash } : {}),
+      effectiveSolutionCorpusHash: legacyAudit.effectiveSolutionCorpusHash,
+    };
+  })();
   const auditBasis = {
     entryId: entry.id,
     problemHash: downloads.problem.sha256,
@@ -1533,8 +1882,8 @@ function upgradeEntryToV3(
     ...(options.terminalScope ? {
       problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
     } : {}),
-    semanticChoiceVersion: 4,
-    semanticPromptDigest: CURRENT_SEMANTIC_PROMPT_DIGEST,
+    semanticChoiceVersion: options.answerV5 ? 5 : 4,
+    semanticPromptDigest: options.answerV5 ? V5_SEMANTIC_PROMPT_DIGEST : CURRENT_SEMANTIC_PROMPT_DIGEST,
     sourceQuestionCount: legacyAudit.sourceQuestionCount,
     acceptedQuestionCount: legacyAudit.acceptedQuestionCount,
     rejectedQuestionCount: legacyAudit.rejectedQuestionCount,
@@ -1551,7 +1900,7 @@ function upgradeEntryToV3(
     solutionRepairs: [],
     problemTerminalFidelityCheckpoints,
     problemTerminalFidelityItems: terminalItems,
-    semanticCheckpoint: null,
+    semanticCheckpoint,
     repairs,
     items: legacyAudit.items,
   };
@@ -1620,10 +1969,14 @@ function convertMathToFilteredV3(
   files: ReturnType<typeof fixture>,
   current = false,
   authorizedMismatch = false,
+  answerV5 = false,
 ): string {
-  upgradeEntryToV3(files, "math", current ? { terminalScope: "authorized-reject" } : {});
+  upgradeEntryToV3(files, "math", current ? {
+    terminalScope: "authorized-reject",
+    answerV5,
+  } : {});
   const terminalVersion = current ? 2 : 1;
-  const auditVersion = current ? 4 : 3;
+  const auditVersion = answerV5 ? 5 : current ? 4 : 3;
   const stateDir = files.stateDirs.math;
   const entry = JSON.parse(readFileSync(join(stateDir, "entry.json"), "utf8")).entry;
   const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
@@ -1722,8 +2075,8 @@ function convertMathToFilteredV3(
     solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
     problemTerminalFidelityVersion: terminalVersion,
     ...(current ? { problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST } : {}),
-    semanticChoiceVersion: 4,
-    semanticPromptDigest: CURRENT_SEMANTIC_PROMPT_DIGEST,
+    semanticChoiceVersion: answerV5 ? 5 : 4,
+    semanticPromptDigest: answerV5 ? V5_SEMANTIC_PROMPT_DIGEST : CURRENT_SEMANTIC_PROMPT_DIGEST,
     sourceQuestionCount: problems.length,
     acceptedQuestionCount: 0,
     rejectedQuestionCount: problems.length,
@@ -1787,7 +2140,8 @@ function rewriteCurrentV3Authority(
 ): void {
   const stateDir = files.stateDirs.math;
   const attestationName = readdirSync(join(stateDir, "answer-attestation"))
-    .find((name) => name.startsWith("v4-"))
+    .find((name) => name.startsWith("v5-"))
+    ?? readdirSync(join(stateDir, "answer-attestation")).find((name) => name.startsWith("v4-"))
     ?? readdirSync(join(stateDir, "answer-attestation")).find((name) => name.startsWith("v3-"))!;
   const attestationPath = join(stateDir, "answer-attestation", attestationName);
   const attestation = JSON.parse(readFileSync(attestationPath, "utf8"));
@@ -3444,6 +3798,60 @@ describe("exam corpus verifier", () => {
     }
   });
 
+  it("uses semantic v5 triple-hash authority while preserving read-only v4 terminals", () => {
+    const legacyFiles = fixture();
+    const legacyArtifacts = upgradeEntryToV3(legacyFiles, "korean", {
+      terminalScope: "authorized-reject",
+    });
+    const legacy = verifyExamCorpus(legacyFiles);
+    expect(legacy, JSON.stringify(legacy.failures)).toMatchObject({ ok: true });
+    expect(legacyArtifacts.auditArtifact).toContain("answer-audit/v4-");
+    const legacyAudit = JSON.parse(readFileSync(legacyArtifacts.auditArtifact, "utf8"));
+    expect(legacyAudit.semanticCheckpoint.path)
+      .toBe(`semantic-choice-checks/v4-${legacyAudit.semanticCheckpoint.inputHash}.json`);
+
+    const currentFiles = fixture();
+    const currentArtifacts = upgradeEntryToV3(currentFiles, "korean", {
+      terminalScope: "authorized-reject",
+      answerV5: true,
+    });
+    const current = verifyExamCorpus(currentFiles);
+    expect(current, JSON.stringify(current.failures)).toMatchObject({ ok: true });
+    expect(currentArtifacts.auditArtifact).toContain("answer-audit/v5-");
+    expect(currentArtifacts.attestationArtifact).toContain("answer-attestation/v5-");
+    const audit = JSON.parse(readFileSync(currentArtifacts.auditArtifact, "utf8"));
+    expect(audit.semanticChoiceVersion).toBe(5);
+    expect(audit.semanticCheckpoint.path).toBe(
+      `semantic-choice-checks/v5-${audit.effectiveCorpusHash}-` +
+      `${audit.effectiveSolutionCorpusHash}-${audit.semanticCheckpoint.inputHash}.json`,
+    );
+    expect(audit.semanticCheckpoint.effectiveCorpusHash).toBe(audit.effectiveCorpusHash);
+
+    const tamperedFiles = fixture();
+    const tamperedArtifacts = upgradeEntryToV3(tamperedFiles, "korean", {
+      terminalScope: "authorized-reject",
+      answerV5: true,
+    });
+    const tamperedAudit = JSON.parse(readFileSync(tamperedArtifacts.auditArtifact, "utf8"));
+    const semanticPath = join(tamperedFiles.stateDirs.korean, tamperedAudit.semanticCheckpoint.path);
+    const semantic = JSON.parse(readFileSync(semanticPath, "utf8"));
+    semantic.effectiveCorpusHash = "0".repeat(64);
+    writeJson(semanticPath, semantic);
+    expect(verifyExamCorpus(tamperedFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const partialFiles = fixture();
+    upgradeEntryToV3(partialFiles, "math", { terminalScope: "authorized-reject" });
+    writeJson(join(
+      partialFiles.stateDirs.math,
+      "semantic-choice-checks",
+      `v5-${"1".repeat(64)}-${"2".repeat(64)}-${"3".repeat(64)}.json`,
+    ), {});
+    const partial = verifyExamCorpus(partialFiles);
+    expect(partial.ok).toBe(false);
+    expect(partial.failures.some((failure) => failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
+  });
+
   it("reconstructs one shared v3 problem/classification repair batch", () => {
     const files = fixture();
     const artifacts = upgradeEntryToV3(files, "math", { batchRepair: true });
@@ -3608,6 +4016,62 @@ describe("exam corpus verifier", () => {
       failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
   });
 
+  it("reconstructs one terminal-triggered v2 recovery and rejects stale trigger authority", () => {
+    const files = fixture();
+    const artifacts = upgradeEntryToV3(files, "math", {
+      terminalRecovery: true,
+      terminalScope: "authorized-reject",
+    });
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    expect(artifacts.problemRecoveryArtifact).toContain("problem-recoveries/v2-");
+    expect(artifacts.classificationRecoveryArtifact).toContain("classification-recoveries/v2-");
+
+    const mixedFiles = fixture();
+    upgradeEntryToV3(mixedFiles, "math", {
+      mixedTerminalRecovery: true,
+      terminalScope: "authorized-reject",
+    });
+    const mixed = verifyExamCorpus(mixedFiles);
+    expect(mixed, JSON.stringify(mixed.failures)).toMatchObject({ ok: true });
+
+    const tamperedFiles = fixture();
+    const tamperedArtifacts = upgradeEntryToV3(tamperedFiles, "math", {
+      terminalRecovery: true,
+      terminalScope: "authorized-reject",
+    });
+    const tampered = JSON.parse(readFileSync(tamperedArtifacts.problemRecoveryArtifact!, "utf8"));
+    tampered.basis.trigger.terminalItem.scopeEvidence = "tampered terminal source evidence";
+    writeJson(tamperedArtifacts.problemRecoveryArtifact!, tampered);
+    expect(verifyExamCorpus(tamperedFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const staleFiles = fixture();
+    upgradeEntryToV3(staleFiles, "math", {
+      terminalRecovery: true,
+      terminalScope: "authorized-reject",
+    });
+    rewriteCurrentV3Authority(staleFiles, (audit) => {
+      audit.repairs.find((repair: Record<string, any>) => repair.revision?.recovery?.trigger)
+        .revision.recovery.trigger.preRecoveryEffectiveCorpusHash = "0".repeat(64);
+    });
+    expect(verifyExamCorpus(staleFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const orphanFiles = fixture();
+    upgradeEntryToV3(orphanFiles, "math", {
+      terminalRecovery: true,
+      terminalScope: "authorized-reject",
+    });
+    writeJson(join(
+      orphanFiles.stateDirs.math,
+      "classification-recoveries",
+      `v2-0001-0004-${"1".repeat(64)}-${DIGEST}.json`,
+    ), {});
+    expect(verifyExamCorpus(orphanFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
+  });
+
   it("reconstructs a mixed same-pass first repair plus terminal revision generation", () => {
     const files = fixture();
     const artifacts = upgradeEntryToV3(files, "math", { mixedTerminal: true });
@@ -3652,6 +4116,24 @@ describe("exam corpus verifier", () => {
     writeJson(currentResultPath, staleCurrent);
     expect(verifyExamCorpus(currentFiles).failures.some((failure) =>
       failure.code === "RESULT_INVALID" || failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const currentV5Files = fixture();
+    const currentV5ResultPath = convertMathToFilteredV3(currentV5Files, true, true, true);
+    const currentV5 = verifyExamCorpus(currentV5Files);
+    expect(currentV5, JSON.stringify(currentV5.failures)).toMatchObject({ ok: true });
+    expect(JSON.parse(readFileSync(currentV5ResultPath, "utf8")).version).toBe(5);
+
+    const mixedVersionFiles = fixture();
+    convertMathToFilteredV3(mixedVersionFiles, true, true);
+    writeJson(join(
+      mixedVersionFiles.stateDirs.math,
+      "semantic-choice-checks",
+      `v5-${"1".repeat(64)}-${"2".repeat(64)}-${"3".repeat(64)}.json`,
+    ), {});
+    const mixedVersion = verifyExamCorpus(mixedVersionFiles);
+    expect(mixedVersion.ok).toBe(false);
+    expect(mixedVersion.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" || failure.code === "RESULT_INVALID")).toBe(true);
 
     const staleGenerationFiles = fixture();
     convertMathToFilteredV3(staleGenerationFiles);

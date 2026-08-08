@@ -271,6 +271,8 @@ const PROBLEM_REVISION_BATCH_VERSION = 1;
 const CLASSIFICATION_REVISION_BATCH_VERSION = 1;
 const PROBLEM_RECOVERY_VERSION = 1;
 const CLASSIFICATION_RECOVERY_VERSION = 1;
+const PROBLEM_TERMINAL_RECOVERY_VERSION = 2;
+const CLASSIFICATION_TERMINAL_RECOVERY_VERSION = 2;
 const PROBLEM_SLICE_PAGES = 20;
 const SOLUTION_SLICE_PAGES = 6;
 const SOLUTION_SLICE_STRIDE = 4;
@@ -313,7 +315,8 @@ answerStatus is exact only when an explicit final answer is visible in these pix
 const SOLUTION_FIDELITY_PROMPT_DIGEST = sha256(
   `${SOLUTION_FIDELITY_VERSION}\n${SOLUTION_FIDELITY_RULES}`,
 );
-const SEMANTIC_CHOICE_VERSION = 4;
+const SEMANTIC_CHOICE_VERSION = 5;
+const V4_SEMANTIC_CHOICE_VERSION = 4;
 const LEGACY_ANSWER_SEMANTIC_CHOICE_VERSION = 3;
 const LEGACY_FILTERED_SEMANTIC_CHOICE_VERSION = 2;
 const SEMANTIC_CHOICE_RULES =
@@ -323,6 +326,9 @@ const SEMANTIC_CHOICE_RULES =
   `Return ambiguous when the explanation does not establish ` +
   `exactly one choice. choiceIndex is 1-based and evidence must briefly cite the decisive value or conclusion.`;
 const SEMANTIC_CHOICE_PROMPT_DIGEST = sha256(`${SEMANTIC_CHOICE_VERSION}\n${SEMANTIC_CHOICE_RULES}`);
+const V4_SEMANTIC_CHOICE_PROMPT_DIGEST = sha256(
+  `${V4_SEMANTIC_CHOICE_VERSION}\n${SEMANTIC_CHOICE_RULES}`,
+);
 const LEGACY_ANSWER_SEMANTIC_CHOICE_PROMPT_DIGEST = sha256(
   `${LEGACY_ANSWER_SEMANTIC_CHOICE_VERSION}\n${SEMANTIC_CHOICE_RULES}`,
 );
@@ -360,12 +366,12 @@ const TARGETED_SOLUTION_REVISION_PROMPT_DIGEST = sha256(
 );
 
 type VerificationContract = {
-  auditVersion: 2 | 3 | 4;
-  attestationVersion: 2 | 3 | 4;
+  auditVersion: 2 | 3 | 4 | 5;
+  attestationVersion: 2 | 3 | 4 | 5;
   classifierVersion: 4 | 5;
   transcriptionGateVersion: 1 | 2;
   transcriptionPromptDigest: string;
-  semanticChoiceVersion: 3 | 4;
+  semanticChoiceVersion: 3 | 4 | 5;
   semanticPromptDigest: string;
   problemTerminalFidelityVersion: 1 | 2 | null;
   problemTerminalScopePromptDigest: string | null;
@@ -389,18 +395,26 @@ const V3_CONTRACT: VerificationContract = {
   classifierVersion: CLASSIFIER_VERSION,
   transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
   transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
-  semanticChoiceVersion: SEMANTIC_CHOICE_VERSION,
-  semanticPromptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
+  semanticChoiceVersion: V4_SEMANTIC_CHOICE_VERSION,
+  semanticPromptDigest: V4_SEMANTIC_CHOICE_PROMPT_DIGEST,
   problemTerminalFidelityVersion: LEGACY_PROBLEM_TERMINAL_FIDELITY_VERSION,
   problemTerminalScopePromptDigest: null,
 };
 
-const CURRENT_CONTRACT: VerificationContract = {
+const V4_CONTRACT: VerificationContract = {
   ...V3_CONTRACT,
   auditVersion: 4,
   attestationVersion: 4,
   problemTerminalFidelityVersion: PROBLEM_TERMINAL_FIDELITY_VERSION,
   problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+};
+
+const CURRENT_CONTRACT: VerificationContract = {
+  ...V4_CONTRACT,
+  auditVersion: 5,
+  attestationVersion: 5,
+  semanticChoiceVersion: SEMANTIC_CHOICE_VERSION,
+  semanticPromptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
 };
 
 const OFFICIAL_CIRCLED_ANSWERS = "①②③④⑤⑥⑦⑧⑨⑩";
@@ -2340,7 +2354,7 @@ function verifyProblemRecoveryCoverage(
     if (repair.revision === undefined) continue;
     const revision = object(repair.revision, `answer audit repairs[${index}].revision`);
     if (revision.recovery === undefined) continue;
-    if (contract.auditVersion !== 4) throw new Error("problem recovery requires answer audit v4");
+    if (contract.auditVersion < 4) throw new Error("problem recovery requires answer audit v4 or newer");
     const recovery = object(revision.recovery, `answer audit repairs[${index}].revision.recovery`);
     for (const [label, raw] of [
       ["problem", recovery.problemArtifact],
@@ -2356,8 +2370,8 @@ function verifyProblemRecoveryCoverage(
     }
   }
   for (const [directory, pattern] of [
-    ["problem-recoveries", /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u],
-    ["classification-recoveries", /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u],
+    ["problem-recoveries", /^v[12]-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u],
+    ["classification-recoveries", /^v[12]-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u],
   ] as const) {
     for (const name of listJson(join(stateDir, directory), /\.json$/u)) {
       if (!pattern.test(name)) throw new Error(`${directory}/${name}: malformed problem recovery artifact name`);
@@ -2531,17 +2545,32 @@ function verifyProblemRecovery(
   problemEvidence: DownloadEvidence,
   rulesDigest: string,
   cache: EvidenceCache,
-): { classified: ClassifiedEvidence; evidence: Record<string, unknown> } {
+  contract: VerificationContract,
+): {
+  classified: ClassifiedEvidence;
+  evidence: Record<string, unknown>;
+  terminalGeneration?: {
+    key: string;
+    current: ClassifiedEvidence;
+    checkpoint: ProblemTerminalFidelityCheckpoint;
+  };
+} {
   const key = row.first.row.key;
-  if (revisedClassification.transcription_status === "exact") {
-    throw new Error(`${key}: exact problem revision cannot have a recovery`);
-  }
   const recovery = object(row.raw.recovery, `${key}.revision.recovery`);
+  const rawTerminalTrigger = recovery.trigger === undefined
+    ? null
+    : object(recovery.trigger, `${key}.revision.recovery.trigger`);
+  if (rawTerminalTrigger === null && revisedClassification.transcription_status === "exact") {
+    throw new Error(`${key}: exact problem revision cannot have a classification recovery`);
+  }
+  if (rawTerminalTrigger !== null && revisedClassification.transcription_status !== "exact") {
+    throw new Error(`${key}: terminal recovery requires one exact prior revision`);
+  }
   const baseProblemRepairArtifact = row.first.row.problemArtifact;
   const baseClassificationRepairArtifact = row.first.row.classificationArtifact;
   const baseProblemRevisionArtifact = row.problemArtifact;
   const baseClassificationRevisionArtifact = row.classificationArtifact;
-  const problemBasis = {
+  const commonProblemBasis = {
     key,
     printedNumber: row.first.row.printedNumber,
     sourcePage: row.first.row.sourcePage,
@@ -2558,18 +2587,156 @@ function verifyProblemRecovery(
     baseClassificationRevisionItemHash: row.classificationArtifactItemHash,
     baseQuestionHash: canonicalEvidenceHash(revisedQuestion.evidence),
     baseClassificationHash: canonicalEvidenceHash(revisedClassification),
-    failedClassificationEvidenceHash: sha256(revisedClassification.transcription_evidence),
   };
+  let terminalTrigger: Record<string, unknown> | null = null;
+  let terminalGeneration: {
+    key: string;
+    current: ClassifiedEvidence;
+    checkpoint: ProblemTerminalFidelityCheckpoint;
+  } | undefined;
+  if (rawTerminalTrigger !== null) {
+    if (contract.problemTerminalFidelityVersion !== PROBLEM_TERMINAL_FIDELITY_VERSION
+      || rawTerminalTrigger.kind !== "terminal") {
+      throw new Error(`${key}: terminal recovery requires the current terminal fidelity contract`);
+    }
+    const terminalCheckpoint = problemTerminalFidelityCheckpoint(
+      rawTerminalTrigger.terminalCheckpoint,
+      `${key}.revision.recovery.trigger.terminalCheckpoint`,
+    );
+    const match = new RegExp(
+      `^problem-terminal-fidelity/v${PROBLEM_TERMINAL_FIDELITY_VERSION}-(\\d{4})-` +
+        "([a-f0-9]{64})-([a-f0-9]{64})\\.json$",
+      "u",
+    ).exec(terminalCheckpoint.path);
+    const slice = match && expectedProblemFidelitySlices(problemEvidence.pageCount)[Number(match[1])];
+    if (!match || !slice || terminalCheckpoint.inputHash !== match[3]
+      || terminalCheckpoint.from !== slice.from || terminalCheckpoint.to !== slice.to
+      || terminalCheckpoint.ownedFrom !== slice.ownedFrom || terminalCheckpoint.ownedTo !== slice.ownedTo
+      || revisedQuestion.page < slice.ownedFrom || revisedQuestion.page > slice.ownedTo) {
+      throw new Error(`${key}: terminal recovery checkpoint path/slice is invalid`);
+    }
+    const checkpoint = readBoundEvidenceCached(
+      cache,
+      stateDir,
+      terminalCheckpoint,
+      `${key} terminal recovery checkpoint`,
+    );
+    if (checkpoint.version !== PROBLEM_TERMINAL_FIDELITY_VERSION || checkpoint.entryId !== entry.id
+      || checkpoint.sourceHash !== problemEvidence.sha256 || checkpoint.from !== slice.from
+      || checkpoint.to !== slice.to || checkpoint.ownedFrom !== slice.ownedFrom
+      || checkpoint.ownedTo !== slice.ownedTo || checkpoint.effectiveCorpusHash !== match[2]
+      || checkpoint.inputHash !== terminalCheckpoint.inputHash
+      || checkpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION
+      || checkpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST
+      || checkpoint.rulesDigest !== rulesDigest
+      || checkpoint.scopePromptDigest !== PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST
+      || checkpoint.model !== "gpt-5.6-sol" || checkpoint.reasoningEffort !== "high"
+      || !Array.isArray(checkpoint.inputs) || !Array.isArray(checkpoint.items)
+      || canonicalEvidenceHash(checkpoint.inputs) !== terminalCheckpoint.inputHash) {
+      throw new Error(`${key}: terminal recovery checkpoint metadata is stale`);
+    }
+    const inputs = checkpoint.inputs.map((value, index) =>
+      object(value, `${key} terminal recovery inputs[${index}]`));
+    const inputKeys = inputs.map((value, index) => exactString(
+      value.key,
+      `${key} terminal recovery inputs[${index}].key`,
+    ));
+    const terminalItems = checkpoint.items.map((value, index) =>
+      parseProblemTerminalFidelityItem(
+        value,
+        `${key} terminal recovery items[${index}]`,
+        contract,
+      ));
+    const itemKeys = terminalItems.map((item) => item.key);
+    if (new Set(inputKeys).size !== inputKeys.length || new Set(itemKeys).size !== itemKeys.length
+      || !isDeepStrictEqual(
+        [...inputKeys].sort(compareCorpusQuestionKeys),
+        [...itemKeys].sort(compareCorpusQuestionKeys),
+      )) {
+      throw new Error(`${key}: terminal recovery checkpoint input/item coverage is not exact`);
+    }
+    const expectedTerminalCheckpoint = {
+      version: PROBLEM_TERMINAL_FIDELITY_VERSION,
+      entryId: entry.id,
+      sourceHash: problemEvidence.sha256,
+      from: slice.from,
+      to: slice.to,
+      ownedFrom: slice.ownedFrom,
+      ownedTo: slice.ownedTo,
+      effectiveCorpusHash: match[2],
+      inputHash: terminalCheckpoint.inputHash,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      rulesDigest,
+      scopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      inputs,
+      items: terminalItems,
+    };
+    if (!isDeepStrictEqual(checkpoint, expectedTerminalCheckpoint)) {
+      throw new Error(`${key}: terminal recovery checkpoint envelope is not exact`);
+    }
+    const checkpointItem = terminalItems.find((item) => item.key === key);
+    const terminalItem = parseProblemTerminalFidelityItem(
+      rawTerminalTrigger.terminalItem,
+      `${key}.revision.recovery.trigger.terminalItem`,
+      contract,
+    );
+    const terminalItemHash = canonicalEvidenceHash(terminalItem);
+    if (!checkpointItem || checkpointItem.status === "exact"
+      || !isDeepStrictEqual(checkpointItem, terminalItem)
+      || rawTerminalTrigger.terminalItemHash !== terminalItemHash
+      || rawTerminalTrigger.evidenceHash !== sha256(terminalItem.evidence)
+      || rawTerminalTrigger.preRecoveryEffectiveCorpusHash !== match[2]) {
+      throw new Error(`${key}: terminal recovery diagnostic authority is stale`);
+    }
+    terminalTrigger = {
+      kind: "terminal",
+      evidenceHash: sha256(terminalItem.evidence),
+      terminalCheckpoint,
+      terminalItemHash,
+      terminalItem,
+      preRecoveryEffectiveCorpusHash: match[2],
+    };
+    if (!isDeepStrictEqual(rawTerminalTrigger, terminalTrigger)) {
+      throw new Error(`${key}: terminal recovery trigger envelope is not exact`);
+    }
+    terminalGeneration = {
+      key,
+      current: {
+        question: revisedQuestion,
+        classification: revisedClassification,
+        problemCheckpoint: row.first.row.base.problemCheckpoint,
+        classificationCheckpoint: row.first.row.base.classificationCheckpoint,
+        contextFrom: row.first.row.contextFrom,
+        contextTo: row.first.row.contextTo,
+      },
+      checkpoint: terminalCheckpoint,
+    };
+  }
+  const problemBasis = terminalTrigger === null
+    ? {
+        ...commonProblemBasis,
+        failedClassificationEvidenceHash: sha256(revisedClassification.transcription_evidence),
+      }
+    : { ...commonProblemBasis, trigger: terminalTrigger };
+  const problemRecoveryVersion = terminalTrigger === null
+    ? PROBLEM_RECOVERY_VERSION
+    : PROBLEM_TERMINAL_RECOVERY_VERSION;
+  const classificationRecoveryVersion = terminalTrigger === null
+    ? CLASSIFICATION_RECOVERY_VERSION
+    : CLASSIFICATION_TERMINAL_RECOVERY_VERSION;
   const basisDigest = canonicalEvidenceHash(problemBasis);
   const problemArtifact = evidencePointer(recovery.problemArtifact, `${key}.recovery.problemArtifact`);
-  const expectedProblemPath = `problem-recoveries/v${PROBLEM_RECOVERY_VERSION}-` +
+  const expectedProblemPath = `problem-recoveries/v${problemRecoveryVersion}-` +
     `${String(row.first.row.sourcePage).padStart(4, "0")}-` +
     `${row.first.row.printedNumber.padStart(4, "0")}-${basisDigest}.json`;
   if (problemArtifact.path !== expectedProblemPath) throw new Error(`${key}: problem recovery path is stale`);
   const problemCheckpoint = readBoundEvidenceCached(cache, stateDir, problemArtifact, expectedProblemPath);
   const recoveredQuestion = parseProblem(problemCheckpoint.item, `${key}.problem recovery.item`);
   const expectedProblemCheckpoint = {
-    version: PROBLEM_RECOVERY_VERSION,
+    version: problemRecoveryVersion,
     entryId: entry.id,
     basisDigest,
     basis: problemBasis,
@@ -2601,7 +2768,7 @@ function verifyProblemRecovery(
     path: classificationEnvelope.path,
     sha256: classificationEnvelope.sha256,
   }, `${key}.recovery.classificationArtifact`);
-  const expectedClassificationPath = `classification-recoveries/v${CLASSIFICATION_RECOVERY_VERSION}-` +
+  const expectedClassificationPath = `classification-recoveries/v${classificationRecoveryVersion}-` +
     `${String(row.first.row.sourcePage).padStart(4, "0")}-` +
     `${row.first.row.printedNumber.padStart(4, "0")}-${classificationBasisDigest}-${rulesDigest}.json`;
   if (classificationArtifact.path !== expectedClassificationPath) {
@@ -2623,7 +2790,7 @@ function verifyProblemRecovery(
     `${key}.classification recovery.items[0]`,
   );
   const expectedClassificationCheckpoint = {
-    version: CLASSIFICATION_RECOVERY_VERSION,
+    version: classificationRecoveryVersion,
     entryId: entry.id,
     basisDigest: classificationBasisDigest,
     basis: classificationBasis,
@@ -2668,7 +2835,9 @@ function verifyProblemRecovery(
       recoveryPromptDigest: TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
     },
     classificationArtifactItemHash,
-    failedClassificationEvidenceHash: problemBasis.failedClassificationEvidenceHash,
+    ...(terminalTrigger === null
+      ? { failedClassificationEvidenceHash: sha256(revisedClassification.transcription_evidence) }
+      : { trigger: terminalTrigger }),
     baseQuestionHash: problemBasis.baseQuestionHash,
     effectiveQuestionHash: problemArtifactItemHash,
     baseClassificationHash: problemBasis.baseClassificationHash,
@@ -2687,8 +2856,20 @@ function verifyProblemRecovery(
       contextTo: row.first.row.contextTo,
     },
     evidence,
+    terminalGeneration,
   };
 }
+
+type V3RevisionVerification = {
+  classified: ClassifiedEvidence;
+  evidence: Record<string, unknown>;
+  preRecoveryClassified?: ClassifiedEvidence;
+  terminalRecoveryGeneration?: {
+    key: string;
+    current: ClassifiedEvidence;
+    checkpoint: ProblemTerminalFidelityCheckpoint;
+  };
+};
 
 function verifyV3RevisionArtifacts(
   rows: V3RevisionRow[],
@@ -2697,7 +2878,8 @@ function verifyV3RevisionArtifacts(
   problemEvidence: DownloadEvidence,
   rulesDigest: string,
   cache: EvidenceCache,
-): Map<string, { classified: ClassifiedEvidence; evidence: Record<string, unknown> }> {
+  contract: VerificationContract,
+): Map<string, V3RevisionVerification> {
   const revisedQuestions = new Map<string, ProblemQuestion>();
   for (const [path, group] of groupByArtifact(rows, (row) => row.problemArtifact)) {
     const ordered = [...group].sort((left, right) =>
@@ -2768,7 +2950,7 @@ function verifyV3RevisionArtifacts(
     }
   }
 
-  const result = new Map<string, { classified: ClassifiedEvidence; evidence: Record<string, unknown> }>();
+  const result = new Map<string, V3RevisionVerification>();
   for (const [path, group] of groupByArtifact(rows, (row) => row.classificationArtifact)) {
     const ordered = [...group].sort((left, right) =>
       compareCorpusQuestionKeys(left.first.row.key, right.first.row.key));
@@ -2879,9 +3061,11 @@ function verifyV3RevisionArtifacts(
         problemEvidence,
         rulesDigest,
         cache,
+        contract,
       );
-      if (classification.transcription_status === "exact" && recovery !== null) {
-        throw new Error(`${key}: exact problem revision cannot have a recovery`);
+      if (classification.transcription_status === "exact" && recovery !== null
+        && recovery.terminalGeneration === undefined) {
+        throw new Error(`${key}: exact problem revision can only have a terminal recovery`);
       }
       if (classification.transcription_status !== "exact" && recovery === null) {
         throw new Error(`${key}: non-exact problem revision has no recovery`);
@@ -2900,6 +3084,17 @@ function verifyV3RevisionArtifacts(
           contextTo: row.first.row.contextTo,
         },
         evidence: expectedEvidence,
+        ...(recovery?.terminalGeneration ? {
+          preRecoveryClassified: {
+            question,
+            classification,
+            problemCheckpoint: row.first.row.base.problemCheckpoint,
+            classificationCheckpoint: row.first.row.base.classificationCheckpoint,
+            contextFrom: row.first.row.contextFrom,
+            contextTo: row.first.row.contextTo,
+          },
+          terminalRecoveryGeneration: recovery.terminalGeneration,
+        } : {}),
       });
     }
   }
@@ -2914,14 +3109,33 @@ export function assertTerminalGenerationSearchBound(optionCounts: number[]): num
   return combinations;
 }
 
+type TerminalGenerationCandidate = { record: ClassifiedEvidence; repaired: boolean };
+
+function terminalGenerationCandidateAllowed(
+  candidate: TerminalGenerationCandidate,
+  item: ProblemTerminalFidelityItem | undefined,
+  terminalVersion: number,
+): boolean {
+  const classification = candidate.record.classification;
+  if (classification.transcription_status === "exact") return true;
+  return terminalVersion === PROBLEM_TERMINAL_FIDELITY_VERSION
+    && !candidate.repaired
+    && classification.decision === "reject"
+    && classification.transcription_status === "mismatch"
+    && item?.status === "mismatch"
+    && item.scopeDecision === "reject"
+    && item.scopeConfidence >= 0.9;
+}
+
 function verifyV3TerminalTriggerGenerations(
   rows: V3RevisionRow[],
   base: DecisionSummary,
   first: Map<string, V3FirstRepair>,
-  classificationRevisions: Map<string, { classified: ClassifiedEvidence }>,
-  terminalRevisions: Map<string, { classified: ClassifiedEvidence }>,
+  classificationRevisions: Map<string, V3RevisionVerification>,
+  terminalRevisions: Map<string, V3RevisionVerification>,
   stateDir: string,
   cache: EvidenceCache,
+  contract: VerificationContract,
 ): void {
   const groups = groupByArtifact(rows, (row) => problemTerminalFidelityCheckpoint(
     row.trigger.terminalCheckpoint,
@@ -2936,6 +3150,10 @@ function verifyV3TerminalTriggerGenerations(
     if (!Array.isArray(checkpoint.inputs)) throw new Error(`${path}: terminal trigger inputs are missing`);
     const inputs = checkpoint.inputs.map((value) => object(value, `${path}.input`));
     const inputByKey = new Map(inputs.map((input) => [exactString(input.key, `${path}.input.key`), input]));
+    if (!Array.isArray(checkpoint.items)) throw new Error(`${path}: terminal trigger items are missing`);
+    const terminalItems = checkpoint.items.map((value, index) =>
+      parseProblemTerminalFidelityItem(value, `${path}.items[${index}]`, contract));
+    const terminalItemByKey = new Map(terminalItems.map((item) => [item.key, item]));
     const expectedSliceKeys = base.order.filter((key) => {
       const page = base.records.get(key)!.question.page;
       return page >= pointer.ownedFrom && page <= pointer.ownedTo;
@@ -2947,17 +3165,27 @@ function verifyV3TerminalTriggerGenerations(
     const sameGenerationKeys = new Set(triggerRows.map((row) => row.first.row.key));
     const sameGenerationCurrent = new Map(triggerRows.map((row) => [row.first.row.key, row.current]));
     const options = base.order.map((key) => {
-      const candidates = (sameGenerationKeys.has(key) ? [sameGenerationCurrent.get(key)] : [
-        base.records.get(key),
-        first.get(key)?.classified,
-        classificationRevisions.get(key)?.classified,
-        terminalRevisions.get(key)?.classified,
-      ]).filter((value): value is ClassifiedEvidence => value !== undefined)
-        .filter((value) => value.classification.transcription_status === "exact");
-      const unique = new Map(candidates.map((value) => [canonicalEvidenceHash({
-        question: value.question.evidence,
-        classification: value.classification,
-      }), value]));
+      const forced = sameGenerationKeys.has(key) ? sameGenerationCurrent.get(key) : undefined;
+      const candidates: TerminalGenerationCandidate[] = forced ? [{ record: forced, repaired: true }] : [
+        { record: base.records.get(key)!, repaired: false },
+        ...[
+          first.get(key)?.classified,
+          classificationRevisions.get(key)?.preRecoveryClassified,
+          classificationRevisions.get(key)?.classified,
+          terminalRevisions.get(key)?.preRecoveryClassified,
+          terminalRevisions.get(key)?.classified,
+        ].filter((value): value is ClassifiedEvidence => value !== undefined)
+          .map((record) => ({ record, repaired: true })),
+      ];
+      const allowed = candidates.filter((candidate) => terminalGenerationCandidateAllowed(
+        candidate,
+        terminalItemByKey.get(key),
+        Number(checkpoint.version),
+      ));
+      const unique = new Map(allowed.map((candidate) => [canonicalEvidenceHash({
+        question: candidate.record.question.evidence,
+        classification: candidate.record.classification,
+      }), candidate.record]));
       const input = inputByKey.get(key);
       const matching = [...unique.values()].filter((value) =>
         input === undefined || isDeepStrictEqual(problemTerminalInput(value), input));
@@ -2991,6 +3219,99 @@ function verifyV3TerminalTriggerGenerations(
     visit(0);
     if (matches !== 1) {
       throw new Error(`${path}: terminal trigger does not bind one exact prior corpus generation`);
+    }
+  }
+}
+
+function verifyV3TerminalRecoveryGenerations(
+  base: DecisionSummary,
+  first: Map<string, V3FirstRepair>,
+  classificationRevisions: Map<string, V3RevisionVerification>,
+  terminalRevisions: Map<string, V3RevisionVerification>,
+  stateDir: string,
+  cache: EvidenceCache,
+  contract: VerificationContract,
+): void {
+  const generations = [...classificationRevisions.values(), ...terminalRevisions.values()]
+    .flatMap((value) => value.terminalRecoveryGeneration ? [value.terminalRecoveryGeneration] : []);
+  const groups = groupByArtifact(generations, (generation) => generation.checkpoint);
+  for (const [path, triggerGenerations] of groups) {
+    const pointer = triggerGenerations[0].checkpoint;
+    const checkpoint = readBoundEvidenceCached(cache, stateDir, pointer, path);
+    if (!Array.isArray(checkpoint.inputs)) throw new Error(`${path}: terminal recovery inputs are missing`);
+    const inputs = checkpoint.inputs.map((value) => object(value, `${path}.input`));
+    const inputByKey = new Map(inputs.map((input) => [exactString(input.key, `${path}.input.key`), input]));
+    if (!Array.isArray(checkpoint.items)) throw new Error(`${path}: terminal recovery items are missing`);
+    const terminalItems = checkpoint.items.map((value, index) =>
+      parseProblemTerminalFidelityItem(value, `${path}.items[${index}]`, contract));
+    const terminalItemByKey = new Map(terminalItems.map((item) => [item.key, item]));
+    const expectedSliceKeys = base.order.filter((key) => {
+      const page = base.records.get(key)!.question.page;
+      return page >= pointer.ownedFrom && page <= pointer.ownedTo;
+    });
+    if (inputByKey.size !== expectedSliceKeys.length
+      || expectedSliceKeys.some((key) => !inputByKey.has(key))) {
+      throw new Error(`${path}: terminal recovery input coverage does not match the immutable key set`);
+    }
+    const sameGeneration = new Map(triggerGenerations.map((generation) => [generation.key, generation.current]));
+    if (sameGeneration.size !== triggerGenerations.length) {
+      throw new Error(`${path}: duplicate terminal recovery generation authority`);
+    }
+    const options = base.order.map((key) => {
+      const forced = sameGeneration.get(key);
+      const candidates: TerminalGenerationCandidate[] = forced ? [{ record: forced, repaired: true }] : [
+        { record: base.records.get(key)!, repaired: false },
+        ...[
+          first.get(key)?.classified,
+          classificationRevisions.get(key)?.preRecoveryClassified,
+          classificationRevisions.get(key)?.classified,
+          terminalRevisions.get(key)?.preRecoveryClassified,
+          terminalRevisions.get(key)?.classified,
+        ].filter((value): value is ClassifiedEvidence => value !== undefined)
+          .map((record) => ({ record, repaired: true })),
+      ];
+      const allowed = candidates.filter((candidate) => terminalGenerationCandidateAllowed(
+        candidate,
+        terminalItemByKey.get(key),
+        Number(checkpoint.version),
+      ));
+      const unique = new Map(allowed.map((candidate) => [canonicalEvidenceHash({
+        question: candidate.record.question.evidence,
+        classification: candidate.record.classification,
+      }), candidate.record]));
+      const input = inputByKey.get(key);
+      const matching = [...unique.values()].filter((value) =>
+        input === undefined || isDeepStrictEqual(problemTerminalInput(value), input));
+      if (matching.length === 0) throw new Error(`${path}: no attested recovery generation matches ${key}`);
+      return matching;
+    });
+    assertTerminalGenerationSearchBound(options.map((values) => values.length));
+    const targetHash = exactString(checkpoint.effectiveCorpusHash, `${path}.effectiveCorpusHash`);
+    let matches = 0;
+    const chosen: ClassifiedEvidence[] = [];
+    const visit = (index: number): void => {
+      if (matches > 1) return;
+      if (index < options.length) {
+        for (const candidate of options[index]) {
+          chosen.push(candidate);
+          visit(index + 1);
+          chosen.pop();
+        }
+        return;
+      }
+      const corpus = chosen.map((record) => ({
+        question: record.question.evidence,
+        classification: record.classification,
+      }));
+      if (canonicalEvidenceHash(corpus) !== targetHash) return;
+      const expectedInputs = chosen.filter((record) =>
+        record.question.page >= pointer.ownedFrom && record.question.page <= pointer.ownedTo)
+        .map(problemTerminalInput);
+      if (isDeepStrictEqual(expectedInputs, inputs)) matches += 1;
+    };
+    visit(0);
+    if (matches !== 1) {
+      throw new Error(`${path}: terminal recovery does not bind one exact prior corpus generation`);
     }
   }
 }
@@ -3032,10 +3353,7 @@ function applyDeclaredRepairsV3(
   if (nonExactWithoutRevision.length > 0) {
     throw new Error(`${nonExactWithoutRevision[0].row.key}: non-exact first repair has no attested revision`);
   }
-  let classificationRevisionResults = new Map<
-    string,
-    { classified: ClassifiedEvidence; evidence: Record<string, unknown> }
-  >();
+  let classificationRevisionResults = new Map<string, V3RevisionVerification>();
   if (classificationRevisions.length > 0) {
     const prepared = prepareV3RevisionRows(
       classificationRevisions,
@@ -3055,6 +3373,7 @@ function applyDeclaredRepairsV3(
       problemEvidence,
       rulesDigest,
       cache,
+      contract,
     );
     for (const [key, value] of classificationRevisionResults) records.set(key, value.classified);
   }
@@ -3064,10 +3383,7 @@ function applyDeclaredRepairsV3(
     return object(object(value.row.raw.revision, `${value.row.key}.revision`).trigger,
       `${value.row.key}.revision.trigger`).kind === "terminal";
   });
-  let terminalRevisionResults = new Map<
-    string,
-    { classified: ClassifiedEvidence; evidence: Record<string, unknown> }
-  >();
+  let terminalRevisionResults = new Map<string, V3RevisionVerification>();
   if (terminalRevisions.length > 0) {
     const prepared = prepareV3RevisionRows(
       terminalRevisions,
@@ -3087,6 +3403,7 @@ function applyDeclaredRepairsV3(
       problemEvidence,
       rulesDigest,
       cache,
+      contract,
     );
     verifyV3TerminalTriggerGenerations(
       prepared,
@@ -3096,9 +3413,20 @@ function applyDeclaredRepairsV3(
       terminalRevisionResults,
       stateDir,
       cache,
+      contract,
     );
     for (const [key, value] of terminalRevisionResults) records.set(key, value.classified);
   }
+
+  verifyV3TerminalRecoveryGenerations(
+    base,
+    first,
+    classificationRevisionResults,
+    terminalRevisionResults,
+    stateDir,
+    cache,
+    contract,
+  );
 
   for (const value of first.values()) {
     const rawRevision = value.row.raw.revision;
@@ -3537,6 +3865,9 @@ function verifySolutionRevision(
         path: semanticCheckpoint.path,
         sha256: semanticCheckpoint.sha256,
         inputHash: semanticCheckpoint.inputHash,
+        ...(contract.semanticChoiceVersion === SEMANTIC_CHOICE_VERSION
+          ? { effectiveCorpusHash: semanticCheckpoint.effectiveCorpusHash }
+          : {}),
         effectiveSolutionCorpusHash: semanticCheckpoint.effectiveSolutionCorpusHash,
       },
       stateDir,
@@ -4096,15 +4427,22 @@ function verifySemanticCheckpoint(
     return new Map();
   }
   const envelope = object(value, "answer audit semanticCheckpoint");
-  if (Object.keys(envelope).sort().join(",") !== "effectiveSolutionCorpusHash,inputHash,path,sha256") {
+  const currentSemantic = contract.semanticChoiceVersion === SEMANTIC_CHOICE_VERSION;
+  const expectedEnvelopeFields = currentSemantic
+    ? "effectiveCorpusHash,effectiveSolutionCorpusHash,inputHash,path,sha256"
+    : "effectiveSolutionCorpusHash,inputHash,path,sha256";
+  if (Object.keys(envelope).sort().join(",") !== expectedEnvelopeFields) {
     throw new Error("semanticCheckpoint has unexpected fields");
   }
   if (envelope.inputHash !== inputHash) throw new Error("semanticCheckpoint input hash does not match marker inputs");
+  if (currentSemantic && envelope.effectiveCorpusHash !== effectiveCorpusHash) {
+    throw new Error("semanticCheckpoint effective problem corpus hash is stale");
+  }
   if (envelope.effectiveSolutionCorpusHash !== effectiveSolutionCorpusHash) {
     throw new Error("semanticCheckpoint effective solution corpus hash is stale");
   }
   const pointer = evidencePointer({ path: envelope.path, sha256: envelope.sha256 }, "semanticCheckpoint");
-  const expectedPath = solutionRevisionApplied
+  const expectedPath = currentSemantic || solutionRevisionApplied
     ? `semantic-choice-checks/v${contract.semanticChoiceVersion}-${effectiveCorpusHash}-` +
       `${effectiveSolutionCorpusHash}-${inputHash}.json`
     : `semantic-choice-checks/v${contract.semanticChoiceVersion}-${inputHash}.json`;
@@ -4167,7 +4505,14 @@ function selectVerificationContract(
   receipt: Record<string, unknown> | null,
   result: Record<string, unknown> | null,
 ): VerificationContract {
-  if (result?.version === 4) return CURRENT_CONTRACT;
+  if (result?.version === 5) return CURRENT_CONTRACT;
+  const v5GenerationSignal = (
+    listJson(join(stateDir, "semantic-choice-checks"), /^v5-.*\.json$/u).length > 0
+    || listJson(join(stateDir, "answer-audit"), /^v5-.*\.json$/u).length > 0
+    || listJson(join(stateDir, "answer-attestation"), /^v5-.*\.json$/u).length > 0
+  );
+  if (v5GenerationSignal) return CURRENT_CONTRACT;
+  if (result?.version === 4) return V4_CONTRACT;
   const v4GenerationSignal = (
     listJson(join(stateDir, "problem-terminal-fidelity"), /^v2-.*\.json$/u).length > 0
     || listJson(join(stateDir, "problem-recoveries"), /\.json$/u).length > 0
@@ -4175,7 +4520,7 @@ function selectVerificationContract(
     || listJson(join(stateDir, "answer-audit"), /^v4-.*\.json$/u).length > 0
     || listJson(join(stateDir, "answer-attestation"), /^v4-.*\.json$/u).length > 0
   );
-  if (v4GenerationSignal) return CURRENT_CONTRACT;
+  if (v4GenerationSignal) return V4_CONTRACT;
   if (result?.version === 3) return V3_CONTRACT;
   const v3GenerationSignal = (
     listJson(join(stateDir, "classification-chunks"), /^v5-\d{4}-[a-f0-9]{16}\.json$/u).length > 0
