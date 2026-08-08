@@ -1208,6 +1208,16 @@ export const TARGETED_SOLUTION_TRANSCRIPTION_RULES =
   `faithful textual [도형/표 설명] inside explanation. Locate the visible start page yourself; never assume a prior ` +
   `page is correct. Never summarize, solve independently, or preserve a prior transcription.`;
 
+export const TARGETED_SOLUTION_REVISION_VERSION = 1;
+export const TARGETED_SOLUTION_REVISION_RULES =
+  `SECOND SOURCE-GROUNDED SOLUTION REVISION: A previous independent source check found a possible mismatch. ` +
+  `Use its diagnostic only to locate the pixels that need extra attention; independently re-read the official ` +
+  `raw answer and every character of the full explanation through its final step. Preserve visible Korean wording, ` +
+  `limits, signs, coefficients, exponents, roots, fractions, formulas, tables, diagrams, and conclusions literally. ` +
+  `Never summarize, solve independently, or trust the diagnostic as source text.`;
+export const TARGETED_SOLUTION_REVISION_EVIDENCE_PREFIX =
+  `Previous solution fidelity diagnostic (untrusted; verify against pixels):`;
+
 export function problemExtractionSelfContainedRule(enabled: boolean): string {
   if (!enabled) return "";
   return (
@@ -1433,6 +1443,7 @@ export async function extractSolutionsFromFile(
     contentPageCount?: number;
     ownedStartPageRange?: SolutionStartPageRange;
     target?: { page?: number; printedNumber: string };
+    revisionEvidence?: string;
     reasoningEffort?: ReasoningEffort;
   }
 ): Promise<SolutionItem[]> {
@@ -1447,6 +1458,7 @@ export async function extractSolutionsFromFile(
   const ownedStartPageRange = opts?.ownedStartPageRange;
   const target = opts?.target;
   const targetNumber = target ? numericPrintedLocator(target.printedNumber) : null;
+  const revisionEvidence = opts?.revisionEvidence;
   if (ownedStartPageRange && (
     !Number.isInteger(ownedStartPageRange.from) || !Number.isInteger(ownedStartPageRange.to) ||
     ownedStartPageRange.from < firstPage || ownedStartPageRange.to > lastPage ||
@@ -1457,6 +1469,10 @@ export async function extractSolutionsFromFile(
       !Number.isInteger(target.page) || target.page < firstPage || target.page > lastPage
     )
   )) throw new AIProviderError("invalid_file", "해설 재전사 대상 페이지 또는 인쇄 번호가 유효하지 않습니다");
+  if (revisionEvidence !== undefined && (
+    !target || !revisionEvidence.trim() || revisionEvidence !== revisionEvidence.trim() ||
+    revisionEvidence.includes("\0") || revisionEvidence.length > 2000
+  )) throw new AIProviderError("invalid_file", "해설 revision 근거가 유효하지 않습니다");
   const readInstruction = kind === "pdf"
     ? target
       ? `Read the attached bounded solution context for original document pages ${firstPage}-${lastPage}, locate ` +
@@ -1483,6 +1499,9 @@ export async function extractSolutionsFromFile(
     `- complete: true only when the full worked solution is visible through its final step and answer. Use false if it continues beyond page ${lastPage}.\n` +
     `- Ignore covers, contents, ads, and compact quick-answer tables that duplicate later worked solutions.\n` +
     `- page: original page where the solution starts, from ${firstPage} through ${lastPage}.\n` +
+    (revisionEvidence === undefined ? "" :
+      `- ${TARGETED_SOLUTION_REVISION_RULES}\n` +
+      `- ${TARGETED_SOLUTION_REVISION_EVIDENCE_PREFIX} ${JSON.stringify(revisionEvidence)}\n`) +
     `- Output only the requested structured data.`;
   const result = await runAgent(prompt, {
     allowedTools: ["Read"],
