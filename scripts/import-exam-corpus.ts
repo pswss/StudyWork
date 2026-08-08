@@ -90,6 +90,8 @@ export const PROBLEM_REVISION_BATCH_VERSION = 1;
 export const CLASSIFICATION_REVISION_BATCH_VERSION = 1;
 export const PROBLEM_RECOVERY_VERSION = 1;
 export const CLASSIFICATION_RECOVERY_VERSION = 1;
+export const PROBLEM_TERMINAL_RECOVERY_VERSION = 2;
+export const CLASSIFICATION_TERMINAL_RECOVERY_VERSION = 2;
 export const SOLUTION_FIDELITY_VERSION = 1;
 export const SOLUTION_FIDELITY_SLICE_PAGES = 22;
 export const SOLUTION_FIDELITY_SLICE_STRIDE = 18;
@@ -604,7 +606,15 @@ export type ProblemRecoveryEvidence = {
     recoveryPromptDigest: string;
   };
   classificationArtifactItemHash: string;
-  failedClassificationEvidenceHash: string;
+  failedClassificationEvidenceHash?: string;
+  trigger?: {
+    kind: "terminal";
+    evidenceHash: string;
+    terminalCheckpoint: ProblemTerminalFidelityCheckpoint;
+    terminalItemHash: string;
+    terminalItem: ProblemTerminalFidelityItem;
+    preRecoveryEffectiveCorpusHash: string;
+  };
   baseQuestionHash: string;
   effectiveQuestionHash: string;
   baseClassificationHash: string;
@@ -618,7 +628,13 @@ type ProblemRevisionTrigger =
       evidence: string;
       checkpoint: ProblemTerminalFidelityCheckpoint;
       itemHash: string;
+      item: ProblemTerminalFidelityItem;
+      effectiveCorpusHash: string;
     };
+
+type ProblemRecoveryTrigger =
+  | { kind: "classification"; evidence: string }
+  | Extract<ProblemRevisionTrigger, { kind: "terminal" }>;
 
 type EvidencePointer = { path: string; sha256: string };
 
@@ -3514,6 +3530,7 @@ type ProblemRecoveryInput = {
   revised: ClassifiedQuestion;
   revisionProblemArtifact: EvidencePointer & { itemHash: string };
   revisionClassificationArtifact: EvidencePointer & { itemHash: string };
+  trigger: ProblemRecoveryTrigger;
 };
 
 async function recoverClassifiedQuestion(
@@ -3524,11 +3541,16 @@ async function recoverClassifiedQuestion(
   input: ProblemRecoveryInput
 ): Promise<{ classified: ClassifiedQuestion; evidence: ProblemRecoveryEvidence }> {
   if (
-    input.revised.classification.transcription_status === "exact" ||
     questionKey(input.revised.question) !== input.key || input.revised.question.page !== input.sourcePage ||
     canonicalEvidenceHash(input.revised.question) !== input.revisionProblemArtifact.itemHash ||
     canonicalEvidenceHash(input.revised.classification) !== input.revisionClassificationArtifact.itemHash
   ) throw new Error(`${input.key} problem recovery 입력이 failed revision과 다릅니다`);
+  if (
+    input.trigger.kind === "classification"
+      ? input.revised.classification.transcription_status === "exact" ||
+        input.trigger.evidence !== input.revised.classification.transcription_evidence
+      : input.revised.classification.transcription_status !== "exact"
+  ) throw new Error(`${input.key} problem recovery trigger가 revision과 다릅니다`);
   for (const [label, pointer] of [
     ["base problem repair", input.repair.problemArtifact],
     ["base classification repair", input.repair.classificationArtifact],
@@ -3539,7 +3561,46 @@ async function recoverClassifiedQuestion(
     if (await sha256File(path) !== pointer.sha256) throw new Error(`${input.key} ${label} hash가 다릅니다`);
   }
   const failedClassificationEvidenceHash = sha256Text(input.revised.classification.transcription_evidence);
-  const problemBasis = {
+  let terminalTrigger: Extract<ProblemRecoveryEvidence["trigger"], { kind: "terminal" }> | undefined;
+  if (input.trigger.kind === "terminal") {
+    const terminalPath = confinedStateFile(stateDir, input.trigger.checkpoint.path, "terminal recovery fidelity");
+    if (await sha256File(terminalPath) !== input.trigger.checkpoint.sha256) {
+      throw new Error(`${input.key} terminal recovery fidelity hash가 다릅니다`);
+    }
+    const terminalCheckpoint = object(JSON.parse(readFileSync(terminalPath, "utf8")), "terminal recovery fidelity");
+    const terminalItem = Array.isArray(terminalCheckpoint.items)
+      ? terminalCheckpoint.items.find((value) => object(value, "terminal recovery fidelity item").key === input.key)
+      : undefined;
+    if (
+      terminalCheckpoint.version !== PROBLEM_TERMINAL_FIDELITY_VERSION ||
+      terminalCheckpoint.entryId !== entry.id || terminalCheckpoint.sourceHash !== problem.sha256 ||
+      terminalCheckpoint.from !== input.trigger.checkpoint.from ||
+      terminalCheckpoint.to !== input.trigger.checkpoint.to ||
+      terminalCheckpoint.ownedFrom !== input.trigger.checkpoint.ownedFrom ||
+      terminalCheckpoint.ownedTo !== input.trigger.checkpoint.ownedTo ||
+      terminalCheckpoint.inputHash !== input.trigger.checkpoint.inputHash ||
+      terminalCheckpoint.effectiveCorpusHash !== input.trigger.effectiveCorpusHash ||
+      terminalCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+      terminalCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+      terminalCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+      terminalCheckpoint.scopePromptDigest !== PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST ||
+      terminalCheckpoint.model !== IMPORT_MODEL ||
+      terminalCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+      !terminalItem || canonicalEvidenceHash(terminalItem) !== input.trigger.itemHash ||
+      canonicalEvidenceHash(input.trigger.item) !== input.trigger.itemHash ||
+      object(terminalItem, "terminal recovery fidelity item").status === "exact" ||
+      object(terminalItem, "terminal recovery fidelity item").evidence !== input.trigger.evidence
+    ) throw new Error(`${input.key} terminal recovery fidelity evidence가 다릅니다`);
+    terminalTrigger = {
+      kind: "terminal",
+      evidenceHash: sha256Text(input.trigger.evidence),
+      terminalCheckpoint: input.trigger.checkpoint,
+      terminalItemHash: input.trigger.itemHash,
+      terminalItem: input.trigger.item,
+      preRecoveryEffectiveCorpusHash: input.trigger.effectiveCorpusHash,
+    };
+  }
+  const commonProblemBasis = {
     key: input.key,
     printedNumber: input.printedNumber,
     sourcePage: input.sourcePage,
@@ -3566,10 +3627,16 @@ async function recoverClassifiedQuestion(
     baseClassificationRevisionItemHash: input.revisionClassificationArtifact.itemHash,
     baseQuestionHash: canonicalEvidenceHash(input.revised.question),
     baseClassificationHash: canonicalEvidenceHash(input.revised.classification),
-    failedClassificationEvidenceHash,
   };
+  const problemBasis = terminalTrigger
+    ? { ...commonProblemBasis, trigger: terminalTrigger }
+    : { ...commonProblemBasis, failedClassificationEvidenceHash };
+  const problemRecoveryVersion = terminalTrigger ? PROBLEM_TERMINAL_RECOVERY_VERSION : PROBLEM_RECOVERY_VERSION;
+  const classificationRecoveryVersion = terminalTrigger
+    ? CLASSIFICATION_TERMINAL_RECOVERY_VERSION
+    : CLASSIFICATION_RECOVERY_VERSION;
   const basisDigest = canonicalEvidenceHash(problemBasis);
-  const problemRelativePath = `problem-recoveries/v${PROBLEM_RECOVERY_VERSION}-` +
+  const problemRelativePath = `problem-recoveries/v${problemRecoveryVersion}-` +
     `${String(input.sourcePage).padStart(4, "0")}-${input.printedNumber.padStart(4, "0")}-${basisDigest}.json`;
   const problemPath = join(stateDir, problemRelativePath);
   let problemCheckpoint: Record<string, unknown>;
@@ -3577,7 +3644,7 @@ async function recoverClassifiedQuestion(
   if (existsSync(problemPath)) {
     problemCheckpoint = object(JSON.parse(readFileSync(problemPath, "utf8")), problemRelativePath);
     if (
-      problemCheckpoint.version !== PROBLEM_RECOVERY_VERSION || problemCheckpoint.entryId !== entry.id ||
+      problemCheckpoint.version !== problemRecoveryVersion || problemCheckpoint.entryId !== entry.id ||
       problemCheckpoint.basisDigest !== basisDigest ||
       canonicalEvidenceHash(problemCheckpoint.basis) !== canonicalEvidenceHash(problemBasis) ||
       problemCheckpoint.promptVersion !== TARGETED_PROBLEM_RECOVERY_VERSION ||
@@ -3591,11 +3658,11 @@ async function recoverClassifiedQuestion(
       contentPageCount: input.contextTo - input.contextFrom + 1,
       selfContained: true,
       target: { page: input.sourcePage, printedNumber: input.printedNumber },
-      recoveryEvidence: input.revised.classification.transcription_evidence,
+      recoveryEvidence: input.trigger.evidence,
       reasoningEffort: IMPORT_REASONING_EFFORT,
     })))[0];
     problemCheckpoint = {
-      version: PROBLEM_RECOVERY_VERSION,
+      version: problemRecoveryVersion,
       entryId: entry.id,
       basisDigest,
       basis: problemBasis,
@@ -3620,7 +3687,7 @@ async function recoverClassifiedQuestion(
     effectiveQuestionHash: problemItemHash,
   };
   const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
-  const classificationRelativePath = `classification-recoveries/v${CLASSIFICATION_RECOVERY_VERSION}-` +
+  const classificationRelativePath = `classification-recoveries/v${classificationRecoveryVersion}-` +
     `${String(input.sourcePage).padStart(4, "0")}-${input.printedNumber.padStart(4, "0")}-` +
     `${classificationBasisDigest}-${CLASSIFIER_DIGEST}.json`;
   const classificationPath = join(stateDir, classificationRelativePath);
@@ -3629,7 +3696,7 @@ async function recoverClassifiedQuestion(
   if (existsSync(classificationPath)) {
     classificationCheckpoint = object(JSON.parse(readFileSync(classificationPath, "utf8")), classificationRelativePath);
     if (
-      classificationCheckpoint.version !== CLASSIFICATION_RECOVERY_VERSION ||
+      classificationCheckpoint.version !== classificationRecoveryVersion ||
       classificationCheckpoint.entryId !== entry.id ||
       classificationCheckpoint.basisDigest !== classificationBasisDigest ||
       canonicalEvidenceHash(classificationCheckpoint.basis) !== canonicalEvidenceHash(classificationBasis) ||
@@ -3648,7 +3715,7 @@ async function recoverClassifiedQuestion(
       entry, contextPath, input.contextFrom, input.contextTo, [recovered], { targeted: true }
     ))[0];
     classificationCheckpoint = {
-      version: CLASSIFICATION_RECOVERY_VERSION,
+      version: classificationRecoveryVersion,
       entryId: entry.id,
       basisDigest: classificationBasisDigest,
       basis: classificationBasis,
@@ -3709,7 +3776,7 @@ async function recoverClassifiedQuestion(
         recoveryPromptDigest: TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
       },
       classificationArtifactItemHash: canonicalEvidenceHash(classification),
-      failedClassificationEvidenceHash,
+      ...(terminalTrigger ? { trigger: terminalTrigger } : { failedClassificationEvidenceHash }),
       baseQuestionHash: problemBasis.baseQuestionHash,
       effectiveQuestionHash: problemItemHash,
       baseClassificationHash: problemBasis.baseClassificationHash,
@@ -4031,6 +4098,7 @@ async function reviseClassifiedQuestionsBatch(
               sha256: classificationSha,
               itemHash: canonicalEvidenceHash(classification),
             },
+            trigger: { kind: "classification", evidence: classification.transcription_evidence },
           });
           recoveryByKey.set(member.key, recovered);
         }
@@ -4515,6 +4583,12 @@ export async function repairAndAuditOfficialAnswers(
     }
     const revisionCurrents: ClassifiedQuestion[] = [];
     const revisionTriggers = new Map<string, ProblemRevisionTrigger>();
+    const terminalRecoveryCurrents: Array<{
+      key: string;
+      current: ClassifiedQuestion;
+      repair: ProblemRepairEvidence;
+      trigger: Extract<ProblemRecoveryTrigger, { kind: "terminal" }>;
+    }> = [];
     for (const key of uniqueKeys) {
       if (initialRepairKeys.has(key)) continue;
       const index = effective.findIndex((item) => questionKey(item.question) === key);
@@ -4522,7 +4596,6 @@ export async function repairAndAuditOfficialAnswers(
       const existing = repairs.get(key);
       if (existing) {
         if (!revisionKind) continue;
-        if (existing.revision) throw new Error(`${key} problem revision은 한 번만 허용됩니다`);
         const current = effective[index];
         const trigger: ProblemRevisionTrigger | undefined = revisionKind === "terminal"
           ? terminalTriggers?.get(key)
@@ -4531,6 +4604,13 @@ export async function repairAndAuditOfficialAnswers(
               evidence: current.classification.transcription_evidence,
             };
         if (!trigger) throw new Error(`${key} problem revision trigger가 없습니다`);
+        if (existing.revision) {
+          if (trigger.kind !== "terminal" || existing.revision.recovery) {
+            throw new Error(`${key} problem recovery는 한 번만 허용됩니다`);
+          }
+          terminalRecoveryCurrents.push({ key, current, repair: existing, trigger });
+          continue;
+        }
         revisionCurrents.push(current);
         revisionTriggers.set(key, trigger);
         continue;
@@ -4554,6 +4634,53 @@ export async function repairAndAuditOfficialAnswers(
         effective[index] = item.classified;
         repairs.set(key, { ...existing, revision: item.evidence });
         changedKeys.add(key);
+      }
+    }
+    if (terminalRecoveryCurrents.length > 0) {
+      const recovered = await mapPool(terminalRecoveryCurrents, IMPORT_CONCURRENCY, async (item) => {
+        const revision = item.repair.revision!;
+        return withImporterPdfForAnalysis(problem, (analysisProblem) =>
+          withProblemContextSlice(
+            analysisProblem.path,
+            item.repair.contextFrom,
+            item.repair.contextTo,
+            async (contextPath) => ({
+              key: item.key,
+              recovered: await recoverClassifiedQuestion(entry, problem, stateDir, contextPath, {
+                key: item.key,
+                printedNumber: item.repair.printedNumber,
+                sourcePage: item.current.question.page!,
+                contextFrom: item.repair.contextFrom,
+                contextTo: item.repair.contextTo,
+                repair: item.repair,
+                revised: item.current,
+                revisionProblemArtifact: {
+                  ...revision.problemArtifact,
+                  itemHash: revision.problemArtifactItemHash ?? revision.effectiveQuestionHash,
+                },
+                revisionClassificationArtifact: {
+                  path: revision.classificationArtifact.path,
+                  sha256: revision.classificationArtifact.sha256,
+                  itemHash: revision.classificationArtifactItemHash ?? revision.effectiveClassificationHash,
+                },
+                trigger: item.trigger,
+              }),
+            })
+          )
+        );
+      });
+      for (const item of recovered) {
+        const index = effective.findIndex((current) => questionKey(current.question) === item.key);
+        const existing = repairs.get(item.key);
+        if (index < 0 || !existing?.revision || existing.revision.recovery) {
+          throw new Error(`${item.key} terminal problem recovery authority가 없습니다`);
+        }
+        effective[index] = item.recovered.classified;
+        repairs.set(item.key, {
+          ...existing,
+          revision: { ...existing.revision, recovery: item.recovered.evidence },
+        });
+        changedKeys.add(item.key);
       }
     }
     const effectiveKeys = effective.map((item) => questionKey(item.question));
@@ -4594,6 +4721,7 @@ export async function repairAndAuditOfficialAnswers(
       .map((item) => item.key);
     if (terminalIssues.length > 0) {
       const terminalTriggers = new Map<string, Extract<ProblemRevisionTrigger, { kind: "terminal" }>>();
+      const preRecoveryEffectiveCorpusHash = canonicalEvidenceHash(effective);
       for (const item of finalProblemFidelity.items.filter((candidate) => candidate.status !== "exact")) {
         const current = effective.find((candidate) => questionKey(candidate.question) === item.key);
         if (!current) throw new Error(`${item.key} terminal 문제 fidelity 대상이 없습니다`);
@@ -4606,6 +4734,8 @@ export async function repairAndAuditOfficialAnswers(
           evidence: item.evidence,
           checkpoint: checkpoints[0],
           itemHash: canonicalEvidenceHash(item),
+          item,
+          effectiveCorpusHash: preRecoveryEffectiveCorpusHash,
         });
       }
       const changed = await applyRepairs(terminalIssues, "terminal", terminalTriggers);

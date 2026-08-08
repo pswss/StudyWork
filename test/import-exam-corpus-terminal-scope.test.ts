@@ -300,12 +300,12 @@ describe("exam corpus independent terminal scope", () => {
     expect(calls).toEqual({ terminal: 2, extract: 1, classify: 1, solution: 0 });
   });
 
-  it("fails closed when source fidelity remains unverifiable after the one allowed revision", async () => {
+  it("fails closed when source fidelity remains unverifiable after the one allowed recovery", async () => {
     const data = await fixture();
     const calls = mockMode(data, "unverifiable");
     await expect(repairAndAuditOfficialAnswers(
       data.entry, data.problem, data.solution, root, data.classified, data.solutions
-    )).rejects.toThrow("problem revision은 한 번만 허용됩니다");
-    expect(calls).toEqual({ terminal: 3, extract: 2, classify: 2, solution: 0 });
+    )).rejects.toThrow("problem recovery는 한 번만 허용됩니다");
+    expect(calls).toEqual({ terminal: 3, extract: 3, classify: 3, solution: 0 });
   });
 });
