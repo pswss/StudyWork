@@ -20,7 +20,7 @@ import { escapeHtmlText, Md, MdInline, MdInlineText, mdHtml, mdInlineHtml } from
 import { useI18n, type Locale, type MessageKey, type Translate } from "../i18n";
 import SourcePicker from "./SourcePicker";
 import SingleSelectPicker from "./SingleSelectPicker";
-import QuizScratchpad, { QuizQuestionAnnotation } from "./QuizScratchpad";
+import QuizInkWorkspace from "./QuizScratchpad";
 import TranscriptNarration from "../TranscriptNarration";
 import { AiPending } from "../Pending";
 import { getAnswerAttempt, type AnswerAttempt } from "../answer-attempt";
@@ -1044,7 +1044,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
         {item.exam_section === "듣기" && item.passage && (
           <TranscriptNarration text={item.passage} />
         )}
-        <QuizQuestionAnnotation questionId={item.id}>
+        <QuizInkWorkspace key={`${item.id}-${play.index}`} questionId={item.id}>
           {item.passage && (
             <section className="quiz-passage" aria-label={t("problems.mock.passage")}>
               <Md text={item.passage} />
@@ -1062,8 +1062,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
               fetchPriority="high"
             />
           )}
-        </QuizQuestionAnnotation>
-        <QuizScratchpad key={`${item.id}-${play.index}`} questionId={item.id} />
+        </QuizInkWorkspace>
 
         {!play.answered && (
           <>

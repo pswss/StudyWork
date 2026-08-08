@@ -1435,70 +1435,79 @@ a.q-chip:hover { color: var(--ink); border-color: var(--lime-dim); background: r
   margin-bottom: 26px; letter-spacing: -.01em;
 }
 
-/* 지문·도형 위 필기 — 읽기 모드에서는 투명 캔버스가 입력을 가로채지 않는다. */
-.quiz-annotation { margin: 0 0 18px; }
-.quiz-annotation-toolbar {
+/* 문제·도형·풀이 공간을 한 문서로 다루는 필기 워크스페이스. */
+body.quiz-ink-fullscreen-open { overflow: hidden; }
+.quiz-ink-workspace { position: relative; margin: 0 0 26px; }
+.quiz-ink-workspace-toolbar {
   position: sticky; top: max(8px, env(safe-area-inset-top)); z-index: 3;
   margin-bottom: 10px; padding: 6px; border: 1px solid var(--line);
   border-radius: 10px; background: rgba(20, 20, 22, .92);
   -webkit-backdrop-filter: blur(14px) saturate(130%);
   backdrop-filter: blur(14px) saturate(130%);
 }
-.quiz-annotation-mode[aria-pressed="true"] {
+.quiz-ink-mode[aria-pressed="true"] {
   color: var(--lime); border-color: var(--lime-dim); background: rgba(217, 255, 63, .06);
 }
-.quiz-annotation-help {
+.quiz-ink-fullscreen-toggle[aria-pressed="true"] {
+  color: var(--lime); border-color: var(--lime-dim); background: rgba(217, 255, 63, .06);
+}
+.quiz-ink-workspace-help {
   margin: 0 2px 10px; color: var(--ink-3); font-size: 11.5px; line-height: 1.5;
 }
-.quiz-annotation-surface { position: relative; min-width: 0; }
-.quiz-annotation-surface::after {
-  content: ""; position: absolute; inset: -6px; z-index: 1; pointer-events: none;
-  border: 1px solid transparent; border-radius: 8px;
-  transition: border-color .2s var(--ease), background-color .2s var(--ease);
+.quiz-ink-document {
+  min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel-2); transition: border-color .2s var(--ease);
 }
-.quiz-annotation.active .quiz-annotation-surface::after {
-  border-color: rgba(217, 255, 63, .34); background: rgba(217, 255, 63, .012);
+.quiz-ink-workspace.writing .quiz-ink-document { border-color: rgba(217, 255, 63, .42); }
+.quiz-ink-problem-surface { position: relative; min-width: 0; }
+.quiz-ink-problem-content { display: flow-root; position: relative; padding: 18px 18px 8px; }
+.quiz-ink-canvas {
+  z-index: 2; display: block; width: 100%; pointer-events: none;
 }
-.quiz-annotation-content { display: flow-root; position: relative; }
-.quiz-annotation-canvas {
-  position: absolute; inset: 0; z-index: 2; display: block; width: 100%; height: 100%;
-  pointer-events: none;
-}
-.quiz-annotation.active .quiz-annotation-canvas {
+.quiz-ink-canvas.problem { position: absolute; inset: 0; height: 100%; }
+.quiz-ink-workspace.writing .quiz-ink-canvas {
   pointer-events: auto; cursor: crosshair; touch-action: none; user-select: none;
 }
-.quiz-annotation.active .quiz-annotation-canvas.pencil-only { touch-action: pan-y pinch-zoom; }
-.quiz-annotation-canvas.erasing { cursor: cell; }
-
-/* 문제별 임시 풀이판 — 실제 필기 캔버스라 미세 격자가 기능적 배경으로 쓰인다. */
-.quiz-scratchpad {
-  margin: 0 0 26px; border: 1px solid var(--line); border-radius: 8px;
-  background: var(--panel-2); overflow: hidden;
+.quiz-ink-workspace.writing .quiz-ink-canvas.pencil-only { touch-action: pan-y pinch-zoom; }
+.quiz-ink-canvas.erasing { cursor: cell; }
+.quiz-ink-solution { border-top: 1px solid var(--line); }
+.quiz-ink-solution-heading {
+  min-height: 52px; padding: 10px 16px; display: flex; align-items: center; gap: 10px;
+  background: rgba(237, 234, 224, .025);
 }
-.quiz-scratchpad > summary {
-  min-height: 52px; padding: 0 16px; display: flex; align-items: center; gap: 10px;
-  list-style: none; cursor: pointer; color: var(--ink); user-select: none;
-  transition: background .18s var(--ease);
+.quiz-ink-solution-heading h3 { color: var(--ink); font-size: 13px; font-weight: 700; }
+.quiz-ink-solution-heading span { color: var(--ink-3); font-size: 12px; }
+/* 실제 필기 캔버스이므로 미세 격자가 기능적 배경이다. */
+.quiz-ink-canvas.solution {
+  height: clamp(280px, 38vw, 420px); border-top: 1px solid rgba(32, 35, 39, .18);
+  border-bottom: 1px solid rgba(32, 35, 39, .18); background-color: #f4f5ef;
+  background-image:
+    linear-gradient(rgba(32, 35, 39, .075) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(32, 35, 39, .075) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
-.quiz-scratchpad > summary::-webkit-details-marker { display: none; }
-.quiz-scratchpad > summary:hover { background: rgba(217, 255, 63, .03); }
-.quiz-scratchpad > summary::after {
-  content: "⌄" / ""; margin-left: auto; color: var(--ink-3);
-  transform: rotate(-90deg); transition: transform .2s var(--ease);
+.quiz-ink-solution .quiz-scratchpad-text { margin: 0; padding: 14px 16px 16px; }
+.quiz-ink-workspace.is-fullscreen {
+  position: fixed; inset: 0; z-index: 90; margin: 0;
+  padding: max(10px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+           max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  overflow-y: auto; overscroll-behavior: contain; background: var(--bg);
 }
-.quiz-scratchpad[open] > summary::after { transform: rotate(0deg); }
-.quiz-scratchpad-title { font-size: 13px; font-weight: 700; }
-.quiz-scratchpad-summary { color: var(--ink-3); font-size: 12px; }
-.quiz-scratchpad-panel {
-  padding: 12px; border-top: 1px solid var(--line);
-  animation: panelIn .2s var(--ease) both;
+.quiz-ink-workspace.is-fullscreen .quiz-ink-workspace-toolbar,
+.quiz-ink-workspace.is-fullscreen .quiz-ink-workspace-help,
+.quiz-ink-workspace.is-fullscreen .quiz-ink-document {
+  width: min(100%, 1100px); margin-inline: auto;
 }
+.quiz-ink-workspace.is-fullscreen .quiz-ink-workspace-toolbar {
+  top: max(10px, env(safe-area-inset-top));
+}
+.quiz-ink-workspace.is-fullscreen .quiz-ink-workspace-help { margin-top: 0; margin-bottom: 10px; }
+.quiz-ink-workspace.is-fullscreen .quiz-ink-canvas.solution { height: clamp(420px, 48vh, 720px); }
 .quiz-ink-toolbar {
   min-height: 44px; display: flex; align-items: center; gap: 6px;
   overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: none;
 }
 .quiz-ink-toolbar::-webkit-scrollbar { display: none; }
-.quiz-scratchpad-toolbar { margin-bottom: 8px; }
 .quiz-ink-toolbar button {
   min-height: 44px; padding: 0 12px; border: 1px solid var(--line);
   border-radius: 6px; background: transparent; color: var(--ink-2);
@@ -1597,18 +1606,6 @@ a.q-chip:hover { color: var(--ink); border-color: var(--lime-dim); background: r
   grid-column: 1 / -1; margin: -3px 2px 0; color: var(--ink-3); font-size: 11.5px; line-height: 1.5;
 }
 .quiz-scratchpad-help { margin: 0 2px 10px; color: var(--ink-3); font-size: 11.5px; line-height: 1.5; }
-.quiz-scratchpad-canvas {
-  display: block; width: 100%; height: clamp(260px, 36vw, 380px);
-  border: 1px solid rgba(32, 35, 39, .22); border-radius: 6px;
-  background-color: #f4f5ef;
-  background-image:
-    linear-gradient(rgba(32, 35, 39, .075) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(32, 35, 39, .075) 1px, transparent 1px);
-  background-size: 24px 24px;
-  cursor: crosshair; touch-action: none; user-select: none;
-}
-.quiz-scratchpad-canvas.pencil-only { touch-action: pan-y pinch-zoom; }
-.quiz-scratchpad-canvas.erasing { cursor: cell; }
 .quiz-scratchpad-text { margin-top: 14px; }
 .quiz-scratchpad-text-label {
   display: block; margin: 0 2px 7px; color: var(--ink-2);
@@ -1958,7 +1955,8 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
   .quiz-ink-setting-actions { grid-column: 1; }
   .quiz-ink-settings-help { grid-column: 1; }
   .quiz-ink-toolbar-gap { display: none; }
-  .quiz-scratchpad-summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .quiz-ink-problem-content { padding: 14px 14px 6px; }
+  .quiz-ink-solution-heading { align-items: flex-start; flex-direction: column; gap: 3px; }
   .ox-btn { max-width: 100%; }
   .exam-card-header { flex-direction: column; align-items: flex-start; }
   .exam-card-right { align-items: flex-start; width: 100%; }
@@ -2023,11 +2021,12 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .quiz-annotation-toolbar { background: var(--panel); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .quiz-ink-workspace-toolbar { background: var(--panel); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 
 @media (prefers-contrast: more) {
-  .quiz-annotation-toolbar,
+  .quiz-ink-workspace-toolbar,
+  .quiz-ink-document,
   .quiz-ink-settings-panel,
   .quiz-ink-toggle { border-color: var(--line-strong); }
 }

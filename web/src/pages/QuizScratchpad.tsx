@@ -4,9 +4,11 @@ import {
   useId,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { useI18n, type MessageKey } from "../i18n";
 
 export type ScratchpadTool = "pen" | "highlighter" | "eraser";
@@ -45,8 +47,9 @@ export interface InkPreferences {
   pencilOnly: boolean;
 }
 
-interface QuizScratchpadProps {
+interface QuizInkWorkspaceProps {
   questionId: number;
+  children: ReactNode;
 }
 
 const MAX_STROKES = 160;
@@ -65,7 +68,7 @@ const DEFAULT_INK_PREFERENCES: InkPreferences = {
   highlighterSize: 16,
   eraserSize: 22,
   pressure: true,
-  pencilOnly: false,
+  pencilOnly: true,
 };
 const PEN_COLORS = ["#246bfe", "#e5484d", "#8e5cf6", "#202327", "#f4f5ef"];
 const HIGHLIGHTER_COLORS = ["#fff066", "#ff72b6", "#67d5ff", "#7cf29a", "#c7a7ff"];
@@ -425,7 +428,6 @@ function useInkPreferences() {
 }
 
 interface InkMessages {
-  ready: MessageKey;
   penStroke: MessageKey;
   highlighterStroke: MessageKey;
   eraserStroke: MessageKey;
@@ -442,7 +444,11 @@ interface UseInkCanvasOptions {
   visible: boolean;
   surface: InkSurfaceStyle;
   messages: InkMessages;
+  tool: ScratchpadTool;
+  preferences: InkPreferences;
   onChange: (strokes: ScratchpadStroke[]) => void;
+  onAction: () => void;
+  onStatus: (message: MessageKey) => void;
 }
 
 function useInkCanvas({
@@ -450,7 +456,11 @@ function useInkCanvas({
   visible,
   surface,
   messages,
+  tool,
+  preferences,
   onChange,
+  onAction,
+  onStatus,
 }: UseInkCanvasOptions) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const strokesRef = useRef<ScratchpadStroke[]>(initialStrokes);
@@ -458,12 +468,9 @@ function useInkCanvas({
   const futureRef = useRef<ScratchpadStroke[][]>([]);
   const activeRef = useRef<{ pointerId: number; stroke: ScratchpadStroke } | null>(null);
   const metricsRef = useRef({ width: 1, height: 1, dpr: 1 });
-  const [tool, setTool] = useState<ScratchpadTool>("pen");
   const [strokeCount, setStrokeCount] = useState(initialStrokes.length);
   const [undoCount, setUndoCount] = useState(0);
   const [redoCount, setRedoCount] = useState(0);
-  const [statusKey, setStatusKey] = useState<MessageKey>(messages.ready);
-  const { preferences, updatePreferences } = useInkPreferences();
 
   const repaint = useCallback(() => {
     const canvas = canvasRef.current;
@@ -528,10 +535,10 @@ function useInkCanvas({
     setStrokeCount(model.strokes.length);
     setUndoCount(model.history.length);
     setRedoCount(future.length);
-    setStatusKey(message);
+    onStatus(message);
     onChange(model.strokes);
     repaint();
-  }, [onChange, repaint]);
+  }, [onChange, onStatus, repaint]);
 
   const pointFromEvent = useCallback((event: PointerEvent): ScratchpadPoint | null => {
     const canvas = canvasRef.current;
@@ -629,6 +636,7 @@ function useInkCanvas({
         ? messages.penStroke
         : active.stroke.tool === "highlighter" ? messages.highlighterStroke : messages.eraserStroke,
     );
+    onAction();
   }
 
   function undo() {
@@ -647,21 +655,14 @@ function useInkCanvas({
     applyHistory(model, messages.redone, model.future);
   }
 
-  function clear() {
-    if (strokesRef.current.length === 0) return;
+  function clear(recordAction = true) {
+    if (strokesRef.current.length === 0) return false;
     applyHistory(
       recordScratchpadChange(strokesRef.current, historyRef.current, []),
       messages.cleared,
     );
-  }
-
-  function selectTool(next: ScratchpadTool) {
-    setTool(next);
-    setStatusKey(
-      next === "pen"
-        ? messages.penSelected
-        : next === "highlighter" ? messages.highlighterSelected : messages.eraserSelected,
-    );
+    if (recordAction) onAction();
+    return true;
   }
 
   return {
@@ -670,32 +671,40 @@ function useInkCanvas({
     resizeCanvas,
     redo,
     redoCount,
-    selectTool,
-    setStatusKey,
-    statusKey,
     strokeCount,
     strokesRef,
     tool,
     undo,
     undoCount,
     preferences,
-    updatePreferences,
     appendSamples,
     finishStroke,
     startStroke,
   };
 }
 
-type InkCanvasController = ReturnType<typeof useInkCanvas>;
+interface InkToolbarController {
+  clear: () => void;
+  preferences: InkPreferences;
+  redo: () => void;
+  redoCount: number;
+  selectTool: (tool: ScratchpadTool) => void;
+  strokeCount: number;
+  tool: ScratchpadTool;
+  undo: () => void;
+  undoCount: number;
+  updatePreferences: (patch: Partial<InkPreferences>) => void;
+}
 
 interface InkToolbarProps {
   ariaLabel: string;
   className: string;
-  controller: InkCanvasController;
+  controller: InkToolbarController;
   clearAria: string;
   redoAria: string;
   undoAria: string;
   before?: ReactNode;
+  after?: ReactNode;
 }
 
 function InkToolbar({
@@ -706,6 +715,7 @@ function InkToolbar({
   redoAria,
   undoAria,
   before,
+  after,
 }: InkToolbarProps) {
   const { t } = useI18n();
   const settingsId = useId();
@@ -736,8 +746,8 @@ function InkToolbar({
       : { min: 8, max: 40, step: 1 };
 
   function selectTool(tool: ScratchpadTool) {
+    controller.selectTool(tool);
     if (controller.tool === tool) setSettingsOpen(true);
-    else controller.selectTool(tool);
   }
 
   function changeSize(value: number) {
@@ -815,6 +825,7 @@ function InkToolbar({
         >
           {t("problems.scratch.settings")}
         </button>
+        {after}
       </div>
       {settingsOpen && (
         <div
@@ -929,7 +940,6 @@ function persistAnnotation(questionId: number, strokes: ScratchpadStroke[]): voi
 }
 
 const scratchpadMessages: InkMessages = {
-  ready: "problems.scratch.ready",
   penStroke: "problems.scratch.penStroke",
   highlighterStroke: "problems.scratch.highlighterStroke",
   eraserStroke: "problems.scratch.eraserStroke",
@@ -953,178 +963,309 @@ const annotationSurface: InkSurfaceStyle = {
   outlined: true,
 };
 
-export default function QuizScratchpad({ questionId }: QuizScratchpadProps) {
+const annotationMessages: InkMessages = {
+  ...scratchpadMessages,
+  cleared: "problems.annotation.cleared",
+};
+
+type InkSurfaceName = "problem" | "solution";
+type InkWorkspaceAction = InkSurfaceName[];
+
+export default function QuizInkWorkspace({ questionId, children }: QuizInkWorkspaceProps) {
   const { t } = useI18n();
-  const initialStateRef = useRef<ScratchpadStoredState | null>(null);
-  if (initialStateRef.current === null) initialStateRef.current = restoreScratchpad(questionId);
-  const initialState = initialStateRef.current;
-  const memoRef = useRef(initialState.memo);
+  const initialScratchpadRef = useRef<ScratchpadStoredState | null>(null);
+  if (initialScratchpadRef.current === null) initialScratchpadRef.current = restoreScratchpad(questionId);
+  const initialScratchpad = initialScratchpadRef.current;
+  const initialAnnotationRef = useRef<ScratchpadStroke[] | null>(null);
+  if (initialAnnotationRef.current === null) initialAnnotationRef.current = restoreAnnotation(questionId);
+  const memoRef = useRef(initialScratchpad.memo);
+  const workspaceRef = useRef<HTMLElement>(null);
+  const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
+  const returnFullscreenFocusRef = useRef(false);
+  const timelineHistoryRef = useRef<InkWorkspaceAction[]>([]);
+  const timelineFutureRef = useRef<InkWorkspaceAction[]>([]);
   const helpId = useId();
+  const solutionTitleId = useId();
   const memoId = useId();
   const memoHelpId = useId();
-  const [memo, setMemo] = useState(initialState.memo);
-  const [open, setOpen] = useState(
+  const [memo, setMemo] = useState(initialScratchpad.memo);
+  const [tool, setTool] = useState<ScratchpadTool>("pen");
+  const [writing, setWriting] = useState(
     () => typeof window !== "undefined"
       && typeof window.matchMedia === "function"
-      && window.matchMedia("(pointer: coarse)").matches,
+      && window.matchMedia("(pointer: coarse)").matches
+      && restoreInkPreferences().pencilOnly,
   );
-  const saveStrokes = useCallback((strokes: ScratchpadStroke[]) => {
+  const [fullscreen, setFullscreen] = useState(false);
+  const [statusKey, setStatusKey] = useState<MessageKey>("problems.annotation.inactive");
+  const [timelineCounts, setTimelineCounts] = useState({ undo: 0, redo: 0 });
+  const { preferences, updatePreferences } = useInkPreferences();
+
+  const saveAnnotation = useCallback((strokes: ScratchpadStroke[]) => {
+    persistAnnotation(questionId, strokes);
+  }, [questionId]);
+  const saveScratchpad = useCallback((strokes: ScratchpadStroke[]) => {
     persistScratchpad(questionId, { strokes, memo: memoRef.current });
   }, [questionId]);
-  const controller = useInkCanvas({
-    initialStrokes: initialState.strokes,
-    visible: open,
+  const recordWorkspaceAction = useCallback((action: InkWorkspaceAction) => {
+    timelineHistoryRef.current = [...timelineHistoryRef.current, action].slice(-MAX_HISTORY);
+    timelineFutureRef.current = [];
+    setTimelineCounts({ undo: timelineHistoryRef.current.length, redo: 0 });
+  }, []);
+  const recordProblemAction = useCallback(() => recordWorkspaceAction(["problem"]), [recordWorkspaceAction]);
+  const recordSolutionAction = useCallback(() => recordWorkspaceAction(["solution"]), [recordWorkspaceAction]);
+
+  const problemController = useInkCanvas({
+    initialStrokes: initialAnnotationRef.current,
+    visible: true,
+    surface: annotationSurface,
+    messages: annotationMessages,
+    tool,
+    preferences,
+    onChange: saveAnnotation,
+    onAction: recordProblemAction,
+    onStatus: setStatusKey,
+  });
+  const solutionController = useInkCanvas({
+    initialStrokes: initialScratchpad.strokes,
+    visible: true,
     surface: scratchpadSurface,
     messages: scratchpadMessages,
-    onChange: saveStrokes,
+    tool,
+    preferences,
+    onChange: saveScratchpad,
+    onAction: recordSolutionAction,
+    onStatus: setStatusKey,
   });
+
+  useEffect(() => {
+    if (!fullscreen) {
+      if (!returnFullscreenFocusRef.current) return;
+      returnFullscreenFocusRef.current = false;
+      const frame = requestAnimationFrame(() => {
+        problemController.resizeCanvas();
+        solutionController.resizeCanvas();
+        fullscreenButtonRef.current?.focus();
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+    returnFullscreenFocusRef.current = true;
+    document.body.classList.add("quiz-ink-fullscreen-open");
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setFullscreen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    const frame = requestAnimationFrame(() => {
+      problemController.resizeCanvas();
+      solutionController.resizeCanvas();
+      fullscreenButtonRef.current?.focus();
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.classList.remove("quiz-ink-fullscreen-open");
+    };
+  }, [fullscreen, problemController.resizeCanvas, solutionController.resizeCanvas]);
+
+  function controllerFor(surface: InkSurfaceName) {
+    return surface === "problem" ? problemController : solutionController;
+  }
+
+  function undo() {
+    const action = timelineHistoryRef.current[timelineHistoryRef.current.length - 1];
+    if (!action) return;
+    timelineHistoryRef.current = timelineHistoryRef.current.slice(0, -1);
+    for (const surface of [...action].reverse()) controllerFor(surface).undo();
+    timelineFutureRef.current = [...timelineFutureRef.current, action].slice(-MAX_HISTORY);
+    setTimelineCounts({
+      undo: timelineHistoryRef.current.length,
+      redo: timelineFutureRef.current.length,
+    });
+    setStatusKey("problems.scratch.undone");
+  }
+
+  function redo() {
+    const action = timelineFutureRef.current[timelineFutureRef.current.length - 1];
+    if (!action) return;
+    timelineFutureRef.current = timelineFutureRef.current.slice(0, -1);
+    for (const surface of action) controllerFor(surface).redo();
+    timelineHistoryRef.current = [...timelineHistoryRef.current, action].slice(-MAX_HISTORY);
+    setTimelineCounts({
+      undo: timelineHistoryRef.current.length,
+      redo: timelineFutureRef.current.length,
+    });
+    setStatusKey("problems.scratch.redone");
+  }
+
+  function clearAll() {
+    const action: InkWorkspaceAction = [];
+    if (problemController.clear(false)) action.push("problem");
+    if (solutionController.clear(false)) action.push("solution");
+    if (action.length === 0) return;
+    recordWorkspaceAction(action);
+    setStatusKey("problems.ink.cleared");
+  }
+
+  function selectTool(next: ScratchpadTool) {
+    setTool(next);
+    setWriting(true);
+    setStatusKey(
+      next === "pen"
+        ? scratchpadMessages.penSelected
+        : next === "highlighter" ? scratchpadMessages.highlighterSelected : scratchpadMessages.eraserSelected,
+    );
+  }
+
+  function toggleWriting() {
+    setWriting(current => {
+      const next = !current;
+      setStatusKey(next ? "problems.annotation.active" : "problems.annotation.inactive");
+      return next;
+    });
+  }
 
   function changeMemo(value: string) {
     const next = value.slice(0, MAX_MEMO_LENGTH);
     memoRef.current = next;
     setMemo(next);
-    persistScratchpad(questionId, { strokes: controller.strokesRef.current, memo: next });
+    persistScratchpad(questionId, { strokes: solutionController.strokesRef.current, memo: next });
   }
 
-  return (
-    <details
-      className="quiz-scratchpad"
-      open={open}
-      onToggle={event => setOpen(event.currentTarget.open)}
-    >
-      <summary>
-        <span className="quiz-scratchpad-title">{t("problems.scratch.title")}</span>
-        <span className="quiz-scratchpad-summary">{t("problems.scratch.summary")}</span>
-      </summary>
-      <div className="quiz-scratchpad-panel">
-        <InkToolbar
-          ariaLabel={t("problems.scratch.toolbarAria")}
-          className="quiz-scratchpad-toolbar"
-          controller={controller}
-          clearAria={t("problems.scratch.clearAria")}
-          redoAria={t("problems.scratch.redoAria")}
-          undoAria={t("problems.scratch.undoAria")}
-        />
-        <p className="quiz-scratchpad-help" id={helpId}>{t("problems.scratch.help")}</p>
-        <canvas
-          ref={controller.canvasRef}
-          className={`quiz-scratchpad-canvas${controller.tool === "eraser" ? " erasing" : ""}${controller.preferences.pencilOnly ? " pencil-only" : ""}`}
-          aria-label={t("problems.scratch.canvasAria")}
-          aria-describedby={helpId}
-          onPointerDown={controller.startStroke}
-          onPointerMove={controller.appendSamples}
-          onPointerUp={event => controller.finishStroke(event, true)}
-          onPointerCancel={event => controller.finishStroke(event, false)}
-          onContextMenu={event => event.preventDefault()}
-        >
-          {t("problems.scratch.unsupported")}
-        </canvas>
-        <div className="quiz-scratchpad-text">
-          <label className="quiz-scratchpad-text-label" htmlFor={memoId}>
-            {t("problems.scratch.memoLabel")}
-          </label>
-          <textarea
-            id={memoId}
-            className="quiz-scratchpad-textarea"
-            name={`scratchpad-memo-${questionId}`}
-            rows={4}
-            maxLength={MAX_MEMO_LENGTH}
-            autoComplete="off"
-            dir="auto"
-            value={memo}
-            placeholder={t("problems.scratch.memoPlaceholder")}
-            aria-describedby={memoHelpId}
-            onChange={event => changeMemo(event.currentTarget.value)}
-            onBlur={() => controller.setStatusKey("problems.scratch.memoSaved")}
-          />
-          <p className="quiz-scratchpad-help" id={memoHelpId}>
-            {t("problems.scratch.memoHelp")}
-          </p>
-        </div>
-        <span className="quiz-scratchpad-status" role="status" aria-live="polite">{t(controller.statusKey)}</span>
-      </div>
-    </details>
-  );
-}
-
-interface QuizQuestionAnnotationProps {
-  questionId: number;
-  children: ReactNode;
-}
-
-const annotationMessages: InkMessages = {
-  ...scratchpadMessages,
-  ready: "problems.annotation.inactive",
-  cleared: "problems.annotation.cleared",
-};
-
-export function QuizQuestionAnnotation({ questionId, children }: QuizQuestionAnnotationProps) {
-  const { t } = useI18n();
-  const initialStrokesRef = useRef<ScratchpadStroke[] | null>(null);
-  if (initialStrokesRef.current === null) initialStrokesRef.current = restoreAnnotation(questionId);
-  const helpId = useId();
-  const [active, setActive] = useState(false);
-  const saveStrokes = useCallback((strokes: ScratchpadStroke[]) => {
-    persistAnnotation(questionId, strokes);
-  }, [questionId]);
-  const controller = useInkCanvas({
-    initialStrokes: initialStrokesRef.current,
-    visible: true,
-    surface: annotationSurface,
-    messages: annotationMessages,
-    onChange: saveStrokes,
-  });
-
-  function toggleActive() {
-    setActive(current => {
-      const next = !current;
-      controller.setStatusKey(next ? "problems.annotation.active" : "problems.annotation.inactive");
-      return next;
-    });
+  function trapFullscreenFocus(event: ReactKeyboardEvent<HTMLElement>) {
+    if (!fullscreen || event.key !== "Tab") return;
+    const focusable = Array.from(workspaceRef.current?.querySelectorAll<HTMLElement>(
+      'a[href], button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    ) ?? []);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
-  return (
+  const toolbarController: InkToolbarController = {
+    clear: clearAll,
+    preferences,
+    redo,
+    redoCount: timelineCounts.redo,
+    selectTool,
+    strokeCount: problemController.strokeCount + solutionController.strokeCount,
+    tool,
+    undo,
+    undoCount: timelineCounts.undo,
+    updatePreferences,
+  };
+
+  const workspace = (
     <section
-      className={`quiz-annotation${active ? " active" : ""}`}
-      aria-label={t("problems.annotation.toolbarAria")}
+      ref={workspaceRef}
+      className={`quiz-ink-workspace${writing ? " writing" : ""}${fullscreen ? " is-fullscreen" : ""}`}
+      aria-label={t("problems.ink.workspaceAria")}
+      aria-modal={fullscreen || undefined}
+      role={fullscreen ? "dialog" : undefined}
+      tabIndex={fullscreen ? -1 : undefined}
+      onKeyDown={trapFullscreenFocus}
     >
       <InkToolbar
-        ariaLabel={t("problems.annotation.toolbarAria")}
-        className="quiz-annotation-toolbar"
-        controller={controller}
-        clearAria={t("problems.annotation.clearAria")}
-        redoAria={t("problems.annotation.redoAria")}
-        undoAria={t("problems.annotation.undoAria")}
+        ariaLabel={t("problems.ink.toolbarAria")}
+        className="quiz-ink-workspace-toolbar"
+        controller={toolbarController}
+        clearAria={t("problems.ink.clearAria")}
+        redoAria={t("problems.ink.redoAria")}
+        undoAria={t("problems.ink.undoAria")}
         before={(
           <button
             type="button"
-            className="quiz-annotation-mode"
-            aria-pressed={active}
-            onClick={toggleActive}
+            className="quiz-ink-mode"
+            aria-pressed={writing}
+            onClick={toggleWriting}
           >
-            {t(active ? "problems.annotation.stop" : "problems.annotation.start")}
+            {t(writing ? "problems.ink.scroll" : "problems.ink.write")}
+          </button>
+        )}
+        after={(
+          <button
+            ref={fullscreenButtonRef}
+            type="button"
+            className="quiz-ink-fullscreen-toggle"
+            aria-pressed={fullscreen}
+            onClick={() => setFullscreen(current => !current)}
+          >
+            {t(fullscreen ? "problems.ink.exitFullscreen" : "problems.ink.fullscreen")}
           </button>
         )}
       />
-      <p className="quiz-annotation-help" id={helpId}>{t("problems.annotation.help")}</p>
-      <div className="quiz-annotation-surface">
-        <div className="quiz-annotation-content">{children}</div>
-        <canvas
-          ref={controller.canvasRef}
-          className={`quiz-annotation-canvas${controller.tool === "eraser" ? " erasing" : ""}${controller.preferences.pencilOnly ? " pencil-only" : ""}`}
-          aria-label={t("problems.annotation.canvasAria")}
-          aria-describedby={helpId}
-          aria-hidden={!active}
-          onPointerDown={controller.startStroke}
-          onPointerMove={controller.appendSamples}
-          onPointerUp={event => controller.finishStroke(event, true)}
-          onPointerCancel={event => controller.finishStroke(event, false)}
-          onContextMenu={event => event.preventDefault()}
-        >
-          {t("problems.scratch.unsupported")}
-        </canvas>
+      <p className="quiz-ink-workspace-help" id={helpId}>{t("problems.ink.help")}</p>
+      <div className="quiz-ink-document">
+        <div className="quiz-ink-problem-surface">
+          <div className="quiz-ink-problem-content">{children}</div>
+          <canvas
+            ref={problemController.canvasRef}
+            className={`quiz-ink-canvas problem${tool === "eraser" ? " erasing" : ""}${preferences.pencilOnly ? " pencil-only" : ""}`}
+            aria-label={t("problems.annotation.canvasAria")}
+            aria-describedby={helpId}
+            aria-hidden={!writing}
+            onPointerDown={problemController.startStroke}
+            onPointerMove={problemController.appendSamples}
+            onPointerUp={event => problemController.finishStroke(event, true)}
+            onPointerCancel={event => problemController.finishStroke(event, false)}
+            onContextMenu={event => event.preventDefault()}
+          >
+            {t("problems.scratch.unsupported")}
+          </canvas>
+        </div>
+        <section className="quiz-ink-solution" aria-labelledby={solutionTitleId}>
+          <div className="quiz-ink-solution-heading">
+            <h3 id={solutionTitleId}>{t("problems.ink.solutionTitle")}</h3>
+            <span>{t("problems.ink.solutionSummary")}</span>
+          </div>
+          <canvas
+            ref={solutionController.canvasRef}
+            className={`quiz-ink-canvas solution${tool === "eraser" ? " erasing" : ""}${preferences.pencilOnly ? " pencil-only" : ""}`}
+            aria-label={t("problems.scratch.canvasAria")}
+            aria-describedby={helpId}
+            aria-hidden={!writing}
+            onPointerDown={solutionController.startStroke}
+            onPointerMove={solutionController.appendSamples}
+            onPointerUp={event => solutionController.finishStroke(event, true)}
+            onPointerCancel={event => solutionController.finishStroke(event, false)}
+            onContextMenu={event => event.preventDefault()}
+          >
+            {t("problems.scratch.unsupported")}
+          </canvas>
+          <div className="quiz-scratchpad-text">
+            <label className="quiz-scratchpad-text-label" htmlFor={memoId}>
+              {t("problems.scratch.memoLabel")}
+            </label>
+            <textarea
+              id={memoId}
+              className="quiz-scratchpad-textarea"
+              name={`scratchpad-memo-${questionId}`}
+              rows={3}
+              maxLength={MAX_MEMO_LENGTH}
+              autoComplete="off"
+              dir="auto"
+              value={memo}
+              placeholder={t("problems.scratch.memoPlaceholder")}
+              aria-describedby={memoHelpId}
+              onChange={event => changeMemo(event.currentTarget.value)}
+              onBlur={() => setStatusKey("problems.scratch.memoSaved")}
+            />
+            <p className="quiz-scratchpad-help" id={memoHelpId}>
+              {t("problems.scratch.memoHelp")}
+            </p>
+          </div>
+        </section>
       </div>
-      <span className="quiz-scratchpad-status" role="status" aria-live="polite">{t(controller.statusKey)}</span>
+      <span className="quiz-scratchpad-status" role="status" aria-live="polite">{t(statusKey)}</span>
     </section>
   );
+  return fullscreen && typeof document !== "undefined" ? createPortal(workspace, document.body) : workspace;
 }

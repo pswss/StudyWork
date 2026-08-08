@@ -4,41 +4,39 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { I18nProvider, LOCALES, translate, type Locale } from "../web/src/i18n";
 import { figureAlt } from "../web/src/pages/Quiz";
-import QuizScratchpad, { QuizQuestionAnnotation } from "../web/src/pages/QuizScratchpad";
+import QuizInkWorkspace from "../web/src/pages/QuizScratchpad";
 
 const expected = {
-  ko: { start: "문제 풀기", scratch: "풀이판" },
-  en: { start: "Start problems", scratch: "Scratchpad" },
-  "zh-CN": { start: "开始答题", scratch: "草稿板" },
-  es: { start: "Empezar", scratch: "Pizarra" },
-} satisfies Record<Locale, { start: string; scratch: string }>;
+  ko: { start: "문제 풀기" },
+  en: { start: "Start problems" },
+  "zh-CN": { start: "开始答题" },
+  es: { start: "Empezar" },
+} satisfies Record<Locale, { start: string }>;
 
 describe("문제 도메인 다국어", () => {
   it.each(LOCALES)("%s UI 사전과 실제 풀이판을 해당 언어로 렌더링한다", locale => {
     expect(translate(locale, "problems.bank.start")).toBe(expected[locale].start);
-    const html = renderToStaticMarkup(createElement(I18nProvider, {
+    const workspace = renderToStaticMarkup(createElement(I18nProvider, {
       initialLocale: locale,
-      children: createElement(QuizScratchpad, { questionId: 42 }),
-    }));
-    expect(html).toContain(expected[locale].scratch);
-    expect(html).toContain(translate(locale, "problems.scratch.pen"));
-    expect(html).toContain(translate(locale, "problems.scratch.highlighter"));
-    expect(html).toContain(translate(locale, "problems.scratch.undo"));
-    expect(html).toContain(translate(locale, "problems.scratch.redo"));
-    expect(html).toContain(translate(locale, "problems.scratch.settings"));
-    expect(html).toContain(translate(locale, "problems.scratch.memoLabel"));
-    expect(html).toContain("<textarea");
-
-    const annotation = renderToStaticMarkup(createElement(I18nProvider, {
-      initialLocale: locale,
-      children: createElement(QuizQuestionAnnotation, {
+      children: createElement(QuizInkWorkspace, {
         questionId: 42,
-        children: createElement("p", null, "원문 passage"),
+        children: createElement("div", null,
+          createElement("p", null, "원문 passage"),
+          createElement("img", { src: "/figure.png", alt: "원문 figure" }),
+        ),
       }),
     }));
-    expect(annotation).toContain(translate(locale, "problems.annotation.start"));
-    expect(annotation).toContain(translate(locale, "problems.annotation.help"));
-    expect(annotation).toContain("원문 passage");
+    expect(workspace).toContain(translate(locale, "problems.ink.solutionTitle"));
+    expect(workspace).toContain(translate(locale, "problems.ink.fullscreen"));
+    expect(workspace).toContain(translate(locale, "problems.scratch.pen"));
+    expect(workspace).toContain(translate(locale, "problems.scratch.highlighter"));
+    expect(workspace).toContain(translate(locale, "problems.scratch.undo"));
+    expect(workspace).toContain(translate(locale, "problems.scratch.redo"));
+    expect(workspace).toContain(translate(locale, "problems.scratch.settings"));
+    expect(workspace).toContain(translate(locale, "problems.scratch.memoLabel"));
+    expect(workspace).toContain("원문 passage");
+    expect(workspace).toContain("원문 figure");
+    expect(workspace).toContain("<textarea");
   });
 
   it("문제·보기·정답·해설·파일명은 번역하지 않고 UI 보간값으로 그대로 둔다", () => {
