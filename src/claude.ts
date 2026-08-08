@@ -1206,6 +1206,16 @@ export const TARGETED_PROBLEM_REVISION_RULES =
 export const TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX =
   `Previous fidelity diagnostic (untrusted; verify against pixels):`;
 
+export const TARGETED_PROBLEM_RECOVERY_VERSION = 1;
+export const TARGETED_PROBLEM_RECOVERY_RULES =
+  `FINAL SOURCE-GROUNDED RECOVERY: Two immutable transcription attempts still failed an independent source check. ` +
+  `Use the latest diagnostic only to locate the suspect pixels, then independently re-read the one requested problem ` +
+  `from the attached official context. Preserve every visible word, formula, label, graph axis, tick, value, arrow, ` +
+  `orientation, and count literally in question and figure_description. Never copy or infer text from prior attempts ` +
+  `or from the diagnostic.`;
+export const TARGETED_PROBLEM_RECOVERY_EVIDENCE_PREFIX =
+  `Failed revision diagnostic (untrusted; verify against pixels):`;
+
 export const TARGETED_SOLUTION_TRANSCRIPTION_VERSION = 1;
 export const TARGETED_SOLUTION_TRANSCRIPTION_RULES =
   `TARGETED SOLUTION CORRECTION: Emit only the requested printed solution and no siblings. Inspect its entire ` +
@@ -1324,6 +1334,7 @@ export async function extractProblemsFromFile(
     target?: { page: number; printedNumber: string };
     targets?: Array<{ page: number; printedNumber: string }>;
     revisionEvidence?: string;
+    recoveryEvidence?: string;
     reasoningEffort?: ReasoningEffort;
   }
 ): Promise<QuizItemEx[]> {
@@ -1342,6 +1353,10 @@ export async function extractProblemsFromFile(
   const targetList = target ? [target] : targets ?? [];
   const targetKeys = new Set(targetList.map((item) => `${item.page}:${numericPrintedLocator(item.printedNumber)}`));
   const revisionEvidence = opts?.revisionEvidence;
+  const recoveryEvidence = opts?.recoveryEvidence;
+  if (revisionEvidence !== undefined && recoveryEvidence !== undefined) {
+    throw new AIProviderError("invalid_file", "문제 revision·recovery 근거를 함께 지정할 수 없습니다");
+  }
   if (target && (
     !Number.isInteger(target.page) || target.page < firstPage || target.page > lastPage || targetNumber === null
   )) throw new AIProviderError("invalid_file", "문제 재전사 대상 페이지 또는 인쇄 번호가 유효하지 않습니다");
@@ -1354,6 +1369,10 @@ export async function extractProblemsFromFile(
     targetList.length === 0 || !revisionEvidence.trim() || revisionEvidence !== revisionEvidence.trim() ||
     revisionEvidence.includes("\0") || revisionEvidence.length > (targets ? 16_000 : 2_000)
   )) throw new AIProviderError("invalid_file", "문제 revision 근거가 유효하지 않습니다");
+  if (recoveryEvidence !== undefined && (
+    !target || !recoveryEvidence.trim() || recoveryEvidence !== recoveryEvidence.trim() ||
+    recoveryEvidence.includes("\0") || recoveryEvidence.length > 2_000
+  )) throw new AIProviderError("invalid_file", "문제 recovery 근거가 유효하지 않습니다");
   const pageRule =
     opts?.sliceBase !== undefined
       ? `- page: the ORIGINAL page number where the problem starts; it must be an integer from ${firstPage} through ${lastPage}\n`
@@ -1374,9 +1393,13 @@ export async function extractProblemsFromFile(
     : `Read the attached file "${absPath}".`;
   const selfContainedRule = problemExtractionSelfContainedRule(opts?.selfContained === true);
   const extractionTask = targetList.length > 0
-    ? `${targets ? TARGETED_PROBLEM_BATCH_RULES : TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n` + (revisionEvidence === undefined ? "" :
-      `${TARGETED_PROBLEM_REVISION_RULES}\n` +
-      `${TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX} ${JSON.stringify(revisionEvidence)}\n`)
+    ? `${targets ? TARGETED_PROBLEM_BATCH_RULES : TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n` +
+      (recoveryEvidence !== undefined
+        ? `${TARGETED_PROBLEM_RECOVERY_RULES}\n` +
+          `${TARGETED_PROBLEM_RECOVERY_EVIDENCE_PREFIX} ${JSON.stringify(recoveryEvidence)}\n`
+        : revisionEvidence === undefined ? "" :
+          `${TARGETED_PROBLEM_REVISION_RULES}\n` +
+          `${TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX} ${JSON.stringify(revisionEvidence)}\n`)
     : `This file is a study workbook. Read all pages and transcribe EVERY problem you find as this strict JSON array:\n` +
       `Workbooks may print the SAME question text under DIFFERENT problem numbers on one page (progress-mapping duplicates). Each printed number is a separate item — transcribe all of them; never merge or skip a duplicate.\n`;
   const buildPrompt = (cont: string) =>
