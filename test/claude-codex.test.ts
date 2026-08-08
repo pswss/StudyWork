@@ -135,7 +135,7 @@ describe("StudyWork Codex facade", () => {
       box: null,
     });
     providerMock.complete.mockResolvedValueOnce({
-      text: JSON.stringify([item("3"), item("1"), item("2")]),
+      text: JSON.stringify([item("23"), item("17"), item("22")]),
       provider: "codex-cli",
       model: "gpt-5.6-sol",
     });
@@ -144,16 +144,16 @@ describe("StudyWork Codex facade", () => {
       sliceBase: 1,
       contentPageCount: 4,
       targets: [
-        { page: 3, printedNumber: "1" },
-        { page: 3, printedNumber: "2" },
-        { page: 3, printedNumber: "3" },
+        { page: 3, printedNumber: "17" },
+        { page: 3, printedNumber: "22" },
+        { page: 3, printedNumber: "23" },
       ],
       selfContained: true,
       reasoningEffort: "high",
     });
-    expect(result.map((value) => value.number)).toEqual(["3", "1", "2"]);
+    expect(result.map((value) => value.number)).toEqual(["23", "17", "22"]);
     const request = providerMock.complete.mock.calls[0][0];
-    expect(request.prompt).toContain("3:1, 3:2, 3:3");
+    expect(request.prompt).toContain("3:17, 3:22, 3:23");
     expect(request.prompt).toContain("Emit EVERY listed page:number target exactly once");
     expect(request.prompt).not.toContain("Emit only the requested printed problem and no siblings");
 
@@ -161,17 +161,17 @@ describe("StudyWork Codex facade", () => {
       sliceBase: 1,
       contentPageCount: 4,
       targets: [
-        { page: 3, printedNumber: "1" },
-        { page: 3, printedNumber: "2" },
-        { page: 3, printedNumber: "3" },
+        { page: 3, printedNumber: "17" },
+        { page: 3, printedNumber: "22" },
+        { page: 3, printedNumber: "23" },
       ],
       selfContained: true,
       reasoningEffort: "high" as const,
     };
-    providerMock.complete.mockResolvedValueOnce({ text: JSON.stringify([item("1"), item("3")]) });
+    providerMock.complete.mockResolvedValueOnce({ text: JSON.stringify([item("17"), item("23")]) });
     await expect(extractProblemsFromFile(problem, "pdf", options)).rejects.toThrow("sparse key 집합");
     providerMock.complete.mockResolvedValueOnce({
-      text: JSON.stringify([item("1"), item("2"), item("3"), item("4")]),
+      text: JSON.stringify([item("17"), item("22"), item("23"), item("24")]),
     });
     await expect(extractProblemsFromFile(problem, "pdf", options)).rejects.toThrow("sparse key 집합");
   });

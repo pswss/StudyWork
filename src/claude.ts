@@ -1052,7 +1052,7 @@ function normalizeExtractedOxAnswer(answer: string, itemIndex: number): string {
 }
 
 // 청크 하나라도 잘못되면 throw해 호출부의 청크 재시도를 탄다. 채점 불가 항목을 부분 저장하지 않는다.
-export function parseQuizItemsEx(text: string): QuizItemEx[] {
+function parseQuizItemsExInternal(text: string, allowSparsePrintedNumbers: boolean): QuizItemEx[] {
   const parsed = parseJsonArray(text);
   const QT = ["mcq", "short", "ox"] as const;
   const DF = ["하", "중", "상"] as const;
@@ -1124,8 +1124,12 @@ export function parseQuizItemsEx(text: string): QuizItemEx[] {
     }
     return { number, qtype, difficulty, question, choices, answer, explanation, page, figure, figure_description: figureDescription, box };
   });
-  validatePrintedQuestionSequence(items);
+  if (!allowSparsePrintedNumbers) validatePrintedQuestionSequence(items);
   return items;
+}
+
+export function parseQuizItemsEx(text: string): QuizItemEx[] {
+  return parseQuizItemsExInternal(text, false);
 }
 
 export function parseSolutionItems(
@@ -1430,7 +1434,7 @@ export async function extractProblemsFromFile(
     const truncated = looksTruncated(result);
     let parsedItems: QuizItemEx[];
     try {
-      parsedItems = parseQuizItemsEx(result);
+      parsedItems = parseQuizItemsExInternal(result, targets !== undefined);
     } catch (error) {
       throw new ProblemChunkValidationError(error instanceof Error ? error.message : "문제 구조 검증 실패");
     }
