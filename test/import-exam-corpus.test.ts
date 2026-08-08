@@ -1,8 +1,10 @@
 import Database from "better-sqlite3";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
 import { LocalDB } from "../src/localdb";
@@ -25,6 +27,7 @@ import {
   PROBLEM_SLICE_STRIDE,
   PROBLEM_REPAIR_VERSION,
   assertImportSchema,
+  buildImageOnlyPdfFromPngs,
   canonicalEvidenceHash,
   compareCorpusQuestionKeys,
   commitCorpusEntry,
@@ -47,6 +50,8 @@ import {
   type ClassificationDecision,
   type PdfEvidence,
 } from "../scripts/import-exam-corpus";
+
+const execFileP = promisify(execFile);
 
 describe("exam corpus importer", () => {
   it("uses one stable canonical evidence hash vector", () => {
@@ -401,12 +406,20 @@ describe("exam corpus importer", () => {
       ))).toThrow("보기 범위를 벗어났습니다");
 
       expect(parsePdfInfoOutput("Pages: 28\nEncrypted: yes (print:yes copy:yes change:no algorithm:AES)\n"))
-        .toEqual({ pages: 28, encrypted: true });
-      expect(() => parsePdfInfoOutput("Pages: 28\nEncrypted: yes (print:yes copy:no algorithm:AES)\n"))
-        .toThrow("인쇄와 복사가 모두 허용");
+        .toEqual({ pages: 28, encrypted: true, printAllowed: true, copyAllowed: true });
+      expect(parsePdfInfoOutput("Pages: 28\nEncrypted: yes (print:yes copy:no algorithm:AES)\n"))
+        .toEqual({ pages: 28, encrypted: true, printAllowed: true, copyAllowed: false });
+      expect(() => parsePdfInfoOutput("Pages: 28\nEncrypted: yes (print:no copy:yes algorithm:AES)\n"))
+        .toThrow("인쇄 권한이 명시적으로 허용");
+      expect(() => parsePdfInfoOutput("Pages: 28\nEncrypted: yes (copy:yes algorithm:AES)\n"))
+        .toThrow("인쇄 권한이 명시적으로 허용");
+      expect(() => parsePdfInfoOutput("Pages: 28\nEncrypted: yes (print:yes algorithm:AES)\n"))
+        .toThrow("복사 권한을 확인");
+      expect(parsePdfInfoOutput("Pages: 2\nEncrypted: no\n"))
+        .toEqual({ pages: 2, encrypted: false, printAllowed: true, copyAllowed: true });
       const sourcePdf = await PDFDocument.create();
-      sourcePdf.addPage();
-      sourcePdf.addPage();
+      sourcePdf.addPage([100, 200]);
+      sourcePdf.addPage([300, 150]);
       const sourcePdfBytes = Buffer.from(await sourcePdf.save());
       const sourcePdfPath = join(root, "normalization-source.pdf");
       writeFileSync(sourcePdfPath, sourcePdfBytes);
@@ -427,7 +440,27 @@ describe("exam corpus importer", () => {
         expect(existsSync(analysis.path)).toBe(true);
       })).resolves.toBeUndefined();
       expect(existsSync(normalizedPath)).toBe(false);
+      expect(existsSync(dirname(normalizedPath))).toBe(false);
       expect(existsSync(sourcePdfPath)).toBe(true);
+
+      const pngPrefix = join(root, "image-only-page");
+      const pdftocairo = existsSync("/opt/homebrew/bin/pdftocairo")
+        ? "/opt/homebrew/bin/pdftocairo"
+        : "pdftocairo";
+      await execFileP(pdftocairo, ["-png", "-r", "72", sourcePdfPath, pngPrefix]);
+      const imageOnlyPath = join(root, "image-only.pdf");
+      await buildImageOnlyPdfFromPngs(
+        [`${pngPrefix}-1.png`, `${pngPrefix}-2.png`],
+        imageOnlyPath,
+        72
+      );
+      const imageOnly = await PDFDocument.load(readFileSync(imageOnlyPath));
+      expect(imageOnly.getPageCount()).toBe(2);
+      expect(imageOnly.getPage(0).getSize()).toEqual({ width: 100, height: 200 });
+      expect(imageOnly.getPage(1).getSize()).toEqual({ width: 300, height: 150 });
+      const pdftotext = existsSync("/opt/homebrew/bin/pdftotext") ? "/opt/homebrew/bin/pdftotext" : "pdftotext";
+      const extracted = await execFileP(pdftotext, [imageOnlyPath, "-"]);
+      expect(String(extracted.stdout).trim()).toBe("");
 
       const makeEvidence = (name: string, url: string): PdfEvidence => {
         const path = join(root, name);

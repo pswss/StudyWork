@@ -27,6 +27,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { PDFDocument } from "pdf-lib";
 import {
   extractProblemsFromFile,
   extractSolutionsFromFile,
@@ -840,6 +841,8 @@ async function writeImmutableEvidence(path: string, value: unknown): Promise<str
 type ImportPdfInfo = {
   pages: number;
   encrypted: boolean;
+  printAllowed: boolean;
+  copyAllowed: boolean;
 };
 
 export function parsePdfInfoOutput(output: string): ImportPdfInfo {
@@ -849,10 +852,31 @@ export function parsePdfInfoOutput(output: string): ImportPdfInfo {
     throw new Error("pdfinfo 결과에 페이지 또는 암호화 정보가 없습니다");
   }
   const isEncrypted = encrypted[1].toLowerCase() === "yes";
-  if (isEncrypted && (!/\bprint:yes\b/i.test(encrypted[2]) || !/\bcopy:yes\b/i.test(encrypted[2]))) {
-    throw new Error("암호화 PDF는 인쇄와 복사가 모두 허용되어야 합니다");
+  if (!isEncrypted) return { pages, encrypted: false, printAllowed: true, copyAllowed: true };
+  const print = /\bprint:(yes|no)\b/i.exec(encrypted[2])?.[1]?.toLowerCase();
+  const copy = /\bcopy:(yes|no)\b/i.exec(encrypted[2])?.[1]?.toLowerCase();
+  if (print !== "yes") throw new Error("암호화 PDF는 인쇄 권한이 명시적으로 허용되어야 합니다");
+  if (!copy) throw new Error("암호화 PDF의 복사 권한을 확인할 수 없습니다");
+  return { pages, encrypted: true, printAllowed: true, copyAllowed: copy === "yes" };
+}
+
+export async function buildImageOnlyPdfFromPngs(
+  pngPaths: string[],
+  outputPath: string,
+  dpi = 180
+): Promise<void> {
+  if (pngPaths.length === 0 || !Number.isFinite(dpi) || dpi <= 0) {
+    throw new Error("image-only PDF 페이지 또는 DPI가 유효하지 않습니다");
   }
-  return { pages, encrypted: isEncrypted };
+  const document = await PDFDocument.create();
+  for (const path of pngPaths) {
+    const image = await document.embedPng(readFileSync(path));
+    const width = image.width * 72 / dpi;
+    const height = image.height * 72 / dpi;
+    const page = document.addPage([width, height]);
+    page.drawImage(image, { x: 0, y: 0, width, height });
+  }
+  writeFileSync(outputPath, await document.save());
 }
 
 function popplerCommand(name: "pdfinfo" | "pdftocairo"): string {
@@ -869,7 +893,7 @@ async function readImportPdfInfo(path: string): Promise<ImportPdfInfo> {
     });
     return parsePdfInfoOutput(String(stdout));
   } catch (error) {
-    if (error instanceof Error && /인쇄와 복사|pdfinfo 결과/.test(error.message)) throw error;
+    if (error instanceof Error && /인쇄 권한|복사 권한|pdfinfo 결과/.test(error.message)) throw error;
     throw new Error("PDF가 암호로 잠겼거나 pdfinfo로 읽을 수 없습니다");
   }
 }
@@ -886,11 +910,33 @@ export async function withImporterPdfForAnalysis<T>(
   const dir = mkdtempSync(join(tmpdir(), "studywork-ebsi-pdf-"));
   const normalizedPath = join(dir, "normalized.pdf");
   try {
-    await execFileP(popplerCommand("pdftocairo"), ["-pdf", evidence.path, normalizedPath], {
-      encoding: "utf8",
-      timeout: 2 * 60 * 1000,
-      maxBuffer: 4 * 1024 * 1024,
-    });
+    if (sourceInfo.copyAllowed) {
+      await execFileP(popplerCommand("pdftocairo"), ["-pdf", evidence.path, normalizedPath], {
+        encoding: "utf8",
+        timeout: 2 * 60 * 1000,
+        maxBuffer: 4 * 1024 * 1024,
+      });
+    } else {
+      const prefix = join(dir, "page");
+      await execFileP(popplerCommand("pdftocairo"), ["-png", "-r", "180", evidence.path, prefix], {
+        encoding: "utf8",
+        timeout: 5 * 60 * 1000,
+        maxBuffer: 4 * 1024 * 1024,
+      });
+      const pngs = readdirSync(dir).flatMap((name) => {
+        const match = /^page-(\d+)\.png$/u.exec(name);
+        return match ? [{ page: Number(match[1]), path: join(dir, name) }] : [];
+      }).sort((left, right) => left.page - right.page);
+      if (
+        pngs.length !== evidence.pageCount ||
+        pngs.some((item, index) => item.page !== index + 1)
+      ) throw new Error("image-only PDF 렌더 페이지가 원본과 다릅니다");
+      await buildImageOnlyPdfFromPngs(pngs.map((item) => item.path), normalizedPath);
+    }
+    const normalizedStat = statSync(normalizedPath);
+    if (!normalizedStat.isFile() || normalizedStat.size < 5 || normalizedStat.size > MAX_PDF_BYTES) {
+      throw new Error("정규화 PDF 크기가 AI 입력 한도를 벗어났습니다");
+    }
     const normalizedInfo = await readImportPdfInfo(normalizedPath);
     if (normalizedInfo.encrypted || normalizedInfo.pages !== evidence.pageCount) {
       throw new Error("정규화 PDF가 암호화됐거나 원본 페이지 수와 다릅니다");
