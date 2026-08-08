@@ -26,6 +26,9 @@ import {
   TARGETED_PROBLEM_REVISION_VERSION,
   TARGETED_SOLUTION_TRANSCRIPTION_RULES,
   TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
+  TARGETED_SOLUTION_REVISION_EVIDENCE_PREFIX,
+  TARGETED_SOLUTION_REVISION_RULES,
+  TARGETED_SOLUTION_REVISION_VERSION,
 } from "../src/claude";
 
 export const TARGET_SUBJECTS = [
@@ -261,6 +264,8 @@ const SOLUTION_FIDELITY_SLICE_PAGES = 22;
 const SOLUTION_FIDELITY_SLICE_STRIDE = 18;
 const SOLUTION_REPAIR_VERSION = 1;
 const SOLUTION_REPAIR_FIDELITY_VERSION = 1;
+const SOLUTION_REVISION_VERSION = 1;
+const SOLUTION_REVISION_FIDELITY_VERSION = 1;
 const TRANSCRIPTION_GATE_VERSION = 1;
 const TRANSCRIPTION_GATE_RULES = `
 Independently compare every supplied transcription with the attached official source pixels. Check the complete shared passage and source material, the full stem, every answer choice and distractor, inequalities, signs, coefficients, exponents, fractions, formulas, tables, qtype, and all figure or visual dependencies including figure_description. Check that box plausibly covers the source problem and figure, without requiring pixel-perfect crop decimals. Do not infer fidelity from plausibility or from the proposed answer. Base the curriculum decision on the source pixels, not on an inaccurate supplied transcription.
@@ -297,6 +302,11 @@ const TARGETED_PROBLEM_REVISION_PROMPT_DIGEST = sha256(
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256(
+  `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`,
+);
+const TARGETED_SOLUTION_REVISION_PROMPT_DIGEST = sha256(
+  `${TARGETED_SOLUTION_REVISION_VERSION}\n${TARGETED_SOLUTION_REVISION_RULES}\n` +
+  `${TARGETED_SOLUTION_REVISION_EVIDENCE_PREFIX}\n` +
   `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`,
 );
 
@@ -1624,9 +1634,483 @@ function parseRepairedSolution(
   };
 }
 
+type VerifiedFirstSolutionRepair = {
+  solution: OfficialSolution;
+  decision: SolutionFidelityDecision;
+  repairArtifact: EvidencePointer;
+  fidelityArtifact: EvidencePointer;
+  effectiveSolutionItemHash: string;
+  evidence: Record<string, unknown>;
+};
+
+function isTerminalSolutionDecision(
+  input: SolutionFidelityInput,
+  solution: OfficialSolution,
+  decision: SolutionFidelityDecision,
+): boolean {
+  const terminalAnswer = decision.answerStatus === "exact"
+    || decision.answerStatus === "not_visible" && input.allowDerivedMarkerAnswer;
+  return decision.sourcePage === solution.page && decision.explanationStatus === "exact" && terminalAnswer;
+}
+
+function verifyFirstSolutionRepair(
+  stateDir: string,
+  entry: ManifestEntry,
+  solutionEvidence: DownloadEvidence,
+  effectiveProblemCorpusHash: string,
+  input: SolutionFidelityInput,
+  baseSolution: OfficialSolution,
+  baseFidelityArtifact: EvidencePointer,
+  repair: Record<string, unknown>,
+): VerifiedFirstSolutionRepair {
+  const key = input.key;
+  const printedNumber = exactString(repair.printedNumber, `${key}.printedNumber`);
+  const basePage = integer(repair.basePage, `${key}.basePage`, 1);
+  const effectivePage = integer(repair.effectivePage, `${key}.effectivePage`, 1);
+  const contextFrom = integer(repair.contextFrom, `${key}.contextFrom`, 1);
+  const contextTo = integer(repair.contextTo, `${key}.contextTo`, contextFrom);
+  const baseOwnedFrom = integer(repair.baseOwnedFrom, `${key}.baseOwnedFrom`, contextFrom);
+  const baseOwnedTo = integer(repair.baseOwnedTo, `${key}.baseOwnedTo`, baseOwnedFrom);
+  if (printedNumber !== input.printedNumber || basePage !== input.sourcePage
+    || contextFrom !== input.baseContextFrom || contextTo !== input.baseContextTo
+    || baseOwnedFrom !== input.baseOwnedFrom || baseOwnedTo !== input.baseOwnedTo
+    || basePage < baseOwnedFrom || basePage > baseOwnedTo
+    || effectivePage < contextFrom || effectivePage > contextTo
+    || contextTo - contextFrom + 1 > SOLUTION_SLICE_PAGES) {
+    throw new Error(`${key}: solution repair identity/context does not match owning base 6/4 chunk`);
+  }
+  const baseSolutionCheckpoint = evidencePointer(repair.baseSolutionCheckpoint, `${key}.baseSolutionCheckpoint`);
+  const baseFidelityCheckpoint = evidencePointer(repair.baseFidelityCheckpoint, `${key}.baseFidelityCheckpoint`);
+  sameEvidencePointer(baseSolutionCheckpoint, input.baseSolutionCheckpoint, `${key}.baseSolutionCheckpoint`);
+  sameEvidencePointer(baseFidelityCheckpoint, baseFidelityArtifact, `${key}.baseFidelityCheckpoint`);
+  const baseSolutionPath = confinedEvidencePath(stateDir, baseSolutionCheckpoint, `${key} base solution checkpoint`);
+  if (hashFile(baseSolutionPath) !== baseSolutionCheckpoint.sha256) {
+    throw new Error(`${key}: base solution checkpoint hash mismatch`);
+  }
+  readBoundEvidence(stateDir, baseFidelityCheckpoint, `${key} base fidelity checkpoint`);
+  if (repair.baseSolutionItemHash !== input.baseSolutionItemHash
+    || repair.baseRawAnswerHash !== sha256(input.rawAnswer)
+    || repair.baseExplanationHash !== sha256(input.explanation)) {
+    throw new Error(`${key}: solution repair base hashes do not match immutable evidence`);
+  }
+
+  const repairArtifact = evidencePointer(repair.repairArtifact, `${key}.repairArtifact`);
+  const expectedRepairPath = `solution-repairs/v${SOLUTION_REPAIR_VERSION}-${String(basePage).padStart(4, "0")}-` +
+    `${printedNumber.padStart(4, "0")}-${baseFidelityArtifact.sha256}.json`;
+  if (repairArtifact.path !== expectedRepairPath) throw new Error(`${key}: solution repair path is invalid`);
+  const repairCheckpoint = readBoundEvidence(stateDir, repairArtifact, `${key} solution repair`);
+  const corrected = parseRepairedSolution(repairCheckpoint.item, `${key} solution repair.item`, baseSolution);
+  if (corrected.printedNumber !== printedNumber || corrected.page !== effectivePage
+    || corrected.page < contextFrom || corrected.page > contextTo) {
+    throw new Error(`${key}: repaired solution changed printed number or escaped its bounded context`);
+  }
+  const effectiveSolutionItemHash = canonicalEvidenceHash(corrected.evidence);
+  const expectedRepairCheckpoint = {
+    version: SOLUTION_REPAIR_VERSION,
+    entryId: entry.id,
+    key,
+    printedNumber,
+    basePage,
+    contextFrom,
+    contextTo,
+    baseOwnedFrom,
+    baseOwnedTo,
+    sourceHash: solutionEvidence.sha256,
+    effectiveProblemCorpusHash,
+    baseSolutionCheckpoint,
+    baseFidelityCheckpoint,
+    baseSolutionItemHash: input.baseSolutionItemHash,
+    baseRawAnswerHash: sha256(input.rawAnswer),
+    baseExplanationHash: sha256(input.explanation),
+    promptVersion: TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
+    promptDigest: TARGETED_SOLUTION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    effectivePage,
+    item: corrected.evidence,
+  };
+  if (!isDeepStrictEqual(repairCheckpoint, expectedRepairCheckpoint)) {
+    throw new Error(`${key}: solution repair metadata/content is stale or incomplete`);
+  }
+
+  const fidelityArtifactRow = object(repair.fidelityArtifact, `${key}.fidelityArtifact`);
+  if (Object.keys(fidelityArtifactRow).sort().join(",") !== "path,promptDigest,sha256") {
+    throw new Error(`${key}.fidelityArtifact has unexpected fields`);
+  }
+  const fidelityArtifact = evidencePointer(
+    { path: fidelityArtifactRow.path, sha256: fidelityArtifactRow.sha256 },
+    `${key}.fidelityArtifact`,
+  );
+  if (fidelityArtifactRow.promptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST) {
+    throw new Error(`${key}: repaired solution fidelity prompt is stale`);
+  }
+  const repairedInput: SolutionFidelityInput = {
+    ...input,
+    sourcePage: corrected.page,
+    rawAnswer: corrected.rawAnswer,
+    explanation: corrected.explanation,
+  };
+  const repairedInputHash = canonicalEvidenceHash(repairedInput);
+  const expectedFidelityPath = `solution-fidelity-repairs/v${SOLUTION_REPAIR_FIDELITY_VERSION}-` +
+    `${String(basePage).padStart(4, "0")}-${printedNumber.padStart(4, "0")}-` +
+    `${baseFidelityArtifact.sha256}-${effectiveSolutionItemHash}.json`;
+  if (fidelityArtifact.path !== expectedFidelityPath) {
+    throw new Error(`${key}: repaired solution fidelity path is invalid`);
+  }
+  const fidelityCheckpoint = readBoundEvidence(stateDir, fidelityArtifact, `${key} repaired solution fidelity`);
+  const repairedDecision = solutionFidelityDecision(
+    fidelityCheckpoint.item,
+    repairedInput,
+    `${key} repaired solution fidelity.item`,
+  );
+  const expectedFidelityCheckpoint = {
+    version: SOLUTION_REPAIR_FIDELITY_VERSION,
+    entryId: entry.id,
+    key,
+    sourceHash: solutionEvidence.sha256,
+    from: contextFrom,
+    to: contextTo,
+    basePage,
+    effectivePage,
+    baseOwnedFrom,
+    baseOwnedTo,
+    effectiveProblemCorpusHash,
+    baseSolutionCheckpoint,
+    baseFidelityCheckpoint,
+    repairArtifact,
+    effectiveSolutionItemHash,
+    inputHash: repairedInputHash,
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    input: repairedInput,
+    item: repairedDecision,
+  };
+  if (!isDeepStrictEqual(fidelityCheckpoint, expectedFidelityCheckpoint)) {
+    throw new Error(`${key}: repaired solution fidelity metadata/content is stale or incomplete`);
+  }
+  const evidence = {
+    key,
+    printedNumber,
+    basePage,
+    effectivePage,
+    contextFrom,
+    contextTo,
+    baseOwnedFrom,
+    baseOwnedTo,
+    baseSolutionCheckpoint,
+    baseFidelityCheckpoint,
+    repairArtifact,
+    fidelityArtifact: { ...fidelityArtifact, promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST },
+    baseSolutionItemHash: input.baseSolutionItemHash,
+    effectiveSolutionItemHash,
+    baseRawAnswerHash: sha256(input.rawAnswer),
+    effectiveRawAnswerHash: sha256(corrected.rawAnswer),
+    baseExplanationHash: sha256(input.explanation),
+    effectiveExplanationHash: sha256(corrected.explanation),
+  };
+  return {
+    solution: corrected,
+    decision: repairedDecision,
+    repairArtifact,
+    fidelityArtifact,
+    effectiveSolutionItemHash,
+    evidence,
+  };
+}
+
+type RevisionSemanticContext = {
+  inputs: Array<{ key: string; choices: string[]; detailedExplanation: string }>;
+  effectiveSolutionCorpusHash: string;
+  solutionRevisionApplied: boolean;
+};
+
+function verifySolutionRevision(
+  value: unknown,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  solutionEvidence: DownloadEvidence,
+  rulesDigest: string,
+  effectiveProblemCorpusHash: string,
+  input: SolutionFidelityInput,
+  baseSolution: OfficialSolution,
+  first: VerifiedFirstSolutionRepair,
+  record: ClassifiedEvidence,
+  semanticContext: RevisionSemanticContext | null,
+): {
+  solution: OfficialSolution;
+  decision: SolutionFidelityDecision;
+  fidelityArtifact: EvidencePointer;
+  evidence: Record<string, unknown>;
+} {
+  const key = input.key;
+  const revision = object(value, `${key}.revision`);
+  const trigger = object(revision.trigger, `${key}.revision.trigger`);
+  const fidelityDecisionHash = canonicalEvidenceHash(first.decision);
+  if (trigger.fidelityDecisionHash !== fidelityDecisionHash) {
+    throw new Error(`${key}: solution revision does not bind the first fidelity decision`);
+  }
+  const firstTerminal = isTerminalSolutionDecision(input, first.solution, first.decision);
+  let semanticDecision: SemanticDecision | undefined;
+  let expectedTrigger: Record<string, unknown>;
+  if (trigger.kind === "fidelity") {
+    if (firstTerminal) throw new Error(`${key}: terminal first repair must not declare a fidelity revision`);
+    expectedTrigger = { kind: "fidelity", fidelityDecisionHash };
+  } else if (trigger.kind === "semantic") {
+    if (!firstTerminal || !semanticContext) {
+      throw new Error(`${key}: semantic revision lacks a terminal first repair or pre-revision corpus`);
+    }
+    const semanticCheckpointRow = object(trigger.semanticCheckpoint, `${key}.revision.trigger.semanticCheckpoint`);
+    const semanticCheckpoint = {
+      ...evidencePointer(
+        { path: semanticCheckpointRow.path, sha256: semanticCheckpointRow.sha256 },
+        `${key}.revision.trigger.semanticCheckpoint`,
+      ),
+      inputHash: exactString(
+        semanticCheckpointRow.inputHash,
+        `${key}.revision.trigger.semanticCheckpoint.inputHash`,
+      ),
+      effectiveCorpusHash: exactString(
+        semanticCheckpointRow.effectiveCorpusHash,
+        `${key}.revision.trigger.semanticCheckpoint.effectiveCorpusHash`,
+      ),
+      effectiveSolutionCorpusHash: exactString(
+        semanticCheckpointRow.effectiveSolutionCorpusHash,
+        `${key}.revision.trigger.semanticCheckpoint.effectiveSolutionCorpusHash`,
+      ),
+    };
+    if (semanticCheckpoint.effectiveCorpusHash !== effectiveProblemCorpusHash
+      || semanticCheckpoint.effectiveSolutionCorpusHash !== semanticContext.effectiveSolutionCorpusHash) {
+      throw new Error(`${key}: semantic revision points to a stale corpus generation`);
+    }
+    const semanticByKey = verifySemanticCheckpoint(
+      {
+        path: semanticCheckpoint.path,
+        sha256: semanticCheckpoint.sha256,
+        inputHash: semanticCheckpoint.inputHash,
+        effectiveSolutionCorpusHash: semanticCheckpoint.effectiveSolutionCorpusHash,
+      },
+      stateDir,
+      entry,
+      problemEvidence,
+      solutionEvidence,
+      rulesDigest,
+      effectiveProblemCorpusHash,
+      semanticContext.effectiveSolutionCorpusHash,
+      semanticContext.inputs,
+      semanticContext.solutionRevisionApplied,
+    );
+    semanticDecision = semanticByKey.get(key);
+    if (!semanticDecision) throw new Error(`${key}: semantic revision checkpoint has no diagnostic decision`);
+    const semanticDecisionHash = canonicalEvidenceHash(semanticDecision);
+    if (trigger.semanticDecisionHash !== semanticDecisionHash) {
+      throw new Error(`${key}: semantic revision decision hash is stale`);
+    }
+    if (record.question.qtype !== "mcq") throw new Error(`${key}: semantic revision is not an MCQ`);
+    const resolution = resolveOfficialAnswerForDb(record.question, first.solution.rawAnswer);
+    if (resolution.mode !== "choice-marker" || resolution.choiceIndex === null) {
+      throw new Error(`${key}: semantic revision does not originate from a marker-only answer`);
+    }
+    if (semanticDecision.status === "resolved" && semanticDecision.choiceIndex === resolution.choiceIndex + 1) {
+      throw new Error(`${key}: matching semantic proof must not trigger a solution revision`);
+    }
+    expectedTrigger = {
+      kind: "semantic",
+      fidelityDecisionHash,
+      semanticCheckpoint,
+      semanticDecisionHash,
+    };
+  } else {
+    throw new Error(`${key}: solution revision trigger kind is invalid`);
+  }
+
+  const solutionArtifactRow = object(revision.solutionArtifact, `${key}.revision.solutionArtifact`);
+  const solutionArtifact = evidencePointer(
+    { path: solutionArtifactRow.path, sha256: solutionArtifactRow.sha256 },
+    `${key}.revision.solutionArtifact`,
+  );
+  if (solutionArtifactRow.revisionPromptVersion !== TARGETED_SOLUTION_REVISION_VERSION
+    || solutionArtifactRow.revisionPromptDigest !== TARGETED_SOLUTION_REVISION_PROMPT_DIGEST) {
+    throw new Error(`${key}: solution revision prompt is stale`);
+  }
+  const revisionBasisHash = canonicalEvidenceHash({
+    key,
+    sourceHash: solutionEvidence.sha256,
+    basePage: input.sourcePage,
+    contextFrom: input.baseContextFrom,
+    contextTo: input.baseContextTo,
+    baseSolutionCheckpoint: input.baseSolutionCheckpoint,
+    baseSolutionItemHash: input.baseSolutionItemHash,
+    baseRepairArtifact: first.repairArtifact,
+    baseRepairFidelityArtifact: {
+      ...first.fidelityArtifact,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    },
+    baseRepairSolutionItemHash: first.effectiveSolutionItemHash,
+    trigger: expectedTrigger,
+    revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+  });
+  const expectedSolutionPath = `solution-revisions/v${SOLUTION_REVISION_VERSION}-` +
+    `${String(first.solution.page).padStart(4, "0")}-${input.printedNumber.padStart(4, "0")}-` +
+    `${revisionBasisHash}.json`;
+  if (solutionArtifact.path !== expectedSolutionPath) {
+    throw new Error(`${key}: solution revision path is invalid`);
+  }
+  const revisionCheckpoint = readBoundEvidence(stateDir, solutionArtifact, `${key} solution revision`);
+  const revised = parseRepairedSolution(
+    revisionCheckpoint.item,
+    `${key} solution revision.item`,
+    baseSolution,
+  );
+  if (revised.printedNumber !== input.printedNumber
+    || revised.page < input.baseContextFrom || revised.page > input.baseContextTo) {
+    throw new Error(`${key}: solution revision changed number or escaped bounded context`);
+  }
+  const effectiveSolutionItemHash = canonicalEvidenceHash(revised.evidence);
+  const expectedRevisionCheckpoint = {
+    version: SOLUTION_REVISION_VERSION,
+    entryId: entry.id,
+    key,
+    printedNumber: input.printedNumber,
+    sourceHash: solutionEvidence.sha256,
+    basePage: input.sourcePage,
+    contextFrom: input.baseContextFrom,
+    contextTo: input.baseContextTo,
+    baseOwnedFrom: input.baseOwnedFrom,
+    baseOwnedTo: input.baseOwnedTo,
+    effectiveProblemCorpusHash,
+    baseSolutionCheckpoint: input.baseSolutionCheckpoint,
+    baseSolutionItemHash: input.baseSolutionItemHash,
+    baseRepairArtifact: first.repairArtifact,
+    baseRepairFidelityArtifact: {
+      ...first.fidelityArtifact,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    },
+    baseRepairPage: first.solution.page,
+    baseRepairSolutionItemHash: first.effectiveSolutionItemHash,
+    trigger: expectedTrigger,
+    diagnosticDecision: first.decision,
+    diagnosticDecisionHash: fidelityDecisionHash,
+    ...(semanticDecision ? { semanticDecision } : {}),
+    promptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+    promptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    effectivePage: revised.page,
+    item: revised.evidence,
+  };
+  if (!isDeepStrictEqual(revisionCheckpoint, expectedRevisionCheckpoint)) {
+    throw new Error(`${key}: solution revision metadata/content is stale or incomplete`);
+  }
+
+  const fidelityArtifactRow = object(revision.fidelityArtifact, `${key}.revision.fidelityArtifact`);
+  if (Object.keys(fidelityArtifactRow).sort().join(",") !== "path,promptDigest,sha256"
+    || fidelityArtifactRow.promptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST) {
+    throw new Error(`${key}: solution revision fidelity envelope or prompt is stale`);
+  }
+  const fidelityArtifact = evidencePointer(
+    { path: fidelityArtifactRow.path, sha256: fidelityArtifactRow.sha256 },
+    `${key}.revision.fidelityArtifact`,
+  );
+  const revisedInput: SolutionFidelityInput = {
+    ...input,
+    sourcePage: revised.page,
+    rawAnswer: revised.rawAnswer,
+    explanation: revised.explanation,
+  };
+  const revisedInputHash = canonicalEvidenceHash(revisedInput);
+  const expectedFidelityPath = `solution-fidelity-revisions/v${SOLUTION_REVISION_FIDELITY_VERSION}-` +
+    `${String(first.solution.page).padStart(4, "0")}-${input.printedNumber.padStart(4, "0")}-` +
+    `${solutionArtifact.sha256}-${effectiveSolutionItemHash}.json`;
+  if (fidelityArtifact.path !== expectedFidelityPath) {
+    throw new Error(`${key}: solution revision fidelity path is invalid`);
+  }
+  const fidelityCheckpoint = readBoundEvidence(
+    stateDir,
+    fidelityArtifact,
+    `${key} solution revision fidelity`,
+  );
+  const decision = solutionFidelityDecision(
+    fidelityCheckpoint.item,
+    revisedInput,
+    `${key} solution revision fidelity.item`,
+  );
+  const expectedFidelityCheckpoint = {
+    version: SOLUTION_REVISION_FIDELITY_VERSION,
+    entryId: entry.id,
+    key,
+    sourceHash: solutionEvidence.sha256,
+    from: input.baseContextFrom,
+    to: input.baseContextTo,
+    basePage: input.sourcePage,
+    baseRepairPage: first.solution.page,
+    effectivePage: revised.page,
+    baseOwnedFrom: input.baseOwnedFrom,
+    baseOwnedTo: input.baseOwnedTo,
+    effectiveProblemCorpusHash,
+    baseSolutionCheckpoint: input.baseSolutionCheckpoint,
+    baseSolutionItemHash: input.baseSolutionItemHash,
+    baseRepairArtifact: first.repairArtifact,
+    baseRepairFidelityArtifact: {
+      ...first.fidelityArtifact,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    },
+    baseRepairSolutionItemHash: first.effectiveSolutionItemHash,
+    diagnosticDecisionHash: fidelityDecisionHash,
+    trigger: expectedTrigger,
+    revisionArtifact: solutionArtifact,
+    effectiveSolutionItemHash,
+    inputHash: revisedInputHash,
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    input: revisedInput,
+    item: decision,
+  };
+  if (!isDeepStrictEqual(fidelityCheckpoint, expectedFidelityCheckpoint)) {
+    throw new Error(`${key}: solution revision fidelity metadata/content is stale or incomplete`);
+  }
+  if (!isTerminalSolutionDecision(input, revised, decision)) {
+    throw new Error(`${key}: solution revision did not reach terminal source fidelity`);
+  }
+  const expectedEvidence = {
+    trigger: expectedTrigger,
+    baseRepairPage: first.solution.page,
+    effectivePage: revised.page,
+    baseRepairArtifact: first.repairArtifact,
+    baseRepairFidelityArtifact: {
+      ...first.fidelityArtifact,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    },
+    solutionArtifact: {
+      ...solutionArtifact,
+      revisionPromptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+      revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+    },
+    fidelityArtifact: {
+      ...fidelityArtifact,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    },
+    diagnosticDecisionHash: fidelityDecisionHash,
+    baseSolutionItemHash: input.baseSolutionItemHash,
+    baseRepairSolutionItemHash: first.effectiveSolutionItemHash,
+    effectiveSolutionItemHash,
+    baseRepairRawAnswerHash: sha256(first.solution.rawAnswer),
+    effectiveRawAnswerHash: sha256(revised.rawAnswer),
+    baseRepairExplanationHash: sha256(first.solution.explanation),
+    effectiveExplanationHash: sha256(revised.explanation),
+  };
+  if (!isDeepStrictEqual(revision, expectedEvidence)) {
+    throw new Error(`${key}: solution revision evidence envelope does not match its exact chain`);
+  }
+  return { solution: revised, decision, fidelityArtifact, evidence: expectedEvidence };
+}
+
 function verifySolutionFidelity(
   stateDir: string,
   entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
   solutionEvidence: DownloadEvidence,
   rulesDigest: string,
   effective: DecisionSummary,
@@ -1765,6 +2249,72 @@ function verifySolutionFidelity(
     throw new Error("declared solution repair keys do not exactly match non-terminal fidelity keys");
   }
 
+  const firstRepairs = new Map<string, VerifiedFirstSolutionRepair>();
+  const firstRepairSolutions = new Map(baseSolutions);
+  for (const key of expectedRepairKeys) {
+    const result = baseResults.get(key)!;
+    const first = verifyFirstSolutionRepair(
+      stateDir,
+      entry,
+      solutionEvidence,
+      effectiveProblemCorpusHash,
+      result.input,
+      result.solution,
+      result.artifact,
+      declaredRepairs.get(key)!,
+    );
+    firstRepairs.set(key, first);
+    firstRepairSolutions.set(result.input.printedNumber, first.solution);
+  }
+  const stagedFidelityRevisions = new Map<string, ReturnType<typeof verifySolutionRevision>>();
+  const semanticStageSolutions = new Map(firstRepairSolutions);
+  for (const [key, repair] of declaredRepairs) {
+    if (repair.revision === undefined) continue;
+    const revision = object(repair.revision, `${key}.revision`);
+    const trigger = object(revision.trigger, `${key}.revision.trigger`);
+    if (trigger.kind !== "fidelity") continue;
+    const result = baseResults.get(key)!;
+    const revised = verifySolutionRevision(
+      repair.revision,
+      stateDir,
+      entry,
+      problemEvidence,
+      solutionEvidence,
+      rulesDigest,
+      effectiveProblemCorpusHash,
+      result.input,
+      result.solution,
+      firstRepairs.get(key)!,
+      effective.records.get(key)!,
+      null,
+    );
+    stagedFidelityRevisions.set(key, revised);
+    semanticStageSolutions.set(result.input.printedNumber, revised.solution);
+  }
+  const semanticStageSolutionCorpus = acceptedRecords.map((record) => ({
+    key: record.question.key,
+    solution: semanticStageSolutions.get(record.question.printedNumber)!.evidence,
+  })).sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+  const semanticStageSolutionCorpusHash = canonicalEvidenceHash(semanticStageSolutionCorpus);
+  const hasSemanticRevision = [...declaredRepairs.values()].some((repair) => {
+    if (repair.revision === undefined) return false;
+    return object(object(repair.revision, "solution revision").trigger, "solution revision trigger").kind === "semantic";
+  });
+  const semanticContext: RevisionSemanticContext | null = hasSemanticRevision ? {
+    effectiveSolutionCorpusHash: semanticStageSolutionCorpusHash,
+    solutionRevisionApplied: stagedFidelityRevisions.size > 0,
+    inputs: acceptedRecords.flatMap((record) => {
+      if (record.question.qtype !== "mcq") return [];
+      const solution = semanticStageSolutions.get(record.question.printedNumber)!;
+      const resolution = resolveOfficialAnswerForDb(record.question, solution.rawAnswer);
+      return resolution.mode === "choice-marker" ? [{
+        key: record.question.key,
+        choices: record.question.choices!,
+        detailedExplanation: semanticExplanationWithoutMarkers(solution.explanation),
+      }] : [];
+    }),
+  } : null;
+
   const effectiveSolutions = new Map(baseSolutions);
   const terminalItems = new Map<string, Record<string, unknown>>();
   const expectedRepairs: Record<string, unknown>[] = [];
@@ -1792,178 +2342,56 @@ function verifySolutionFidelity(
     }
 
     const repair = declaredRepairs.get(key)!;
-    const printedNumber = exactString(repair.printedNumber, `${key}.printedNumber`);
-    const basePage = integer(repair.basePage, `${key}.basePage`, 1);
-    const effectivePage = integer(repair.effectivePage, `${key}.effectivePage`, 1);
-    const contextFrom = integer(repair.contextFrom, `${key}.contextFrom`, 1);
-    const contextTo = integer(repair.contextTo, `${key}.contextTo`, contextFrom);
-    const baseOwnedFrom = integer(repair.baseOwnedFrom, `${key}.baseOwnedFrom`, contextFrom);
-    const baseOwnedTo = integer(repair.baseOwnedTo, `${key}.baseOwnedTo`, baseOwnedFrom);
-    if (printedNumber !== input.printedNumber || basePage !== input.sourcePage
-      || contextFrom !== input.baseContextFrom || contextTo !== input.baseContextTo
-      || baseOwnedFrom !== input.baseOwnedFrom || baseOwnedTo !== input.baseOwnedTo
-      || basePage < baseOwnedFrom || basePage > baseOwnedTo
-      || effectivePage < contextFrom || effectivePage > contextTo
-      || contextTo - contextFrom + 1 > SOLUTION_SLICE_PAGES) {
-      throw new Error(`${key}: solution repair identity/context does not match owning base 6/4 chunk`);
-    }
-    const baseSolutionCheckpoint = evidencePointer(repair.baseSolutionCheckpoint, `${key}.baseSolutionCheckpoint`);
-    const baseFidelityCheckpoint = evidencePointer(repair.baseFidelityCheckpoint, `${key}.baseFidelityCheckpoint`);
-    sameEvidencePointer(baseSolutionCheckpoint, input.baseSolutionCheckpoint, `${key}.baseSolutionCheckpoint`);
-    sameEvidencePointer(baseFidelityCheckpoint, artifact, `${key}.baseFidelityCheckpoint`);
-    const baseSolutionPath = confinedEvidencePath(stateDir, baseSolutionCheckpoint, `${key} base solution checkpoint`);
-    if (hashFile(baseSolutionPath) !== baseSolutionCheckpoint.sha256) {
-      throw new Error(`${key}: base solution checkpoint hash mismatch`);
-    }
-    readBoundEvidence(stateDir, baseFidelityCheckpoint, `${key} base fidelity checkpoint`);
-    if (repair.baseSolutionItemHash !== input.baseSolutionItemHash
-      || repair.baseRawAnswerHash !== sha256(input.rawAnswer)
-      || repair.baseExplanationHash !== sha256(input.explanation)) {
-      throw new Error(`${key}: solution repair base hashes do not match immutable evidence`);
-    }
-
-    const repairArtifact = evidencePointer(repair.repairArtifact, `${key}.repairArtifact`);
-    const expectedRepairPath = `solution-repairs/v${SOLUTION_REPAIR_VERSION}-${String(basePage).padStart(4, "0")}-` +
-      `${printedNumber.padStart(4, "0")}-${artifact.sha256}.json`;
-    if (repairArtifact.path !== expectedRepairPath) throw new Error(`${key}: solution repair path is invalid`);
-    const repairCheckpoint = readBoundEvidence(stateDir, repairArtifact, `${key} solution repair`);
-    const corrected = parseRepairedSolution(repairCheckpoint.item, `${key} solution repair.item`, baseSolution);
-    if (corrected.printedNumber !== printedNumber || corrected.page !== effectivePage
-      || corrected.page < contextFrom || corrected.page > contextTo) {
-      throw new Error(`${key}: repaired solution changed printed number or escaped its bounded context`);
-    }
-    const effectiveSolutionItemHash = canonicalEvidenceHash(corrected.evidence);
-    const expectedRepairCheckpoint = {
-      version: SOLUTION_REPAIR_VERSION,
-      entryId: entry.id,
-      key,
-      printedNumber,
-      basePage,
-      contextFrom,
-      contextTo,
-      baseOwnedFrom,
-      baseOwnedTo,
-      sourceHash: solutionEvidence.sha256,
-      effectiveProblemCorpusHash,
-      baseSolutionCheckpoint,
-      baseFidelityCheckpoint,
-      baseSolutionItemHash: input.baseSolutionItemHash,
-      baseRawAnswerHash: sha256(input.rawAnswer),
-      baseExplanationHash: sha256(input.explanation),
-      promptVersion: TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
-      promptDigest: TARGETED_SOLUTION_PROMPT_DIGEST,
-      model: "gpt-5.6-sol",
-      reasoningEffort: "high",
-      effectivePage,
-      item: corrected.evidence,
+    const first = firstRepairs.get(key)!;
+    let terminal = {
+      solution: first.solution,
+      decision: first.decision,
+      fidelityArtifact: first.fidelityArtifact,
     };
-    if (!isDeepStrictEqual(repairCheckpoint, expectedRepairCheckpoint)) {
-      throw new Error(`${key}: solution repair metadata/content is stale or incomplete`);
+    let expectedRepair: Record<string, unknown> = first.evidence;
+    if (repair.revision === undefined) {
+      if (!isTerminalSolutionDecision(input, first.solution, first.decision)) {
+        throw new Error(`${key}: non-terminal first solution repair has no attested revision`);
+      }
+    } else {
+      const revised = stagedFidelityRevisions.get(key) ?? verifySolutionRevision(
+          repair.revision,
+          stateDir,
+          entry,
+          problemEvidence,
+          solutionEvidence,
+          rulesDigest,
+          effectiveProblemCorpusHash,
+          input,
+          baseSolution,
+          first,
+          effective.records.get(key)!,
+          semanticContext,
+        );
+      terminal = revised;
+      expectedRepair = { ...first.evidence, revision: revised.evidence };
     }
-
-    const fidelityArtifactRow = object(repair.fidelityArtifact, `${key}.fidelityArtifact`);
-    if (Object.keys(fidelityArtifactRow).sort().join(",") !== "path,promptDigest,sha256") {
-      throw new Error(`${key}.fidelityArtifact has unexpected fields`);
-    }
-    const fidelityArtifact = evidencePointer(
-      { path: fidelityArtifactRow.path, sha256: fidelityArtifactRow.sha256 },
-      `${key}.fidelityArtifact`,
-    );
-    if (fidelityArtifactRow.promptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST) {
-      throw new Error(`${key}: repaired solution fidelity prompt is stale`);
-    }
-    const repairedInput: SolutionFidelityInput = {
-      ...input,
-      sourcePage: corrected.page,
-      rawAnswer: corrected.rawAnswer,
-      explanation: corrected.explanation,
-    };
-    const repairedInputHash = canonicalEvidenceHash(repairedInput);
-    const expectedFidelityPath = `solution-fidelity-repairs/v${SOLUTION_REPAIR_FIDELITY_VERSION}-` +
-      `${String(basePage).padStart(4, "0")}-${printedNumber.padStart(4, "0")}-` +
-      `${artifact.sha256}-${effectiveSolutionItemHash}.json`;
-    if (fidelityArtifact.path !== expectedFidelityPath) {
-      throw new Error(`${key}: repaired solution fidelity path is invalid`);
-    }
-    const fidelityCheckpoint = readBoundEvidence(stateDir, fidelityArtifact, `${key} repaired solution fidelity`);
-    const repairedDecision = solutionFidelityDecision(
-      fidelityCheckpoint.item,
-      repairedInput,
-      `${key} repaired solution fidelity.item`,
-    );
-    const expectedFidelityCheckpoint = {
-      version: SOLUTION_REPAIR_FIDELITY_VERSION,
-      entryId: entry.id,
-      key,
-      sourceHash: solutionEvidence.sha256,
-      from: contextFrom,
-      to: contextTo,
-      basePage,
-      effectivePage,
-      baseOwnedFrom,
-      baseOwnedTo,
-      effectiveProblemCorpusHash,
-      baseSolutionCheckpoint,
-      baseFidelityCheckpoint,
-      repairArtifact,
-      effectiveSolutionItemHash,
-      inputHash: repairedInputHash,
-      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
-      model: "gpt-5.6-sol",
-      reasoningEffort: "high",
-      input: repairedInput,
-      item: repairedDecision,
-    };
-    if (!isDeepStrictEqual(fidelityCheckpoint, expectedFidelityCheckpoint)) {
-      throw new Error(`${key}: repaired solution fidelity metadata/content is stale or incomplete`);
-    }
-    const terminalAnswer = repairedDecision.answerStatus === "exact"
-      || repairedDecision.answerStatus === "not_visible" && input.allowDerivedMarkerAnswer;
-    if (repairedDecision.sourcePage !== effectivePage || repairedDecision.explanationStatus !== "exact"
-      || !terminalAnswer) {
-      throw new Error(`${key}: repaired solution did not reach terminal source fidelity`);
-    }
-    const expectedRepair = {
-      key,
-      printedNumber,
-      basePage,
-      effectivePage,
-      contextFrom,
-      contextTo,
-      baseOwnedFrom,
-      baseOwnedTo,
-      baseSolutionCheckpoint,
-      baseFidelityCheckpoint,
-      repairArtifact,
-      fidelityArtifact: { ...fidelityArtifact, promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST },
-      baseSolutionItemHash: input.baseSolutionItemHash,
-      effectiveSolutionItemHash,
-      baseRawAnswerHash: sha256(input.rawAnswer),
-      effectiveRawAnswerHash: sha256(corrected.rawAnswer),
-      baseExplanationHash: sha256(input.explanation),
-      effectiveExplanationHash: sha256(corrected.explanation),
-    };
     if (!isDeepStrictEqual(repair, expectedRepair)) {
-      throw new Error(`${key}: solution repair evidence envelope does not match its artifacts`);
+      throw new Error(`${key}: solution repair evidence envelope does not match its exact chain`);
     }
     expectedRepairs.push(expectedRepair);
-    effectiveSolutions.set(printedNumber, corrected);
+    effectiveSolutions.set(input.printedNumber, terminal.solution);
     terminalItems.set(key, {
       key,
-      printedNumber,
+      printedNumber: input.printedNumber,
       qtype: input.qtype,
-      basePage,
-      effectivePage,
-      answerStatus: repairedDecision.answerStatus,
-      explanationStatus: repairedDecision.explanationStatus,
-      evidence: repairedDecision.evidence,
-      fidelityArtifact,
+      basePage: input.sourcePage,
+      effectivePage: terminal.solution.page,
+      answerStatus: terminal.decision.answerStatus,
+      explanationStatus: terminal.decision.explanationStatus,
+      evidence: terminal.decision.evidence,
+      fidelityArtifact: terminal.fidelityArtifact,
       baseSolutionItemHash: input.baseSolutionItemHash,
-      effectiveSolutionItemHash,
+      effectiveSolutionItemHash: canonicalEvidenceHash(terminal.solution.evidence),
       baseRawAnswerHash: sha256(input.rawAnswer),
-      effectiveRawAnswerHash: sha256(corrected.rawAnswer),
+      effectiveRawAnswerHash: sha256(terminal.solution.rawAnswer),
       baseExplanationHash: sha256(input.explanation),
-      effectiveExplanationHash: sha256(corrected.explanation),
+      effectiveExplanationHash: sha256(terminal.solution.explanation),
     });
   }
   const items = [...terminalItems.values()].sort((left, right) =>
@@ -2007,6 +2435,7 @@ function verifySemanticCheckpoint(
   effectiveCorpusHash: string,
   effectiveSolutionCorpusHash: string,
   inputs: Array<{ key: string; choices: string[]; detailedExplanation: string }>,
+  solutionRevisionApplied = false,
 ): Map<string, SemanticDecision> {
   const inputHash = canonicalEvidenceHash(inputs);
   if (value === null) {
@@ -2022,7 +2451,11 @@ function verifySemanticCheckpoint(
     throw new Error("semanticCheckpoint effective solution corpus hash is stale");
   }
   const pointer = evidencePointer({ path: envelope.path, sha256: envelope.sha256 }, "semanticCheckpoint");
-  if (pointer.path !== `semantic-choice-checks/v${SEMANTIC_CHOICE_VERSION}-${inputHash}.json`) {
+  const expectedPath = solutionRevisionApplied
+    ? `semantic-choice-checks/v${SEMANTIC_CHOICE_VERSION}-${effectiveCorpusHash}-` +
+      `${effectiveSolutionCorpusHash}-${inputHash}.json`
+    : `semantic-choice-checks/v${SEMANTIC_CHOICE_VERSION}-${inputHash}.json`;
+  if (pointer.path !== expectedPath) {
     throw new Error("semantic checkpoint path does not match input hash");
   }
   const checkpoint = readBoundEvidence(stateDir, pointer, "semantic choice checkpoint");
@@ -2256,6 +2689,7 @@ function verifyAnswerAudit(
     const solutionFidelity = verifySolutionFidelity(
       stateDir,
       entry,
+      problemEvidence,
       solutionEvidence,
       rulesDigest,
       effective,
@@ -2295,6 +2729,7 @@ function verifyAnswerAudit(
       effectiveCorpusHash,
       solutionFidelity.effectiveSolutionCorpusHash,
       markerInputs,
+      solutionFidelity.repairs.some((repair) => repair.revision !== undefined),
     );
     const terminalFidelityByKey = new Map(solutionFidelity.items.map((item) => [String(item.key), item]));
     for (const record of acceptedRecords) {

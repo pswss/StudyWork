@@ -22,6 +22,9 @@ import {
   TARGETED_PROBLEM_REVISION_VERSION,
   TARGETED_SOLUTION_TRANSCRIPTION_RULES,
   TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
+  TARGETED_SOLUTION_REVISION_EVIDENCE_PREFIX,
+  TARGETED_SOLUTION_REVISION_RULES,
+  TARGETED_SOLUTION_REVISION_VERSION,
 } from "../src/claude";
 import {
   canonicalEvidenceHash,
@@ -71,6 +74,11 @@ const TARGETED_REVISION_PROMPT_DIGEST = hash(
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
 const TARGETED_SOLUTION_PROMPT_DIGEST = hash(
+  `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`,
+);
+const TARGETED_SOLUTION_REVISION_PROMPT_DIGEST = hash(
+  `${TARGETED_SOLUTION_REVISION_VERSION}\n${TARGETED_SOLUTION_REVISION_RULES}\n` +
+  `${TARGETED_SOLUTION_REVISION_EVIDENCE_PREFIX}\n` +
   `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`,
 );
 const SOURCE_COUNTS: Record<string, number> = { 국어: 45, 수학: 30, 통합과학: 20, 통합사회: 20 };
@@ -1109,7 +1117,11 @@ function installSyntheticRepair(
   };
 }
 
-function installQ27SolutionRepair(files: ReturnType<typeof fixture>): {
+function installQ27SolutionRepair(
+  files: ReturnType<typeof fixture>,
+  targetNumber = 27,
+  markerMode = false,
+): {
   repairArtifact: string;
   fidelityArtifact: string;
 } {
@@ -1122,41 +1134,53 @@ function installQ27SolutionRepair(files: ReturnType<typeof fixture>): {
   const problemCheckpoint = JSON.parse(readFileSync(problemPath, "utf8"));
   const classificationCheckpoint = JSON.parse(readFileSync(classificationPath, "utf8"));
   const solutionCheckpoint = JSON.parse(readFileSync(solutionPath, "utf8"));
-  const q27Problem = problemCheckpoint.items[26];
-  Object.assign(q27Problem, {
-    qtype: "short",
-    question: "두 수 $\\sqrt{2m}$, $\\sqrt[3]{3m}$이 모두 자연수가 되게 하는 자연수 $m$의 최솟값을 구하시오.",
-    choices: null,
-    answer: "$72$",
+  const targetIndex = targetNumber - 1;
+  const targetKey = `1:${targetNumber}`;
+  const targetIsFirst = targetNumber === 1;
+  const companionNumber = targetIsFirst ? 2 : 1;
+  const companionKey = `1:${companionNumber}`;
+  const targetProblem = problemCheckpoint.items[targetIndex];
+  const targetChoices = markerMode ? ["① 2", "② 3", "③ 4", "④ 5", "⑤ 6"] : null;
+  const targetStoredAnswer = markerMode ? "②" : "72";
+  Object.assign(targetProblem, {
+    qtype: markerMode ? "mcq" : "short",
+    question: markerMode
+      ? "$3^{(\\frac12)\\times2}$의 값을 고르시오."
+      : "두 수 $\\sqrt{2m}$, $\\sqrt[3]{3m}$이 모두 자연수가 되게 하는 자연수 $m$의 최솟값을 구하시오.",
+    choices: targetChoices,
+    answer: markerMode ? "② 3" : "$72$",
   });
-  Object.assign(classificationCheckpoint.items[1], {
-    decision: "reject",
-    canonical_subject: null,
-    curriculum_course: null,
-    domain: null,
-    achievement_codes: [],
-    reason_codes: ["OUT_OF_SCOPE"],
-  });
-  Object.assign(classificationCheckpoint.items[26], {
+  if (!targetIsFirst) {
+    Object.assign(classificationCheckpoint.items[1], {
+      decision: "reject",
+      canonical_subject: null,
+      curriculum_course: null,
+      domain: null,
+      achievement_codes: [],
+      reason_codes: ["OUT_OF_SCOPE"],
+    });
+  }
+  Object.assign(classificationCheckpoint.items[targetIndex], {
     decision: "accept",
-    canonical_subject: "math_B",
-    curriculum_course: "2015 수학Ⅰ",
+    canonical_subject: targetIsFirst ? "math_A" : "math_B",
+    curriculum_course: targetIsFirst ? "2015 미적분Ⅰ" : "2015 수학Ⅰ",
     domain: "거듭제곱근",
-    achievement_codes: ["12수학Ⅰ01-01"],
+    achievement_codes: [targetIsFirst ? "12미적Ⅰ-01-01" : "12수학Ⅰ01-01"],
     confidence: 0.99,
     reason_codes: ["IN_SCOPE_ROOTS_AND_POWERS"],
     transcription_status: "exact",
-    transcription_evidence: "27번 거듭제곱근 조건이 공식 문제 픽셀과 정확히 일치한다",
+    transcription_evidence: `${targetNumber}번 거듭제곱근 조건이 공식 문제 픽셀과 정확히 일치한다`,
   });
-  const q27BaseSolution = solutionCheckpoint.items.find(
-    (item: { number: string }) => item.number === "27",
+  const targetBaseSolution = solutionCheckpoint.items.find(
+    (item: { number: string }) => item.number === String(targetNumber),
   );
-  Object.assign(q27BaseSolution, {
-    answer: "72",
+  Object.assign(targetBaseSolution, {
+    answer: targetStoredAnswer,
     explanation: "$m=3q^3$이어야 하고 결국 $m=2^3\\times3^2=72$이다.",
     page: 1,
     complete: true,
   });
+  const basePage = targetBaseSolution.page;
   writeJson(problemPath, problemCheckpoint);
   writeJson(classificationPath, classificationCheckpoint);
   writeJson(solutionPath, solutionCheckpoint);
@@ -1170,15 +1194,19 @@ function installQ27SolutionRepair(files: ReturnType<typeof fixture>): {
     path: "solution-chunks/v3-0000.json",
     sha256: hash(readFileSync(solutionPath)),
   };
-  const q1Solution = solutionCheckpoint.items.find((item: { number: string }) => item.number === "1");
-  const fidelityInputs = [
-    { key: "1:1", printedNumber: "1", question: problemCheckpoint.items[0], solution: q1Solution },
-    { key: "1:27", printedNumber: "27", question: q27Problem, solution: q27BaseSolution },
-  ].map(({ key, printedNumber, question, solution }) => ({
+  const companionProblem = problemCheckpoint.items[companionNumber - 1];
+  const companionSolution = solutionCheckpoint.items.find(
+    (item: { number: string }) => item.number === String(companionNumber),
+  );
+  const fidelityRows = [
+    { key: companionKey, printedNumber: String(companionNumber), question: companionProblem, solution: companionSolution },
+    { key: targetKey, printedNumber: String(targetNumber), question: targetProblem, solution: targetBaseSolution },
+  ].sort((left, right) => Number(left.printedNumber) - Number(right.printedNumber));
+  const fidelityInputs = fidelityRows.map(({ key, printedNumber, question, solution }) => ({
     key,
     printedNumber,
     qtype: question.qtype,
-    allowDerivedMarkerAnswer: false,
+    allowDerivedMarkerAnswer: markerMode && key === targetKey,
     sourcePage: solution.page,
     rawAnswer: solution.answer,
     explanation: solution.explanation,
@@ -1192,19 +1220,19 @@ function installQ27SolutionRepair(files: ReturnType<typeof fixture>): {
   }));
   const fidelityInputHash = canonicalEvidenceHash(fidelityInputs);
   const fidelityRelativePath = `solution-fidelity/v1-0000-${effectiveCorpusHash}-${fidelityInputHash}.json`;
-  const fidelityDecisions = [{
-    key: "1:1",
-    sourcePage: q1Solution.page,
-    answerStatus: "exact",
-    explanationStatus: "exact",
-    evidence: "1번 답과 전체 해설이 공식 픽셀과 정확히 일치한다",
-  }, {
-    key: "1:27",
-    sourcePage: 1,
+  const fidelityDecisions = fidelityInputs.map((input) => input.key === targetKey ? {
+    key: targetKey,
+    sourcePage: targetBaseSolution.page,
     answerStatus: "exact",
     explanationStatus: "mismatch",
     evidence: "공식 해설은 m=3^2q^3인데 전사는 m=3q^3이다",
-  }];
+  } : {
+    key: companionKey,
+    sourcePage: companionSolution.page,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: `${companionNumber}번 답과 전체 해설이 공식 픽셀과 정확히 일치한다`,
+  });
   const fidelityCheckpoint = {
     version: 1,
     entryId: entry.id,
@@ -1236,21 +1264,25 @@ function installQ27SolutionRepair(files: ReturnType<typeof fixture>): {
     inputHash: fidelityInputHash,
   }];
 
-  const q27Input = fidelityInputs[1];
+  const targetInput = fidelityInputs.find((input) => input.key === targetKey)!;
+  const companionInput = fidelityInputs.find((input) => input.key === companionKey)!;
   const correctedSolution = {
-    number: "27",
-    answer: "72",
-    explanation: "$m=3^2q^3$이어야 하므로 $m=2^3\\times3^2=72$이다.",
+    number: String(targetNumber),
+    answer: targetStoredAnswer,
+    explanation: markerMode
+      ? "$\\left(\\frac{1}{3^2}\\right)^2=\\frac{1}{81}$이다."
+      : "$m=3^2q^3$이어야 하므로 $m=2^3\\times3^2=72$이다.",
     page: 2,
     complete: true,
   };
-  const repairRelativePath = `solution-repairs/v1-0001-0027-${fidelityHash}.json`;
+  const repairRelativePath = `solution-repairs/v1-${String(basePage).padStart(4, "0")}-` +
+    `${String(targetNumber).padStart(4, "0")}-${fidelityHash}.json`;
   const repairCheckpoint = {
     version: 1,
     entryId: entry.id,
-    key: "1:27",
-    printedNumber: "27",
-    basePage: 1,
+    key: targetKey,
+    printedNumber: String(targetNumber),
+    basePage,
     contextFrom: 1,
     contextTo: 6,
     baseOwnedFrom: 1,
@@ -1259,9 +1291,9 @@ function installQ27SolutionRepair(files: ReturnType<typeof fixture>): {
     effectiveProblemCorpusHash: effectiveCorpusHash,
     baseSolutionCheckpoint: baseSolutionPointer,
     baseFidelityCheckpoint: baseFidelityPointer,
-    baseSolutionItemHash: q27Input.baseSolutionItemHash,
-    baseRawAnswerHash: hash(q27Input.rawAnswer),
-    baseExplanationHash: hash(q27Input.explanation),
+    baseSolutionItemHash: targetInput.baseSolutionItemHash,
+    baseRawAnswerHash: hash(targetInput.rawAnswer),
+    baseExplanationHash: hash(targetInput.explanation),
     promptVersion: TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
     promptDigest: TARGETED_SOLUTION_PROMPT_DIGEST,
     model: "gpt-5.6-sol",
@@ -1273,16 +1305,17 @@ function installQ27SolutionRepair(files: ReturnType<typeof fixture>): {
   const repairPointer = { path: repairRelativePath, sha256: repairHash };
   const effectiveSolutionItemHash = canonicalEvidenceHash(correctedSolution);
   const repairedInput = {
-    ...q27Input,
+    ...targetInput,
     sourcePage: 2,
     rawAnswer: correctedSolution.answer,
     explanation: correctedSolution.explanation,
   };
   const repairedInputHash = canonicalEvidenceHash(repairedInput);
   const repairFidelityRelativePath =
-    `solution-fidelity-repairs/v1-0001-0027-${fidelityHash}-${effectiveSolutionItemHash}.json`;
+    `solution-fidelity-repairs/v1-${String(basePage).padStart(4, "0")}-` +
+    `${String(targetNumber).padStart(4, "0")}-${fidelityHash}-${effectiveSolutionItemHash}.json`;
   const repairDecision = {
-    key: "1:27",
+    key: targetKey,
     sourcePage: 2,
     answerStatus: "exact",
     explanationStatus: "exact",
@@ -1291,11 +1324,11 @@ function installQ27SolutionRepair(files: ReturnType<typeof fixture>): {
   const repairFidelityCheckpoint = {
     version: 1,
     entryId: entry.id,
-    key: "1:27",
+    key: targetKey,
     sourceHash: downloads.solution.sha256,
     from: 1,
     to: 6,
-    basePage: 1,
+    basePage,
     effectivePage: 2,
     baseOwnedFrom: 1,
     baseOwnedTo: 4,
@@ -1317,9 +1350,9 @@ function installQ27SolutionRepair(files: ReturnType<typeof fixture>): {
   );
   const repairFidelityPointer = { path: repairFidelityRelativePath, sha256: repairFidelityHash };
   const solutionRepair = {
-    key: "1:27",
-    printedNumber: "27",
-    basePage: 1,
+    key: targetKey,
+    printedNumber: String(targetNumber),
+    basePage,
     effectivePage: 2,
     contextFrom: 1,
     contextTo: 6,
@@ -1329,64 +1362,78 @@ function installQ27SolutionRepair(files: ReturnType<typeof fixture>): {
     baseFidelityCheckpoint: baseFidelityPointer,
     repairArtifact: repairPointer,
     fidelityArtifact: { ...repairFidelityPointer, promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST },
-    baseSolutionItemHash: q27Input.baseSolutionItemHash,
+    baseSolutionItemHash: targetInput.baseSolutionItemHash,
     effectiveSolutionItemHash,
-    baseRawAnswerHash: hash(q27Input.rawAnswer),
+    baseRawAnswerHash: hash(targetInput.rawAnswer),
     effectiveRawAnswerHash: hash(correctedSolution.answer),
-    baseExplanationHash: hash(q27Input.explanation),
+    baseExplanationHash: hash(targetInput.explanation),
     effectiveExplanationHash: hash(correctedSolution.explanation),
   };
+  const companionDecision = fidelityDecisions.find((decision) => decision.key === companionKey)!;
   const solutionFidelityItems = [{
-    key: "1:1",
-    printedNumber: "1",
-    qtype: fidelityInputs[0].qtype,
-    basePage: q1Solution.page,
-    effectivePage: q1Solution.page,
+    key: companionKey,
+    printedNumber: String(companionNumber),
+    qtype: companionInput.qtype,
+    basePage: companionSolution.page,
+    effectivePage: companionSolution.page,
     answerStatus: "exact",
     explanationStatus: "exact",
-    evidence: fidelityDecisions[0].evidence,
+    evidence: companionDecision.evidence,
     fidelityArtifact: baseFidelityPointer,
-    baseSolutionItemHash: fidelityInputs[0].baseSolutionItemHash,
-    effectiveSolutionItemHash: fidelityInputs[0].baseSolutionItemHash,
-    baseRawAnswerHash: hash(q1Solution.answer),
-    effectiveRawAnswerHash: hash(q1Solution.answer),
-    baseExplanationHash: hash(q1Solution.explanation),
-    effectiveExplanationHash: hash(q1Solution.explanation),
+    baseSolutionItemHash: companionInput.baseSolutionItemHash,
+    effectiveSolutionItemHash: companionInput.baseSolutionItemHash,
+    baseRawAnswerHash: hash(companionSolution.answer),
+    effectiveRawAnswerHash: hash(companionSolution.answer),
+    baseExplanationHash: hash(companionSolution.explanation),
+    effectiveExplanationHash: hash(companionSolution.explanation),
   }, {
-    key: "1:27",
-    printedNumber: "27",
-    qtype: "short",
-    basePage: 1,
+    key: targetKey,
+    printedNumber: String(targetNumber),
+    qtype: targetProblem.qtype,
+    basePage,
     effectivePage: 2,
     answerStatus: "exact",
     explanationStatus: "exact",
     evidence: repairDecision.evidence,
     fidelityArtifact: repairFidelityPointer,
-    baseSolutionItemHash: q27Input.baseSolutionItemHash,
+    baseSolutionItemHash: targetInput.baseSolutionItemHash,
     effectiveSolutionItemHash,
-    baseRawAnswerHash: hash(q27Input.rawAnswer),
+    baseRawAnswerHash: hash(targetInput.rawAnswer),
     effectiveRawAnswerHash: hash(correctedSolution.answer),
-    baseExplanationHash: hash(q27Input.explanation),
+    baseExplanationHash: hash(targetInput.explanation),
     effectiveExplanationHash: hash(correctedSolution.explanation),
-  }];
+  }].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
   const effectiveSolutionCorpusHash = canonicalEvidenceHash([{
-    key: "1:1",
-    solution: q1Solution,
+    key: companionKey,
+    solution: companionSolution,
   }, {
-    key: "1:27",
+    key: targetKey,
     solution: correctedSolution,
-  }]);
-  const answer = answerCase("math", 0);
-  const auditItems = [{
-    key: "1:1",
-    printedNumber: "1",
-    sourcePage: 1,
+  }].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key)));
+  const answer = answerCase("math", companionNumber - 1);
+  const auditItems: Array<Record<string, unknown>> = [{
+    key: companionKey,
+    printedNumber: String(companionNumber),
+    sourcePage: companionProblem.page,
     officialRawAnswerHash: hash(answer.officialRaw),
     storedAnswerHash: hash(answer.storedAnswer),
     mode: "choice-content",
     choiceIndex: answer.choices!.indexOf(answer.storedAnswer) + 1,
     semantic: null,
   }];
+  if (markerMode) {
+    auditItems.push({
+      key: targetKey,
+      printedNumber: String(targetNumber),
+      sourcePage: targetProblem.page,
+      officialRawAnswerHash: hash(targetStoredAnswer),
+      storedAnswerHash: hash(targetStoredAnswer),
+      mode: "choice-marker",
+      choiceIndex: 2,
+      semantic: null,
+    });
+    auditItems.sort((left, right) => compareCorpusQuestionKeys(String(left.key), String(right.key)));
+  }
   const auditBasis = {
     entryId: entry.id,
     problemHash: downloads.problem.sha256,
@@ -1407,10 +1454,10 @@ function installQ27SolutionRepair(files: ReturnType<typeof fixture>): {
       "수학 - 수학Ⅱ·미적분Ⅰ": 1,
       "수학 - 수학Ⅰ·대수": 1,
     },
-    acceptedSolutionKeys: ["1:1", "1:27"],
-    solutionRepairKeys: ["1:27"],
+    acceptedSolutionKeys: [companionKey, targetKey].sort(compareCorpusQuestionKeys),
+    solutionRepairKeys: [targetKey],
     derivedAnswerKeys: [],
-    acceptedMcqKeys: ["1:1"],
+    acceptedMcqKeys: auditItems.map((item) => String(item.key)).sort(compareCorpusQuestionKeys),
     effectiveCorpusHash,
     effectiveSolutionCorpusHash,
     solutionFidelityCheckpoints,
@@ -1462,32 +1509,625 @@ function installQ27SolutionRepair(files: ReturnType<typeof fixture>): {
   });
 
   const db = new Database(files.dbPath);
-  const mathBBook = db.prepare(`
+  const targetBook = db.prepare(`
     SELECT books.id
     FROM books JOIN subjects ON subjects.id = books.subject_id
-    WHERE subjects.name = '수학 - 수학Ⅰ·대수'
-  `).get() as { id: number };
+    WHERE subjects.name = ?
+  `).get(targetIsFirst ? "수학 - 수학Ⅱ·미적분Ⅰ" : "수학 - 수학Ⅰ·대수") as { id: number };
   db.prepare(`
     UPDATE questions
-    SET qtype = 'short', question = ?, choices = NULL, answer = '72', explanation = ?,
-        book_number = '27', printed_number = '27'
+    SET qtype = ?, question = ?, choices = ?, answer = ?, explanation = ?,
+        book_number = ?, printed_number = ?, src_page = ?
     WHERE book_id = ?
-  `).run(q27Problem.question, correctedSolution.explanation, mathBBook.id);
+  `).run(
+    targetProblem.qtype,
+    targetProblem.question,
+    targetChoices === null ? null : JSON.stringify(targetChoices),
+    targetStoredAnswer,
+    correctedSolution.explanation,
+    String(targetNumber),
+    String(targetNumber),
+    targetProblem.page,
+    targetBook.id,
+  );
   db.prepare(`
     UPDATE book_items
-    SET number = '27', answer = '72', content = ?, page = 1
+    SET number = ?, answer = ?, content = ?, page = 1
     WHERE book_id = ? AND category = '문제'
-  `).run(q27Problem.question, mathBBook.id);
+  `).run(String(targetNumber), targetStoredAnswer, targetProblem.question, targetBook.id);
   db.prepare(`
     UPDATE book_items
-    SET number = '27', answer = '72', content = ?, page = 2
+    SET number = ?, answer = ?, content = ?, page = 2
     WHERE book_id = ? AND category = '해설'
-  `).run(correctedSolution.explanation, mathBBook.id);
+  `).run(String(targetNumber), targetStoredAnswer, correctedSolution.explanation, targetBook.id);
   db.close();
   return {
     repairArtifact: join(stateDir, repairRelativePath),
     fidelityArtifact: join(stateDir, repairFidelityRelativePath),
   };
+}
+
+function installQ28SolutionRevision(files: ReturnType<typeof fixture>, firstTerminal = false): {
+  firstFidelityArtifact: string;
+  revisionArtifact: string;
+  revisionFidelityArtifact: string;
+} {
+  installQ27SolutionRepair(files, 28);
+  const stateDir = files.stateDirs.math;
+  const entry = JSON.parse(readFileSync(join(stateDir, "entry.json"), "utf8")).entry;
+  const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
+  const attestationDir = join(stateDir, "answer-attestation");
+  const attestationName = readdirSync(attestationDir).find((name) => /^v2-/u.test(name))!;
+  const attestation = JSON.parse(readFileSync(join(attestationDir, attestationName), "utf8"));
+  const audit = JSON.parse(readFileSync(join(stateDir, attestation.answerAudit.path), "utf8"));
+  const repair = audit.solutionRepairs[0];
+  const firstRepairCheckpoint = JSON.parse(
+    readFileSync(join(stateDir, repair.repairArtifact.path), "utf8"),
+  );
+  const firstSolution = firstRepairCheckpoint.item;
+  const firstFidelityPath = join(stateDir, repair.fidelityArtifact.path);
+  const firstFidelityCheckpoint = JSON.parse(readFileSync(firstFidelityPath, "utf8"));
+  const firstDecision = {
+    key: "1:28",
+    sourcePage: firstSolution.page,
+    answerStatus: "exact",
+    explanationStatus: firstTerminal ? "exact" : "mismatch",
+    evidence: firstTerminal
+      ? "첫 repair가 이미 원본과 완전히 일치한다"
+      : "x→-2 두 극한과 '크거나 같아야' 문구가 누락됐다",
+  };
+  firstFidelityCheckpoint.item = firstDecision;
+  const firstFidelityHash = writeEvidence(firstFidelityPath, firstFidelityCheckpoint);
+  repair.fidelityArtifact.sha256 = firstFidelityHash;
+
+  const trigger = {
+    kind: "fidelity",
+    fidelityDecisionHash: canonicalEvidenceHash(firstDecision),
+  };
+  const revisionBasisHash = canonicalEvidenceHash({
+    key: "1:28",
+    sourceHash: downloads.solution.sha256,
+    basePage: repair.basePage,
+    contextFrom: repair.contextFrom,
+    contextTo: repair.contextTo,
+    baseSolutionCheckpoint: repair.baseSolutionCheckpoint,
+    baseSolutionItemHash: repair.baseSolutionItemHash,
+    baseRepairArtifact: repair.repairArtifact,
+    baseRepairFidelityArtifact: repair.fidelityArtifact,
+    baseRepairSolutionItemHash: repair.effectiveSolutionItemHash,
+    trigger,
+    revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+  });
+  const revisionRelativePath = `solution-revisions/v1-${String(firstSolution.page).padStart(4, "0")}-` +
+    `0028-${revisionBasisHash}.json`;
+  const finalExplanation =
+    "$\\lim_{x\\to2}f(x)=0$, $\\lim_{x\\to-2}f(x)=0$, " +
+    "$\\lim_{x\\to2}g(x)=0$, $\\lim_{x\\to-2}g(x)=0$이고 함수값이 크거나 같아야 한다.";
+  const finalSolution = {
+    number: "28",
+    answer: "72",
+    explanation: finalExplanation,
+    page: 2,
+    complete: true,
+  };
+  const revisionCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    key: "1:28",
+    printedNumber: "28",
+    sourceHash: downloads.solution.sha256,
+    basePage: repair.basePage,
+    contextFrom: repair.contextFrom,
+    contextTo: repair.contextTo,
+    baseOwnedFrom: repair.baseOwnedFrom,
+    baseOwnedTo: repair.baseOwnedTo,
+    effectiveProblemCorpusHash: audit.effectiveCorpusHash,
+    baseSolutionCheckpoint: repair.baseSolutionCheckpoint,
+    baseSolutionItemHash: repair.baseSolutionItemHash,
+    baseRepairArtifact: repair.repairArtifact,
+    baseRepairFidelityArtifact: repair.fidelityArtifact,
+    baseRepairPage: firstSolution.page,
+    baseRepairSolutionItemHash: repair.effectiveSolutionItemHash,
+    trigger,
+    diagnosticDecision: firstDecision,
+    diagnosticDecisionHash: trigger.fidelityDecisionHash,
+    promptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+    promptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    effectivePage: finalSolution.page,
+    item: finalSolution,
+  };
+  const revisionHash = writeEvidence(join(stateDir, revisionRelativePath), revisionCheckpoint);
+  const revisionPointer = { path: revisionRelativePath, sha256: revisionHash };
+  const finalSolutionItemHash = canonicalEvidenceHash(finalSolution);
+  const finalInput = {
+    ...firstFidelityCheckpoint.input,
+    sourcePage: finalSolution.page,
+    rawAnswer: finalSolution.answer,
+    explanation: finalSolution.explanation,
+  };
+  const revisionFidelityRelativePath = `solution-fidelity-revisions/v1-` +
+    `${String(firstSolution.page).padStart(4, "0")}-0028-${revisionHash}-${finalSolutionItemHash}.json`;
+  const finalDecision = {
+    key: "1:28",
+    sourcePage: finalSolution.page,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: "±2 네 극한 줄과 '크거나 같아야'가 모두 공식 픽셀과 일치한다",
+  };
+  const revisionFidelityCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    key: "1:28",
+    sourceHash: downloads.solution.sha256,
+    from: repair.contextFrom,
+    to: repair.contextTo,
+    basePage: repair.basePage,
+    baseRepairPage: firstSolution.page,
+    effectivePage: finalSolution.page,
+    baseOwnedFrom: repair.baseOwnedFrom,
+    baseOwnedTo: repair.baseOwnedTo,
+    effectiveProblemCorpusHash: audit.effectiveCorpusHash,
+    baseSolutionCheckpoint: repair.baseSolutionCheckpoint,
+    baseSolutionItemHash: repair.baseSolutionItemHash,
+    baseRepairArtifact: repair.repairArtifact,
+    baseRepairFidelityArtifact: repair.fidelityArtifact,
+    baseRepairSolutionItemHash: repair.effectiveSolutionItemHash,
+    diagnosticDecisionHash: trigger.fidelityDecisionHash,
+    trigger,
+    revisionArtifact: revisionPointer,
+    effectiveSolutionItemHash: finalSolutionItemHash,
+    inputHash: canonicalEvidenceHash(finalInput),
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    input: finalInput,
+    item: finalDecision,
+  };
+  const revisionFidelityHash = writeEvidence(
+    join(stateDir, revisionFidelityRelativePath),
+    revisionFidelityCheckpoint,
+  );
+  const revisionFidelityPointer = {
+    path: revisionFidelityRelativePath,
+    sha256: revisionFidelityHash,
+  };
+  repair.revision = {
+    trigger,
+    baseRepairPage: firstSolution.page,
+    effectivePage: finalSolution.page,
+    baseRepairArtifact: repair.repairArtifact,
+    baseRepairFidelityArtifact: repair.fidelityArtifact,
+    solutionArtifact: {
+      ...revisionPointer,
+      revisionPromptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+      revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+    },
+    fidelityArtifact: {
+      ...revisionFidelityPointer,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    },
+    diagnosticDecisionHash: trigger.fidelityDecisionHash,
+    baseSolutionItemHash: repair.baseSolutionItemHash,
+    baseRepairSolutionItemHash: repair.effectiveSolutionItemHash,
+    effectiveSolutionItemHash: finalSolutionItemHash,
+    baseRepairRawAnswerHash: hash(firstSolution.answer),
+    effectiveRawAnswerHash: hash(finalSolution.answer),
+    baseRepairExplanationHash: hash(firstSolution.explanation),
+    effectiveExplanationHash: hash(finalSolution.explanation),
+  };
+  const terminalItem = audit.solutionFidelityItems.find((item: { key: string }) => item.key === "1:28");
+  Object.assign(terminalItem, {
+    effectivePage: finalSolution.page,
+    answerStatus: finalDecision.answerStatus,
+    explanationStatus: finalDecision.explanationStatus,
+    evidence: finalDecision.evidence,
+    fidelityArtifact: revisionFidelityPointer,
+    effectiveSolutionItemHash: finalSolutionItemHash,
+    effectiveRawAnswerHash: hash(finalSolution.answer),
+    effectiveExplanationHash: hash(finalSolution.explanation),
+  });
+  const solutionCheckpoint = JSON.parse(
+    readFileSync(join(stateDir, "solution-chunks", "v3-0000.json"), "utf8"),
+  );
+  const q1Solution = solutionCheckpoint.items.find((item: { number: string }) => item.number === "1");
+  audit.effectiveSolutionCorpusHash = canonicalEvidenceHash([{
+    key: "1:1",
+    solution: q1Solution,
+  }, {
+    key: "1:28",
+    solution: finalSolution,
+  }]);
+
+  const { version: _auditVersion, auditDigest: _oldAuditDigest, ...auditBasis } = audit;
+  const auditDigest = canonicalEvidenceHash(auditBasis);
+  const auditRelativePath = `answer-audit/v2-${auditDigest}.json`;
+  for (const name of readdirSync(join(stateDir, "answer-audit"))) rmSync(join(stateDir, "answer-audit", name));
+  const auditHash = writeEvidence(join(stateDir, auditRelativePath), {
+    version: 2,
+    auditDigest,
+    ...auditBasis,
+  });
+  const { version: _attestationVersion, attestationDigest: _oldAttestationDigest, ...attestationBasis } = attestation;
+  attestationBasis.answerAudit = {
+    path: auditRelativePath,
+    sha256: auditHash,
+    effectiveCorpusHash: audit.effectiveCorpusHash,
+    effectiveSolutionCorpusHash: audit.effectiveSolutionCorpusHash,
+  };
+  attestationBasis.solutionFidelityItems = audit.solutionFidelityItems;
+  attestationBasis.solutionRepairs = audit.solutionRepairs;
+  const attestationDigest = canonicalEvidenceHash(attestationBasis);
+  for (const name of readdirSync(attestationDir)) rmSync(join(attestationDir, name));
+  writeEvidence(join(attestationDir, `v2-${attestationDigest}.json`), {
+    version: 2,
+    attestationDigest,
+    ...attestationBasis,
+  });
+
+  const db = new Database(files.dbPath);
+  db.prepare("UPDATE questions SET explanation = ? WHERE printed_number = '28'")
+    .run(finalSolution.explanation);
+  db.prepare("UPDATE book_items SET content = ?, page = 2 WHERE category = '해설' AND number = '28'")
+    .run(finalSolution.explanation);
+  db.close();
+  return {
+    firstFidelityArtifact: firstFidelityPath,
+    revisionArtifact: join(stateDir, revisionRelativePath),
+    revisionFidelityArtifact: join(stateDir, revisionFidelityRelativePath),
+  };
+}
+
+function installQ1SemanticSolutionRevision(files: ReturnType<typeof fixture>): {
+  preliminarySemanticArtifact: string;
+  finalSemanticArtifact: string;
+  revisionArtifact: string;
+} {
+  installQ27SolutionRepair(files, 1, true);
+  const stateDir = files.stateDirs.math;
+  const entry = JSON.parse(readFileSync(join(stateDir, "entry.json"), "utf8")).entry;
+  const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
+  const attestationDir = join(stateDir, "answer-attestation");
+  const attestationName = readdirSync(attestationDir).find((name) => /^v2-/u.test(name))!;
+  const attestation = JSON.parse(readFileSync(join(attestationDir, attestationName), "utf8"));
+  const audit = JSON.parse(readFileSync(join(stateDir, attestation.answerAudit.path), "utf8"));
+  const repair = audit.solutionRepairs[0];
+  const firstSolution = JSON.parse(
+    readFileSync(join(stateDir, repair.repairArtifact.path), "utf8"),
+  ).item;
+  const firstFidelityCheckpoint = JSON.parse(
+    readFileSync(join(stateDir, repair.fidelityArtifact.path), "utf8"),
+  );
+  const firstDecision = firstFidelityCheckpoint.item;
+  const problemCheckpoint = JSON.parse(
+    readFileSync(join(stateDir, "problem-chunks", "v2-0000.json"), "utf8"),
+  );
+  const targetProblem = problemCheckpoint.items[0];
+  const preliminaryInputs = [{
+    key: "1:1",
+    choices: targetProblem.choices,
+    detailedExplanation: redactedExplanation(firstSolution.explanation),
+  }];
+  const preliminaryInputHash = canonicalEvidenceHash(preliminaryInputs);
+  const preliminarySemanticRelativePath = `semantic-choice-checks/v3-${preliminaryInputHash}.json`;
+  const preliminaryDecision = {
+    key: "1:1",
+    status: "ambiguous",
+    choiceIndex: null,
+    evidence: "계산값 1/81은 어떤 보기에도 대응하지 않는다",
+  };
+  const preliminarySemanticCheckpoint = {
+    version: 3,
+    entryId: entry.id,
+    problemHash: downloads.problem.sha256,
+    solutionHash: downloads.solution.sha256,
+    classifierVersion: 4,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 1,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    effectiveCorpusHash: audit.effectiveCorpusHash,
+    effectiveSolutionCorpusHash: audit.effectiveSolutionCorpusHash,
+    inputHash: preliminaryInputHash,
+    promptDigest: SEMANTIC_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    inputs: preliminaryInputs,
+    items: [preliminaryDecision],
+  };
+  const preliminarySemanticHash = writeEvidence(
+    join(stateDir, preliminarySemanticRelativePath),
+    preliminarySemanticCheckpoint,
+  );
+  const preliminarySemanticPointer = {
+    path: preliminarySemanticRelativePath,
+    sha256: preliminarySemanticHash,
+    inputHash: preliminaryInputHash,
+    effectiveCorpusHash: audit.effectiveCorpusHash,
+    effectiveSolutionCorpusHash: audit.effectiveSolutionCorpusHash,
+  };
+  const trigger = {
+    kind: "semantic",
+    fidelityDecisionHash: canonicalEvidenceHash(firstDecision),
+    semanticCheckpoint: preliminarySemanticPointer,
+    semanticDecisionHash: canonicalEvidenceHash(preliminaryDecision),
+  };
+  const revisionBasisHash = canonicalEvidenceHash({
+    key: "1:1",
+    sourceHash: downloads.solution.sha256,
+    basePage: repair.basePage,
+    contextFrom: repair.contextFrom,
+    contextTo: repair.contextTo,
+    baseSolutionCheckpoint: repair.baseSolutionCheckpoint,
+    baseSolutionItemHash: repair.baseSolutionItemHash,
+    baseRepairArtifact: repair.repairArtifact,
+    baseRepairFidelityArtifact: repair.fidelityArtifact,
+    baseRepairSolutionItemHash: repair.effectiveSolutionItemHash,
+    trigger,
+    revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+  });
+  const revisionRelativePath = `solution-revisions/v1-${String(firstSolution.page).padStart(4, "0")}-` +
+    `0001-${revisionBasisHash}.json`;
+  const finalSolution = {
+    number: "1",
+    answer: "②",
+    explanation: "$3^{(\\frac{1}{2})\\times2}=3$이므로 값은 3이다.",
+    page: 2,
+    complete: true,
+  };
+  const revisionCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    key: "1:1",
+    printedNumber: "1",
+    sourceHash: downloads.solution.sha256,
+    basePage: repair.basePage,
+    contextFrom: repair.contextFrom,
+    contextTo: repair.contextTo,
+    baseOwnedFrom: repair.baseOwnedFrom,
+    baseOwnedTo: repair.baseOwnedTo,
+    effectiveProblemCorpusHash: audit.effectiveCorpusHash,
+    baseSolutionCheckpoint: repair.baseSolutionCheckpoint,
+    baseSolutionItemHash: repair.baseSolutionItemHash,
+    baseRepairArtifact: repair.repairArtifact,
+    baseRepairFidelityArtifact: repair.fidelityArtifact,
+    baseRepairPage: firstSolution.page,
+    baseRepairSolutionItemHash: repair.effectiveSolutionItemHash,
+    trigger,
+    diagnosticDecision: firstDecision,
+    diagnosticDecisionHash: trigger.fidelityDecisionHash,
+    semanticDecision: preliminaryDecision,
+    promptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+    promptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    effectivePage: finalSolution.page,
+    item: finalSolution,
+  };
+  const revisionHash = writeEvidence(join(stateDir, revisionRelativePath), revisionCheckpoint);
+  const revisionPointer = { path: revisionRelativePath, sha256: revisionHash };
+  const finalSolutionItemHash = canonicalEvidenceHash(finalSolution);
+  const finalInput = {
+    ...firstFidelityCheckpoint.input,
+    sourcePage: finalSolution.page,
+    rawAnswer: finalSolution.answer,
+    explanation: finalSolution.explanation,
+  };
+  const revisionFidelityRelativePath = `solution-fidelity-revisions/v1-` +
+    `${String(firstSolution.page).padStart(4, "0")}-0001-${revisionHash}-${finalSolutionItemHash}.json`;
+  const finalDecision = {
+    key: "1:1",
+    sourcePage: finalSolution.page,
+    answerStatus: "not_visible",
+    explanationStatus: "exact",
+    evidence: "공식 식과 값 3은 일치하고 marker는 이 범위에 직접 보이지 않는다",
+  };
+  const revisionFidelityCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    key: "1:1",
+    sourceHash: downloads.solution.sha256,
+    from: repair.contextFrom,
+    to: repair.contextTo,
+    basePage: repair.basePage,
+    baseRepairPage: firstSolution.page,
+    effectivePage: finalSolution.page,
+    baseOwnedFrom: repair.baseOwnedFrom,
+    baseOwnedTo: repair.baseOwnedTo,
+    effectiveProblemCorpusHash: audit.effectiveCorpusHash,
+    baseSolutionCheckpoint: repair.baseSolutionCheckpoint,
+    baseSolutionItemHash: repair.baseSolutionItemHash,
+    baseRepairArtifact: repair.repairArtifact,
+    baseRepairFidelityArtifact: repair.fidelityArtifact,
+    baseRepairSolutionItemHash: repair.effectiveSolutionItemHash,
+    diagnosticDecisionHash: trigger.fidelityDecisionHash,
+    trigger,
+    revisionArtifact: revisionPointer,
+    effectiveSolutionItemHash: finalSolutionItemHash,
+    inputHash: canonicalEvidenceHash(finalInput),
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    input: finalInput,
+    item: finalDecision,
+  };
+  const revisionFidelityHash = writeEvidence(
+    join(stateDir, revisionFidelityRelativePath),
+    revisionFidelityCheckpoint,
+  );
+  const revisionFidelityPointer = {
+    path: revisionFidelityRelativePath,
+    sha256: revisionFidelityHash,
+  };
+  repair.revision = {
+    trigger,
+    baseRepairPage: firstSolution.page,
+    effectivePage: finalSolution.page,
+    baseRepairArtifact: repair.repairArtifact,
+    baseRepairFidelityArtifact: repair.fidelityArtifact,
+    solutionArtifact: {
+      ...revisionPointer,
+      revisionPromptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+      revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+    },
+    fidelityArtifact: {
+      ...revisionFidelityPointer,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    },
+    diagnosticDecisionHash: trigger.fidelityDecisionHash,
+    baseSolutionItemHash: repair.baseSolutionItemHash,
+    baseRepairSolutionItemHash: repair.effectiveSolutionItemHash,
+    effectiveSolutionItemHash: finalSolutionItemHash,
+    baseRepairRawAnswerHash: hash(firstSolution.answer),
+    effectiveRawAnswerHash: hash(finalSolution.answer),
+    baseRepairExplanationHash: hash(firstSolution.explanation),
+    effectiveExplanationHash: hash(finalSolution.explanation),
+  };
+  const terminalItem = audit.solutionFidelityItems.find((item: { key: string }) => item.key === "1:1");
+  Object.assign(terminalItem, {
+    effectivePage: finalSolution.page,
+    answerStatus: finalDecision.answerStatus,
+    explanationStatus: finalDecision.explanationStatus,
+    evidence: finalDecision.evidence,
+    fidelityArtifact: revisionFidelityPointer,
+    effectiveSolutionItemHash: finalSolutionItemHash,
+    effectiveRawAnswerHash: hash(finalSolution.answer),
+    effectiveExplanationHash: hash(finalSolution.explanation),
+  });
+  const solutionCheckpoint = JSON.parse(
+    readFileSync(join(stateDir, "solution-chunks", "v3-0000.json"), "utf8"),
+  );
+  const companionSolution = solutionCheckpoint.items.find((item: { number: string }) => item.number === "2");
+  audit.effectiveSolutionCorpusHash = canonicalEvidenceHash([{
+    key: "1:1",
+    solution: finalSolution,
+  }, {
+    key: "1:2",
+    solution: companionSolution,
+  }]);
+  const finalInputs = [{
+    key: "1:1",
+    choices: targetProblem.choices,
+    detailedExplanation: redactedExplanation(finalSolution.explanation),
+  }];
+  const finalInputHash = canonicalEvidenceHash(finalInputs);
+  const finalSemanticRelativePath = `semantic-choice-checks/v3-${audit.effectiveCorpusHash}-` +
+    `${audit.effectiveSolutionCorpusHash}-${finalInputHash}.json`;
+  const finalSemanticDecision = {
+    key: "1:1",
+    status: "resolved",
+    choiceIndex: 2,
+    evidence: "계산값 3은 ②이다",
+  };
+  const finalSemanticCheckpoint = {
+    version: 3,
+    entryId: entry.id,
+    problemHash: downloads.problem.sha256,
+    solutionHash: downloads.solution.sha256,
+    classifierVersion: 4,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 1,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    effectiveCorpusHash: audit.effectiveCorpusHash,
+    effectiveSolutionCorpusHash: audit.effectiveSolutionCorpusHash,
+    inputHash: finalInputHash,
+    promptDigest: SEMANTIC_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    inputs: finalInputs,
+    items: [finalSemanticDecision],
+  };
+  const finalSemanticHash = writeEvidence(
+    join(stateDir, finalSemanticRelativePath),
+    finalSemanticCheckpoint,
+  );
+  audit.semanticCheckpoint = {
+    path: finalSemanticRelativePath,
+    sha256: finalSemanticHash,
+    inputHash: finalInputHash,
+    effectiveSolutionCorpusHash: audit.effectiveSolutionCorpusHash,
+  };
+  audit.derivedAnswerKeys = ["1:1"];
+  const targetAuditItem = audit.items.find((item: { key: string }) => item.key === "1:1");
+  targetAuditItem.officialRawAnswerHash = hash(finalSolution.answer);
+  targetAuditItem.storedAnswerHash = hash("②");
+  targetAuditItem.mode = "choice-marker";
+  targetAuditItem.choiceIndex = 2;
+  targetAuditItem.semantic = {
+    status: finalSemanticDecision.status,
+    choiceIndex: finalSemanticDecision.choiceIndex,
+    evidence: finalSemanticDecision.evidence,
+  };
+
+  const { version: _auditVersion, auditDigest: _oldAuditDigest, ...auditBasis } = audit;
+  const auditDigest = canonicalEvidenceHash(auditBasis);
+  const auditRelativePath = `answer-audit/v2-${auditDigest}.json`;
+  for (const name of readdirSync(join(stateDir, "answer-audit"))) rmSync(join(stateDir, "answer-audit", name));
+  const auditHash = writeEvidence(join(stateDir, auditRelativePath), {
+    version: 2,
+    auditDigest,
+    ...auditBasis,
+  });
+  const { version: _attestationVersion, attestationDigest: _oldAttestationDigest, ...attestationBasis } = attestation;
+  attestationBasis.answerAudit = {
+    path: auditRelativePath,
+    sha256: auditHash,
+    effectiveCorpusHash: audit.effectiveCorpusHash,
+    effectiveSolutionCorpusHash: audit.effectiveSolutionCorpusHash,
+  };
+  attestationBasis.solutionFidelityItems = audit.solutionFidelityItems;
+  attestationBasis.solutionRepairs = audit.solutionRepairs;
+  const attestationDigest = canonicalEvidenceHash(attestationBasis);
+  for (const name of readdirSync(attestationDir)) rmSync(join(attestationDir, name));
+  writeEvidence(join(attestationDir, `v2-${attestationDigest}.json`), {
+    version: 2,
+    attestationDigest,
+    ...attestationBasis,
+  });
+
+  const db = new Database(files.dbPath);
+  db.prepare("UPDATE questions SET answer = '②', explanation = ? WHERE printed_number = '1' AND question = ?")
+    .run(finalSolution.explanation, targetProblem.question);
+  db.prepare("UPDATE book_items SET answer = '②', content = ?, page = 2 WHERE category = '해설' AND number = '1' AND book_id = (SELECT id FROM books WHERE title LIKE '%수학 미적분')")
+    .run(finalSolution.explanation);
+  db.close();
+  return {
+    preliminarySemanticArtifact: join(stateDir, preliminarySemanticRelativePath),
+    finalSemanticArtifact: join(stateDir, finalSemanticRelativePath),
+    revisionArtifact: join(stateDir, revisionRelativePath),
+  };
+}
+
+function rewriteSolutionRepairAuthority(
+  files: ReturnType<typeof fixture>,
+  mutateRepair: (repair: Record<string, any>) => void,
+): void {
+  const stateDir = files.stateDirs.math;
+  const attestationDir = join(stateDir, "answer-attestation");
+  const attestationName = readdirSync(attestationDir).find((name) => /^v2-/u.test(name))!;
+  const attestation = JSON.parse(readFileSync(join(attestationDir, attestationName), "utf8"));
+  const audit = JSON.parse(readFileSync(join(stateDir, attestation.answerAudit.path), "utf8"));
+  mutateRepair(audit.solutionRepairs[0]);
+  const { version: _auditVersion, auditDigest: _oldAuditDigest, ...auditBasis } = audit;
+  const auditDigest = canonicalEvidenceHash(auditBasis);
+  const auditPath = `answer-audit/v2-${auditDigest}.json`;
+  for (const name of readdirSync(join(stateDir, "answer-audit"))) rmSync(join(stateDir, "answer-audit", name));
+  const auditHash = writeEvidence(join(stateDir, auditPath), { version: 2, auditDigest, ...auditBasis });
+  const { version: _attestationVersion, attestationDigest: _oldAttestationDigest, ...attestationBasis } = attestation;
+  attestationBasis.answerAudit = {
+    path: auditPath,
+    sha256: auditHash,
+    effectiveCorpusHash: audit.effectiveCorpusHash,
+    effectiveSolutionCorpusHash: audit.effectiveSolutionCorpusHash,
+  };
+  attestationBasis.solutionRepairs = audit.solutionRepairs;
+  const attestationDigest = canonicalEvidenceHash(attestationBasis);
+  for (const name of readdirSync(attestationDir)) rmSync(join(attestationDir, name));
+  writeEvidence(join(attestationDir, `v2-${attestationDigest}.json`), {
+    version: 2,
+    attestationDigest,
+    ...attestationBasis,
+  });
 }
 
 function rewriteBaselineFidelityAuthority(
@@ -1716,6 +2356,114 @@ describe("exam corpus verifier", () => {
     expect(report.failures.some((failure) => failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
   });
 
+  it("reconstructs one Q28 solution revision and rejects broken or repeated chains", () => {
+    const files = fixture();
+    const artifacts = installQ28SolutionRevision(files);
+    const setupDb = new Database(files.dbPath, { readonly: true, fileMustExist: true });
+    const setupRows = setupDb.prepare("SELECT printed_number, src_page FROM questions").all();
+    setupDb.close();
+    expect(setupRows).toContainEqual({ printed_number: "28", src_page: 1 });
+    const revised = verifyExamCorpus(files);
+    expect(revised, JSON.stringify(revised.failures)).toMatchObject({ ok: true });
+    const db = new Database(files.dbPath, { readonly: true, fileMustExist: true });
+    const row = db.prepare("SELECT explanation FROM questions WHERE printed_number = '28'")
+      .get() as { explanation: string };
+    db.close();
+    expect(row.explanation).toContain("\\lim_{x\\to-2}f(x)");
+    expect(row.explanation).toContain("\\lim_{x\\to-2}g(x)");
+    expect(row.explanation).toContain("크거나 같아야");
+
+    const tamperedFiles = fixture();
+    const tamperedArtifacts = installQ28SolutionRevision(tamperedFiles);
+    const tampered = JSON.parse(readFileSync(tamperedArtifacts.revisionArtifact, "utf8"));
+    tampered.item.explanation = "x→-2 줄을 다시 누락했다";
+    writeJson(tamperedArtifacts.revisionArtifact, tampered);
+    expect(verifyExamCorpus(tamperedFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const orphanFiles = fixture();
+    installQ28SolutionRevision(orphanFiles);
+    rewriteSolutionRepairAuthority(orphanFiles, (repair) => delete repair.revision);
+    expect(verifyExamCorpus(orphanFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("no attested revision"))).toBe(true);
+
+    const staleFiles = fixture();
+    installQ28SolutionRevision(staleFiles);
+    rewriteSolutionRepairAuthority(staleFiles, (repair) => {
+      repair.revision.solutionArtifact.revisionPromptDigest = "0".repeat(64);
+    });
+    expect(verifyExamCorpus(staleFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("stale"))).toBe(true);
+
+    const repeatedFiles = fixture();
+    installQ28SolutionRevision(repeatedFiles);
+    rewriteSolutionRepairAuthority(repeatedFiles, (repair) => {
+      repair.revision.revision = { forbidden: true };
+    });
+    expect(verifyExamCorpus(repeatedFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("exact chain"))).toBe(true);
+
+    const exactFirstFiles = fixture();
+    installQ28SolutionRevision(exactFirstFiles, true);
+    expect(verifyExamCorpus(exactFirstFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("must not declare"))).toBe(true);
+    expect(artifacts.firstFidelityArtifact).toContain("solution-fidelity-repairs/v1-");
+  });
+
+  it("reconstructs Q1 semantic-conflict revision with fresh marker authority", () => {
+    const files = fixture();
+    const artifacts = installQ1SemanticSolutionRevision(files);
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    expect(artifacts.preliminarySemanticArtifact).not.toBe(artifacts.finalSemanticArtifact);
+    const stateDir = files.stateDirs.math;
+    const attestationName = readdirSync(join(stateDir, "answer-attestation"))[0];
+    const attestation = JSON.parse(
+      readFileSync(join(stateDir, "answer-attestation", attestationName), "utf8"),
+    );
+    const audit = JSON.parse(readFileSync(join(stateDir, attestation.answerAudit.path), "utf8"));
+    expect(audit.semanticCheckpoint.path).toBe(
+      `semantic-choice-checks/v3-${audit.effectiveCorpusHash}-` +
+      `${audit.effectiveSolutionCorpusHash}-${audit.semanticCheckpoint.inputHash}.json`,
+    );
+    expect(audit.derivedAnswerKeys).toEqual(["1:1"]);
+    expect(audit.items.find((item: { key: string }) => item.key === "1:1").semantic).toEqual({
+      status: "resolved",
+      choiceIndex: 2,
+      evidence: "계산값 3은 ②이다",
+    });
+    const db = new Database(files.dbPath, { readonly: true, fileMustExist: true });
+    const row = db.prepare("SELECT answer, explanation FROM questions WHERE printed_number = '1' AND question LIKE '$3%'")
+      .get() as { answer: string; explanation: string };
+    db.close();
+    expect(row.answer).toBe("②");
+    expect(row.explanation).toContain("=3");
+
+    const staleGenerationFiles = fixture();
+    installQ1SemanticSolutionRevision(staleGenerationFiles);
+    rewriteSolutionRepairAuthority(staleGenerationFiles, (repair) => {
+      repair.revision.trigger.semanticCheckpoint.effectiveCorpusHash = "0".repeat(64);
+    });
+    expect(verifyExamCorpus(staleGenerationFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("stale corpus generation"))).toBe(true);
+
+    const tamperedSemanticFiles = fixture();
+    const semanticArtifacts = installQ1SemanticSolutionRevision(tamperedSemanticFiles);
+    const semantic = JSON.parse(readFileSync(semanticArtifacts.preliminarySemanticArtifact, "utf8"));
+    semantic.items[0].evidence = "tampered diagnostic";
+    writeJson(semanticArtifacts.preliminarySemanticArtifact, semantic);
+    expect(verifyExamCorpus(tamperedSemanticFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const repeatedFiles = fixture();
+    installQ1SemanticSolutionRevision(repeatedFiles);
+    rewriteSolutionRepairAuthority(repeatedFiles, (repair) => {
+      repair.revision.revision = { forbidden: true };
+    });
+    expect(verifyExamCorpus(repeatedFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("exact chain"))).toBe(true);
+  });
+
   it("rejects stale fidelity metadata and non-marker not_visible answer authority", () => {
     const staleFiles = fixture();
     rewriteBaselineFidelityAuthority(staleFiles, "math", (checkpoint) => {
@@ -1748,6 +2496,17 @@ describe("exam corpus verifier", () => {
     const report = verifyExamCorpus(files);
     expect(report.ok).toBe(false);
     expect(report.failures.some((failure) => failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
+
+    const legacyFiles = fixture();
+    const legacyDir = join(legacyFiles.stateDirs.math, "answer-attestation");
+    const currentName = readdirSync(legacyDir)[0];
+    const legacy = JSON.parse(readFileSync(join(legacyDir, currentName), "utf8"));
+    legacy.version = 1;
+    renameSync(join(legacyDir, currentName), join(legacyDir, currentName.replace(/^v2-/u, "v1-")));
+    writeJson(join(legacyDir, currentName.replace(/^v2-/u, "v1-")), legacy);
+    const legacyReport = verifyExamCorpus(legacyFiles);
+    expect(legacyReport.failures.some((failure) =>
+      failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
   });
 
   it("rejects legacy v3 classifications instead of bypassing the source-fidelity gate", () => {
