@@ -205,13 +205,18 @@ describe("exam corpus page-batch problem repair", () => {
       }
       if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
         calls.terminal++;
-        const inputs = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{ key: string }>;
+        const inputs = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{ key: string; question: string }>;
         return { text: JSON.stringify(inputs.map((input) => ({
           key: input.key,
-          status: calls.terminal === 1 && input.key === "3:24" ? "mismatch" : "exact",
-          evidence: calls.terminal === 1 && input.key === "3:24"
+          status: input.key === "3:24" && !input.question.includes("최종") ? "mismatch" : "exact",
+          evidence: input.key === "3:24" && !input.question.includes("최종")
             ? "Q24의 전환 문장이 축약됐다."
             : "원본 픽셀과 일치한다.",
+          scopeDecision: input.key === "2:3" || (input.key === "3:24" && !input.question.includes("최종"))
+            ? "accept"
+            : "reject",
+          scopeConfidence: 0.99,
+          scopeEvidence: "원본 문제의 필수 개념을 페이지 픽셀에서 확인했다.",
         }))) };
       }
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
@@ -230,7 +235,7 @@ describe("exam corpus page-batch problem repair", () => {
     await expect(repairAndAuditOfficialAnswers(
       entry, problem, solution, root, classified, solutions
     )).rejects.toThrow("simulated batch classification interruption");
-    expect(calls).toEqual({ extract: 1, classify: 1, terminal: 0, solution: 0 });
+    expect(calls).toEqual({ extract: 1, classify: 1, terminal: 1, solution: 0 });
     const [v2Name] = readdirSync(join(root, "problem-repair-batches"));
     expect(v2Name).toMatch(/^v2-0001-0003-[a-f0-9]{64}\.json$/u);
     const v2Checkpoint = JSON.parse(readFileSync(join(root, "problem-repair-batches", v2Name), "utf8"));
@@ -252,14 +257,14 @@ describe("exam corpus page-batch problem repair", () => {
     const repaired = await repairAndAuditOfficialAnswers(
       entry, problem, solution, root, classified, solutions
     );
-    expect(calls).toEqual({ extract: 2, classify: 3, terminal: 2, solution: 1 });
+    expect(calls).toEqual({ extract: 2, classify: 3, terminal: 3, solution: 1 });
     expect(repaired.repairs.map((repair) => repair.key)).toEqual(["1:1", "2:3", "3:24"]);
     expect(new Set(repaired.repairs.map((repair) => repair.problemArtifact.path)).size).toBe(1);
     expect(new Set(repaired.repairs.map((repair) => repair.classificationArtifact.path)).size).toBe(1);
     expect(repaired.repairs.find((repair) => repair.key === "3:24")?.revision).toMatchObject({
       trigger: {
         kind: "terminal",
-        terminalCheckpoint: { path: expect.stringMatching(/^problem-terminal-fidelity\/v1-/u) },
+        terminalCheckpoint: { path: expect.stringMatching(/^problem-terminal-fidelity\/v2-/u) },
         terminalItemHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
       },
       problemArtifact: { path: expect.stringMatching(/^problem-revision-batches\/v1-/u) },
@@ -269,7 +274,7 @@ describe("exam corpus page-batch problem repair", () => {
     expect(repaired.classified.find((item) => item.classification.key === "3:24")?.classification.decision).toBe("reject");
     expect(repaired.problemTerminalFidelityItems).toHaveLength(30);
     expect(repaired.problemTerminalFidelityItems.every((item) => item.status === "exact")).toBe(true);
-    expect(repaired.auditPath).toMatch(/^answer-audit\/v3-/u);
+    expect(repaired.auditPath).toMatch(/^answer-audit\/v4-/u);
 
     const beforeReplay = { ...calls };
     const replay = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);

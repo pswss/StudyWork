@@ -156,6 +156,9 @@ describe("exam corpus official solution revision", () => {
           key: input.key,
           status: "exact",
           evidence: "공식 문제 픽셀과 최종 전사가 일치한다.",
+          scopeDecision: "accept",
+          scopeConfidence: 0.99,
+          scopeEvidence: "원본 문제의 대상 수학 개념을 확인했다.",
         }))) };
       }
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
@@ -236,6 +239,9 @@ describe("exam corpus official solution revision", () => {
           key: input.key,
           status: "exact",
           evidence: "공식 문제 픽셀과 최종 전사가 일치한다.",
+          scopeDecision: "accept",
+          scopeConfidence: 0.99,
+          scopeEvidence: "원본 문제의 대상 수학 개념을 확인했다.",
         }))) };
       }
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {

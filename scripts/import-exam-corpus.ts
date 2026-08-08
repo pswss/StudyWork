@@ -83,10 +83,10 @@ export const SOLUTION_REPAIR_VERSION = 1;
 export const SOLUTION_REPAIR_FIDELITY_VERSION = 1;
 export const SOLUTION_REVISION_VERSION = 1;
 export const SOLUTION_REVISION_FIDELITY_VERSION = 1;
-export const PROBLEM_TERMINAL_FIDELITY_VERSION = 1;
+export const PROBLEM_TERMINAL_FIDELITY_VERSION = 2;
 export const SEMANTIC_CHOICE_CHECK_VERSION = 4;
-export const ANSWER_AUDIT_VERSION = 3;
-export const ANSWER_ATTESTATION_VERSION = 3;
+export const ANSWER_AUDIT_VERSION = 4;
+export const ANSWER_ATTESTATION_VERSION = 4;
 
 const execFileP = promisify(execFile);
 
@@ -257,6 +257,19 @@ export const TRANSCRIPTION_PROMPT_DIGEST = createHash("sha256")
   .update(`${TRANSCRIPTION_GATE_VERSION}\n${TRANSCRIPTION_GATE_RULES}`)
   .digest("hex");
 
+export const PROBLEM_TERMINAL_SCOPE_RULES = `
+The prior curriculum decision is intentionally hidden. Independently decide whether each source-pixel problem is
+accept, reject, or review under the supplied curriculum rules. Keep this scope decision independent from transcription
+fidelity: a mistranscribed item can still have a clear source-pixel scope. Give confidence from 0 through 1 and concise
+evidence grounded in the original source page and the decisive required concept. Never infer scope from the supplied
+transcription when it disagrees with the pixels. Scope output for an exact transcription is an audit observation only;
+it never overrides the existing classifier decision.
+`.trim();
+
+export const PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST = createHash("sha256")
+  .update(`${PROBLEM_TERMINAL_FIDELITY_VERSION}\n${PROBLEM_TERMINAL_SCOPE_RULES}\n${CURRICULUM_RULES}`)
+  .digest("hex");
+
 export const SOLUTION_FIDELITY_RULES = `
 Independently compare every supplied accepted official solution with the attached official solution PDF pixels. Report the visible page where that numbered solution starts. Check the supplied raw final answer separately from the complete explanation through its final step. Compare every sign, coefficient, exponent, root index, fraction, formula, table, diagram, and conclusion. LaTeX normalization is allowed only when it preserves every mathematical and Korean source detail.
 
@@ -337,8 +350,11 @@ const PROBLEM_TERMINAL_FIDELITY_SCHEMA: AIJsonSchema = {
             key: { type: "string" },
             status: { type: "string", enum: ["exact", "mismatch", "unverifiable"] },
             evidence: { type: "string" },
+            scopeDecision: { type: "string", enum: ["accept", "reject", "review"] },
+            scopeConfidence: { type: "number", minimum: 0, maximum: 1 },
+            scopeEvidence: { type: "string" },
           },
-          required: ["key", "status", "evidence"],
+          required: ["key", "status", "evidence", "scopeDecision", "scopeConfidence", "scopeEvidence"],
           additionalProperties: false,
         },
       },
@@ -449,6 +465,9 @@ export type ProblemTerminalFidelityItem = {
   key: string;
   status: "exact" | "mismatch" | "unverifiable";
   evidence: string;
+  scopeDecision: "accept" | "reject" | "review";
+  scopeConfidence: number;
+  scopeEvidence: string;
 };
 
 export type ProblemTerminalFidelityCheckpoint = EvidencePointer & {
@@ -1377,16 +1396,55 @@ function parseProblemTerminalFidelity(
     if (!( ["exact", "mismatch", "unverifiable"] as unknown[]).includes(row.status)) {
       throw new Error(`terminal 문제 fidelity ${key}.status가 유효하지 않습니다`);
     }
+    if (!( ["accept", "reject", "review"] as unknown[]).includes(row.scopeDecision)) {
+      throw new Error(`terminal 문제 fidelity ${key}.scopeDecision이 유효하지 않습니다`);
+    }
+    if (typeof row.scopeConfidence !== "number" || !Number.isFinite(row.scopeConfidence) ||
+        row.scopeConfidence < 0 || row.scopeConfidence > 1) {
+      throw new Error(`terminal 문제 fidelity ${key}.scopeConfidence가 유효하지 않습니다`);
+    }
     return {
       key,
       status: row.status as ProblemTerminalFidelityItem["status"],
       evidence: exactString(row.evidence, `terminal 문제 fidelity ${key}.evidence`, 2000),
+      scopeDecision: row.scopeDecision as ProblemTerminalFidelityItem["scopeDecision"],
+      scopeConfidence: row.scopeConfidence,
+      scopeEvidence: exactString(row.scopeEvidence, `terminal 문제 fidelity ${key}.scopeEvidence`, 2000),
     };
   });
   if (items.length !== expected.size || seen.size !== expected.size) {
     throw new Error("terminal 문제 fidelity 결과의 exact key 집합이 다릅니다");
   }
   return items;
+}
+
+function isAuthorizedScopeRejectedMismatch(
+  current: ClassifiedQuestion,
+  item: ProblemTerminalFidelityItem,
+  repairedKeys: ReadonlySet<string>
+): boolean {
+  return !repairedKeys.has(item.key) && questionKey(current.question) === item.key &&
+    current.classification.decision === "reject" && current.classification.transcription_status === "mismatch" &&
+    item.status === "mismatch" && item.scopeDecision === "reject" && item.scopeConfidence >= 0.9;
+}
+
+function assertTerminalProblemPolicy(
+  classified: ClassifiedQuestion[],
+  items: ProblemTerminalFidelityItem[],
+  repairedKeys: ReadonlySet<string>
+): void {
+  const itemByKey = new Map(items.map((item) => [item.key, item]));
+  if (itemByKey.size !== items.length || classified.length !== items.length) {
+    throw new Error("terminal 문제 fidelity policy coverage가 다릅니다");
+  }
+  for (const current of classified) {
+    const key = questionKey(current.question);
+    const item = itemByKey.get(key);
+    const independentlyExact = item?.status === "exact" && current.classification.transcription_status === "exact";
+    if (!item || (!independentlyExact && !isAuthorizedScopeRejectedMismatch(current, item, repairedKeys))) {
+      throw new Error(`${key} terminal 문제 fidelity가 최종 정책을 만족하지 않습니다`);
+    }
+  }
 }
 
 async function auditProblemTerminalFidelity(
@@ -1431,14 +1489,19 @@ async function auditProblemTerminalFidelity(
             checkpoint.effectiveCorpusHash !== effectiveCorpusHash || checkpoint.inputHash !== inputHash ||
             checkpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
             checkpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+            checkpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+            checkpoint.scopePromptDigest !== PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST ||
             checkpoint.model !== IMPORT_MODEL || checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
             canonicalEvidenceHash(checkpoint.inputs) !== canonicalEvidenceHash(inputs)
           ) throw new Error(`terminal 문제 fidelity 체크포인트 메타데이터가 다릅니다: ${path}`);
           items = parseProblemTerminalFidelity(checkpoint.items, questions);
         } else {
           const prompt = `Attached official problem PDF slice contains original pages ${slice.from}-${slice.to}. ` +
-            `Independently audit every final transcription against source pixels. Do not classify curriculum.\n\n` +
-            `${TRANSCRIPTION_GATE_RULES}\n\nFinal questions:\n${JSON.stringify(inputs)}`;
+            `Exam source subject is ${entry.subject}; source school grade is ${entry.grade ?? "unknown"}. ` +
+            `Independently audit every final transcription and its curriculum scope from source pixels. ` +
+            `No prior classifier decision is supplied.\n\n${TRANSCRIPTION_GATE_RULES}\n\n` +
+            `${PROBLEM_TERMINAL_SCOPE_RULES}\n\n${CURRICULUM_RULES}\n\n` +
+            `Final questions:\n${JSON.stringify(inputs)}`;
           const result = await withFullContextAi(() => getCodexProvider({
             model: IMPORT_MODEL,
             reasoningEffort: IMPORT_REASONING_EFFORT,
@@ -1464,6 +1527,8 @@ async function auditProblemTerminalFidelity(
             inputHash,
             transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
             transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+            rulesDigest: CLASSIFIER_DIGEST,
+            scopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
             model: IMPORT_MODEL,
             reasoningEffort: IMPORT_REASONING_EFFORT,
             inputs,
@@ -3386,6 +3451,8 @@ async function reviseClassifiedQuestionsBatch(
         checkpoint.sourceHash !== problem.sha256 || checkpoint.from !== member.trigger.checkpoint.from ||
         checkpoint.to !== member.trigger.checkpoint.to || checkpoint.ownedFrom !== member.trigger.checkpoint.ownedFrom ||
         checkpoint.ownedTo !== member.trigger.checkpoint.ownedTo || !item ||
+        checkpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+        checkpoint.scopePromptDigest !== PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST ||
         canonicalEvidenceHash(item) !== member.trigger.itemHash ||
         object(item, "terminal problem fidelity item").status === "exact" ||
         object(item, "terminal problem fidelity item").evidence !== member.trigger.evidence
@@ -4129,7 +4196,15 @@ export async function repairAndAuditOfficialAnswers(
 
   for (;;) {
     officialSolutionsByNumber(entry, effective, solutions);
-    const transcriptionIssues = transcriptionRepairKeys(effective);
+    finalProblemFidelity = await auditProblemTerminalFidelity(entry, problem, stateDir, effective);
+    const terminalByKey = new Map(finalProblemFidelity.items.map((item) => [item.key, item]));
+    const repairedKeys = new Set(repairs.keys());
+    const authorizedScopeRejects = new Set(effective.flatMap((current) => {
+      const item = terminalByKey.get(questionKey(current.question));
+      return item && isAuthorizedScopeRejectedMismatch(current, item, repairedKeys) ? [item.key] : [];
+    }));
+    const transcriptionIssues = transcriptionRepairKeys(effective)
+      .filter((key) => !authorizedScopeRejects.has(key));
     if (transcriptionIssues.length > 0) {
       const changed = await applyRepairs(transcriptionIssues, "classification");
       if (transcriptionIssues.some((key) => !changed.has(key))) {
@@ -4142,9 +4217,8 @@ export async function repairAndAuditOfficialAnswers(
       finalProblemFidelity = null;
       continue;
     }
-    finalProblemFidelity = await auditProblemTerminalFidelity(entry, problem, stateDir, effective);
     const terminalIssues = finalProblemFidelity.items
-      .filter((item) => item.status !== "exact")
+      .filter((item) => item.status !== "exact" && !authorizedScopeRejects.has(item.key))
       .map((item) => item.key);
     if (terminalIssues.length > 0) {
       const terminalTriggers = new Map<string, Extract<ProblemRevisionTrigger, { kind: "terminal" }>>();
@@ -4171,6 +4245,7 @@ export async function repairAndAuditOfficialAnswers(
       finalProblemFidelity = null;
       continue;
     }
+    assertTerminalProblemPolicy(effective, finalProblemFidelity.items, repairedKeys);
     if (effective.some(({ classification }) => classification.decision === "review")) {
       return {
         classified: effective,
@@ -4322,12 +4397,19 @@ export async function repairAndAuditOfficialAnswers(
     break;
   }
 
-  const remainingTranscriptionIssues = transcriptionRepairKeys(effective);
+  if (!finalProblemFidelity) throw new Error("terminal 문제 fidelity 결과가 없습니다");
+  const finalTerminalByKey = new Map(finalProblemFidelity.items.map((item) => [item.key, item]));
+  const finalRepairedKeys = new Set(repairs.keys());
+  const remainingTranscriptionIssues = transcriptionRepairKeys(effective).filter((key) => {
+    const current = effective.find((item) => questionKey(item.question) === key);
+    const terminal = finalTerminalByKey.get(key);
+    return !current || !terminal || !isAuthorizedScopeRejectedMismatch(current, terminal, finalRepairedKeys);
+  });
   if (remainingTranscriptionIssues.length > 0) {
     throw new Error(`terminal corpus에 원본 전사 미검증 문항이 있습니다: ${remainingTranscriptionIssues.join(", ")}`);
   }
+  assertTerminalProblemPolicy(effective, finalProblemFidelity.items, finalRepairedKeys);
   if (!finalSolutionAudit) throw new Error("terminal 해설 fidelity 결과가 없습니다");
-  if (!finalProblemFidelity) throw new Error("terminal 문제 fidelity 결과가 없습니다");
   const finalByNumber = officialSolutionsByNumber(entry, effective, finalSolutionAudit.solutions);
   const finalMcq = effective.filter(
     ({ question, classification }) => classification.decision === "accept" && question.qtype === "mcq"
@@ -4395,6 +4477,7 @@ export async function repairAndAuditOfficialAnswers(
     solutionFidelityVersion: SOLUTION_FIDELITY_VERSION,
     solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
     problemTerminalFidelityVersion: PROBLEM_TERMINAL_FIDELITY_VERSION,
+    problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
     semanticChoiceVersion: SEMANTIC_CHOICE_CHECK_VERSION,
     semanticPromptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
     sourceQuestionCount: effective.length,
@@ -4478,15 +4561,26 @@ async function assertProblemTerminalFidelityEvidence(
       checkpoint.inputHash !== pointer.inputHash || checkpoint.inputHash !== canonicalEvidenceHash(checkpoint.inputs) ||
       checkpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
       checkpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+      checkpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+      checkpoint.scopePromptDigest !== PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST ||
       checkpoint.model !== IMPORT_MODEL || checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
       !Array.isArray(checkpoint.items)
     ) throw new Error("problem terminal fidelity child metadata가 다릅니다");
     const childItems = checkpoint.items.map((item) => {
       const row = object(item, "problem terminal fidelity child item");
+      if (!( ["exact", "mismatch", "unverifiable"] as unknown[]).includes(row.status) ||
+          !( ["accept", "reject", "review"] as unknown[]).includes(row.scopeDecision) ||
+          typeof row.scopeConfidence !== "number" || !Number.isFinite(row.scopeConfidence) ||
+          row.scopeConfidence < 0 || row.scopeConfidence > 1) {
+        throw new Error("problem terminal fidelity child item status 또는 scope가 유효하지 않습니다");
+      }
       return {
         key: exactString(row.key, "problem terminal fidelity child item.key", 100),
         status: row.status as ProblemTerminalFidelityItem["status"],
         evidence: exactString(row.evidence, "problem terminal fidelity child item.evidence", 2000),
+        scopeDecision: row.scopeDecision as ProblemTerminalFidelityItem["scopeDecision"],
+        scopeConfidence: row.scopeConfidence,
+        scopeEvidence: exactString(row.scopeEvidence, "problem terminal fidelity child item.scopeEvidence", 2000),
       };
     });
     const inputKeys = Array.isArray(checkpoint.inputs)
@@ -4533,6 +4627,11 @@ export async function writeAnswerAttestation(
   const auditPath = confinedStateFile(stateDir, answerAudit.auditPath, "answer audit");
   if (await sha256File(auditPath) !== answerAudit.auditHash) throw new Error("answer audit hash가 다릅니다");
   const audit = object(JSON.parse(readFileSync(auditPath, "utf8")), "answer audit");
+  assertTerminalProblemPolicy(
+    answerAudit.classified,
+    answerAudit.problemTerminalFidelityItems,
+    new Set(answerAudit.repairs.map((repair) => repair.key))
+  );
   if (
     audit.entryId !== entryId || audit.problemHash !== problemHash || audit.solutionHash !== solutionHash ||
     audit.classifierVersion !== CLASSIFIER_VERSION || audit.rulesDigest !== CLASSIFIER_DIGEST ||
@@ -4541,6 +4640,7 @@ export async function writeAnswerAttestation(
     audit.solutionFidelityVersion !== SOLUTION_FIDELITY_VERSION ||
     audit.solutionFidelityPromptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST ||
     audit.problemTerminalFidelityVersion !== PROBLEM_TERMINAL_FIDELITY_VERSION ||
+    audit.problemTerminalScopePromptDigest !== PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST ||
     audit.effectiveCorpusHash !== answerAudit.effectiveCorpusHash ||
     audit.effectiveSolutionCorpusHash !== answerAudit.effectiveSolutionCorpusHash ||
     canonicalEvidenceHash(audit.repairs) !== canonicalEvidenceHash(answerAudit.repairs) ||
@@ -4574,6 +4674,7 @@ export async function writeAnswerAttestation(
     solutionFidelityVersion: SOLUTION_FIDELITY_VERSION,
     solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
     problemTerminalFidelityVersion: PROBLEM_TERMINAL_FIDELITY_VERSION,
+    problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
     receipt: { path: "receipt.json", sha256: receiptHash },
     answerAudit: {
       path: answerAudit.auditPath,
@@ -4956,15 +5057,17 @@ type EntryResult = {
 
 export function validateFilteredResult(value: unknown, entryId: string): string {
   const result = object(value, "result.json");
-  if (![2, 3].includes(Number(result.version)) || result.status !== "filtered" || result.entryId !== entryId) {
+  if (![2, 4].includes(Number(result.version)) || result.status !== "filtered" || result.entryId !== entryId) {
     throw new Error("기존 result.json이 유효하지 않습니다");
   }
   const reason = exactString(result.reason, "result.json.reason", 100);
   if (reason === "NO_IN_SCOPE_QUESTIONS" && (
-    result.version !== 3 ||
+    result.version !== 4 ||
     result.rulesDigest !== CLASSIFIER_DIGEST || result.classifierVersion !== CLASSIFIER_VERSION ||
     result.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
     result.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+    result.problemTerminalFidelityVersion !== PROBLEM_TERMINAL_FIDELITY_VERSION ||
+    result.problemTerminalScopePromptDigest !== PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST ||
     !object(result.answerAudit, "result.json.answerAudit").path ||
     !object(result.answerAudit, "result.json.answerAudit").sha256
   )) {
@@ -5016,11 +5119,22 @@ async function processEntry(
         ? audit.problemTerminalFidelityItems.map((item) => object(item, "filtered terminal fidelity item"))
         : [];
       const terminalKeys = terminalItems.map((item) => exactString(item.key, "filtered terminal fidelity key", 100));
-      const typedTerminalItems = terminalItems.map((item) => ({
-        key: exactString(item.key, "filtered terminal fidelity key", 100),
-        status: item.status as ProblemTerminalFidelityItem["status"],
-        evidence: exactString(item.evidence, "filtered terminal fidelity evidence", 2000),
-      }));
+      const typedTerminalItems = terminalItems.map((item) => {
+        if (!( ["exact", "mismatch", "unverifiable"] as unknown[]).includes(item.status) ||
+            !( ["accept", "reject", "review"] as unknown[]).includes(item.scopeDecision) ||
+            typeof item.scopeConfidence !== "number" || !Number.isFinite(item.scopeConfidence) ||
+            item.scopeConfidence < 0 || item.scopeConfidence > 1) {
+          throw new Error("filtered terminal fidelity status 또는 scope가 유효하지 않습니다");
+        }
+        return {
+          key: exactString(item.key, "filtered terminal fidelity key", 100),
+          status: item.status as ProblemTerminalFidelityItem["status"],
+          evidence: exactString(item.evidence, "filtered terminal fidelity evidence", 2000),
+          scopeDecision: item.scopeDecision as ProblemTerminalFidelityItem["scopeDecision"],
+          scopeConfidence: item.scopeConfidence,
+          scopeEvidence: exactString(item.scopeEvidence, "filtered terminal fidelity scope evidence", 2000),
+        };
+      });
       const terminalCheckpoints = Array.isArray(audit.problemTerminalFidelityCheckpoints)
         ? audit.problemTerminalFidelityCheckpoints.map((value) => {
             const pointer = object(value, "filtered terminal fidelity checkpoint");
@@ -5042,11 +5156,16 @@ async function processEntry(
         audit.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
         audit.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
         audit.problemTerminalFidelityVersion !== PROBLEM_TERMINAL_FIDELITY_VERSION ||
+        audit.problemTerminalScopePromptDigest !== PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST ||
         audit.effectiveCorpusHash !== result.effectiveCorpusHash ||
         audit.sourceQuestionCount !== result.sourceQuestionCount || audit.acceptedQuestionCount !== 0 ||
         audit.rejectedQuestionCount !== result.rejectedQuestionCount || audit.reviewQuestionCount !== 0 ||
         terminalItems.length !== result.sourceQuestionCount ||
-        new Set(terminalKeys).size !== terminalKeys.length || terminalItems.some((item) => item.status !== "exact") ||
+        new Set(terminalKeys).size !== terminalKeys.length || typedTerminalItems.some((item) =>
+          item.status !== "exact" && !(
+            item.status === "mismatch" && item.scopeDecision === "reject" && item.scopeConfidence >= 0.9
+          )
+        ) ||
         typeof auditDigest !== "string" || canonicalEvidenceHash(auditBasis) !== auditDigest ||
         relativePath !== `answer-audit/v${ANSWER_AUDIT_VERSION}-${auditDigest}.json`
       ) throw new Error("filtered answer audit terminal binding이 다릅니다");
@@ -5118,10 +5237,10 @@ async function processEntry(
   if (repairedAcceptedCount === 0) {
     assertNoCommittedReceiptForFilteredResult(stateDir);
     if (!answerAudit.auditPath || !answerAudit.auditHash || !answerAudit.effectiveCorpusHash) {
-      throw new Error("filtered corpus의 v3 terminal audit이 없습니다");
+      throw new Error("filtered corpus의 v4 terminal audit이 없습니다");
     }
     writeImmutableJson(resultPath, {
-      version: 3,
+      version: 4,
       status: "filtered",
       entryId: entry.id,
       reason: "NO_IN_SCOPE_QUESTIONS",
@@ -5129,6 +5248,8 @@ async function processEntry(
       classifierVersion: CLASSIFIER_VERSION,
       transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
       transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      problemTerminalFidelityVersion: PROBLEM_TERMINAL_FIDELITY_VERSION,
+      problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
       sourceQuestionCount: classified.length,
       acceptedQuestionCount: 0,
       rejectedQuestionCount: classified.length,

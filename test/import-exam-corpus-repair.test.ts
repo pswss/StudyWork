@@ -311,6 +311,9 @@ describe("exam corpus targeted problem repair", () => {
             key: input.key,
             status: "exact",
             evidence: "원본 픽셀과 최종 전사가 일치한다.",
+            scopeDecision: "accept",
+            scopeConfidence: 0.99,
+            scopeEvidence: "원본 4쪽의 삼각함수 개념을 확인했다.",
           }))),
           provider: "codex-cli",
           model: "gpt-5.6-sol",
@@ -362,13 +365,13 @@ describe("exam corpus targeted problem repair", () => {
       classified,
       solutions
     )).rejects.toThrow("simulated classification interruption");
-    expect(calls).toEqual({ target: 1, classification: 1, terminalFidelity: 0, solutionFidelity: 0, semantic: 0 });
+    expect(calls).toEqual({ target: 1, classification: 1, terminalFidelity: 1, solutionFidelity: 0, semantic: 0 });
     expect(readdirSync(join(root, "problem-repair-batches"))).toHaveLength(1);
     expect(() => readdirSync(join(root, "classification-repair-batches"))).toThrow();
 
     crashClassification = false;
     const repaired = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
-    expect(calls).toEqual({ target: 2, classification: 3, terminalFidelity: 1, solutionFidelity: 1, semantic: 1 });
+    expect(calls).toEqual({ target: 2, classification: 3, terminalFidelity: 3, solutionFidelity: 1, semantic: 1 });
     expect(repaired.repairs).toHaveLength(1);
     expect(PROBLEM_REPAIR_VERSION).toBe(2);
     expect(PROBLEM_REVISION_VERSION).toBe(1);
@@ -416,7 +419,7 @@ describe("exam corpus targeted problem repair", () => {
       contextTo: 4,
       items: [{ transcription_status: "exact" }],
     });
-    expect(repaired.auditPath).toMatch(/^answer-audit\/v3-[a-f0-9]{64}\.json$/u);
+    expect(repaired.auditPath).toMatch(/^answer-audit\/v4-[a-f0-9]{64}\.json$/u);
     expect(repaired.auditHash).toMatch(/^[a-f0-9]{64}$/u);
     const changedKeys = repaired.classified.flatMap((item, index) =>
       canonicalEvidenceHash(item) === canonicalEvidenceHash(classified[index]) ? [] : [item.classification.key]
@@ -450,7 +453,7 @@ describe("exam corpus targeted problem repair", () => {
       receipt,
       repaired
     );
-    expect(attestation.path).toMatch(/^answer-attestation\/v3-[a-f0-9]{64}\.json$/u);
+    expect(attestation.path).toMatch(/^answer-attestation\/v4-[a-f0-9]{64}\.json$/u);
     expect(attestation.sha256).toMatch(/^[a-f0-9]{64}$/u);
     const auditCheckpoint = JSON.parse(readFileSync(join(root, repaired.auditPath!), "utf8"));
     expect(auditCheckpoint).toMatchObject({
@@ -489,7 +492,7 @@ describe("exam corpus targeted problem repair", () => {
     rmSync(join(root, "result.json"));
 
     const replay = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
-    expect(calls).toEqual({ target: 2, classification: 3, terminalFidelity: 1, solutionFidelity: 1, semantic: 1 });
+    expect(calls).toEqual({ target: 2, classification: 3, terminalFidelity: 3, solutionFidelity: 1, semantic: 1 });
     expect(replay.auditHash).toBe(repaired.auditHash);
     await expect(writeAnswerAttestation(
       root,

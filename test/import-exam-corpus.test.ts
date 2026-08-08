@@ -26,6 +26,8 @@ import {
   PROBLEM_SLICE_PAGES,
   PROBLEM_SLICE_STRIDE,
   PROBLEM_REPAIR_VERSION,
+  PROBLEM_TERMINAL_FIDELITY_VERSION,
+  PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
   assertImportSchema,
   buildImageOnlyPdfFromPngs,
   canonicalEvidenceHash,
@@ -317,7 +319,7 @@ describe("exam corpus importer", () => {
         rulesDigest: "stale",
       }, entry.id)).toThrow("transcription gate가 오래되었습니다");
       expect(validateFilteredResult({
-        version: 3,
+        version: 4,
         status: "filtered",
         entryId: entry.id,
         reason: "NO_IN_SCOPE_QUESTIONS",
@@ -325,7 +327,9 @@ describe("exam corpus importer", () => {
         classifierVersion: CLASSIFIER_VERSION,
         transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
         transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
-        answerAudit: { path: "answer-audit/v3-test.json", sha256: "test" },
+        problemTerminalFidelityVersion: PROBLEM_TERMINAL_FIDELITY_VERSION,
+        problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+        answerAudit: { path: "answer-audit/v4-test.json", sha256: "test" },
       }, entry.id)).toBe("NO_IN_SCOPE_QUESTIONS");
       expect(() => parseCorpusManifest({
         schemaVersion: 2,
