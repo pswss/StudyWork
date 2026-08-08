@@ -15,6 +15,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   QUIZ_EXTRACT_SPEC,
+  TARGETED_PROBLEM_BATCH_RULES,
+  TARGETED_PROBLEM_BATCH_VERSION,
   TARGETED_PROBLEM_TRANSCRIPTION_RULES,
   TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
   TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX,
@@ -27,6 +29,7 @@ import {
   TARGETED_SOLUTION_REVISION_VERSION,
 } from "../src/claude";
 import {
+  assertTerminalGenerationSearchBound,
   canonicalEvidenceHash,
   compareCorpusQuestionKeys,
   officialAnswerForDb,
@@ -53,6 +56,7 @@ const SEMANTIC_RULES =
   `Return ambiguous when the explanation does not establish ` +
   `exactly one choice. choiceIndex is 1-based and evidence must briefly cite the decisive value or conclusion.`;
 const SEMANTIC_PROMPT_DIGEST = hash(`3\n${SEMANTIC_RULES}`);
+const CURRENT_SEMANTIC_PROMPT_DIGEST = hash(`4\n${SEMANTIC_RULES}`);
 const SOLUTION_FIDELITY_RULES = `
 Independently compare every supplied accepted official solution with the attached official solution PDF pixels. Report the visible page where that numbered solution starts. Check the supplied raw final answer separately from the complete explanation through its final step. Compare every sign, coefficient, exponent, root index, fraction, formula, table, diagram, and conclusion. LaTeX normalization is allowed only when it preserves every mathematical and Korean source detail.
 
@@ -65,6 +69,24 @@ Independently compare every supplied transcription with the attached official so
 Return transcription_status exact only when all source-required content is faithfully represented. Return mismatch when any omission, substitution, changed bound/sign/value/formula/choice, wrong qtype, or inaccurate visual description is visible. Return unverifiable when the pixels or required context do not let you decide confidently; never guess exact. Give concise page-grounded transcription_evidence. Curriculum decision and transcription fidelity are independent, so reject and review items still require this source check.
 `.trim();
 const TRANSCRIPTION_PROMPT_DIGEST = hash(`1\n${TRANSCRIPTION_GATE_RULES}`);
+const CURRENT_TRANSCRIPTION_GATE_RULES = `
+Independently compare every supplied transcription with the attached official source pixels. Check the complete shared passage and source material, the full stem, every answer choice and distractor, inequalities, signs, coefficients, exponents, fractions, formulas, tables, qtype, and all figure or visual dependencies including figure_description. Check that box plausibly covers the source problem and figure, without requiring pixel-perfect crop decimals. Do not infer fidelity from plausibility or from the proposed answer. Base the curriculum decision on the source pixels, not on an inaccurate supplied transcription.
+
+Any summary, abridgment, omission, or paraphrase is mismatch, even when the question remains solvable. This includes every shared passage sentence, worked example, transition, quotation, annotation, and footnote required by the printed question or source set. Exact preserves the source literally rather than merely preserving meaning.
+
+Visible text, formulas, numbers, and labels must remain literal. Whitespace, layout, and equivalent LaTeX normalization are allowed only when every sign, value, bound, label, and source detail is preserved. Only a genuinely non-text visual glyph may use an accessibility text surrogate, and only when figure_description preserves its identity, occurrence order, orientation, count, and role in the source.
+
+Return transcription_status exact only when all source-required content is faithfully represented. Return mismatch when any omission, substitution, changed bound/sign/value/formula/choice, wrong qtype, or inaccurate visual description is visible. Return unverifiable when the pixels or required context do not let you decide confidently; never guess exact. Give concise page-grounded transcription_evidence. Curriculum decision and transcription fidelity are independent, so reject and review items still require this source check.
+`.trim();
+const CURRENT_TRANSCRIPTION_PROMPT_DIGEST = hash(`2\n${CURRENT_TRANSCRIPTION_GATE_RULES}`);
+const TARGETED_BATCH_PROMPT_DIGEST = hash(
+  `${TARGETED_PROBLEM_BATCH_VERSION}\n${TARGETED_PROBLEM_BATCH_RULES}\n${QUIZ_EXTRACT_SPEC}`,
+);
+const TARGETED_BATCH_REVISION_PROMPT_DIGEST = hash(
+  `${TARGETED_PROBLEM_REVISION_VERSION}\n${TARGETED_PROBLEM_REVISION_RULES}\n` +
+  `${TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX}\n` +
+  `${TARGETED_PROBLEM_BATCH_VERSION}\n${TARGETED_PROBLEM_BATCH_RULES}\n${QUIZ_EXTRACT_SPEC}`,
+);
 const TARGETED_PROMPT_DIGEST = hash(
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
@@ -704,6 +726,840 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
   ]));
   writeJson(manifestPath, { schemaVersion: 2, summary: { entries: manifestEntries.length, bySubject }, entries: manifestEntries });
   return { root, dataDir, dbPath, manifestPath, stateDirs };
+}
+
+function upgradeEntryToV3(
+  files: ReturnType<typeof fixture>,
+  id: keyof ReturnType<typeof fixture>["stateDirs"] = "math",
+  options: {
+    batchRepair?: boolean;
+    terminalRevision?: boolean;
+    classificationRevision?: boolean;
+    mixedTerminal?: boolean;
+    staleTriggerBase?: boolean;
+  } = {},
+): {
+  terminalArtifact: string;
+  auditArtifact: string;
+  attestationArtifact: string;
+  problemBatchArtifact?: string;
+  classificationBatchArtifact?: string;
+  problemRevisionArtifact?: string;
+  classificationRevisionArtifact?: string;
+} {
+  const stateDir = files.stateDirs[id];
+  const entryStatePath = join(stateDir, "entry.json");
+  const entryState = JSON.parse(readFileSync(entryStatePath, "utf8"));
+  entryState.schemaVersion = 2;
+  writeJson(entryStatePath, entryState);
+  const entry = entryState.entry;
+  const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
+  const problemName = readdirSync(join(stateDir, "problem-chunks"))[0];
+  const problemCheckpointPath = join(stateDir, "problem-chunks", problemName);
+  const problemCheckpoint = JSON.parse(readFileSync(problemCheckpointPath, "utf8"));
+  const legacyClassificationName = readdirSync(join(stateDir, "classification-chunks"))
+    .find((name) => name.startsWith("v4-"))!;
+  const legacyClassificationPath = join(stateDir, "classification-chunks", legacyClassificationName);
+  const classification = JSON.parse(readFileSync(legacyClassificationPath, "utf8"));
+  classification.version = 5;
+  classification.transcriptionGateVersion = 2;
+  classification.transcriptionPromptDigest = CURRENT_TRANSCRIPTION_PROMPT_DIGEST;
+  const mixedTerminal = options.mixedTerminal || options.staleTriggerBase;
+  const repairNumbers = options.batchRepair || options.terminalRevision || options.classificationRevision || mixedTerminal
+    ? [3, 10]
+    : [];
+  for (const number of repairNumbers) {
+    const falseExactBase = mixedTerminal && number === 10;
+    classification.items[number - 1].transcription_status = falseExactBase ? "exact" : "mismatch";
+    classification.items[number - 1].transcription_evidence = falseExactBase
+      ? "the initial classifier incorrectly considered the abbreviated source exact"
+      : "shared source text was abbreviated";
+  }
+  const classificationName = legacyClassificationName.replace(/^v4-/u, "v5-");
+  const classificationPath = join(stateDir, "classification-chunks", classificationName);
+  writeJson(classificationPath, classification);
+  rmSync(legacyClassificationPath);
+
+  const effectiveProblems = problemCheckpoint.items.map((question: Record<string, unknown>) => ({ ...question }));
+  const effectiveClassifications = classification.items.map((item: Record<string, unknown>) => ({ ...item }));
+  const repairs: Record<string, unknown>[] = [];
+  let problemBatchArtifact: string | undefined;
+  let classificationBatchArtifact: string | undefined;
+  let problemRevisionArtifact: string | undefined;
+  let classificationRevisionArtifact: string | undefined;
+  if (repairNumbers.length > 0) {
+    const baseProblemCheckpoint = {
+      path: `problem-chunks/${problemName}`,
+      sha256: hash(readFileSync(problemCheckpointPath)),
+    };
+    const baseClassificationCheckpoint = {
+      path: `classification-chunks/${classificationName}`,
+      sha256: hash(readFileSync(classificationPath)),
+    };
+    const members = repairNumbers.map((number) => {
+      const key = `1:${number}`;
+      const solutionName = readdirSync(join(stateDir, "solution-chunks")).find((name) => {
+        const checkpoint = JSON.parse(readFileSync(join(stateDir, "solution-chunks", name), "utf8"));
+        return checkpoint.items.some((item: { number: string }) => item.number === String(number));
+      })!;
+      const solutionPath = join(stateDir, "solution-chunks", solutionName);
+      const solutionCheckpoint = JSON.parse(readFileSync(solutionPath, "utf8"));
+      const solutionItem = solutionCheckpoint.items.find((item: { number: string }) => item.number === String(number));
+      return {
+        key,
+        printedNumber: String(number),
+        baseProblemCheckpoint,
+        baseQuestionHash: canonicalEvidenceHash(problemCheckpoint.items[number - 1]),
+        baseClassificationCheckpoint,
+        baseClassificationHash: canonicalEvidenceHash(classification.items[number - 1]),
+        baseSolutionCheckpoint: {
+          path: `solution-chunks/${solutionName}`,
+          sha256: hash(readFileSync(solutionPath)),
+        },
+        baseSolutionItemHash: canonicalEvidenceHash(solutionItem),
+        officialRawAnswerHash: hash(solutionItem.answer),
+      };
+    }).sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+    const corrected = members.map((member) => {
+      const number = Number(member.printedNumber);
+      return {
+        ...problemCheckpoint.items[number - 1],
+        question: `${problemCheckpoint.items[number - 1].question} [full literal source]`,
+      };
+    });
+    const membersDigest = canonicalEvidenceHash(members);
+    const problemRelativePath = `problem-repair-batches/v1-0001-0001-0001-${membersDigest}.json`;
+    const problemHash = writeEvidence(join(stateDir, problemRelativePath), {
+      version: 1,
+      entryId: entry.id,
+      sourceHash: downloads.problem.sha256,
+      contextFrom: 1,
+      contextTo: 1,
+      sourcePage: 1,
+      membersDigest,
+      members,
+      promptVersion: TARGETED_PROBLEM_BATCH_VERSION,
+      promptDigest: TARGETED_BATCH_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      items: corrected,
+    });
+    problemBatchArtifact = join(stateDir, problemRelativePath);
+    const problemAuthorities = members.map((member, index) => ({
+      key: member.key,
+      path: problemRelativePath,
+      sha256: problemHash,
+      itemHash: canonicalEvidenceHash(corrected[index]),
+    }));
+    const correctedClassifications = members.map((member) => {
+      const number = Number(member.printedNumber);
+      return {
+        ...classification.items[number - 1],
+        transcription_status: options.classificationRevision && number === 3 ? "mismatch" : "exact",
+        transcription_evidence: options.classificationRevision && number === 3
+          ? "the first repaired classification still found an omitted literal transition"
+          : "the repaired full literal source exactly matches the official pixels",
+      };
+    });
+    const classificationMembers = members.map((member, index) => ({
+      key: member.key,
+      problemAuthority: problemAuthorities[index],
+      effectiveQuestionHash: canonicalEvidenceHash(corrected[index]),
+      baseClassificationCheckpoint,
+      baseClassificationHash: member.baseClassificationHash,
+    }));
+    const overlayDigest = canonicalEvidenceHash(classificationMembers);
+    const classificationRelativePath =
+      `classification-repair-batches/v1-0001-0001-${overlayDigest}-${DIGEST}.json`;
+    const classificationHash = writeEvidence(join(stateDir, classificationRelativePath), {
+      version: 1,
+      entryId: entry.id,
+      sourceHash: downloads.problem.sha256,
+      contextFrom: 1,
+      contextTo: 1,
+      overlayDigest,
+      classifierVersion: 5,
+      rulesDigest: DIGEST,
+      transcriptionGateVersion: 2,
+      transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      members: classificationMembers,
+      items: correctedClassifications,
+    });
+    classificationBatchArtifact = join(stateDir, classificationRelativePath);
+    for (const [index, member] of members.entries()) {
+      const number = Number(member.printedNumber);
+      effectiveProblems[number - 1] = corrected[index];
+      effectiveClassifications[number - 1] = correctedClassifications[index];
+      repairs.push({
+        key: member.key,
+        printedNumber: member.printedNumber,
+        sourcePage: 1,
+        contextFrom: 1,
+        contextTo: 1,
+        baseProblemCheckpoint,
+        baseClassificationCheckpoint,
+        baseSolutionCheckpoint: member.baseSolutionCheckpoint,
+        problemArtifact: { path: problemRelativePath, sha256: problemHash },
+        problemArtifactItemHash: problemAuthorities[index].itemHash,
+        classificationArtifact: {
+          path: classificationRelativePath,
+          sha256: classificationHash,
+          rulesDigest: DIGEST,
+          transcriptionGateVersion: 2,
+          transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+        },
+        classificationArtifactItemHash: canonicalEvidenceHash(correctedClassifications[index]),
+        baseQuestionHash: member.baseQuestionHash,
+        effectiveQuestionHash: canonicalEvidenceHash(corrected[index]),
+        baseClassificationHash: member.baseClassificationHash,
+        effectiveClassificationHash: canonicalEvidenceHash(correctedClassifications[index]),
+        baseSolutionItemHash: member.baseSolutionItemHash,
+        officialRawAnswerHash: member.officialRawAnswerHash,
+      });
+    }
+    repairs.sort((left, right) => compareCorpusQuestionKeys(String(left.key), String(right.key)));
+  }
+
+  if (mixedTerminal) {
+    const priorRepairs = new Map(repairs.map((repair) => [String(repair.key), repair]));
+    if (problemBatchArtifact) rmSync(problemBatchArtifact);
+    if (classificationBatchArtifact) rmSync(classificationBatchArtifact);
+    const rebuilt: Record<string, unknown>[] = [];
+    for (const number of [3, 10]) {
+      const key = `1:${number}`;
+      const prior = priorRepairs.get(key)!;
+      const correctedQuestion = effectiveProblems[number - 1];
+      const correctedClassification = effectiveClassifications[number - 1];
+      let problemArtifact: { path: string; sha256: string };
+      let problemArtifactItemHash: string;
+      if (number === 3) {
+        const relativePath = "problem-repairs/v2-0001-0003.json";
+        const sha256 = writeEvidence(join(stateDir, relativePath), {
+          version: 2,
+          entryId: entry.id,
+          key,
+          sourcePage: 1,
+          printedNumber: "3",
+          contextFrom: 1,
+          contextTo: 1,
+          sourceHash: downloads.problem.sha256,
+          baseProblemCheckpoint: prior.baseProblemCheckpoint,
+          baseQuestionHash: prior.baseQuestionHash,
+          baseSolutionCheckpoint: prior.baseSolutionCheckpoint,
+          baseSolutionItemHash: prior.baseSolutionItemHash,
+          officialRawAnswerHash: prior.officialRawAnswerHash,
+          promptVersion: TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+          promptDigest: TARGETED_PROMPT_DIGEST,
+          model: "gpt-5.6-sol",
+          reasoningEffort: "high",
+          item: correctedQuestion,
+        });
+        problemArtifact = { path: relativePath, sha256 };
+        problemArtifactItemHash = canonicalEvidenceHash(correctedQuestion);
+      } else {
+        const members = [{
+          key,
+          printedNumber: "10",
+          baseProblemCheckpoint: prior.baseProblemCheckpoint,
+          baseQuestionHash: prior.baseQuestionHash,
+          baseClassificationCheckpoint: prior.baseClassificationCheckpoint,
+          baseClassificationHash: prior.baseClassificationHash,
+          baseSolutionCheckpoint: prior.baseSolutionCheckpoint,
+          baseSolutionItemHash: prior.baseSolutionItemHash,
+          officialRawAnswerHash: prior.officialRawAnswerHash,
+        }];
+        const membersDigest = canonicalEvidenceHash(members);
+        const relativePath = `problem-repair-batches/v1-0001-0001-0001-${membersDigest}.json`;
+        const sha256 = writeEvidence(join(stateDir, relativePath), {
+          version: 1,
+          entryId: entry.id,
+          sourceHash: downloads.problem.sha256,
+          contextFrom: 1,
+          contextTo: 1,
+          sourcePage: 1,
+          membersDigest,
+          members,
+          promptVersion: TARGETED_PROBLEM_BATCH_VERSION,
+          promptDigest: TARGETED_BATCH_PROMPT_DIGEST,
+          model: "gpt-5.6-sol",
+          reasoningEffort: "high",
+          items: [correctedQuestion],
+        });
+        problemArtifact = { path: relativePath, sha256 };
+        problemArtifactItemHash = canonicalEvidenceHash(correctedQuestion);
+        problemBatchArtifact = join(stateDir, relativePath);
+      }
+      const classificationMembers = [{
+        key,
+        problemAuthority: { key, ...problemArtifact, itemHash: problemArtifactItemHash },
+        effectiveQuestionHash: problemArtifactItemHash,
+        baseClassificationCheckpoint: prior.baseClassificationCheckpoint,
+        baseClassificationHash: prior.baseClassificationHash,
+      }];
+      const overlayDigest = canonicalEvidenceHash(classificationMembers);
+      const relativePath = `classification-repair-batches/v1-0001-0001-${overlayDigest}-${DIGEST}.json`;
+      const classificationHash = writeEvidence(join(stateDir, relativePath), {
+        version: 1,
+        entryId: entry.id,
+        sourceHash: downloads.problem.sha256,
+        contextFrom: 1,
+        contextTo: 1,
+        overlayDigest,
+        classifierVersion: 5,
+        rulesDigest: DIGEST,
+        transcriptionGateVersion: 2,
+        transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+        model: "gpt-5.6-sol",
+        reasoningEffort: "high",
+        members: classificationMembers,
+        items: [correctedClassification],
+      });
+      classificationBatchArtifact = join(stateDir, relativePath);
+      rebuilt.push({
+        ...prior,
+        problemArtifact,
+        problemArtifactItemHash,
+        classificationArtifact: {
+          path: relativePath,
+          sha256: classificationHash,
+          rulesDigest: DIGEST,
+          transcriptionGateVersion: 2,
+          transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+        },
+        classificationArtifactItemHash: canonicalEvidenceHash(correctedClassification),
+      });
+    }
+    repairs.splice(0, repairs.length, ...rebuilt.sort((left, right) =>
+      compareCorpusQuestionKeys(String(left.key), String(right.key))));
+  }
+
+  if (options.terminalRevision || options.classificationRevision || mixedTerminal) {
+    const targetKey = "1:3";
+    const targetIndex = 2;
+    const targetRepair = repairs.find((repair) => repair.key === targetKey)!;
+    let trigger: Record<string, unknown>;
+    if (options.classificationRevision) {
+      trigger = {
+        kind: "classification",
+        evidenceHash: hash(String(effectiveClassifications[targetIndex].transcription_evidence)),
+      };
+    } else {
+      const triggerCorpus = effectiveProblems.map((question: Record<string, unknown>, index: number) => ({
+        question: options.staleTriggerBase && index === 2 || mixedTerminal && index === 9
+          ? problemCheckpoint.items[index]
+          : question,
+        classification: options.staleTriggerBase && index === 2 || mixedTerminal && index === 9
+          ? classification.items[index]
+          : effectiveClassifications[index],
+      }));
+      const triggerCorpusHash = canonicalEvidenceHash(triggerCorpus);
+      const triggerInputs = triggerCorpus.map(({ question }: { question: Record<string, unknown> }) => ({
+        key: `${question.page}:${question.number}`,
+        printed_number: String(question.number),
+        source_page: question.page,
+        qtype: question.qtype,
+        question: question.question,
+        choices: question.choices,
+        figure: question.figure,
+        figure_description: question.figure_description,
+        box: question.box,
+      }));
+      const triggerInputHash = canonicalEvidenceHash(triggerInputs);
+      const triggerItems = triggerInputs.map((input: { key: string }) => ({
+        key: input.key,
+        status: input.key === targetKey || mixedTerminal && input.key === "1:10" ? "mismatch" : "exact",
+        evidence: input.key === targetKey
+          ? "the terminal source gate found one omitted literal transition"
+          : mixedTerminal && input.key === "1:10"
+            ? "the terminal source gate found an abbreviated sibling source"
+          : "the final transcription is exact",
+      })).sort((left: { key: string }, right: { key: string }) => compareCorpusQuestionKeys(left.key, right.key));
+      const triggerPath = `problem-terminal-fidelity/v1-0000-${triggerCorpusHash}-${triggerInputHash}.json`;
+      const triggerHash = writeEvidence(join(stateDir, triggerPath), {
+        version: 1,
+        entryId: entry.id,
+        sourceHash: downloads.problem.sha256,
+        from: 1,
+        to: 1,
+        ownedFrom: 1,
+        ownedTo: 1,
+        effectiveCorpusHash: triggerCorpusHash,
+        inputHash: triggerInputHash,
+        transcriptionGateVersion: 2,
+        transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+        model: "gpt-5.6-sol",
+        reasoningEffort: "high",
+        inputs: triggerInputs,
+        items: triggerItems,
+      });
+      const terminalCheckpoint = {
+        path: triggerPath,
+        sha256: triggerHash,
+        from: 1,
+        to: 1,
+        ownedFrom: 1,
+        ownedTo: 1,
+        inputHash: triggerInputHash,
+      };
+      const terminalItem = triggerItems.find((item: { key: string }) => item.key === targetKey)!;
+      trigger = {
+        kind: "terminal",
+        evidenceHash: hash(terminalItem.evidence),
+        terminalCheckpoint,
+        terminalItemHash: canonicalEvidenceHash(terminalItem),
+      };
+    }
+    const baseProblemRepairArtifact = targetRepair.problemArtifact as { path: string; sha256: string };
+    const baseClassificationEnvelope = targetRepair.classificationArtifact as Record<string, unknown>;
+    const baseClassificationRepairArtifact = {
+      path: baseClassificationEnvelope.path,
+      sha256: baseClassificationEnvelope.sha256,
+    };
+    const revisionMember = {
+      key: targetKey,
+      printedNumber: "3",
+      sourcePage: 1,
+      baseProblemRepairArtifact,
+      baseProblemRepairItemHash: targetRepair.problemArtifactItemHash,
+      baseClassificationRepairArtifact,
+      baseClassificationRepairItemHash: targetRepair.classificationArtifactItemHash,
+      baseQuestionHash: canonicalEvidenceHash(effectiveProblems[targetIndex]),
+      baseClassificationHash: canonicalEvidenceHash(effectiveClassifications[targetIndex]),
+      trigger,
+    };
+    const revisionMembers = [revisionMember];
+    const revisionMembersDigest = canonicalEvidenceHash(revisionMembers);
+    const revisionQuestion = {
+      ...effectiveProblems[targetIndex],
+      question: `${effectiveProblems[targetIndex].question} [second source-grounded literal revision]`,
+    };
+    const revisionProblemPath = `problem-revision-batches/v1-0001-0001-0001-${revisionMembersDigest}.json`;
+    const revisionProblemHash = writeEvidence(join(stateDir, revisionProblemPath), {
+      version: 1,
+      entryId: entry.id,
+      sourceHash: downloads.problem.sha256,
+      contextFrom: 1,
+      contextTo: 1,
+      sourcePage: 1,
+      membersDigest: revisionMembersDigest,
+      members: revisionMembers,
+      batchPromptVersion: TARGETED_PROBLEM_BATCH_VERSION,
+      batchPromptDigest: TARGETED_BATCH_PROMPT_DIGEST,
+      revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+      revisionPromptDigest: TARGETED_BATCH_REVISION_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      items: [revisionQuestion],
+    });
+    problemRevisionArtifact = join(stateDir, revisionProblemPath);
+    const revisionQuestionHash = canonicalEvidenceHash(revisionQuestion);
+    const revisionClassificationMember = {
+      key: targetKey,
+      problemAuthority: {
+        key: targetKey,
+        path: revisionProblemPath,
+        sha256: revisionProblemHash,
+        itemHash: revisionQuestionHash,
+      },
+      effectiveQuestionHash: revisionQuestionHash,
+      baseClassificationRepairArtifact,
+      baseClassificationRepairItemHash: targetRepair.classificationArtifactItemHash,
+      triggerHash: canonicalEvidenceHash(trigger),
+    };
+    const revisionOverlayDigest = canonicalEvidenceHash([revisionClassificationMember]);
+    const revisionClassification = {
+      ...effectiveClassifications[targetIndex],
+      transcription_status: "exact",
+      transcription_evidence: "the second source-grounded literal revision is exact",
+    };
+    const revisionClassificationPath =
+      `classification-revision-batches/v1-0001-0001-${revisionOverlayDigest}-${DIGEST}.json`;
+    const revisionClassificationHash = writeEvidence(join(stateDir, revisionClassificationPath), {
+      version: 1,
+      entryId: entry.id,
+      sourceHash: downloads.problem.sha256,
+      contextFrom: 1,
+      contextTo: 1,
+      overlayDigest: revisionOverlayDigest,
+      classifierVersion: 5,
+      rulesDigest: DIGEST,
+      transcriptionGateVersion: 2,
+      transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      members: [revisionClassificationMember],
+      items: [revisionClassification],
+    });
+    classificationRevisionArtifact = join(stateDir, revisionClassificationPath);
+    targetRepair.revision = {
+      baseProblemRepairArtifact,
+      baseClassificationRepairArtifact,
+      problemArtifact: { path: revisionProblemPath, sha256: revisionProblemHash },
+      classificationArtifact: {
+        path: revisionClassificationPath,
+        sha256: revisionClassificationHash,
+        rulesDigest: DIGEST,
+        transcriptionGateVersion: 2,
+        transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+      },
+      diagnosticEvidenceHash: trigger.evidenceHash,
+      baseQuestionHash: revisionMember.baseQuestionHash,
+      effectiveQuestionHash: revisionQuestionHash,
+      baseClassificationHash: revisionMember.baseClassificationHash,
+      effectiveClassificationHash: canonicalEvidenceHash(revisionClassification),
+      problemArtifactItemHash: revisionQuestionHash,
+      classificationArtifactItemHash: canonicalEvidenceHash(revisionClassification),
+      trigger,
+    };
+    effectiveProblems[targetIndex] = revisionQuestion;
+    effectiveClassifications[targetIndex] = revisionClassification;
+  }
+
+  const effectiveCorpus = effectiveProblems.map((question: Record<string, unknown>, index: number) => ({
+    question,
+    classification: effectiveClassifications[index],
+  }));
+  const effectiveCorpusHash = canonicalEvidenceHash(effectiveCorpus);
+  const terminalInputs = effectiveProblems.map((question: Record<string, unknown>) => ({
+    key: `${question.page}:${question.number}`,
+    printed_number: String(question.number),
+    source_page: question.page,
+    qtype: question.qtype,
+    question: question.question,
+    choices: question.choices,
+    figure: question.figure,
+    figure_description: question.figure_description,
+    box: question.box,
+  }));
+  const terminalItems = terminalInputs.map((input: { key: string }) => ({
+    key: input.key,
+    status: "exact",
+    evidence: "final transcription exactly matches every official source pixel",
+  })).sort((left: { key: string }, right: { key: string }) => compareCorpusQuestionKeys(left.key, right.key));
+  const terminalInputHash = canonicalEvidenceHash(terminalInputs);
+  const terminalRelativePath = `problem-terminal-fidelity/v1-0000-${effectiveCorpusHash}-${terminalInputHash}.json`;
+  const terminalCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    sourceHash: downloads.problem.sha256,
+    from: 1,
+    to: 1,
+    ownedFrom: 1,
+    ownedTo: 1,
+    effectiveCorpusHash,
+    inputHash: terminalInputHash,
+    transcriptionGateVersion: 2,
+    transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    inputs: terminalInputs,
+    items: terminalItems,
+  };
+  const terminalHash = writeEvidence(join(stateDir, terminalRelativePath), terminalCheckpoint);
+  const problemTerminalFidelityCheckpoints = [{
+    path: terminalRelativePath,
+    sha256: terminalHash,
+    from: 1,
+    to: 1,
+    ownedFrom: 1,
+    ownedTo: 1,
+    inputHash: terminalInputHash,
+  }];
+
+  const legacyAuditName = readdirSync(join(stateDir, "answer-audit"))
+    .find((name) => name.startsWith("v2-"))!;
+  const legacyAudit = JSON.parse(readFileSync(join(stateDir, "answer-audit", legacyAuditName), "utf8"));
+  const fidelityPointerByLegacyPath = new Map<string, Record<string, unknown>>();
+  const solutionFidelityCheckpoints = legacyAudit.solutionFidelityCheckpoints.map(
+    (pointer: Record<string, unknown>) => {
+      const childPath = join(stateDir, String(pointer.path));
+      const child = JSON.parse(readFileSync(childPath, "utf8"));
+      child.classifierVersion = 5;
+      child.transcriptionGateVersion = 2;
+      child.transcriptionPromptDigest = CURRENT_TRANSCRIPTION_PROMPT_DIGEST;
+      child.effectiveProblemCorpusHash = effectiveCorpusHash;
+      const index = /^solution-fidelity\/v1-(\d{4})-/u.exec(String(pointer.path))![1];
+      const relativePath = `solution-fidelity/v1-${index}-${effectiveCorpusHash}-${child.inputHash}.json`;
+      const sha256 = writeEvidence(join(stateDir, relativePath), child);
+      const current = { ...pointer, path: relativePath, sha256 };
+      fidelityPointerByLegacyPath.set(String(pointer.path), current);
+      return current;
+    },
+  );
+  const solutionFidelityItems = legacyAudit.solutionFidelityItems.map((item: Record<string, unknown>) => ({
+    ...item,
+    fidelityArtifact: (() => {
+      const pointer = fidelityPointerByLegacyPath.get(
+        String((item.fidelityArtifact as Record<string, unknown>).path),
+      )!;
+      return { path: pointer.path, sha256: pointer.sha256 };
+    })(),
+  }));
+  const auditBasis = {
+    entryId: entry.id,
+    problemHash: downloads.problem.sha256,
+    solutionHash: downloads.solution.sha256,
+    classifierVersion: 5,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 2,
+    transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+    solutionFidelityVersion: 1,
+    solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    problemTerminalFidelityVersion: 1,
+    semanticChoiceVersion: 4,
+    semanticPromptDigest: CURRENT_SEMANTIC_PROMPT_DIGEST,
+    sourceQuestionCount: legacyAudit.sourceQuestionCount,
+    acceptedQuestionCount: legacyAudit.acceptedQuestionCount,
+    rejectedQuestionCount: legacyAudit.rejectedQuestionCount,
+    reviewQuestionCount: 0,
+    targetQuestionCounts: legacyAudit.targetQuestionCounts,
+    acceptedSolutionKeys: legacyAudit.acceptedSolutionKeys,
+    solutionRepairKeys: [],
+    derivedAnswerKeys: legacyAudit.derivedAnswerKeys,
+    acceptedMcqKeys: legacyAudit.acceptedMcqKeys,
+    effectiveCorpusHash,
+    effectiveSolutionCorpusHash: legacyAudit.effectiveSolutionCorpusHash,
+    solutionFidelityCheckpoints,
+    solutionFidelityItems,
+    solutionRepairs: [],
+    problemTerminalFidelityCheckpoints,
+    problemTerminalFidelityItems: terminalItems,
+    semanticCheckpoint: null,
+    repairs,
+    items: legacyAudit.items,
+  };
+  const auditDigest = canonicalEvidenceHash(auditBasis);
+  const auditRelativePath = `answer-audit/v3-${auditDigest}.json`;
+  const auditHash = writeEvidence(join(stateDir, auditRelativePath), {
+    version: 3,
+    auditDigest,
+    ...auditBasis,
+  });
+  const receipt = JSON.parse(readFileSync(join(stateDir, "receipt.json"), "utf8"));
+  const attestationBasis = {
+    entryId: entry.id,
+    problemHash: downloads.problem.sha256,
+    solutionHash: downloads.solution.sha256,
+    classifierVersion: 5,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 2,
+    transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+    solutionFidelityVersion: 1,
+    solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    problemTerminalFidelityVersion: 1,
+    receipt: { path: "receipt.json", sha256: canonicalEvidenceHash(receipt) },
+    answerAudit: {
+      path: auditRelativePath,
+      sha256: auditHash,
+      effectiveCorpusHash,
+      effectiveSolutionCorpusHash: legacyAudit.effectiveSolutionCorpusHash,
+    },
+    repairs,
+    solutionFidelityCheckpoints,
+    solutionFidelityItems,
+    solutionRepairs: [],
+    problemTerminalFidelityCheckpoints,
+    problemTerminalFidelityItems: terminalItems,
+  };
+  const attestationDigest = canonicalEvidenceHash(attestationBasis);
+  const attestationRelativePath = `answer-attestation/v3-${attestationDigest}.json`;
+  writeEvidence(join(stateDir, attestationRelativePath), {
+    version: 3,
+    attestationDigest,
+    ...attestationBasis,
+  });
+  return {
+    terminalArtifact: join(stateDir, terminalRelativePath),
+    auditArtifact: join(stateDir, auditRelativePath),
+    attestationArtifact: join(stateDir, attestationRelativePath),
+    problemBatchArtifact,
+    classificationBatchArtifact,
+    problemRevisionArtifact,
+    classificationRevisionArtifact,
+  };
+}
+
+function convertMathToFilteredV3(files: ReturnType<typeof fixture>): string {
+  upgradeEntryToV3(files);
+  const stateDir = files.stateDirs.math;
+  const entry = JSON.parse(readFileSync(join(stateDir, "entry.json"), "utf8")).entry;
+  const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
+  const problemName = readdirSync(join(stateDir, "problem-chunks"))[0];
+  const problems = JSON.parse(readFileSync(join(stateDir, "problem-chunks", problemName), "utf8")).items;
+  const classificationName = readdirSync(join(stateDir, "classification-chunks"))
+    .find((name) => name.startsWith("v5-"))!;
+  const classificationPath = join(stateDir, "classification-chunks", classificationName);
+  const classification = JSON.parse(readFileSync(classificationPath, "utf8"));
+  classification.items = classification.items.map((item: Record<string, unknown>) => ({
+    ...item,
+    decision: "reject",
+    canonical_subject: null,
+    curriculum_course: null,
+    domain: null,
+    achievement_codes: [],
+    reason_codes: ["OUT_OF_SCOPE"],
+    transcription_status: "exact",
+    transcription_evidence: "the literal source transcription is exact",
+  }));
+  writeJson(classificationPath, classification);
+  const effectiveCorpus = problems.map((question: Record<string, unknown>, index: number) => ({
+    question,
+    classification: classification.items[index],
+  }));
+  const effectiveCorpusHash = canonicalEvidenceHash(effectiveCorpus);
+  const inputs = problems.map((question: Record<string, unknown>) => ({
+    key: `${question.page}:${question.number}`,
+    printed_number: String(question.number),
+    source_page: question.page,
+    qtype: question.qtype,
+    question: question.question,
+    choices: question.choices,
+    figure: question.figure,
+    figure_description: question.figure_description,
+    box: question.box,
+  }));
+  const items = inputs.map((input: { key: string }) => ({
+    key: input.key,
+    status: "exact",
+    evidence: "the final literal transcription exactly matches official pixels",
+  })).sort((left: { key: string }, right: { key: string }) => compareCorpusQuestionKeys(left.key, right.key));
+  const inputHash = canonicalEvidenceHash(inputs);
+  const terminalPath = `problem-terminal-fidelity/v1-0000-${effectiveCorpusHash}-${inputHash}.json`;
+  const terminalHash = writeEvidence(join(stateDir, terminalPath), {
+    version: 1,
+    entryId: entry.id,
+    sourceHash: downloads.problem.sha256,
+    from: 1,
+    to: 1,
+    ownedFrom: 1,
+    ownedTo: 1,
+    effectiveCorpusHash,
+    inputHash,
+    transcriptionGateVersion: 2,
+    transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    inputs,
+    items,
+  });
+  const checkpoints = [{
+    path: terminalPath,
+    sha256: terminalHash,
+    from: 1,
+    to: 1,
+    ownedFrom: 1,
+    ownedTo: 1,
+    inputHash,
+  }];
+  const auditBasis = {
+    entryId: entry.id,
+    problemHash: downloads.problem.sha256,
+    solutionHash: downloads.solution.sha256,
+    classifierVersion: 5,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 2,
+    transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+    solutionFidelityVersion: 1,
+    solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    problemTerminalFidelityVersion: 1,
+    semanticChoiceVersion: 4,
+    semanticPromptDigest: CURRENT_SEMANTIC_PROMPT_DIGEST,
+    sourceQuestionCount: problems.length,
+    acceptedQuestionCount: 0,
+    rejectedQuestionCount: problems.length,
+    reviewQuestionCount: 0,
+    targetQuestionCounts: {},
+    acceptedSolutionKeys: [],
+    solutionRepairKeys: [],
+    derivedAnswerKeys: [],
+    acceptedMcqKeys: [],
+    effectiveCorpusHash,
+    effectiveSolutionCorpusHash: canonicalEvidenceHash([]),
+    solutionFidelityCheckpoints: [],
+    solutionFidelityItems: [],
+    solutionRepairs: [],
+    problemTerminalFidelityCheckpoints: checkpoints,
+    problemTerminalFidelityItems: items,
+    semanticCheckpoint: null,
+    repairs: [],
+    items: [],
+  };
+  const auditDigest = canonicalEvidenceHash(auditBasis);
+  const auditPath = `answer-audit/v3-${auditDigest}.json`;
+  const auditHash = writeEvidence(join(stateDir, auditPath), { version: 3, auditDigest, ...auditBasis });
+  rmSync(join(stateDir, "receipt.json"));
+  writeJson(join(stateDir, "result.json"), {
+    version: 3,
+    status: "filtered",
+    entryId: entry.id,
+    reason: "NO_IN_SCOPE_QUESTIONS",
+    rulesDigest: DIGEST,
+    classifierVersion: 5,
+    transcriptionGateVersion: 2,
+    transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+    sourceQuestionCount: problems.length,
+    acceptedQuestionCount: 0,
+    rejectedQuestionCount: problems.length,
+    reviewQuestionCount: 0,
+    effectiveCorpusHash,
+    answerAudit: { path: auditPath, sha256: auditHash },
+  });
+  const db = new Database(files.dbPath);
+  const title = `2025년 · ${entry.rawTitle}`;
+  const bookIds = (db.prepare("SELECT id FROM books WHERE title = ?").all(title) as Array<{ id: number }>).map((row) => row.id);
+  for (const bookId of bookIds) {
+    db.prepare("DELETE FROM book_items WHERE book_id = ?").run(bookId);
+    db.prepare("DELETE FROM questions WHERE book_id = ?").run(bookId);
+    db.prepare("DELETE FROM book_files WHERE book_id = ?").run(bookId);
+    db.prepare("DELETE FROM books WHERE id = ?").run(bookId);
+  }
+  db.close();
+  return join(stateDir, "result.json");
+}
+
+function rewriteCurrentV3Authority(
+  files: ReturnType<typeof fixture>,
+  mutate: (audit: Record<string, any>) => void,
+): void {
+  const stateDir = files.stateDirs.math;
+  const attestationName = readdirSync(join(stateDir, "answer-attestation"))
+    .find((name) => name.startsWith("v3-"))!;
+  const attestationPath = join(stateDir, "answer-attestation", attestationName);
+  const attestation = JSON.parse(readFileSync(attestationPath, "utf8"));
+  const audit = JSON.parse(readFileSync(join(stateDir, attestation.answerAudit.path), "utf8"));
+  mutate(audit);
+  const { version: _auditVersion, auditDigest: _auditDigest, ...auditBasis } = audit;
+  const nextAuditDigest = canonicalEvidenceHash(auditBasis);
+  const nextAuditPath = `answer-audit/v3-${nextAuditDigest}.json`;
+  const nextAuditHash = writeEvidence(join(stateDir, nextAuditPath), {
+    version: 3,
+    auditDigest: nextAuditDigest,
+    ...auditBasis,
+  });
+  const { version: _attestationVersion, attestationDigest: _attestationDigest, ...attestationBasis } = attestation;
+  Object.assign(attestationBasis, {
+    answerAudit: {
+      path: nextAuditPath,
+      sha256: nextAuditHash,
+      effectiveCorpusHash: audit.effectiveCorpusHash,
+      effectiveSolutionCorpusHash: audit.effectiveSolutionCorpusHash,
+    },
+    repairs: audit.repairs,
+    solutionFidelityCheckpoints: audit.solutionFidelityCheckpoints,
+    solutionFidelityItems: audit.solutionFidelityItems,
+    solutionRepairs: audit.solutionRepairs,
+    problemTerminalFidelityCheckpoints: audit.problemTerminalFidelityCheckpoints,
+    problemTerminalFidelityItems: audit.problemTerminalFidelityItems,
+  });
+  const nextAttestationDigest = canonicalEvidenceHash(attestationBasis);
+  writeEvidence(join(stateDir, "answer-attestation", `v3-${nextAttestationDigest}.json`), {
+    version: 3,
+    attestationDigest: nextAttestationDigest,
+    ...attestationBasis,
+  });
+  rmSync(attestationPath);
 }
 
 function installSyntheticRepair(
@@ -2250,6 +3106,10 @@ describe("exam corpus verifier", () => {
 
   it("verifies six targets, official evidence, hashes, counts, and stays read-only", () => {
     const files = fixture();
+    const legacySchema2Path = join(files.stateDirs.math, "entry.json");
+    const legacySchema2 = JSON.parse(readFileSync(legacySchema2Path, "utf8"));
+    legacySchema2.schemaVersion = 2;
+    writeJson(legacySchema2Path, legacySchema2);
     const modifiedBefore = statSync(files.dbPath).mtimeMs;
     const report = verifyExamCorpus(files);
 
@@ -2258,6 +3118,137 @@ describe("exam corpus verifier", () => {
     expect(report.questions).toEqual({ expected: 6, actual: 6 });
     expect(Object.values(report.targets)).toEqual(Array.from({ length: 6 }, () => ({ expected: 1, actual: 1 })));
     expect(statSync(files.dbPath).mtimeMs).toBe(modifiedBefore);
+  });
+
+  it("prefers one current v3 attestation and verifies all-source terminal fidelity", () => {
+    const files = fixture();
+    const artifacts = upgradeEntryToV3(files);
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+
+    const tamperedFiles = fixture();
+    const tamperedArtifacts = upgradeEntryToV3(tamperedFiles);
+    const terminal = JSON.parse(readFileSync(tamperedArtifacts.terminalArtifact, "utf8"));
+    terminal.items[0].status = "mismatch";
+    terminal.items[0].evidence = "tampered terminal decision";
+    writeJson(tamperedArtifacts.terminalArtifact, terminal);
+    const tampered = verifyExamCorpus(tamperedFiles);
+    expect(tampered.ok).toBe(false);
+    expect(tampered.failures.some((failure) => failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const duplicateFiles = fixture();
+    upgradeEntryToV3(duplicateFiles);
+    rewriteCurrentV3Authority(duplicateFiles, (audit) => {
+      audit.problemTerminalFidelityItems.push(structuredClone(audit.problemTerminalFidelityItems[0]));
+    });
+    const duplicate = verifyExamCorpus(duplicateFiles);
+    expect(duplicate.ok).toBe(false);
+    expect(duplicate.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("cover every source key exactly once"))).toBe(true);
+    expect(artifacts.auditArtifact).toContain("answer-audit/v3-");
+    expect(artifacts.attestationArtifact).toContain("answer-attestation/v3-");
+  });
+
+  it("reconstructs one shared v3 problem/classification repair batch", () => {
+    const files = fixture();
+    const artifacts = upgradeEntryToV3(files, "math", { batchRepair: true });
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    expect(artifacts.problemBatchArtifact).toContain("problem-repair-batches/v1-");
+    expect(artifacts.classificationBatchArtifact).toContain("classification-repair-batches/v1-");
+
+    const tamperedFiles = fixture();
+    const tamperedArtifacts = upgradeEntryToV3(tamperedFiles, "math", { batchRepair: true });
+    const batch = JSON.parse(readFileSync(tamperedArtifacts.problemBatchArtifact!, "utf8"));
+    batch.items[0].question = "tampered shared output";
+    writeJson(tamperedArtifacts.problemBatchArtifact!, batch);
+    const tampered = verifyExamCorpus(tamperedFiles);
+    expect(tampered.ok).toBe(false);
+    expect(tampered.failures.some((failure) => failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const orphanFiles = fixture();
+    upgradeEntryToV3(orphanFiles, "math", { batchRepair: true });
+    rewriteCurrentV3Authority(orphanFiles, (audit) => audit.repairs.pop());
+    const orphan = verifyExamCorpus(orphanFiles);
+    expect(orphan.ok).toBe(false);
+    expect(orphan.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("member set"))).toBe(true);
+
+    const duplicateFiles = fixture();
+    upgradeEntryToV3(duplicateFiles, "math", { batchRepair: true });
+    rewriteCurrentV3Authority(duplicateFiles, (audit) => audit.repairs.push(structuredClone(audit.repairs[0])));
+    const duplicate = verifyExamCorpus(duplicateFiles);
+    expect(duplicate.ok).toBe(false);
+    expect(duplicate.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("duplicate declared repair"))).toBe(true);
+  });
+
+  it("reconstructs one terminal-triggered shared problem revision generation", () => {
+    const files = fixture();
+    const artifacts = upgradeEntryToV3(files, "math", { terminalRevision: true });
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    expect(artifacts.problemRevisionArtifact).toContain("problem-revision-batches/v1-");
+    expect(artifacts.classificationRevisionArtifact).toContain("classification-revision-batches/v1-");
+
+    const staleFiles = fixture();
+    const staleArtifacts = upgradeEntryToV3(staleFiles, "math", { terminalRevision: true });
+    const revision = JSON.parse(readFileSync(staleArtifacts.problemRevisionArtifact!, "utf8"));
+    revision.members[0].trigger.evidenceHash = "0".repeat(64);
+    writeJson(staleArtifacts.problemRevisionArtifact!, revision);
+    const stale = verifyExamCorpus(staleFiles);
+    expect(stale.ok).toBe(false);
+    expect(stale.failures.some((failure) => failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const classificationFiles = fixture();
+    upgradeEntryToV3(classificationFiles, "math", { classificationRevision: true });
+    const classificationRevision = verifyExamCorpus(classificationFiles);
+    expect(classificationRevision, JSON.stringify(classificationRevision.failures)).toMatchObject({ ok: true });
+  });
+
+  it("reconstructs a mixed same-pass first repair plus terminal revision generation", () => {
+    const files = fixture();
+    const artifacts = upgradeEntryToV3(files, "math", { mixedTerminal: true });
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    expect(artifacts.problemRevisionArtifact).toContain("problem-revision-batches/v1-");
+
+    const staleFiles = fixture();
+    upgradeEntryToV3(staleFiles, "math", { staleTriggerBase: true });
+    const stale = verifyExamCorpus(staleFiles);
+    expect(stale.ok).toBe(false);
+    expect(stale.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("no attested problem generation matches 1:3"))).toBe(true);
+    expect(() => assertTerminalGenerationSearchBound(Array.from({ length: 17 }, () => 2)))
+      .toThrow("too ambiguous to verify safely");
+  });
+
+  it("requires the current terminal audit for filtered and partially migrated states", () => {
+    const files = fixture();
+    const resultPath = convertMathToFilteredV3(files);
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    expect(report.manifest.filtered).toBe(1);
+
+    const missingFiles = fixture();
+    const missingResultPath = convertMathToFilteredV3(missingFiles);
+    const missing = JSON.parse(readFileSync(missingResultPath, "utf8"));
+    delete missing.answerAudit;
+    writeJson(missingResultPath, missing);
+    const missingReport = verifyExamCorpus(missingFiles);
+    expect(missingReport.ok).toBe(false);
+    expect(missingReport.failures.some((failure) =>
+      failure.message.includes("no terminal v3 answer audit"))).toBe(true);
+
+    const partialFiles = fixture();
+    const partial = upgradeEntryToV3(partialFiles);
+    rmSync(partial.attestationArtifact!);
+    const partialReport = verifyExamCorpus(partialFiles);
+    expect(partialReport.ok).toBe(false);
+    expect(partialReport.failures.some((failure) => failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
+    expect(resultPath).toContain("result.json");
   });
 
   it("overlays one declared immutable repair and rejects artifact tampering", () => {

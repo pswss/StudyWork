@@ -19,6 +19,8 @@ import { gradeAnswer } from "../src/quiz";
 import {
   numericPrintedLocator,
   QUIZ_EXTRACT_SPEC,
+  TARGETED_PROBLEM_BATCH_RULES,
+  TARGETED_PROBLEM_BATCH_VERSION,
   TARGETED_PROBLEM_TRANSCRIPTION_RULES,
   TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
   TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX,
@@ -251,11 +253,18 @@ export function compareCorpusQuestionKeys(left: string, right: string): number {
   return left.localeCompare(right, "en");
 }
 
-const CLASSIFIER_VERSION = 4;
+const LEGACY_CLASSIFIER_VERSION = 4;
+const CLASSIFIER_VERSION = 5;
 const PROBLEM_REPAIR_VERSION = 2;
 const CLASSIFICATION_REPAIR_VERSION = 3;
+const CURRENT_CLASSIFICATION_REPAIR_VERSION = 4;
+const PROBLEM_REPAIR_BATCH_VERSION = 1;
+const CLASSIFICATION_REPAIR_BATCH_VERSION = 1;
 const PROBLEM_REVISION_VERSION = 1;
 const CLASSIFICATION_REVISION_VERSION = 1;
+const CURRENT_CLASSIFICATION_REVISION_VERSION = 2;
+const PROBLEM_REVISION_BATCH_VERSION = 1;
+const CLASSIFICATION_REVISION_BATCH_VERSION = 1;
 const PROBLEM_SLICE_PAGES = 20;
 const SOLUTION_SLICE_PAGES = 6;
 const SOLUTION_SLICE_STRIDE = 4;
@@ -266,9 +275,23 @@ const SOLUTION_REPAIR_VERSION = 1;
 const SOLUTION_REPAIR_FIDELITY_VERSION = 1;
 const SOLUTION_REVISION_VERSION = 1;
 const SOLUTION_REVISION_FIDELITY_VERSION = 1;
-const TRANSCRIPTION_GATE_VERSION = 1;
+const PROBLEM_TERMINAL_FIDELITY_VERSION = 1;
+const LEGACY_TRANSCRIPTION_GATE_VERSION = 1;
+const LEGACY_TRANSCRIPTION_GATE_RULES = `
+Independently compare every supplied transcription with the attached official source pixels. Check the complete shared passage and source material, the full stem, every answer choice and distractor, inequalities, signs, coefficients, exponents, fractions, formulas, tables, qtype, and all figure or visual dependencies including figure_description. Check that box plausibly covers the source problem and figure, without requiring pixel-perfect crop decimals. Do not infer fidelity from plausibility or from the proposed answer. Base the curriculum decision on the source pixels, not on an inaccurate supplied transcription.
+
+Return transcription_status exact only when all source-required content is faithfully represented. Return mismatch when any omission, substitution, changed bound/sign/value/formula/choice, wrong qtype, or inaccurate visual description is visible. Return unverifiable when the pixels or required context do not let you decide confidently; never guess exact. Give concise page-grounded transcription_evidence. Curriculum decision and transcription fidelity are independent, so reject and review items still require this source check.
+`.trim();
+const LEGACY_TRANSCRIPTION_PROMPT_DIGEST = sha256(
+  `${LEGACY_TRANSCRIPTION_GATE_VERSION}\n${LEGACY_TRANSCRIPTION_GATE_RULES}`,
+);
+const TRANSCRIPTION_GATE_VERSION = 2;
 const TRANSCRIPTION_GATE_RULES = `
 Independently compare every supplied transcription with the attached official source pixels. Check the complete shared passage and source material, the full stem, every answer choice and distractor, inequalities, signs, coefficients, exponents, fractions, formulas, tables, qtype, and all figure or visual dependencies including figure_description. Check that box plausibly covers the source problem and figure, without requiring pixel-perfect crop decimals. Do not infer fidelity from plausibility or from the proposed answer. Base the curriculum decision on the source pixels, not on an inaccurate supplied transcription.
+
+Any summary, abridgment, omission, or paraphrase is mismatch, even when the question remains solvable. This includes every shared passage sentence, worked example, transition, quotation, annotation, and footnote required by the printed question or source set. Exact preserves the source literally rather than merely preserving meaning.
+
+Visible text, formulas, numbers, and labels must remain literal. Whitespace, layout, and equivalent LaTeX normalization are allowed only when every sign, value, bound, label, and source detail is preserved. Only a genuinely non-text visual glyph may use an accessibility text surrogate, and only when figure_description preserves its identity, occurrence order, orientation, count, and role in the source.
 
 Return transcription_status exact only when all source-required content is faithfully represented. Return mismatch when any omission, substitution, changed bound/sign/value/formula/choice, wrong qtype, or inaccurate visual description is visible. Return unverifiable when the pixels or required context do not let you decide confidently; never guess exact. Give concise page-grounded transcription_evidence. Curriculum decision and transcription fidelity are independent, so reject and review items still require this source check.
 `.trim();
@@ -281,8 +304,9 @@ answerStatus is exact only when an explicit final answer is visible in these pix
 const SOLUTION_FIDELITY_PROMPT_DIGEST = sha256(
   `${SOLUTION_FIDELITY_VERSION}\n${SOLUTION_FIDELITY_RULES}`,
 );
-const SEMANTIC_CHOICE_VERSION = 3;
-const LEGACY_SEMANTIC_CHOICE_VERSION = 2;
+const SEMANTIC_CHOICE_VERSION = 4;
+const LEGACY_ANSWER_SEMANTIC_CHOICE_VERSION = 3;
+const LEGACY_FILTERED_SEMANTIC_CHOICE_VERSION = 2;
 const SEMANTIC_CHOICE_RULES =
   `For each item, use only its official detailed explanation and answer-choice contents to identify the one ` +
   `choice semantically supported by the reasoning. The official answer marker and the problem extractor's answer ` +
@@ -290,16 +314,27 @@ const SEMANTIC_CHOICE_RULES =
   `Return ambiguous when the explanation does not establish ` +
   `exactly one choice. choiceIndex is 1-based and evidence must briefly cite the decisive value or conclusion.`;
 const SEMANTIC_CHOICE_PROMPT_DIGEST = sha256(`${SEMANTIC_CHOICE_VERSION}\n${SEMANTIC_CHOICE_RULES}`);
-const LEGACY_SEMANTIC_CHOICE_PROMPT_DIGEST = sha256(
-  `${LEGACY_SEMANTIC_CHOICE_VERSION}\n${SEMANTIC_CHOICE_RULES}`,
+const LEGACY_ANSWER_SEMANTIC_CHOICE_PROMPT_DIGEST = sha256(
+  `${LEGACY_ANSWER_SEMANTIC_CHOICE_VERSION}\n${SEMANTIC_CHOICE_RULES}`,
+);
+const LEGACY_FILTERED_SEMANTIC_CHOICE_PROMPT_DIGEST = sha256(
+  `${LEGACY_FILTERED_SEMANTIC_CHOICE_VERSION}\n${SEMANTIC_CHOICE_RULES}`,
 );
 const TARGETED_PROBLEM_PROMPT_DIGEST = sha256(
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
+);
+const TARGETED_PROBLEM_BATCH_PROMPT_DIGEST = sha256(
+  `${TARGETED_PROBLEM_BATCH_VERSION}\n${TARGETED_PROBLEM_BATCH_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
 const TARGETED_PROBLEM_REVISION_PROMPT_DIGEST = sha256(
   `${TARGETED_PROBLEM_REVISION_VERSION}\n${TARGETED_PROBLEM_REVISION_RULES}\n` +
   `${TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX}\n` +
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
+);
+const TARGETED_PROBLEM_BATCH_REVISION_PROMPT_DIGEST = sha256(
+  `${TARGETED_PROBLEM_REVISION_VERSION}\n${TARGETED_PROBLEM_REVISION_RULES}\n` +
+  `${TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX}\n` +
+  `${TARGETED_PROBLEM_BATCH_VERSION}\n${TARGETED_PROBLEM_BATCH_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256(
   `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`,
@@ -309,6 +344,36 @@ const TARGETED_SOLUTION_REVISION_PROMPT_DIGEST = sha256(
   `${TARGETED_SOLUTION_REVISION_EVIDENCE_PREFIX}\n` +
   `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`,
 );
+
+type VerificationContract = {
+  auditVersion: 2 | 3;
+  attestationVersion: 2 | 3;
+  classifierVersion: 4 | 5;
+  transcriptionGateVersion: 1 | 2;
+  transcriptionPromptDigest: string;
+  semanticChoiceVersion: 3 | 4;
+  semanticPromptDigest: string;
+};
+
+const LEGACY_CONTRACT: VerificationContract = {
+  auditVersion: 2,
+  attestationVersion: 2,
+  classifierVersion: LEGACY_CLASSIFIER_VERSION,
+  transcriptionGateVersion: LEGACY_TRANSCRIPTION_GATE_VERSION,
+  transcriptionPromptDigest: LEGACY_TRANSCRIPTION_PROMPT_DIGEST,
+  semanticChoiceVersion: LEGACY_ANSWER_SEMANTIC_CHOICE_VERSION,
+  semanticPromptDigest: LEGACY_ANSWER_SEMANTIC_CHOICE_PROMPT_DIGEST,
+};
+
+const CURRENT_CONTRACT: VerificationContract = {
+  auditVersion: 3,
+  attestationVersion: 3,
+  classifierVersion: CLASSIFIER_VERSION,
+  transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+  transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+  semanticChoiceVersion: SEMANTIC_CHOICE_VERSION,
+  semanticPromptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
+};
 
 const OFFICIAL_CIRCLED_ANSWERS = "①②③④⑤⑥⑦⑧⑨⑩";
 const normalizedAnswerText = (value: string) => value.trim().toLowerCase().replace(/\s+/g, " ");
@@ -790,12 +855,16 @@ function loadDecisions(
   entry: ManifestEntry,
   problemEvidence: DownloadEvidence,
   terminalDigest: string | null,
+  contract: VerificationContract,
   add: AddFailure,
 ): DecisionSummary {
   const problemDir = join(stateDir, "problem-chunks");
   const classificationDir = join(stateDir, "classification-chunks");
   const problemFiles = listJson(problemDir, /^v2-\d{4}\.json$/);
-  const classificationFiles = listJson(classificationDir, /^v4-\d{4}-[a-f0-9]{16}\.json$/);
+  const classificationFiles = listJson(
+    classificationDir,
+    new RegExp(`^v${contract.classifierVersion}-\\d{4}-[a-f0-9]{16}\\.json$`, "u"),
+  );
   const records = new Map<string, ClassifiedEvidence>();
   const order: string[] = [];
   const ranges: Array<{ from: number; to: number }> = [];
@@ -834,9 +903,9 @@ function loadDecisions(
       continue;
     }
 
-    const candidates = classificationFiles.filter((name) => name.startsWith(`v${CLASSIFIER_VERSION}-${index}-`));
+    const candidates = classificationFiles.filter((name) => name.startsWith(`v${contract.classifierVersion}-${index}-`));
     const selected = terminalDigest
-      ? candidates.find((name) => name === `v4-${index}-${terminalDigest}.json`)
+      ? candidates.find((name) => name === `v${contract.classifierVersion}-${index}-${terminalDigest}.json`)
       : candidates.length === 1 ? candidates[0] : undefined;
     if (!selected) {
       add({
@@ -851,11 +920,11 @@ function loadDecisions(
     const fileDigest = selected.slice(8, -5);
     try {
       if (
-        classification.version !== CLASSIFIER_VERSION || classification.sourceHash !== problemEvidence.sha256
+        classification.version !== contract.classifierVersion || classification.sourceHash !== problemEvidence.sha256
         || classification.from !== from || classification.to !== to || classification.rulesDigest !== fileDigest
         || classification.ownedFrom !== checkpoint.ownedFrom || classification.ownedTo !== checkpoint.ownedTo
-        || classification.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION
-        || classification.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST
+        || classification.transcriptionGateVersion !== contract.transcriptionGateVersion
+        || classification.transcriptionPromptDigest !== contract.transcriptionPromptDigest
         || classification.model !== "gpt-5.6-sol" || classification.reasoningEffort !== "high"
       ) throw new Error(`${selected} metadata does not match problem checkpoint`);
       if (selectedDigest !== null && selectedDigest !== fileDigest) throw new Error(`${selected} rules digest does not match terminal record`);
@@ -1096,6 +1165,7 @@ function applyDeclaredProblemRevision(
   currentClassification: ClassificationEvidence,
   expectedProblemRepairArtifact: EvidencePointer,
   expectedClassificationRepairArtifact: EvidencePointer,
+  contract: VerificationContract,
 ): { classified: ClassifiedEvidence; evidence: Record<string, unknown> } {
   const revision = object(value, `${base.question.key}.revision`);
   const key = base.question.key;
@@ -1180,8 +1250,8 @@ function applyDeclaredProblemRevision(
     sha256: classificationArtifactRow.sha256,
   }, `${key}.revision.classificationArtifact`);
   if (classificationArtifactRow.rulesDigest !== rulesDigest
-    || classificationArtifactRow.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION
-    || classificationArtifactRow.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST
+    || classificationArtifactRow.transcriptionGateVersion !== contract.transcriptionGateVersion
+    || classificationArtifactRow.transcriptionPromptDigest !== contract.transcriptionPromptDigest
     || classificationArtifactRow.revisionPromptVersion !== TARGETED_PROBLEM_REVISION_VERSION
     || classificationArtifactRow.revisionPromptDigest !== TARGETED_PROBLEM_REVISION_PROMPT_DIGEST) {
     throw new Error(`${key}: classification revision metadata is stale`);
@@ -1221,10 +1291,10 @@ function applyDeclaredProblemRevision(
     baseClassificationHash,
     diagnosticEvidenceHash,
     effectiveQuestionHash,
-    classifierVersion: CLASSIFIER_VERSION,
+    classifierVersion: contract.classifierVersion,
     rulesDigest,
-    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
-    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    transcriptionGateVersion: contract.transcriptionGateVersion,
+    transcriptionPromptDigest: contract.transcriptionPromptDigest,
     revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
     revisionPromptDigest: TARGETED_PROBLEM_REVISION_PROMPT_DIGEST,
     model: "gpt-5.6-sol",
@@ -1241,8 +1311,8 @@ function applyDeclaredProblemRevision(
     classificationArtifact: {
       ...classificationArtifact,
       rulesDigest,
-      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
-      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      transcriptionGateVersion: contract.transcriptionGateVersion,
+      transcriptionPromptDigest: contract.transcriptionPromptDigest,
       revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
       revisionPromptDigest: TARGETED_PROBLEM_REVISION_PROMPT_DIGEST,
     },
@@ -1276,6 +1346,7 @@ function applyDeclaredRepair(
   rulesDigest: string,
   base: ClassifiedEvidence,
   solution: OfficialSolution,
+  contract: VerificationContract,
 ): ClassifiedEvidence {
   const repair = object(value, "answer audit repair");
   const key = exactString(repair.key, "repair.key");
@@ -1368,8 +1439,8 @@ function applyDeclaredRepair(
   if (classificationArtifactRow.rulesDigest !== rulesDigest) {
     throw new Error(`${key}: classification repair rules digest is stale`);
   }
-  if (classificationArtifactRow.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION
-    || classificationArtifactRow.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST) {
+  if (classificationArtifactRow.transcriptionGateVersion !== contract.transcriptionGateVersion
+    || classificationArtifactRow.transcriptionPromptDigest !== contract.transcriptionPromptDigest) {
     throw new Error(`${key}: classification repair transcription gate is stale`);
   }
   const expectedClassificationPath =
@@ -1401,10 +1472,10 @@ function applyDeclaredRepair(
     baseClassificationCheckpoint,
     baseClassificationHash,
     effectiveQuestionHash,
-    classifierVersion: CLASSIFIER_VERSION,
+    classifierVersion: contract.classifierVersion,
     rulesDigest,
-    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
-    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    transcriptionGateVersion: contract.transcriptionGateVersion,
+    transcriptionPromptDigest: contract.transcriptionPromptDigest,
     model: "gpt-5.6-sol",
     reasoningEffort: "high",
     item: correctedClassification,
@@ -1425,8 +1496,8 @@ function applyDeclaredRepair(
     classificationArtifact: {
       ...classificationArtifact,
       rulesDigest,
-      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
-      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      transcriptionGateVersion: contract.transcriptionGateVersion,
+      transcriptionPromptDigest: contract.transcriptionPromptDigest,
     },
     baseQuestionHash,
     effectiveQuestionHash,
@@ -1464,12 +1535,1188 @@ function applyDeclaredRepair(
     correctedClassification,
     problemArtifact,
     classificationArtifact,
+    contract,
   );
   const expectedRevisedRepair = { ...expectedRepair, revision: revised.evidence };
   if (!isDeepStrictEqual(repair, expectedRevisedRepair)) {
     throw new Error(`${key}: repair revision envelope does not match its exact chain`);
   }
   return revised.classified;
+}
+
+type ProblemTerminalFidelityItem = {
+  key: string;
+  status: "exact" | "mismatch" | "unverifiable";
+  evidence: string;
+};
+
+type ProblemTerminalFidelityCheckpoint = EvidencePointer & {
+  from: number;
+  to: number;
+  ownedFrom: number;
+  ownedTo: number;
+  inputHash: string;
+};
+
+type EvidenceCache = Map<string, { pointer: EvidencePointer; value: Record<string, unknown> }>;
+
+function digest(value: unknown, label: string): string {
+  const result = exactString(value, label);
+  if (!/^[a-f0-9]{64}$/u.test(result)) throw new Error(`${label} is not a sha256 digest`);
+  return result;
+}
+
+function readBoundEvidenceCached(
+  cache: EvidenceCache,
+  stateDir: string,
+  pointer: EvidencePointer,
+  label: string,
+): Record<string, unknown> {
+  const cached = cache.get(pointer.path);
+  if (cached) {
+    sameEvidencePointer(pointer, cached.pointer, `${label} cached pointer`);
+    return cached.value;
+  }
+  const value = readBoundEvidence(stateDir, pointer, label);
+  cache.set(pointer.path, { pointer, value });
+  return value;
+}
+
+function problemTerminalFidelityCheckpoint(
+  value: unknown,
+  label: string,
+): ProblemTerminalFidelityCheckpoint {
+  const row = object(value, label);
+  if (Object.keys(row).sort().join(",") !== "from,inputHash,ownedFrom,ownedTo,path,sha256,to") {
+    throw new Error(`${label} has unexpected fields`);
+  }
+  return {
+    ...evidencePointer({ path: row.path, sha256: row.sha256 }, label),
+    from: integer(row.from, `${label}.from`, 1),
+    to: integer(row.to, `${label}.to`, 1),
+    ownedFrom: integer(row.ownedFrom, `${label}.ownedFrom`, 1),
+    ownedTo: integer(row.ownedTo, `${label}.ownedTo`, 1),
+    inputHash: digest(row.inputHash, `${label}.inputHash`),
+  };
+}
+
+function expectedProblemFidelitySlices(pageCount: number): Array<{
+  index: number;
+  from: number;
+  to: number;
+  ownedFrom: number;
+  ownedTo: number;
+}> {
+  const slices: Array<{ index: number; from: number; to: number }> = [];
+  let from = 1;
+  while (from <= pageCount) {
+    const to = Math.min(pageCount, from + PROBLEM_SLICE_PAGES - 1);
+    slices.push({ index: slices.length, from, to });
+    if (to === pageCount) break;
+    from += PROBLEM_SLICE_PAGES - 2;
+  }
+  return slices.map((slice, index) => ({
+    ...slice,
+    ownedFrom: index === 0 ? slice.from : slice.from + 1,
+    ownedTo: slices[index + 1]?.from ?? slice.to,
+  }));
+}
+
+function problemTerminalInput(record: ClassifiedEvidence): Record<string, unknown> {
+  return {
+    key: record.question.key,
+    printed_number: record.question.printedNumber,
+    source_page: record.question.page,
+    qtype: record.question.qtype,
+    question: record.question.question,
+    choices: record.question.choices,
+    figure: record.question.evidence.figure,
+    figure_description: record.question.evidence.figure_description,
+    box: record.question.evidence.box,
+  };
+}
+
+function parseProblemTerminalFidelityItem(value: unknown, label: string): ProblemTerminalFidelityItem {
+  const row = object(value, label);
+  if (Object.keys(row).sort().join(",") !== "evidence,key,status") {
+    throw new Error(`${label} has unexpected fields`);
+  }
+  const status = row.status;
+  if (status !== "exact" && status !== "mismatch" && status !== "unverifiable") {
+    throw new Error(`${label}.status is invalid`);
+  }
+  return {
+    key: exactString(row.key, `${label}.key`),
+    status,
+    evidence: exactString(row.evidence, `${label}.evidence`),
+  };
+}
+
+function verifyProblemTerminalFidelityCheckpoint(
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  effective: DecisionSummary,
+  effectiveCorpusHash: string,
+  pointer: ProblemTerminalFidelityCheckpoint,
+  cache: EvidenceCache,
+): ProblemTerminalFidelityItem[] {
+  const pathMatch = /^problem-terminal-fidelity\/v1-(\d{4})-([a-f0-9]{64})-([a-f0-9]{64})\.json$/u
+    .exec(pointer.path);
+  if (!pathMatch || pathMatch[2] !== effectiveCorpusHash || pathMatch[3] !== pointer.inputHash) {
+    throw new Error(`${pointer.path}: terminal problem fidelity path is stale`);
+  }
+  const slice = expectedProblemFidelitySlices(problemEvidence.pageCount)[Number(pathMatch[1])];
+  if (!slice || pointer.from !== slice.from || pointer.to !== slice.to
+    || pointer.ownedFrom !== slice.ownedFrom || pointer.ownedTo !== slice.ownedTo) {
+    throw new Error(`${pointer.path}: terminal problem fidelity slice is invalid`);
+  }
+  const records = effective.order.map((key) => effective.records.get(key)!)
+    .filter((record) => record.question.page >= slice.ownedFrom && record.question.page <= slice.ownedTo);
+  if (records.length === 0) throw new Error(`${pointer.path}: terminal problem fidelity slice has no owned questions`);
+  const inputs = records.map(problemTerminalInput);
+  const inputHash = canonicalEvidenceHash(inputs);
+  if (pointer.inputHash !== inputHash) throw new Error(`${pointer.path}: terminal problem fidelity input hash is stale`);
+  const checkpoint = readBoundEvidenceCached(cache, stateDir, pointer, pointer.path);
+  if (!Array.isArray(checkpoint.inputs) || !Array.isArray(checkpoint.items)) {
+    throw new Error(`${pointer.path}: terminal problem fidelity arrays are missing`);
+  }
+  const expectedKeys = records.map((record) => record.question.key);
+  const inputKeys = checkpoint.inputs.map((value, index) =>
+    exactString(object(value, `${pointer.path}.inputs[${index}]`).key, `${pointer.path}.inputs[${index}].key`));
+  const items = checkpoint.items.map((value, index) =>
+    parseProblemTerminalFidelityItem(value, `${pointer.path}.items[${index}]`));
+  const itemKeys = items.map((item) => item.key);
+  const sortedExpected = [...expectedKeys].sort(compareCorpusQuestionKeys);
+  const exactCoverage = (keys: string[]) => keys.length === sortedExpected.length
+    && new Set(keys).size === keys.length
+    && isDeepStrictEqual([...keys].sort(compareCorpusQuestionKeys), sortedExpected);
+  if (!exactCoverage(inputKeys) || !exactCoverage(itemKeys)) {
+    throw new Error(`${pointer.path}: terminal problem fidelity child key coverage is not exact`);
+  }
+  const expectedCheckpoint = {
+    version: PROBLEM_TERMINAL_FIDELITY_VERSION,
+    entryId: entry.id,
+    sourceHash: problemEvidence.sha256,
+    from: slice.from,
+    to: slice.to,
+    ownedFrom: slice.ownedFrom,
+    ownedTo: slice.ownedTo,
+    effectiveCorpusHash,
+    inputHash,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    inputs,
+    items,
+  };
+  if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)) {
+    throw new Error(`${pointer.path}: terminal problem fidelity metadata/input/output is stale`);
+  }
+  return items;
+}
+
+function verifyProblemTerminalFidelity(
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  effective: DecisionSummary,
+  audit: Record<string, unknown>,
+  cache: EvidenceCache,
+): { checkpoints: ProblemTerminalFidelityCheckpoint[]; items: ProblemTerminalFidelityItem[] } {
+  if (!Array.isArray(audit.problemTerminalFidelityCheckpoints)
+    || !Array.isArray(audit.problemTerminalFidelityItems)) {
+    throw new Error("answer audit terminal problem fidelity arrays are missing");
+  }
+  const effectiveCorpusHash = canonicalEvidenceHash(effective.order.map((key) => {
+    const record = effective.records.get(key)!;
+    return { question: record.question.evidence, classification: record.classification };
+  }));
+  const expectedSlices = expectedProblemFidelitySlices(problemEvidence.pageCount)
+    .filter((slice) => effective.order.some((key) => {
+      const page = effective.records.get(key)!.question.page;
+      return page >= slice.ownedFrom && page <= slice.ownedTo;
+    }));
+  const checkpoints = audit.problemTerminalFidelityCheckpoints.map((value, index) =>
+    problemTerminalFidelityCheckpoint(value, `problemTerminalFidelityCheckpoints[${index}]`));
+  if (checkpoints.length !== expectedSlices.length) {
+    throw new Error("terminal problem fidelity checkpoint coverage is incomplete");
+  }
+  const actualItems = checkpoints.flatMap((pointer) => verifyProblemTerminalFidelityCheckpoint(
+    stateDir,
+    entry,
+    problemEvidence,
+    effective,
+    effectiveCorpusHash,
+    pointer,
+    cache,
+  ));
+  const items = audit.problemTerminalFidelityItems.map((value, index) =>
+    parseProblemTerminalFidelityItem(value, `problemTerminalFidelityItems[${index}]`));
+  const sortedActual = [...actualItems].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+  const sortedExpected = [...items].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+  if (new Set(actualItems.map((item) => item.key)).size !== effective.order.length
+    || actualItems.length !== effective.order.length
+    || !isDeepStrictEqual(sortedActual, sortedExpected)
+    || items.some((item) => item.status !== "exact")) {
+    throw new Error("terminal problem fidelity must cover every source key exactly once with exact status");
+  }
+  if (!isDeepStrictEqual(checkpoints, audit.problemTerminalFidelityCheckpoints)
+    || !isDeepStrictEqual(items, audit.problemTerminalFidelityItems)) {
+    throw new Error("terminal problem fidelity evidence envelope is not exact");
+  }
+  return { checkpoints, items };
+}
+
+type V3RepairRow = {
+  raw: Record<string, unknown>;
+  key: string;
+  printedNumber: string;
+  sourcePage: number;
+  contextFrom: number;
+  contextTo: number;
+  base: ClassifiedEvidence;
+  solution: OfficialSolution;
+  baseProblemCheckpoint: EvidencePointer;
+  baseClassificationCheckpoint: EvidencePointer;
+  baseSolutionCheckpoint: EvidencePointer;
+  problemArtifact: EvidencePointer;
+  problemArtifactItemHash: string;
+  classificationArtifact: EvidencePointer;
+  classificationArtifactEnvelope: Record<string, unknown>;
+  classificationArtifactItemHash: string;
+  baseQuestionHash: string;
+  baseClassificationHash: string;
+  baseSolutionItemHash: string;
+  officialRawAnswerHash: string;
+};
+
+type V3FirstRepair = {
+  row: V3RepairRow;
+  classified: ClassifiedEvidence;
+  evidence: Record<string, unknown>;
+};
+
+function groupByArtifact<T>(
+  values: T[],
+  pointer: (value: T) => EvidencePointer,
+): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  const hashes = new Map<string, string>();
+  for (const value of values) {
+    const artifact = pointer(value);
+    const priorHash = hashes.get(artifact.path);
+    if (priorHash !== undefined && priorHash !== artifact.sha256) {
+      throw new Error(`${artifact.path}: shared artifact has conflicting whole-file hashes`);
+    }
+    hashes.set(artifact.path, artifact.sha256);
+    const group = groups.get(artifact.path) ?? [];
+    group.push(value);
+    groups.set(artifact.path, group);
+  }
+  return groups;
+}
+
+function prepareV3RepairRows(
+  values: unknown[],
+  stateDir: string,
+  base: DecisionSummary,
+  solutions: Map<string, OfficialSolution>,
+): V3RepairRow[] {
+  const seen = new Set<string>();
+  return values.map((value, index) => {
+    const raw = object(value, `answer audit repairs[${index}]`);
+    const key = exactString(raw.key, `answer audit repairs[${index}].key`);
+    if (seen.has(key)) throw new Error(`duplicate declared repair: ${key}`);
+    seen.add(key);
+    const baseRecord = base.records.get(key);
+    if (!baseRecord) throw new Error(`${key}: repair has no base problem`);
+    const solution = solutions.get(baseRecord.question.printedNumber);
+    if (!solution) throw new Error(`${key}: repair has no base official solution`);
+    const printedNumber = exactString(raw.printedNumber, `${key}.printedNumber`);
+    const sourcePage = integer(raw.sourcePage, `${key}.sourcePage`, 1);
+    const contextFrom = integer(raw.contextFrom, `${key}.contextFrom`, 1);
+    const contextTo = integer(raw.contextTo, `${key}.contextTo`, contextFrom);
+    if (key !== baseRecord.question.key || printedNumber !== baseRecord.question.printedNumber
+      || sourcePage !== baseRecord.question.page || printedNumber !== solution.printedNumber
+      || contextFrom !== baseRecord.contextFrom || contextTo !== baseRecord.contextTo
+      || sourcePage < contextFrom || sourcePage > contextTo
+      || contextTo - contextFrom + 1 > PROBLEM_SLICE_PAGES) {
+      throw new Error(`${key}: repair identity/context does not match its immutable base evidence`);
+    }
+    const baseProblemCheckpoint = evidencePointer(raw.baseProblemCheckpoint, `${key}.baseProblemCheckpoint`);
+    const baseClassificationCheckpoint = evidencePointer(
+      raw.baseClassificationCheckpoint,
+      `${key}.baseClassificationCheckpoint`,
+    );
+    const baseSolutionCheckpoint = evidencePointer(raw.baseSolutionCheckpoint, `${key}.baseSolutionCheckpoint`);
+    sameEvidencePointer(baseProblemCheckpoint, baseRecord.problemCheckpoint, `${key}.baseProblemCheckpoint`);
+    sameEvidencePointer(
+      baseClassificationCheckpoint,
+      baseRecord.classificationCheckpoint,
+      `${key}.baseClassificationCheckpoint`,
+    );
+    sameEvidencePointer(baseSolutionCheckpoint, solution.checkpoint, `${key}.baseSolutionCheckpoint`);
+    for (const [label, pointer] of [
+      ["base problem", baseProblemCheckpoint],
+      ["base classification", baseClassificationCheckpoint],
+      ["base solution", baseSolutionCheckpoint],
+    ] as const) {
+      const path = confinedEvidencePath(stateDir, pointer, `${key} ${label}`);
+      if (hashFile(path) !== pointer.sha256) throw new Error(`${key} ${label} hash mismatch`);
+    }
+    const baseQuestionHash = canonicalEvidenceHash(baseRecord.question.evidence);
+    const baseClassificationHash = canonicalEvidenceHash(baseRecord.classification);
+    const baseSolutionItemHash = canonicalEvidenceHash(solution.evidence);
+    const officialRawAnswerHash = sha256(solution.rawAnswer);
+    if (raw.baseQuestionHash !== baseQuestionHash || raw.baseClassificationHash !== baseClassificationHash
+      || raw.baseSolutionItemHash !== baseSolutionItemHash || raw.officialRawAnswerHash !== officialRawAnswerHash) {
+      throw new Error(`${key}: repair base hashes do not match immutable evidence`);
+    }
+    const problemArtifact = evidencePointer(raw.problemArtifact, `${key}.problemArtifact`);
+    const problemArtifactItemHash = digest(raw.problemArtifactItemHash, `${key}.problemArtifactItemHash`);
+    const classificationArtifactEnvelope = object(raw.classificationArtifact, `${key}.classificationArtifact`);
+    if (Object.keys(classificationArtifactEnvelope).sort().join(",")
+      !== "path,rulesDigest,sha256,transcriptionGateVersion,transcriptionPromptDigest") {
+      throw new Error(`${key}.classificationArtifact has unexpected fields`);
+    }
+    const classificationArtifact = evidencePointer(
+      { path: classificationArtifactEnvelope.path, sha256: classificationArtifactEnvelope.sha256 },
+      `${key}.classificationArtifact`,
+    );
+    const classificationArtifactItemHash = digest(
+      raw.classificationArtifactItemHash,
+      `${key}.classificationArtifactItemHash`,
+    );
+    return {
+      raw,
+      key,
+      printedNumber,
+      sourcePage,
+      contextFrom,
+      contextTo,
+      base: baseRecord,
+      solution,
+      baseProblemCheckpoint,
+      baseClassificationCheckpoint,
+      baseSolutionCheckpoint,
+      problemArtifact,
+      problemArtifactItemHash,
+      classificationArtifact,
+      classificationArtifactEnvelope,
+      classificationArtifactItemHash,
+      baseQuestionHash,
+      baseClassificationHash,
+      baseSolutionItemHash,
+      officialRawAnswerHash,
+    };
+  });
+}
+
+function verifyV3FirstProblemArtifacts(
+  rows: V3RepairRow[],
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  cache: EvidenceCache,
+): Map<string, ProblemQuestion> {
+  const corrected = new Map<string, ProblemQuestion>();
+  for (const [path, group] of groupByArtifact(rows, (row) => row.problemArtifact)) {
+    const pointer = group[0].problemArtifact;
+    if (/^problem-repairs\/v2-\d{4}-\d{4}\.json$/u.test(path)) {
+      if (group.length !== 1) throw new Error(`${path}: legacy single repair has multiple key authorities`);
+      const row = group[0];
+      const expectedPath = `problem-repairs/v${PROBLEM_REPAIR_VERSION}-` +
+        `${String(row.sourcePage).padStart(4, "0")}-${row.printedNumber.padStart(4, "0")}.json`;
+      if (path !== expectedPath) throw new Error(`${row.key}: legacy problem repair path is invalid`);
+      const checkpoint = readBoundEvidenceCached(cache, stateDir, pointer, `${row.key} legacy problem repair`);
+      const question = parseProblem(checkpoint.item, `${row.key} legacy problem repair.item`);
+      const expectedCheckpoint = {
+        version: PROBLEM_REPAIR_VERSION,
+        entryId: entry.id,
+        key: row.key,
+        sourcePage: row.sourcePage,
+        printedNumber: row.printedNumber,
+        contextFrom: row.contextFrom,
+        contextTo: row.contextTo,
+        sourceHash: problemEvidence.sha256,
+        baseProblemCheckpoint: row.baseProblemCheckpoint,
+        baseQuestionHash: row.baseQuestionHash,
+        baseSolutionCheckpoint: row.baseSolutionCheckpoint,
+        baseSolutionItemHash: row.baseSolutionItemHash,
+        officialRawAnswerHash: row.officialRawAnswerHash,
+        promptVersion: TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+        promptDigest: TARGETED_PROBLEM_PROMPT_DIGEST,
+        model: "gpt-5.6-sol",
+        reasoningEffort: "high",
+        item: question.evidence,
+      };
+      if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)) {
+        throw new Error(`${row.key}: legacy problem repair metadata/content is stale`);
+      }
+      if (question.key !== row.key || canonicalEvidenceHash(question.evidence) !== row.problemArtifactItemHash) {
+        throw new Error(`${row.key}: legacy problem repair per-item hash or identity is invalid`);
+      }
+      corrected.set(row.key, question);
+      continue;
+    }
+    const ordered = [...group].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+    if (ordered.length > 6) throw new Error(`${path}: shared problem repair exceeds six members`);
+    const contextFrom = ordered[0].contextFrom;
+    const contextTo = ordered[0].contextTo;
+    const sourcePage = ordered[0].sourcePage;
+    if (ordered.some((row) => row.contextFrom !== contextFrom || row.contextTo !== contextTo
+      || row.sourcePage !== sourcePage)) {
+      throw new Error(`${path}: shared problem repair members do not share context/page`);
+    }
+    const members = ordered.map((row) => ({
+      key: row.key,
+      printedNumber: row.printedNumber,
+      baseProblemCheckpoint: row.baseProblemCheckpoint,
+      baseQuestionHash: row.baseQuestionHash,
+      baseClassificationCheckpoint: row.baseClassificationCheckpoint,
+      baseClassificationHash: row.baseClassificationHash,
+      baseSolutionCheckpoint: row.baseSolutionCheckpoint,
+      baseSolutionItemHash: row.baseSolutionItemHash,
+      officialRawAnswerHash: row.officialRawAnswerHash,
+    }));
+    const membersDigest = canonicalEvidenceHash(members);
+    const expectedPath = `problem-repair-batches/v${PROBLEM_REPAIR_BATCH_VERSION}-` +
+      `${String(contextFrom).padStart(4, "0")}-${String(contextTo).padStart(4, "0")}-` +
+      `${String(sourcePage).padStart(4, "0")}-${membersDigest}.json`;
+    if (path !== expectedPath) throw new Error(`${path}: shared problem repair path/member set is invalid`);
+    const checkpoint = readBoundEvidenceCached(cache, stateDir, pointer, path);
+    if (!Array.isArray(checkpoint.items)) throw new Error(`${path}: shared problem repair items are missing`);
+    const items = checkpoint.items.map((value, index) => parseProblem(value, `${path}.items[${index}]`));
+    const byKey = new Map<string, ProblemQuestion>();
+    for (const item of items) {
+      if (byKey.has(item.key)) throw new Error(`${path}: duplicate shared problem output ${item.key}`);
+      byKey.set(item.key, item);
+    }
+    if (byKey.size !== ordered.length || ordered.some((row) => !byKey.has(row.key))) {
+      throw new Error(`${path}: shared problem member/output/reference coverage is not exact`);
+    }
+    const expectedCheckpoint = {
+      version: PROBLEM_REPAIR_BATCH_VERSION,
+      entryId: entry.id,
+      sourceHash: problemEvidence.sha256,
+      contextFrom,
+      contextTo,
+      sourcePage,
+      membersDigest,
+      members,
+      promptVersion: TARGETED_PROBLEM_BATCH_VERSION,
+      promptDigest: TARGETED_PROBLEM_BATCH_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      items: items.map((item) => item.evidence),
+    };
+    if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)) {
+      throw new Error(`${path}: shared problem repair metadata/content is stale`);
+    }
+    for (const row of ordered) {
+      const item = byKey.get(row.key)!;
+      if (item.page !== row.sourcePage || item.printedNumber !== row.printedNumber
+        || canonicalEvidenceHash(item.evidence) !== row.problemArtifactItemHash) {
+        throw new Error(`${row.key}: shared problem repair per-item hash or identity is invalid`);
+      }
+      corrected.set(row.key, item);
+    }
+  }
+  return corrected;
+}
+
+function verifyV3FirstClassificationArtifacts(
+  rows: V3RepairRow[],
+  corrected: Map<string, ProblemQuestion>,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  rulesDigest: string,
+  cache: EvidenceCache,
+): Map<string, V3FirstRepair> {
+  const result = new Map<string, V3FirstRepair>();
+  for (const [path, group] of groupByArtifact(rows, (row) => row.classificationArtifact)) {
+    const ordered = [...group].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+    const contextFrom = ordered[0].contextFrom;
+    const contextTo = ordered[0].contextTo;
+    if (ordered.some((row) => row.contextFrom !== contextFrom || row.contextTo !== contextTo)) {
+      throw new Error(`${path}: shared classification members do not share context`);
+    }
+    for (const row of ordered) {
+      if (row.classificationArtifactEnvelope.rulesDigest !== rulesDigest
+        || row.classificationArtifactEnvelope.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION
+        || row.classificationArtifactEnvelope.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST) {
+        throw new Error(`${row.key}: classification repair envelope is stale`);
+      }
+    }
+    const members = ordered.map((row) => ({
+      key: row.key,
+      problemAuthority: {
+        key: row.key,
+        path: row.problemArtifact.path,
+        sha256: row.problemArtifact.sha256,
+        itemHash: row.problemArtifactItemHash,
+      },
+      effectiveQuestionHash: canonicalEvidenceHash(corrected.get(row.key)!.evidence),
+      baseClassificationCheckpoint: row.baseClassificationCheckpoint,
+      baseClassificationHash: row.baseClassificationHash,
+    }));
+    const overlayDigest = canonicalEvidenceHash(members);
+    const expectedPath = `classification-repair-batches/v${CLASSIFICATION_REPAIR_BATCH_VERSION}-` +
+      `${String(contextFrom).padStart(4, "0")}-${String(contextTo).padStart(4, "0")}-` +
+      `${overlayDigest}-${rulesDigest}.json`;
+    if (path !== expectedPath) throw new Error(`${path}: shared classification path/member set is invalid`);
+    const checkpoint = readBoundEvidenceCached(cache, stateDir, ordered[0].classificationArtifact, path);
+    if (!Array.isArray(checkpoint.items)) throw new Error(`${path}: shared classification items are missing`);
+    const byKey = new Map<string, ClassificationEvidence>();
+    const items = checkpoint.items.map((value, index) => {
+      const key = exactString(object(value, `${path}.items[${index}]`).key, `${path}.items[${index}].key`);
+      const row = ordered.find((candidate) => candidate.key === key);
+      if (!row || byKey.has(key)) throw new Error(`${path}: missing, extra, or duplicate classification key ${key}`);
+      const parsed = parseClassificationEvidence(value, corrected.get(key)!, entry, `${path}.items[${index}]`);
+      byKey.set(key, parsed);
+      return parsed;
+    });
+    if (byKey.size !== ordered.length) throw new Error(`${path}: shared classification coverage is incomplete`);
+    const expectedCheckpoint = {
+      version: CLASSIFICATION_REPAIR_BATCH_VERSION,
+      entryId: entry.id,
+      sourceHash: problemEvidence.sha256,
+      contextFrom,
+      contextTo,
+      overlayDigest,
+      classifierVersion: CLASSIFIER_VERSION,
+      rulesDigest,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      members,
+      items,
+    };
+    if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)) {
+      throw new Error(`${path}: shared classification metadata/content is stale`);
+    }
+    for (const row of ordered) {
+      const question = corrected.get(row.key)!;
+      const classification = byKey.get(row.key)!;
+      const effectiveQuestionHash = canonicalEvidenceHash(question.evidence);
+      const effectiveClassificationHash = canonicalEvidenceHash(classification);
+      if (row.raw.effectiveQuestionHash !== effectiveQuestionHash
+        || row.problemArtifactItemHash !== effectiveQuestionHash
+        || row.raw.effectiveClassificationHash !== effectiveClassificationHash
+        || row.classificationArtifactItemHash !== effectiveClassificationHash) {
+        throw new Error(`${row.key}: repair effective/per-item hashes do not match shared outputs`);
+      }
+      const evidence = {
+        key: row.key,
+        printedNumber: row.printedNumber,
+        sourcePage: row.sourcePage,
+        contextFrom: row.contextFrom,
+        contextTo: row.contextTo,
+        baseProblemCheckpoint: row.baseProblemCheckpoint,
+        baseClassificationCheckpoint: row.baseClassificationCheckpoint,
+        baseSolutionCheckpoint: row.baseSolutionCheckpoint,
+        problemArtifact: row.problemArtifact,
+        problemArtifactItemHash: row.problemArtifactItemHash,
+        classificationArtifact: {
+          ...row.classificationArtifact,
+          rulesDigest,
+          transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+          transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+        },
+        classificationArtifactItemHash: row.classificationArtifactItemHash,
+        baseQuestionHash: row.baseQuestionHash,
+        effectiveQuestionHash,
+        baseClassificationHash: row.baseClassificationHash,
+        effectiveClassificationHash,
+        baseSolutionItemHash: row.baseSolutionItemHash,
+        officialRawAnswerHash: row.officialRawAnswerHash,
+      };
+      result.set(row.key, {
+        row,
+        classified: {
+          question,
+          classification,
+          problemCheckpoint: row.base.problemCheckpoint,
+          classificationCheckpoint: row.base.classificationCheckpoint,
+          contextFrom: row.contextFrom,
+          contextTo: row.contextTo,
+        },
+        evidence,
+      });
+    }
+  }
+  return result;
+}
+
+type V3RevisionRow = {
+  first: V3FirstRepair;
+  raw: Record<string, unknown>;
+  current: ClassifiedEvidence;
+  trigger: Record<string, unknown>;
+  problemArtifact: EvidencePointer;
+  problemArtifactItemHash: string;
+  classificationArtifact: EvidencePointer;
+  classificationArtifactEnvelope: Record<string, unknown>;
+  classificationArtifactItemHash: string;
+};
+
+function prepareV3RevisionRows(
+  values: V3FirstRepair[],
+  kind: "classification" | "terminal",
+  current: Map<string, ClassifiedEvidence>,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  cache: EvidenceCache,
+): V3RevisionRow[] {
+  return values.map((first) => {
+    const key = first.row.key;
+    const revision = object(first.row.raw.revision, `${key}.revision`);
+    const triggerRow = object(revision.trigger, `${key}.revision.trigger`);
+    const record = current.get(key);
+    if (!record) throw new Error(`${key}: revision has no current first-stage record`);
+    let trigger: Record<string, unknown>;
+    if (kind === "classification") {
+      if (triggerRow.kind !== "classification" || record.classification.transcription_status === "exact") {
+        throw new Error(`${key}: classification revision trigger does not match first decision`);
+      }
+      trigger = {
+        kind: "classification",
+        evidenceHash: sha256(record.classification.transcription_evidence),
+      };
+    } else {
+      if (triggerRow.kind !== "terminal" || record.classification.transcription_status !== "exact"
+      ) {
+        throw new Error(`${key}: terminal revision trigger does not match the pre-revision corpus`);
+      }
+      const terminalCheckpoint = problemTerminalFidelityCheckpoint(
+        triggerRow.terminalCheckpoint,
+        `${key}.revision.trigger.terminalCheckpoint`,
+      );
+      const pathMatch = /^problem-terminal-fidelity\/v1-(\d{4})-([a-f0-9]{64})-([a-f0-9]{64})\.json$/u
+        .exec(terminalCheckpoint.path);
+      const slice = pathMatch && expectedProblemFidelitySlices(problemEvidence.pageCount)[Number(pathMatch[1])];
+      if (!pathMatch || !slice || pathMatch[3] !== terminalCheckpoint.inputHash
+        || terminalCheckpoint.from !== slice.from || terminalCheckpoint.to !== slice.to
+        || terminalCheckpoint.ownedFrom !== slice.ownedFrom || terminalCheckpoint.ownedTo !== slice.ownedTo
+        || record.question.page < slice.ownedFrom || record.question.page > slice.ownedTo) {
+        throw new Error(`${key}: terminal revision checkpoint path/slice is invalid`);
+      }
+      const checkpoint = readBoundEvidenceCached(
+        cache,
+        stateDir,
+        terminalCheckpoint,
+        `${key} terminal revision checkpoint`,
+      );
+      if (checkpoint.version !== PROBLEM_TERMINAL_FIDELITY_VERSION || checkpoint.entryId !== entry.id
+        || checkpoint.sourceHash !== problemEvidence.sha256 || checkpoint.from !== slice.from
+        || checkpoint.to !== slice.to || checkpoint.ownedFrom !== slice.ownedFrom
+        || checkpoint.ownedTo !== slice.ownedTo || checkpoint.effectiveCorpusHash !== pathMatch[2]
+        || checkpoint.inputHash !== terminalCheckpoint.inputHash
+        || checkpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION
+        || checkpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST
+        || checkpoint.model !== "gpt-5.6-sol" || checkpoint.reasoningEffort !== "high"
+        || !Array.isArray(checkpoint.inputs) || !Array.isArray(checkpoint.items)
+        || canonicalEvidenceHash(checkpoint.inputs) !== terminalCheckpoint.inputHash) {
+        throw new Error(`${key}: terminal revision checkpoint metadata is stale`);
+      }
+      const inputKeys = checkpoint.inputs.map((value, index) => exactString(
+        object(value, `${key} terminal inputs[${index}]`).key,
+        `${key} terminal inputs[${index}].key`,
+      ));
+      const terminalItems = checkpoint.items.map((value, index) =>
+        parseProblemTerminalFidelityItem(value, `${key} terminal items[${index}]`));
+      const itemKeys = terminalItems.map((item) => item.key);
+      if (new Set(inputKeys).size !== inputKeys.length || new Set(itemKeys).size !== itemKeys.length
+        || !isDeepStrictEqual(
+          [...inputKeys].sort(compareCorpusQuestionKeys),
+          [...itemKeys].sort(compareCorpusQuestionKeys),
+        )) {
+        throw new Error(`${key}: terminal revision checkpoint input/item coverage is not exact`);
+      }
+      const terminalItem = terminalItems.find((item) => item.key === key);
+      if (!terminalItem || terminalItem.status === "exact") {
+        throw new Error(`${key}: terminal revision lacks a bound non-exact diagnostic`);
+      }
+      const terminalItemHash = canonicalEvidenceHash(terminalItem);
+      if (triggerRow.terminalItemHash !== terminalItemHash) {
+        throw new Error(`${key}: terminal revision item hash is invalid`);
+      }
+      trigger = {
+        kind: "terminal",
+        evidenceHash: sha256(terminalItem.evidence),
+        terminalCheckpoint,
+        terminalItemHash,
+      };
+    }
+    if (!isDeepStrictEqual(triggerRow, trigger) || revision.diagnosticEvidenceHash !== trigger.evidenceHash) {
+      throw new Error(`${key}: revision trigger/evidence hash is stale`);
+    }
+    const baseProblemRepairArtifact = evidencePointer(
+      revision.baseProblemRepairArtifact,
+      `${key}.revision.baseProblemRepairArtifact`,
+    );
+    const baseClassificationRepairArtifact = evidencePointer(
+      revision.baseClassificationRepairArtifact,
+      `${key}.revision.baseClassificationRepairArtifact`,
+    );
+    sameEvidencePointer(baseProblemRepairArtifact, first.row.problemArtifact, `${key}.revision base problem repair`);
+    sameEvidencePointer(
+      baseClassificationRepairArtifact,
+      first.row.classificationArtifact,
+      `${key}.revision base classification repair`,
+    );
+    const baseQuestionHash = canonicalEvidenceHash(record.question.evidence);
+    const baseClassificationHash = canonicalEvidenceHash(record.classification);
+    if (revision.baseQuestionHash !== baseQuestionHash || revision.baseClassificationHash !== baseClassificationHash) {
+      throw new Error(`${key}: revision base hashes do not match its first repair generation`);
+    }
+    const problemArtifact = evidencePointer(revision.problemArtifact, `${key}.revision.problemArtifact`);
+    const problemArtifactItemHash = digest(
+      revision.problemArtifactItemHash,
+      `${key}.revision.problemArtifactItemHash`,
+    );
+    const classificationArtifactEnvelope = object(
+      revision.classificationArtifact,
+      `${key}.revision.classificationArtifact`,
+    );
+    if (Object.keys(classificationArtifactEnvelope).sort().join(",")
+      !== "path,rulesDigest,sha256,transcriptionGateVersion,transcriptionPromptDigest") {
+      throw new Error(`${key}.revision.classificationArtifact has unexpected fields`);
+    }
+    const classificationArtifact = evidencePointer(
+      { path: classificationArtifactEnvelope.path, sha256: classificationArtifactEnvelope.sha256 },
+      `${key}.revision.classificationArtifact`,
+    );
+    const classificationArtifactItemHash = digest(
+      revision.classificationArtifactItemHash,
+      `${key}.revision.classificationArtifactItemHash`,
+    );
+    return {
+      first,
+      raw: revision,
+      current: record,
+      trigger,
+      problemArtifact,
+      problemArtifactItemHash,
+      classificationArtifact,
+      classificationArtifactEnvelope,
+      classificationArtifactItemHash,
+    };
+  });
+}
+
+function verifyV3RevisionArtifacts(
+  rows: V3RevisionRow[],
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  rulesDigest: string,
+  cache: EvidenceCache,
+): Map<string, { classified: ClassifiedEvidence; evidence: Record<string, unknown> }> {
+  const revisedQuestions = new Map<string, ProblemQuestion>();
+  for (const [path, group] of groupByArtifact(rows, (row) => row.problemArtifact)) {
+    const ordered = [...group].sort((left, right) =>
+      compareCorpusQuestionKeys(left.first.row.key, right.first.row.key));
+    if (ordered.length > 6) throw new Error(`${path}: shared problem revision exceeds six members`);
+    const contextFrom = ordered[0].first.row.contextFrom;
+    const contextTo = ordered[0].first.row.contextTo;
+    const sourcePage = ordered[0].first.row.sourcePage;
+    if (ordered.some((row) => row.first.row.contextFrom !== contextFrom
+      || row.first.row.contextTo !== contextTo || row.first.row.sourcePage !== sourcePage)) {
+      throw new Error(`${path}: shared problem revision members do not share context/page`);
+    }
+    const members = ordered.map((row) => ({
+      key: row.first.row.key,
+      printedNumber: row.first.row.printedNumber,
+      sourcePage: row.first.row.sourcePage,
+      baseProblemRepairArtifact: row.first.row.problemArtifact,
+      baseProblemRepairItemHash: row.first.row.problemArtifactItemHash,
+      baseClassificationRepairArtifact: row.first.row.classificationArtifact,
+      baseClassificationRepairItemHash: row.first.row.classificationArtifactItemHash,
+      baseQuestionHash: canonicalEvidenceHash(row.current.question.evidence),
+      baseClassificationHash: canonicalEvidenceHash(row.current.classification),
+      trigger: row.trigger,
+    }));
+    const membersDigest = canonicalEvidenceHash(members);
+    const expectedPath = `problem-revision-batches/v${PROBLEM_REVISION_BATCH_VERSION}-` +
+      `${String(contextFrom).padStart(4, "0")}-${String(contextTo).padStart(4, "0")}-` +
+      `${String(sourcePage).padStart(4, "0")}-${membersDigest}.json`;
+    if (path !== expectedPath) throw new Error(`${path}: shared problem revision path/member set is invalid`);
+    const checkpoint = readBoundEvidenceCached(cache, stateDir, ordered[0].problemArtifact, path);
+    if (!Array.isArray(checkpoint.items)) throw new Error(`${path}: shared problem revision items are missing`);
+    const items = checkpoint.items.map((value, index) => parseProblem(value, `${path}.items[${index}]`));
+    const byKey = new Map<string, ProblemQuestion>();
+    for (const item of items) {
+      if (byKey.has(item.key)) throw new Error(`${path}: duplicate shared problem revision output ${item.key}`);
+      byKey.set(item.key, item);
+    }
+    if (byKey.size !== ordered.length || ordered.some((row) => !byKey.has(row.first.row.key))) {
+      throw new Error(`${path}: shared problem revision member/output/reference coverage is not exact`);
+    }
+    const expectedCheckpoint = {
+      version: PROBLEM_REVISION_BATCH_VERSION,
+      entryId: entry.id,
+      sourceHash: problemEvidence.sha256,
+      contextFrom,
+      contextTo,
+      sourcePage,
+      membersDigest,
+      members,
+      batchPromptVersion: TARGETED_PROBLEM_BATCH_VERSION,
+      batchPromptDigest: TARGETED_PROBLEM_BATCH_PROMPT_DIGEST,
+      revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+      revisionPromptDigest: TARGETED_PROBLEM_BATCH_REVISION_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      items: items.map((item) => item.evidence),
+    };
+    if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)) {
+      throw new Error(`${path}: shared problem revision metadata/content is stale`);
+    }
+    for (const row of ordered) {
+      const item = byKey.get(row.first.row.key)!;
+      if (item.page !== row.first.row.sourcePage || item.printedNumber !== row.first.row.printedNumber
+        || canonicalEvidenceHash(item.evidence) !== row.problemArtifactItemHash) {
+        throw new Error(`${row.first.row.key}: problem revision per-item hash or identity is invalid`);
+      }
+      revisedQuestions.set(row.first.row.key, item);
+    }
+  }
+
+  const result = new Map<string, { classified: ClassifiedEvidence; evidence: Record<string, unknown> }>();
+  for (const [path, group] of groupByArtifact(rows, (row) => row.classificationArtifact)) {
+    const ordered = [...group].sort((left, right) =>
+      compareCorpusQuestionKeys(left.first.row.key, right.first.row.key));
+    const contextFrom = ordered[0].first.row.contextFrom;
+    const contextTo = ordered[0].first.row.contextTo;
+    if (ordered.some((row) => row.first.row.contextFrom !== contextFrom
+      || row.first.row.contextTo !== contextTo)) {
+      throw new Error(`${path}: shared classification revision members do not share context`);
+    }
+    for (const row of ordered) {
+      if (row.classificationArtifactEnvelope.rulesDigest !== rulesDigest
+        || row.classificationArtifactEnvelope.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION
+        || row.classificationArtifactEnvelope.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST) {
+        throw new Error(`${row.first.row.key}: classification revision envelope is stale`);
+      }
+    }
+    const members = ordered.map((row) => ({
+      key: row.first.row.key,
+      problemAuthority: {
+        key: row.first.row.key,
+        path: row.problemArtifact.path,
+        sha256: row.problemArtifact.sha256,
+        itemHash: row.problemArtifactItemHash,
+      },
+      effectiveQuestionHash: canonicalEvidenceHash(revisedQuestions.get(row.first.row.key)!.evidence),
+      baseClassificationRepairArtifact: row.first.row.classificationArtifact,
+      baseClassificationRepairItemHash: row.first.row.classificationArtifactItemHash,
+      triggerHash: canonicalEvidenceHash(row.trigger),
+    }));
+    const overlayDigest = canonicalEvidenceHash(members);
+    const expectedPath = `classification-revision-batches/v${CLASSIFICATION_REVISION_BATCH_VERSION}-` +
+      `${String(contextFrom).padStart(4, "0")}-${String(contextTo).padStart(4, "0")}-` +
+      `${overlayDigest}-${rulesDigest}.json`;
+    if (path !== expectedPath) throw new Error(`${path}: shared classification revision path/member set is invalid`);
+    const checkpoint = readBoundEvidenceCached(cache, stateDir, ordered[0].classificationArtifact, path);
+    if (!Array.isArray(checkpoint.items)) throw new Error(`${path}: shared classification revision items are missing`);
+    const byKey = new Map<string, ClassificationEvidence>();
+    const items = checkpoint.items.map((value, index) => {
+      const key = exactString(object(value, `${path}.items[${index}]`).key, `${path}.items[${index}].key`);
+      const row = ordered.find((candidate) => candidate.first.row.key === key);
+      if (!row || byKey.has(key)) throw new Error(`${path}: missing, extra, or duplicate revision key ${key}`);
+      const parsed = parseClassificationEvidence(
+        value,
+        revisedQuestions.get(key)!,
+        entry,
+        `${path}.items[${index}]`,
+      );
+      byKey.set(key, parsed);
+      return parsed;
+    });
+    if (byKey.size !== ordered.length) throw new Error(`${path}: classification revision coverage is incomplete`);
+    const expectedCheckpoint = {
+      version: CLASSIFICATION_REVISION_BATCH_VERSION,
+      entryId: entry.id,
+      sourceHash: problemEvidence.sha256,
+      contextFrom,
+      contextTo,
+      overlayDigest,
+      classifierVersion: CLASSIFIER_VERSION,
+      rulesDigest,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      members,
+      items,
+    };
+    if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)) {
+      throw new Error(`${path}: shared classification revision metadata/content is stale`);
+    }
+    for (const row of ordered) {
+      const key = row.first.row.key;
+      const question = revisedQuestions.get(key)!;
+      const classification = byKey.get(key)!;
+      if (classification.transcription_status !== "exact") {
+        throw new Error(`${key}: second source-grounded revision is not exact`);
+      }
+      const effectiveQuestionHash = canonicalEvidenceHash(question.evidence);
+      const effectiveClassificationHash = canonicalEvidenceHash(classification);
+      if (row.raw.effectiveQuestionHash !== effectiveQuestionHash
+        || row.problemArtifactItemHash !== effectiveQuestionHash
+        || row.raw.effectiveClassificationHash !== effectiveClassificationHash
+        || row.classificationArtifactItemHash !== effectiveClassificationHash) {
+        throw new Error(`${key}: revision effective/per-item hashes do not match shared outputs`);
+      }
+      const evidence = {
+        baseProblemRepairArtifact: row.first.row.problemArtifact,
+        baseClassificationRepairArtifact: row.first.row.classificationArtifact,
+        problemArtifact: row.problemArtifact,
+        classificationArtifact: {
+          ...row.classificationArtifact,
+          rulesDigest,
+          transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+          transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+        },
+        diagnosticEvidenceHash: row.trigger.evidenceHash,
+        baseQuestionHash: canonicalEvidenceHash(row.current.question.evidence),
+        effectiveQuestionHash,
+        baseClassificationHash: canonicalEvidenceHash(row.current.classification),
+        effectiveClassificationHash,
+        problemArtifactItemHash: row.problemArtifactItemHash,
+        classificationArtifactItemHash: row.classificationArtifactItemHash,
+        trigger: row.trigger,
+      };
+      if (!isDeepStrictEqual(row.raw, evidence)) {
+        throw new Error(`${key}: revision evidence envelope does not match its exact shared chain`);
+      }
+      result.set(key, {
+        classified: {
+          question,
+          classification,
+          problemCheckpoint: row.first.row.base.problemCheckpoint,
+          classificationCheckpoint: row.first.row.base.classificationCheckpoint,
+          contextFrom: row.first.row.contextFrom,
+          contextTo: row.first.row.contextTo,
+        },
+        evidence,
+      });
+    }
+  }
+  return result;
+}
+
+export function assertTerminalGenerationSearchBound(optionCounts: number[]): number {
+  const combinations = optionCounts.reduce((count, value) => count * value, 1);
+  if (!Number.isSafeInteger(combinations) || combinations > 65_536) {
+    throw new Error("terminal trigger generation is too ambiguous to verify safely");
+  }
+  return combinations;
+}
+
+function verifyV3TerminalTriggerGenerations(
+  rows: V3RevisionRow[],
+  base: DecisionSummary,
+  first: Map<string, V3FirstRepair>,
+  classificationRevisions: Map<string, { classified: ClassifiedEvidence }>,
+  terminalRevisions: Map<string, { classified: ClassifiedEvidence }>,
+  stateDir: string,
+  cache: EvidenceCache,
+): void {
+  const groups = groupByArtifact(rows, (row) => problemTerminalFidelityCheckpoint(
+    row.trigger.terminalCheckpoint,
+    `${row.first.row.key}.revision.trigger.terminalCheckpoint`,
+  ));
+  for (const [path, triggerRows] of groups) {
+    const pointer = problemTerminalFidelityCheckpoint(
+      triggerRows[0].trigger.terminalCheckpoint,
+      `${triggerRows[0].first.row.key}.revision.trigger.terminalCheckpoint`,
+    );
+    const checkpoint = readBoundEvidenceCached(cache, stateDir, pointer, path);
+    if (!Array.isArray(checkpoint.inputs)) throw new Error(`${path}: terminal trigger inputs are missing`);
+    const inputs = checkpoint.inputs.map((value) => object(value, `${path}.input`));
+    const inputByKey = new Map(inputs.map((input) => [exactString(input.key, `${path}.input.key`), input]));
+    const expectedSliceKeys = base.order.filter((key) => {
+      const page = base.records.get(key)!.question.page;
+      return page >= pointer.ownedFrom && page <= pointer.ownedTo;
+    });
+    if (inputByKey.size !== expectedSliceKeys.length
+      || expectedSliceKeys.some((key) => !inputByKey.has(key))) {
+      throw new Error(`${path}: terminal trigger input coverage does not match the immutable key set`);
+    }
+    const sameGenerationKeys = new Set(triggerRows.map((row) => row.first.row.key));
+    const sameGenerationCurrent = new Map(triggerRows.map((row) => [row.first.row.key, row.current]));
+    const options = base.order.map((key) => {
+      const candidates = (sameGenerationKeys.has(key) ? [sameGenerationCurrent.get(key)] : [
+        base.records.get(key),
+        first.get(key)?.classified,
+        classificationRevisions.get(key)?.classified,
+        terminalRevisions.get(key)?.classified,
+      ]).filter((value): value is ClassifiedEvidence => value !== undefined)
+        .filter((value) => value.classification.transcription_status === "exact");
+      const unique = new Map(candidates.map((value) => [canonicalEvidenceHash({
+        question: value.question.evidence,
+        classification: value.classification,
+      }), value]));
+      const input = inputByKey.get(key);
+      const matching = [...unique.values()].filter((value) =>
+        input === undefined || isDeepStrictEqual(problemTerminalInput(value), input));
+      if (matching.length === 0) throw new Error(`${path}: no attested problem generation matches ${key}`);
+      return matching;
+    });
+    assertTerminalGenerationSearchBound(options.map((values) => values.length));
+    const targetHash = exactString(checkpoint.effectiveCorpusHash, `${path}.effectiveCorpusHash`);
+    let matches = 0;
+    const chosen: ClassifiedEvidence[] = [];
+    const visit = (index: number): void => {
+      if (matches > 1) return;
+      if (index < options.length) {
+        for (const candidate of options[index]) {
+          chosen.push(candidate);
+          visit(index + 1);
+          chosen.pop();
+        }
+        return;
+      }
+      const corpus = chosen.map((record) => ({
+        question: record.question.evidence,
+        classification: record.classification,
+      }));
+      if (canonicalEvidenceHash(corpus) !== targetHash) return;
+      const expectedInputs = chosen.filter((record) =>
+        record.question.page >= pointer.ownedFrom && record.question.page <= pointer.ownedTo)
+        .map(problemTerminalInput);
+      if (isDeepStrictEqual(expectedInputs, inputs)) matches += 1;
+    };
+    visit(0);
+    if (matches !== 1) {
+      throw new Error(`${path}: terminal trigger does not bind one exact prior corpus generation`);
+    }
+  }
+}
+
+function applyDeclaredRepairsV3(
+  values: unknown[],
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  rulesDigest: string,
+  base: DecisionSummary,
+  solutions: Map<string, OfficialSolution>,
+  cache: EvidenceCache,
+): Map<string, ClassifiedEvidence> {
+  const rows = prepareV3RepairRows(values, stateDir, base, solutions);
+  const corrected = verifyV3FirstProblemArtifacts(rows, stateDir, entry, problemEvidence, cache);
+  const first = verifyV3FirstClassificationArtifacts(
+    rows,
+    corrected,
+    stateDir,
+    entry,
+    problemEvidence,
+    rulesDigest,
+    cache,
+  );
+  const records = new Map(base.records);
+  for (const [key, value] of first) records.set(key, value.classified);
+
+  const classificationRevisions = [...first.values()].filter((value) => {
+    if (value.row.raw.revision === undefined) return false;
+    return object(object(value.row.raw.revision, `${value.row.key}.revision`).trigger,
+      `${value.row.key}.revision.trigger`).kind === "classification";
+  });
+  const nonExactWithoutRevision = [...first.values()].filter((value) =>
+    value.classified.classification.transcription_status !== "exact"
+    && !classificationRevisions.some((candidate) => candidate.row.key === value.row.key));
+  if (nonExactWithoutRevision.length > 0) {
+    throw new Error(`${nonExactWithoutRevision[0].row.key}: non-exact first repair has no attested revision`);
+  }
+  let classificationRevisionResults = new Map<
+    string,
+    { classified: ClassifiedEvidence; evidence: Record<string, unknown> }
+  >();
+  if (classificationRevisions.length > 0) {
+    const prepared = prepareV3RevisionRows(
+      classificationRevisions,
+      "classification",
+      records,
+      stateDir,
+      entry,
+      problemEvidence,
+      cache,
+    );
+    classificationRevisionResults = verifyV3RevisionArtifacts(
+      prepared,
+      stateDir,
+      entry,
+      problemEvidence,
+      rulesDigest,
+      cache,
+    );
+    for (const [key, value] of classificationRevisionResults) records.set(key, value.classified);
+  }
+
+  const terminalRevisions = [...first.values()].filter((value) => {
+    if (value.row.raw.revision === undefined) return false;
+    return object(object(value.row.raw.revision, `${value.row.key}.revision`).trigger,
+      `${value.row.key}.revision.trigger`).kind === "terminal";
+  });
+  let terminalRevisionResults = new Map<
+    string,
+    { classified: ClassifiedEvidence; evidence: Record<string, unknown> }
+  >();
+  if (terminalRevisions.length > 0) {
+    const prepared = prepareV3RevisionRows(
+      terminalRevisions,
+      "terminal",
+      records,
+      stateDir,
+      entry,
+      problemEvidence,
+      cache,
+    );
+    terminalRevisionResults = verifyV3RevisionArtifacts(
+      prepared,
+      stateDir,
+      entry,
+      problemEvidence,
+      rulesDigest,
+      cache,
+    );
+    verifyV3TerminalTriggerGenerations(
+      prepared,
+      base,
+      first,
+      classificationRevisionResults,
+      terminalRevisionResults,
+      stateDir,
+      cache,
+    );
+    for (const [key, value] of terminalRevisionResults) records.set(key, value.classified);
+  }
+
+  for (const value of first.values()) {
+    const rawRevision = value.row.raw.revision;
+    let expected = value.evidence;
+    if (rawRevision !== undefined) {
+      const triggerKind = object(object(rawRevision, `${value.row.key}.revision`).trigger,
+        `${value.row.key}.revision.trigger`).kind;
+      const revisionEvidence = triggerKind === "classification"
+        ? classificationRevisionResults.get(value.row.key)?.evidence
+        : terminalRevisionResults.get(value.row.key)?.evidence;
+      if (!revisionEvidence) throw new Error(`${value.row.key}: revision authority is missing`);
+      expected = { ...value.evidence, revision: revisionEvidence };
+    }
+    if (!isDeepStrictEqual(value.row.raw, expected)) {
+      throw new Error(`${value.row.key}: repair evidence envelope does not match its exact shared chain`);
+    }
+  }
+  return records;
 }
 
 type SolutionFidelityInput = {
@@ -1838,6 +3085,7 @@ function verifySolutionRevision(
   first: VerifiedFirstSolutionRepair,
   record: ClassifiedEvidence,
   semanticContext: RevisionSemanticContext | null,
+  contract: VerificationContract,
 ): {
   solution: OfficialSolution;
   decision: SolutionFidelityDecision;
@@ -1900,6 +3148,7 @@ function verifySolutionRevision(
       semanticContext.effectiveSolutionCorpusHash,
       semanticContext.inputs,
       semanticContext.solutionRevisionApplied,
+      contract,
     );
     semanticDecision = semanticByKey.get(key);
     if (!semanticDecision) throw new Error(`${key}: semantic revision checkpoint has no diagnostic decision`);
@@ -2116,6 +3365,7 @@ function verifySolutionFidelity(
   effective: DecisionSummary,
   baseSolutions: Map<string, OfficialSolution>,
   audit: Record<string, unknown>,
+  contract: VerificationContract,
 ): VerifiedSolutionFidelity {
   if (!Array.isArray(audit.solutionFidelityCheckpoints) || !Array.isArray(audit.solutionFidelityItems)
     || !Array.isArray(audit.solutionRepairs)) {
@@ -2195,10 +3445,10 @@ function verifySolutionFidelity(
       to: slice.to,
       ownedFrom: slice.ownedFrom,
       ownedTo: slice.ownedTo,
-      classifierVersion: CLASSIFIER_VERSION,
+      classifierVersion: contract.classifierVersion,
       rulesDigest,
-      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
-      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      transcriptionGateVersion: contract.transcriptionGateVersion,
+      transcriptionPromptDigest: contract.transcriptionPromptDigest,
       effectiveProblemCorpusHash,
       inputHash,
       promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
@@ -2287,6 +3537,7 @@ function verifySolutionFidelity(
       firstRepairs.get(key)!,
       effective.records.get(key)!,
       null,
+      contract,
     );
     stagedFidelityRevisions.set(key, revised);
     semanticStageSolutions.set(result.input.printedNumber, revised.solution);
@@ -2367,6 +3618,7 @@ function verifySolutionFidelity(
           first,
           effective.records.get(key)!,
           semanticContext,
+          contract,
         );
       terminal = revised;
       expectedRepair = { ...first.evidence, revision: revised.evidence };
@@ -2436,6 +3688,7 @@ function verifySemanticCheckpoint(
   effectiveSolutionCorpusHash: string,
   inputs: Array<{ key: string; choices: string[]; detailedExplanation: string }>,
   solutionRevisionApplied = false,
+  contract: VerificationContract,
 ): Map<string, SemanticDecision> {
   const inputHash = canonicalEvidenceHash(inputs);
   if (value === null) {
@@ -2452,9 +3705,9 @@ function verifySemanticCheckpoint(
   }
   const pointer = evidencePointer({ path: envelope.path, sha256: envelope.sha256 }, "semanticCheckpoint");
   const expectedPath = solutionRevisionApplied
-    ? `semantic-choice-checks/v${SEMANTIC_CHOICE_VERSION}-${effectiveCorpusHash}-` +
+    ? `semantic-choice-checks/v${contract.semanticChoiceVersion}-${effectiveCorpusHash}-` +
       `${effectiveSolutionCorpusHash}-${inputHash}.json`
-    : `semantic-choice-checks/v${SEMANTIC_CHOICE_VERSION}-${inputHash}.json`;
+    : `semantic-choice-checks/v${contract.semanticChoiceVersion}-${inputHash}.json`;
   if (pointer.path !== expectedPath) {
     throw new Error("semantic checkpoint path does not match input hash");
   }
@@ -2484,18 +3737,18 @@ function verifySemanticCheckpoint(
   });
   if (decisions.size !== inputs.length) throw new Error("semantic choice checkpoint omits marker inputs");
   const expectedCheckpoint = {
-    version: SEMANTIC_CHOICE_VERSION,
+    version: contract.semanticChoiceVersion,
     entryId: entry.id,
     problemHash: problemEvidence.sha256,
     solutionHash: solutionEvidence.sha256,
-    classifierVersion: CLASSIFIER_VERSION,
+    classifierVersion: contract.classifierVersion,
     rulesDigest,
-    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
-    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    transcriptionGateVersion: contract.transcriptionGateVersion,
+    transcriptionPromptDigest: contract.transcriptionPromptDigest,
     effectiveCorpusHash,
     effectiveSolutionCorpusHash,
     inputHash,
-    promptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
+    promptDigest: contract.semanticPromptDigest,
     model: "gpt-5.6-sol",
     reasoningEffort: "high",
     inputs,
@@ -2509,6 +3762,27 @@ function verifySemanticCheckpoint(
 
 type VerifiedAnswerAudit = { decisions: DecisionSummary; solutions: Map<string, OfficialSolution> };
 
+function selectVerificationContract(
+  stateDir: string,
+  receipt: Record<string, unknown> | null,
+  result: Record<string, unknown> | null,
+): VerificationContract {
+  if (result?.version === 3) return CURRENT_CONTRACT;
+  const currentGenerationSignal = (
+    listJson(join(stateDir, "classification-chunks"), /^v5-\d{4}-[a-f0-9]{16}\.json$/u).length > 0
+    || listJson(join(stateDir, "problem-repair-batches"), /^v1-.*\.json$/u).length > 0
+    || listJson(join(stateDir, "classification-repair-batches"), /^v1-.*\.json$/u).length > 0
+    || listJson(join(stateDir, "problem-revision-batches"), /^v1-.*\.json$/u).length > 0
+    || listJson(join(stateDir, "classification-revision-batches"), /^v1-.*\.json$/u).length > 0
+    || listJson(join(stateDir, "problem-terminal-fidelity"), /^v1-.*\.json$/u).length > 0
+    || listJson(join(stateDir, "answer-audit"), /^v3-[a-f0-9]{64}\.json$/u).length > 0
+    || listJson(join(stateDir, "answer-attestation"), /^v3-[a-f0-9]{64}\.json$/u).length > 0
+  );
+  if (currentGenerationSignal) return CURRENT_CONTRACT;
+  if (!receipt) return LEGACY_CONTRACT;
+  return LEGACY_CONTRACT;
+}
+
 function verifyAnswerAudit(
   stateDir: string,
   entry: ManifestEntry,
@@ -2517,6 +3791,7 @@ function verifyAnswerAudit(
   base: DecisionSummary,
   solutions: Map<string, OfficialSolution>,
   terminal: Record<string, unknown>,
+  contract: VerificationContract,
   add: AddFailure,
 ): VerifiedAnswerAudit {
   const rulesDigest = base.rulesDigest;
@@ -2541,7 +3816,10 @@ function verifyAnswerAudit(
     return { decisions: base, solutions };
   }
   const attestationDir = join(stateDir, "answer-attestation");
-  const names = listJson(attestationDir, /^v2-[a-f0-9]{64}\.json$/u);
+  const names = listJson(
+    attestationDir,
+    new RegExp(`^v${contract.attestationVersion}-[a-f0-9]{64}\\.json$`, "u"),
+  );
   const candidates: Array<{ name: string; path: string; value: Record<string, unknown> }> = [];
   for (const name of names) {
     try {
@@ -2555,12 +3833,14 @@ function verifyAnswerAudit(
       const looksCurrent = value.entryId === entry.id
         && value.problemHash === problemEvidence.sha256
         && value.solutionHash === solutionEvidence.sha256
-        && value.classifierVersion === CLASSIFIER_VERSION
+        && value.classifierVersion === contract.classifierVersion
         && value.rulesDigest === rulesDigest
-        && value.transcriptionGateVersion === TRANSCRIPTION_GATE_VERSION
-        && value.transcriptionPromptDigest === TRANSCRIPTION_PROMPT_DIGEST
+        && value.transcriptionGateVersion === contract.transcriptionGateVersion
+        && value.transcriptionPromptDigest === contract.transcriptionPromptDigest
         && value.solutionFidelityVersion === SOLUTION_FIDELITY_VERSION
         && value.solutionFidelityPromptDigest === SOLUTION_FIDELITY_PROMPT_DIGEST
+        && (contract.auditVersion === 2
+          || value.problemTerminalFidelityVersion === PROBLEM_TERMINAL_FIDELITY_VERSION)
         && receipt.path === "receipt.json"
         && receipt.sha256 === receiptHash;
       if (looksCurrent) candidates.push({ name, path, value });
@@ -2580,7 +3860,8 @@ function verifyAnswerAudit(
   try {
     const { name, path: attestationPath, value: attestation } = candidates[0];
     const attestationDigest = exactString(attestation.attestationDigest, "answer attestation.digest");
-    if (attestation.version !== 2 || name !== `v2-${attestationDigest}.json`
+    if (attestation.version !== contract.attestationVersion
+      || name !== `v${contract.attestationVersion}-${attestationDigest}.json`
       || !/^[a-f0-9]{64}$/u.test(attestationDigest)) {
       throw new Error("answer attestation version/name/digest is invalid");
     }
@@ -2602,14 +3883,18 @@ function verifyAnswerAudit(
       { path: auditEnvelope.path, sha256: auditEnvelope.sha256 },
       "answer attestation audit",
     );
-    const auditPathMatch = /^answer-audit\/v2-([a-f0-9]{64})\.json$/u.exec(auditPointer.path);
+    const auditPathMatch = new RegExp(
+      `^answer-audit/v${contract.auditVersion}-([a-f0-9]{64})\\.json$`,
+      "u",
+    ).exec(auditPointer.path);
     if (!auditPathMatch || !/^[a-f0-9]{64}$/u.test(String(auditEnvelope.effectiveCorpusHash))
       || !/^[a-f0-9]{64}$/u.test(String(auditEnvelope.effectiveSolutionCorpusHash))) {
       throw new Error("answer attestation audit path/effective corpus hash is invalid");
     }
     const audit = readBoundEvidence(stateDir, auditPointer, "attested answer audit");
     const auditDigest = exactString(audit.auditDigest, "answer audit.digest");
-    if (audit.version !== 2 || auditPathMatch[1] !== auditDigest || !/^[a-f0-9]{64}$/u.test(auditDigest)) {
+    if (audit.version !== contract.auditVersion || auditPathMatch[1] !== auditDigest
+      || !/^[a-f0-9]{64}$/u.test(auditDigest)) {
       throw new Error("answer audit version/name/digest is invalid");
     }
     const { version: _version, auditDigest: _auditDigest, ...auditBasis } = audit;
@@ -2617,7 +3902,9 @@ function verifyAnswerAudit(
       throw new Error("answer audit canonical digest or file hash is invalid");
     }
     if (!Array.isArray(audit.repairs) || !Array.isArray(audit.solutionFidelityCheckpoints)
-      || !Array.isArray(audit.solutionFidelityItems) || !Array.isArray(audit.solutionRepairs)) {
+      || !Array.isArray(audit.solutionFidelityItems) || !Array.isArray(audit.solutionRepairs)
+      || contract.auditVersion === 3 && (!Array.isArray(audit.problemTerminalFidelityCheckpoints)
+        || !Array.isArray(audit.problemTerminalFidelityItems))) {
       throw new Error("answer audit repair/fidelity arrays are missing");
     }
     if (auditEnvelope.effectiveCorpusHash !== audit.effectiveCorpusHash
@@ -2628,12 +3915,15 @@ function verifyAnswerAudit(
       entryId: entry.id,
       problemHash: problemEvidence.sha256,
       solutionHash: solutionEvidence.sha256,
-      classifierVersion: CLASSIFIER_VERSION,
+      classifierVersion: contract.classifierVersion,
       rulesDigest,
-      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
-      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      transcriptionGateVersion: contract.transcriptionGateVersion,
+      transcriptionPromptDigest: contract.transcriptionPromptDigest,
       solutionFidelityVersion: SOLUTION_FIDELITY_VERSION,
       solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      ...(contract.auditVersion === 3
+        ? { problemTerminalFidelityVersion: PROBLEM_TERMINAL_FIDELITY_VERSION }
+        : {}),
       receipt: receiptPointer,
       answerAudit: {
         ...auditPointer,
@@ -2644,30 +3934,50 @@ function verifyAnswerAudit(
       solutionFidelityCheckpoints: audit.solutionFidelityCheckpoints,
       solutionFidelityItems: audit.solutionFidelityItems,
       solutionRepairs: audit.solutionRepairs,
+      ...(contract.auditVersion === 3 ? {
+        problemTerminalFidelityCheckpoints: audit.problemTerminalFidelityCheckpoints,
+        problemTerminalFidelityItems: audit.problemTerminalFidelityItems,
+      } : {}),
     };
     if (!isDeepStrictEqual(attestationBasis, expectedAttestationBasis)) {
       throw new Error("answer attestation does not exactly bind receipt/audit/repairs");
     }
-    const records = new Map(base.records);
-    const repairedKeys = new Set<string>();
-    for (const rawRepair of audit.repairs) {
-      const repair = object(rawRepair, "answer audit repair");
-      const key = exactString(repair.key, "answer audit repair.key");
-      if (repairedKeys.has(key)) throw new Error(`duplicate declared repair: ${key}`);
-      const baseRecord = base.records.get(key);
-      const solution = baseRecord && solutions.get(baseRecord.question.printedNumber);
-      if (!baseRecord || !solution) throw new Error(`repair has no base problem/solution: ${key}`);
-      records.set(key, applyDeclaredRepair(
-        repair,
-        stateDir,
-        entry,
-        problemEvidence,
-        rulesDigest,
-        baseRecord,
-        solution,
-      ));
-      repairedKeys.add(key);
-    }
+    const evidenceCache: EvidenceCache = new Map();
+    const records = contract.auditVersion === 3
+      ? applyDeclaredRepairsV3(
+          audit.repairs,
+          stateDir,
+          entry,
+          problemEvidence,
+          rulesDigest,
+          base,
+          solutions,
+          evidenceCache,
+        )
+      : (() => {
+          const legacy = new Map(base.records);
+          const repairedKeys = new Set<string>();
+          for (const rawRepair of audit.repairs) {
+            const repair = object(rawRepair, "answer audit repair");
+            const key = exactString(repair.key, "answer audit repair.key");
+            if (repairedKeys.has(key)) throw new Error(`duplicate declared repair: ${key}`);
+            const baseRecord = base.records.get(key);
+            const solution = baseRecord && solutions.get(baseRecord.question.printedNumber);
+            if (!baseRecord || !solution) throw new Error(`repair has no base problem/solution: ${key}`);
+            legacy.set(key, applyDeclaredRepair(
+              repair,
+              stateDir,
+              entry,
+              problemEvidence,
+              rulesDigest,
+              baseRecord,
+              solution,
+              contract,
+            ));
+            repairedKeys.add(key);
+          }
+          return legacy;
+        })();
     const effective = summarizeDecisions(records, base.order, rulesDigest);
     if (effective.order.length !== base.order.length || effective.records.size !== base.records.size
       || effective.order.some((key) => !base.records.has(key))) {
@@ -2686,6 +3996,16 @@ function verifyAnswerAudit(
     if (auditEnvelope.effectiveCorpusHash !== effectiveCorpusHash) {
       throw new Error("attested effective corpus hash does not match reconstructed corpus");
     }
+    const problemTerminalFidelity = contract.auditVersion === 3
+      ? verifyProblemTerminalFidelity(
+          stateDir,
+          entry,
+          problemEvidence,
+          effective,
+          audit,
+          evidenceCache,
+        )
+      : null;
     const solutionFidelity = verifySolutionFidelity(
       stateDir,
       entry,
@@ -2695,6 +4015,7 @@ function verifyAnswerAudit(
       effective,
       solutions,
       audit,
+      contract,
     );
     if (auditEnvelope.effectiveSolutionCorpusHash !== solutionFidelity.effectiveSolutionCorpusHash) {
       throw new Error("attested effective solution corpus hash does not match reconstructed overlay");
@@ -2730,6 +4051,7 @@ function verifyAnswerAudit(
       solutionFidelity.effectiveSolutionCorpusHash,
       markerInputs,
       solutionFidelity.repairs.some((repair) => repair.revision !== undefined),
+      contract,
     );
     const terminalFidelityByKey = new Map(solutionFidelity.items.map((item) => [String(item.key), item]));
     for (const record of acceptedRecords) {
@@ -2778,14 +4100,17 @@ function verifyAnswerAudit(
       entryId: entry.id,
       problemHash: problemEvidence.sha256,
       solutionHash: solutionEvidence.sha256,
-      classifierVersion: CLASSIFIER_VERSION,
+      classifierVersion: contract.classifierVersion,
       rulesDigest,
-      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
-      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      transcriptionGateVersion: contract.transcriptionGateVersion,
+      transcriptionPromptDigest: contract.transcriptionPromptDigest,
       solutionFidelityVersion: SOLUTION_FIDELITY_VERSION,
       solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
-      semanticChoiceVersion: SEMANTIC_CHOICE_VERSION,
-      semanticPromptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
+      ...(contract.auditVersion === 3
+        ? { problemTerminalFidelityVersion: PROBLEM_TERMINAL_FIDELITY_VERSION }
+        : {}),
+      semanticChoiceVersion: contract.semanticChoiceVersion,
+      semanticPromptDigest: contract.semanticPromptDigest,
       sourceQuestionCount: effective.problems.size,
       acceptedQuestionCount: effective.accepted.length,
       rejectedQuestionCount: effective.rejected,
@@ -2800,6 +4125,10 @@ function verifyAnswerAudit(
       solutionFidelityCheckpoints: solutionFidelity.checkpoints,
       solutionFidelityItems: solutionFidelity.items,
       solutionRepairs: solutionFidelity.repairs,
+      ...(problemTerminalFidelity ? {
+        problemTerminalFidelityCheckpoints: problemTerminalFidelity.checkpoints,
+        problemTerminalFidelityItems: problemTerminalFidelity.items,
+      } : {}),
       semanticCheckpoint: semanticEnvelope,
       repairs: [...audit.repairs].sort((left, right) => compareCorpusQuestionKeys(
         exactString(object(left, "repair").key, "repair.key"),
@@ -2835,16 +4164,19 @@ function verifyFilteredAnswerAudit(
   base: DecisionSummary,
   solutions: Map<string, OfficialSolution>,
   result: Record<string, unknown>,
+  contract: VerificationContract,
   add: AddFailure,
 ): DecisionSummary {
   const nonExactBase = base.order.filter((key) =>
     base.records.get(key)!.classification.transcription_status !== "exact");
   if (result.answerAudit === undefined) {
-    if (nonExactBase.length > 0) {
+    if (contract.auditVersion === 3 || nonExactBase.length > 0) {
       add({
         code: "TRANSCRIPTION_GATE",
         entryId: entry.id,
-        message: `filtered result has unverified source transcriptions: ${nonExactBase.join(", ")}`,
+        message: contract.auditVersion === 3
+          ? "current filtered result has no terminal v3 answer audit"
+          : `filtered result has unverified source transcriptions: ${nonExactBase.join(", ")}`,
       });
     }
     return base;
@@ -2858,7 +4190,9 @@ function verifyFilteredAnswerAudit(
       throw new Error("filtered repair audit problem/solution number sets differ");
     }
     const pointer = evidencePointer(result.answerAudit, "filtered result answerAudit");
-    const pathMatch = /^answer-audit\/v([12])-([a-f0-9]{64})\.json$/u.exec(pointer.path);
+    const pathMatch = (contract.auditVersion === 3
+      ? /^answer-audit\/v(3)-([a-f0-9]{64})\.json$/u
+      : /^answer-audit\/v([12])-([a-f0-9]{64})\.json$/u).exec(pointer.path);
     if (!pathMatch) throw new Error("filtered answer audit path is invalid");
     const version = Number(pathMatch[1]);
     const audit = readBoundEvidence(stateDir, pointer, "filtered answer audit");
@@ -2870,26 +4204,42 @@ function verifyFilteredAnswerAudit(
     if (canonicalEvidenceHash(auditBasis) !== auditDigest || !Array.isArray(audit.repairs)) {
       throw new Error("filtered answer audit canonical digest/repairs are invalid");
     }
-    const records = new Map(base.records);
-    const repaired = new Set<string>();
-    for (const rawRepair of audit.repairs) {
-      const repair = object(rawRepair, "filtered answer audit repair");
-      const key = exactString(repair.key, "filtered answer audit repair.key");
-      if (repaired.has(key)) throw new Error(`duplicate declared repair: ${key}`);
-      const baseRecord = base.records.get(key);
-      const solution = baseRecord && solutions.get(baseRecord.question.printedNumber);
-      if (!baseRecord || !solution) throw new Error(`repair has no base problem/solution: ${key}`);
-      records.set(key, applyDeclaredRepair(
-        repair,
-        stateDir,
-        entry,
-        problemEvidence,
-        rulesDigest,
-        baseRecord,
-        solution,
-      ));
-      repaired.add(key);
-    }
+    const evidenceCache: EvidenceCache = new Map();
+    const records = contract.auditVersion === 3
+      ? applyDeclaredRepairsV3(
+          audit.repairs,
+          stateDir,
+          entry,
+          problemEvidence,
+          rulesDigest,
+          base,
+          solutions,
+          evidenceCache,
+        )
+      : (() => {
+          const legacy = new Map(base.records);
+          const repaired = new Set<string>();
+          for (const rawRepair of audit.repairs) {
+            const repair = object(rawRepair, "filtered answer audit repair");
+            const key = exactString(repair.key, "filtered answer audit repair.key");
+            if (repaired.has(key)) throw new Error(`duplicate declared repair: ${key}`);
+            const baseRecord = base.records.get(key);
+            const solution = baseRecord && solutions.get(baseRecord.question.printedNumber);
+            if (!baseRecord || !solution) throw new Error(`repair has no base problem/solution: ${key}`);
+            legacy.set(key, applyDeclaredRepair(
+              repair,
+              stateDir,
+              entry,
+              problemEvidence,
+              rulesDigest,
+              baseRecord,
+              solution,
+              contract,
+            ));
+            repaired.add(key);
+          }
+          return legacy;
+        })();
     const effective = summarizeDecisions(records, base.order, rulesDigest);
     const effectiveCorpusHash = canonicalEvidenceHash(effective.order.map((key) => {
       const record = effective.records.get(key)!;
@@ -2898,40 +4248,55 @@ function verifyFilteredAnswerAudit(
     const nonExact = effective.order.filter((key) =>
       effective.records.get(key)!.classification.transcription_status !== "exact");
     if (nonExact.length > 0) throw new Error(`filtered corpus remains non-exact: ${nonExact.join(", ")}`);
+    const problemTerminalFidelity = contract.auditVersion === 3
+      ? verifyProblemTerminalFidelity(
+          stateDir,
+          entry,
+          problemEvidence,
+          effective,
+          audit,
+          evidenceCache,
+        )
+      : null;
     const expectedBasis = {
       entryId: entry.id,
       problemHash: problemEvidence.sha256,
       solutionHash: solutionEvidence.sha256,
-      classifierVersion: CLASSIFIER_VERSION,
+      classifierVersion: contract.classifierVersion,
       rulesDigest,
-      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
-      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
-      ...(version === 2 ? {
+      transcriptionGateVersion: contract.transcriptionGateVersion,
+      transcriptionPromptDigest: contract.transcriptionPromptDigest,
+      ...(version >= 2 ? {
         solutionFidelityVersion: SOLUTION_FIDELITY_VERSION,
         solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
-        semanticChoiceVersion: SEMANTIC_CHOICE_VERSION,
-        semanticPromptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
+        ...(version === 3 ? { problemTerminalFidelityVersion: PROBLEM_TERMINAL_FIDELITY_VERSION } : {}),
+        semanticChoiceVersion: contract.semanticChoiceVersion,
+        semanticPromptDigest: contract.semanticPromptDigest,
       } : {
-        semanticChoiceVersion: LEGACY_SEMANTIC_CHOICE_VERSION,
-        semanticPromptDigest: LEGACY_SEMANTIC_CHOICE_PROMPT_DIGEST,
+        semanticChoiceVersion: LEGACY_FILTERED_SEMANTIC_CHOICE_VERSION,
+        semanticPromptDigest: LEGACY_FILTERED_SEMANTIC_CHOICE_PROMPT_DIGEST,
       }),
       sourceQuestionCount: effective.problems.size,
       acceptedQuestionCount: 0,
       rejectedQuestionCount: effective.rejected,
       reviewQuestionCount: effective.reviews,
       targetQuestionCounts: {},
-      ...(version === 2 ? {
+      ...(version >= 2 ? {
         acceptedSolutionKeys: [],
         solutionRepairKeys: [],
         derivedAnswerKeys: [],
       } : {}),
       acceptedMcqKeys: [],
       effectiveCorpusHash,
-      ...(version === 2 ? {
+      ...(version >= 2 ? {
         effectiveSolutionCorpusHash: canonicalEvidenceHash([]),
         solutionFidelityCheckpoints: [],
         solutionFidelityItems: [],
         solutionRepairs: [],
+      } : {}),
+      ...(problemTerminalFidelity ? {
+        problemTerminalFidelityCheckpoints: problemTerminalFidelity.checkpoints,
+        problemTerminalFidelityItems: problemTerminalFidelity.items,
       } : {}),
       semanticCheckpoint: null,
       repairs: [...audit.repairs].sort((left, right) => compareCorpusQuestionKeys(
@@ -2945,7 +4310,8 @@ function verifyFilteredAnswerAudit(
       || result.sourceQuestionCount !== effective.problems.size
       || result.acceptedQuestionCount !== 0
       || result.rejectedQuestionCount !== effective.rejected
-      || result.reviewQuestionCount !== 0) {
+      || result.reviewQuestionCount !== 0
+      || contract.auditVersion === 3 && result.effectiveCorpusHash !== effectiveCorpusHash) {
       throw new Error("filtered answer audit/result does not match the exact effective corpus");
     }
     return effective;
@@ -3328,12 +4694,16 @@ export function verifyExamCorpus(options: {
     for (const entry of entries) {
       const stateDir = join(dataDir, "import-exam-corpus", entryToken(entry));
       const entryPath = join(stateDir, "entry.json");
+      let entrySchemaVersion: number | null = null;
       if (!existsSync(entryPath)) {
         add({ code: "ENTRY_STATE_MISSING", entryId: entry.id, message: "entry.json is missing" });
       } else {
         const saved = safeObject(entryPath, "entry.json", entry.id, add);
-        if (saved && (saved.schemaVersion !== 1 || !isDeepStrictEqual(saved.entry, entry.raw))) {
-          add({ code: "ENTRY_MISMATCH", entryId: entry.id, message: "entry.json does not exactly match manifest entry" });
+        if (saved) {
+          entrySchemaVersion = Number(saved.schemaVersion);
+          if (![1, 2].includes(entrySchemaVersion) || !isDeepStrictEqual(saved.entry, entry.raw)) {
+            add({ code: "ENTRY_MISMATCH", entryId: entry.id, message: "entry.json does not exactly match manifest entry" });
+          }
         }
       }
 
@@ -3372,10 +4742,22 @@ export function verifyExamCorpus(options: {
       verifyFile(join(stateDir, problemEvidence.path), problemEvidence.sha256, problemEvidence.bytes, "DOWNLOAD_EVIDENCE", entry.id, add, hashCache);
       verifyFile(join(stateDir, solutionEvidence.path), solutionEvidence.sha256, solutionEvidence.bytes, "DOWNLOAD_EVIDENCE", entry.id, add, hashCache);
 
-      let decisions = loadDecisions(stateDir, entry, problemEvidence, terminalDigest, add);
+      const contract = selectVerificationContract(
+        stateDir,
+        receipt,
+        result,
+      );
+      if (contract.auditVersion === 3 && entrySchemaVersion !== null && entrySchemaVersion !== 2) {
+        add({
+          code: "ENTRY_MISMATCH",
+          entryId: entry.id,
+          message: "entry.json schemaVersion must be 2 for the current terminal contract",
+        });
+      }
+      let decisions = loadDecisions(stateDir, entry, problemEvidence, terminalDigest, contract, add);
 
       if (result) {
-        const needsFilteredAudit = result.answerAudit !== undefined || decisions.order.some((key) =>
+        const needsFilteredAudit = result.version === 3 || result.answerAudit !== undefined || decisions.order.some((key) =>
           decisions.records.get(key)!.classification.transcription_status !== "exact");
         if (needsFilteredAudit) {
           const filteredSolutions = loadSolutions(stateDir, entry, solutionEvidence, add);
@@ -3387,6 +4769,7 @@ export function verifyExamCorpus(options: {
             decisions,
             filteredSolutions,
             result,
+            contract,
             add,
           );
         }
@@ -3395,16 +4778,29 @@ export function verifyExamCorpus(options: {
           add({ code: "REVIEW_COMMITTED", entryId: entry.id, message: "review decisions must have no terminal result" });
         }
         const noScopeGateMatches = result.reason === "NO_IN_SCOPE_QUESTIONS" && (
-          result.classifierVersion === CLASSIFIER_VERSION
-          && result.transcriptionGateVersion === TRANSCRIPTION_GATE_VERSION
-          && result.transcriptionPromptDigest === TRANSCRIPTION_PROMPT_DIGEST
+          result.classifierVersion === contract.classifierVersion
+          && result.transcriptionGateVersion === contract.transcriptionGateVersion
+          && result.transcriptionPromptDigest === contract.transcriptionPromptDigest
+        );
+        const sourceGradeResult = result.reason === "SOURCE_GRADE_OUT_OF_SCOPE" && result.version === 2
+          && result.sourceQuestionCount === null && result.rejectedQuestionCount === null;
+        const currentAuditPointer = result.answerAudit && typeof result.answerAudit === "object"
+          && !Array.isArray(result.answerAudit) ? result.answerAudit as Record<string, unknown> : null;
+        const currentFilteredBinding = contract.auditVersion !== 3 || (
+          typeof result.effectiveCorpusHash === "string" && /^[a-f0-9]{64}$/u.test(result.effectiveCorpusHash)
+          && typeof currentAuditPointer?.path === "string" && typeof currentAuditPointer.sha256 === "string"
         );
         if (
-          result.version !== 2 || result.status !== "filtered" || result.entryId !== entry.id
+          result.status !== "filtered" || result.entryId !== entry.id
           || result.acceptedQuestionCount !== 0 || result.reviewQuestionCount !== 0
-          || result.sourceQuestionCount !== decisions.problems.size || result.rejectedQuestionCount !== decisions.rejected
-          || decisions.accepted.length !== 0 || decisions.reviews !== 0
-          || result.rulesDigest !== decisions.rulesDigest || !noScopeGateMatches
+          || !sourceGradeResult && (
+            result.version !== contract.auditVersion
+            || result.sourceQuestionCount !== decisions.problems.size
+            || result.rejectedQuestionCount !== decisions.rejected
+            || decisions.accepted.length !== 0 || decisions.reviews !== 0
+            || result.rulesDigest !== decisions.rulesDigest || !noScopeGateMatches
+            || !currentFilteredBinding
+          )
         ) {
           add({ code: "RESULT_INVALID", entryId: entry.id, message: "filtered result does not match complete classifications" });
         }
@@ -3441,6 +4837,7 @@ export function verifyExamCorpus(options: {
         decisions,
         solutions,
         receipt,
+        contract,
         add,
       );
       decisions = verifiedAudit.decisions;
