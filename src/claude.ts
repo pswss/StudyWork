@@ -1348,8 +1348,7 @@ export async function extractProblemsFromFile(
   if (targets && (
     targets.length < 1 || targets.length > 6 || targetKeys.size !== targets.length ||
     targets.some((item) => !Number.isInteger(item.page) || item.page < firstPage || item.page > lastPage ||
-      numericPrintedLocator(item.printedNumber) === null) ||
-    new Set(targets.map((item) => item.page)).size !== 1
+      numericPrintedLocator(item.printedNumber) === null)
   )) throw new AIProviderError("invalid_file", "문제 batch 재전사 target이 유효하지 않습니다");
   if (revisionEvidence !== undefined && (
     targetList.length === 0 || !revisionEvidence.trim() || revisionEvidence !== revisionEvidence.trim() ||

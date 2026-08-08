@@ -70,7 +70,7 @@ export const SOLUTION_SLICE_PAGES = 6;
 export const SOLUTION_SLICE_STRIDE = 4;
 export const PROBLEM_REPAIR_VERSION = 2;
 export const CLASSIFICATION_REPAIR_VERSION = 4;
-export const PROBLEM_REPAIR_BATCH_VERSION = 1;
+export const PROBLEM_REPAIR_BATCH_VERSION = 2;
 export const CLASSIFICATION_REPAIR_BATCH_VERSION = 1;
 export const PROBLEM_REVISION_VERSION = 1;
 export const CLASSIFICATION_REVISION_VERSION = 2;
@@ -2950,6 +2950,89 @@ export function semanticExplanationWithoutMarkers(value: string): string {
     .replace(/[①-⑩]/gu, "[CHOICE MARKER HIDDEN]");
 }
 
+async function problemRepairBatchAuthorityVersion(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  stateDir: string,
+  contextFrom: number,
+  contextTo: number
+): Promise<1 | 2> {
+  const directory = join(stateDir, "problem-repair-batches");
+  if (!existsSync(directory)) return 2;
+  if (lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory()) {
+    throw new Error("problem repair batch 디렉터리가 유효하지 않습니다");
+  }
+  const context = `${String(contextFrom).padStart(4, "0")}-${String(contextTo).padStart(4, "0")}`;
+  const v1Pattern = new RegExp(`^v1-${context}-(\\d{4})-([a-f0-9]{64})\\.json$`, "u");
+  const v2Pattern = new RegExp(`^v2-${context}-([a-f0-9]{64})\\.json$`, "u");
+  const names = readdirSync(directory);
+  const malformed = names.filter((name) =>
+    (name.startsWith(`v1-${context}-`) || name.startsWith(`v2-${context}-`)) && name.endsWith(".json") &&
+    !v1Pattern.test(name) && !v2Pattern.test(name)
+  );
+  if (malformed.length > 0) throw new Error(`problem repair batch filename이 유효하지 않습니다: ${malformed[0]}`);
+  const v1Names = names.filter((name) => v1Pattern.test(name));
+  const v2Names = names.filter((name) => v2Pattern.test(name));
+  if (v1Names.length > 0 && v2Names.length > 0) {
+    throw new Error(`${contextFrom}-${contextTo} problem repair batch v1/v2 authority가 섞였습니다`);
+  }
+  for (const name of [...v1Names, ...v2Names]) {
+    const version = name.startsWith("v1-") ? 1 : 2;
+    const match = (version === 1 ? v1Pattern : v2Pattern).exec(name)!;
+    const relativePath = `problem-repair-batches/${name}`;
+    const path = confinedStateFile(stateDir, relativePath, "problem repair batch authority");
+    const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), relativePath);
+    const members = Array.isArray(checkpoint.members)
+      ? checkpoint.members.map((value, index) => object(value, `${relativePath}.members[${index}]`))
+      : [];
+    const memberKeys = members.map((member, index) => exactString(member.key, `${relativePath}.members[${index}].key`));
+    const corrected = restoredQuizItems(checkpoint.items);
+    const actualKeys = corrected.map(questionKey);
+    if (
+      checkpoint.version !== version || checkpoint.entryId !== entry.id || checkpoint.sourceHash !== problem.sha256 ||
+      checkpoint.contextFrom !== contextFrom || checkpoint.contextTo !== contextTo ||
+      checkpoint.model !== IMPORT_MODEL || checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+      members.length === 0 || new Set(memberKeys).size !== memberKeys.length ||
+      corrected.length !== memberKeys.length || new Set(actualKeys).size !== memberKeys.length ||
+      actualKeys.some((key) => !memberKeys.includes(key)) ||
+      await sha256File(path) !== canonicalEvidenceHash(checkpoint)
+    ) throw new Error(`기존 problem repair batch authority가 유효하지 않습니다: ${path}`);
+    if (version === 1) {
+      const sourcePage = Number(match[1]);
+      const membersDigest = match[2];
+      if (
+        checkpoint.sourcePage !== sourcePage || checkpoint.membersDigest !== membersDigest ||
+        canonicalEvidenceHash(checkpoint.members) !== membersDigest ||
+        checkpoint.promptVersion !== TARGETED_PROBLEM_BATCH_VERSION ||
+        checkpoint.promptDigest !== TARGETED_PROBLEM_BATCH_PROMPT_DIGEST ||
+        corrected.some((item) => item.page !== sourcePage)
+      ) throw new Error(`기존 problem repair batch v1 authority가 유효하지 않습니다: ${path}`);
+    } else {
+      const targetsDigest = match[1];
+      const pageByKey = new Map(memberKeys.map((key, index) => {
+        const sourcePage = Number(members[index].sourcePage);
+        if (!Number.isInteger(sourcePage) || sourcePage < contextFrom || sourcePage > contextTo) {
+          throw new Error(`기존 problem repair batch v2 sourcePage가 유효하지 않습니다: ${path}`);
+        }
+        if (!/^[a-f0-9]{64}$/u.test(String(members[index].baseTranscriptionEvidenceHash))) {
+          throw new Error(`기존 problem repair batch v2 transcription evidence hash가 유효하지 않습니다: ${path}`);
+        }
+        return [key, sourcePage] as const;
+      }));
+      if (
+        checkpoint.targetsDigest !== targetsDigest || canonicalEvidenceHash(checkpoint.members) !== targetsDigest ||
+        checkpoint.batchPromptVersion !== TARGETED_PROBLEM_BATCH_VERSION ||
+        checkpoint.batchPromptDigest !== TARGETED_PROBLEM_BATCH_PROMPT_DIGEST ||
+        checkpoint.revisionPromptVersion !== TARGETED_PROBLEM_REVISION_VERSION ||
+        checkpoint.revisionPromptDigest !== TARGETED_PROBLEM_BATCH_REVISION_PROMPT_DIGEST ||
+        !/^[a-f0-9]{64}$/u.test(String(checkpoint.diagnosticEvidenceHash)) ||
+        corrected.some((item) => pageByKey.get(questionKey(item)) !== item.page)
+      ) throw new Error(`기존 problem repair batch v2 authority가 유효하지 않습니다: ${path}`);
+    }
+  }
+  return v1Names.length > 0 ? 1 : 2;
+}
+
 async function repairClassifiedQuestionsBatch(
   entry: CorpusManifestEntry,
   problem: PdfEvidence,
@@ -2989,13 +3072,9 @@ async function repairClassifiedQuestionsBatch(
   }
   return withImporterPdfForAnalysis(problem, (analysisProblem) =>
     withProblemContextSlice(analysisProblem.path, contextFrom, contextTo, async (contextPath) => {
-      const byPage = new Map<number, typeof members>();
-      for (const member of members) {
-        const page = member.original.question.page!;
-        const group = byPage.get(page) ?? [];
-        group.push(member);
-        byPage.set(page, group);
-      }
+      const authorityVersion = await problemRepairBatchAuthorityVersion(
+        entry, problem, stateDir, contextFrom, contextTo
+      );
       const correctedByKey = new Map<string, QuizItemEx>();
       const problemEvidenceByKey = new Map<string, EvidencePointer & { itemHash: string }>();
       for (const member of members) {
@@ -3024,16 +3103,25 @@ async function repairClassifiedQuestionsBatch(
         correctedByKey.set(member.key, corrected);
         problemEvidenceByKey.set(member.key, { path: legacyRelativePath, sha256, itemHash: canonicalEvidenceHash(corrected) });
       }
-      const missingBatches = [...byPage.entries()].flatMap(([page, group]) => {
-        const missing = group.filter((item) => !correctedByKey.has(item.key));
-        return Array.from({ length: Math.ceil(missing.length / 6) }, (_, index) =>
-          [page, missing.slice(index * 6, index * 6 + 6)] as const
-        );
-      });
-      await mapPool(missingBatches, IMPORT_CONCURRENCY, async ([page, group]) => {
+      const missing = members.filter((item) => !correctedByKey.has(item.key));
+      const missingBatches = authorityVersion === 1
+        ? [...missing.reduce((byPage, member) => {
+            const page = member.original.question.page!;
+            byPage.set(page, [...(byPage.get(page) ?? []), member]);
+            return byPage;
+          }, new Map<number, typeof members>()).values()].flatMap((group) =>
+            Array.from({ length: Math.ceil(group.length / 6) }, (_, index) => group.slice(index * 6, index * 6 + 6))
+          )
+        : Array.from({ length: Math.ceil(missing.length / 6) }, (_, index) => missing.slice(index * 6, index * 6 + 6));
+      await mapPool(missingBatches, IMPORT_CONCURRENCY, async (group) => {
+        const page = authorityVersion === 1 ? group[0].original.question.page! : null;
         const memberBasis = group.map((item) => ({
           key: item.key,
           printedNumber: String(item.number),
+          ...(authorityVersion === 2 ? {
+            sourcePage: item.original.question.page!,
+            baseTranscriptionEvidenceHash: sha256Text(item.original.classification.transcription_evidence),
+          } : {}),
           baseProblemCheckpoint: item.baseQuestion.problem,
           baseQuestionHash: item.baseQuestion.questionHash,
           baseClassificationCheckpoint: item.baseQuestion.classification,
@@ -3042,54 +3130,86 @@ async function repairClassifiedQuestionsBatch(
           baseSolutionItemHash: item.baseSolution.itemHash,
           officialRawAnswerHash: sha256Text(item.solution.answer),
         }));
-        const membersDigest = canonicalEvidenceHash(memberBasis);
-        const relativePath = `problem-repair-batches/v${PROBLEM_REPAIR_BATCH_VERSION}-` +
-          `${String(contextFrom).padStart(4, "0")}-${String(contextTo).padStart(4, "0")}-` +
-          `${String(page).padStart(4, "0")}-${membersDigest}.json`;
+        const targetsDigest = canonicalEvidenceHash(memberBasis);
+        const diagnosticEvidence = authorityVersion === 2
+          ? JSON.stringify(group.map((item) => ({
+              key: item.key,
+              evidence: item.original.classification.transcription_evidence,
+            })))
+          : null;
+        const relativePath = authorityVersion === 1
+          ? `problem-repair-batches/v1-${String(contextFrom).padStart(4, "0")}-` +
+            `${String(contextTo).padStart(4, "0")}-${String(page).padStart(4, "0")}-${targetsDigest}.json`
+          : `problem-repair-batches/v2-${String(contextFrom).padStart(4, "0")}-` +
+            `${String(contextTo).padStart(4, "0")}-${targetsDigest}.json`;
         const path = join(stateDir, relativePath);
         let checkpoint: Record<string, unknown>;
         let corrected: QuizItemEx[];
         if (existsSync(path)) {
           checkpoint = object(JSON.parse(readFileSync(path, "utf8")), relativePath);
-          if (
-            checkpoint.version !== PROBLEM_REPAIR_BATCH_VERSION || checkpoint.entryId !== entry.id ||
+          const commonMismatch = checkpoint.version !== authorityVersion || checkpoint.entryId !== entry.id ||
             checkpoint.sourceHash !== problem.sha256 || checkpoint.contextFrom !== contextFrom ||
-            checkpoint.contextTo !== contextTo || checkpoint.sourcePage !== page ||
-            checkpoint.membersDigest !== membersDigest || checkpoint.promptVersion !== TARGETED_PROBLEM_BATCH_VERSION ||
-            checkpoint.promptDigest !== TARGETED_PROBLEM_BATCH_PROMPT_DIGEST || checkpoint.model !== IMPORT_MODEL ||
+            checkpoint.contextTo !== contextTo || checkpoint.model !== IMPORT_MODEL ||
             checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
-            canonicalEvidenceHash(checkpoint.members) !== canonicalEvidenceHash(memberBasis)
-          ) throw new Error(`기존 problem repair batch 메타데이터가 다릅니다: ${path}`);
+            canonicalEvidenceHash(checkpoint.members) !== canonicalEvidenceHash(memberBasis);
+          const versionMismatch = authorityVersion === 1
+            ? checkpoint.sourcePage !== page || checkpoint.membersDigest !== targetsDigest ||
+              checkpoint.promptVersion !== TARGETED_PROBLEM_BATCH_VERSION ||
+              checkpoint.promptDigest !== TARGETED_PROBLEM_BATCH_PROMPT_DIGEST
+            : checkpoint.targetsDigest !== targetsDigest ||
+              checkpoint.batchPromptVersion !== TARGETED_PROBLEM_BATCH_VERSION ||
+              checkpoint.batchPromptDigest !== TARGETED_PROBLEM_BATCH_PROMPT_DIGEST ||
+              checkpoint.revisionPromptVersion !== TARGETED_PROBLEM_REVISION_VERSION ||
+              checkpoint.revisionPromptDigest !== TARGETED_PROBLEM_BATCH_REVISION_PROMPT_DIGEST ||
+              checkpoint.diagnosticEvidenceHash !== sha256Text(diagnosticEvidence!);
+          if (commonMismatch || versionMismatch) {
+            throw new Error(`기존 problem repair batch 메타데이터가 다릅니다: ${path}`);
+          }
           corrected = restoredQuizItems(checkpoint.items);
         } else {
           corrected = await withTargetedAi(() => extractProblemsFromFile(contextPath, "pdf", {
             sliceBase: contextFrom,
             contentPageCount: contextTo - contextFrom + 1,
             selfContained: true,
-            targets: group.map((item) => ({ page, printedNumber: String(item.number) })),
+            targets: group.map((item) => ({
+              page: item.original.question.page!,
+              printedNumber: String(item.number),
+            })),
+            ...(diagnosticEvidence === null ? {} : { revisionEvidence: diagnosticEvidence }),
             reasoningEffort: IMPORT_REASONING_EFFORT,
           }));
-          checkpoint = {
-            version: PROBLEM_REPAIR_BATCH_VERSION,
+          const common = {
+            version: authorityVersion,
             entryId: entry.id,
             sourceHash: problem.sha256,
             contextFrom,
             contextTo,
-            sourcePage: page,
-            membersDigest,
             members: memberBasis,
-            promptVersion: TARGETED_PROBLEM_BATCH_VERSION,
-            promptDigest: TARGETED_PROBLEM_BATCH_PROMPT_DIGEST,
             model: IMPORT_MODEL,
             reasoningEffort: IMPORT_REASONING_EFFORT,
             items: corrected.sort((a, b) => compareCorpusQuestionKeys(questionKey(a), questionKey(b))),
+          };
+          checkpoint = authorityVersion === 1 ? {
+            ...common,
+            sourcePage: page,
+            membersDigest: targetsDigest,
+            promptVersion: TARGETED_PROBLEM_BATCH_VERSION,
+            promptDigest: TARGETED_PROBLEM_BATCH_PROMPT_DIGEST,
+          } : {
+            ...common,
+            targetsDigest,
+            batchPromptVersion: TARGETED_PROBLEM_BATCH_VERSION,
+            batchPromptDigest: TARGETED_PROBLEM_BATCH_PROMPT_DIGEST,
+            revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+            revisionPromptDigest: TARGETED_PROBLEM_BATCH_REVISION_PROMPT_DIGEST,
+            diagnosticEvidenceHash: sha256Text(diagnosticEvidence!),
           };
           await writeImmutableEvidence(path, checkpoint);
         }
         const expected = new Set(group.map((item) => item.key));
         const actual = corrected.map(questionKey);
         if (actual.length !== expected.size || new Set(actual).size !== expected.size || actual.some((key) => !expected.has(key))) {
-          throw new Error(`${page}쪽 problem repair batch exact member 집합이 다릅니다`);
+          throw new Error(`${contextFrom}-${contextTo} problem repair batch exact member 집합이 다릅니다`);
         }
         const sha256 = await sha256File(path);
         if (sha256 !== canonicalEvidenceHash(checkpoint)) throw new Error("problem repair batch hash가 다릅니다");

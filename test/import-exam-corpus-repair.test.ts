@@ -380,7 +380,7 @@ describe("exam corpus targeted problem repair", () => {
       sourcePage: 4,
       contextFrom: 1,
       contextTo: 4,
-      problemArtifact: { path: expect.stringMatching(/^problem-repair-batches\/v1-/u) },
+      problemArtifact: { path: expect.stringMatching(/^problem-repair-batches\/v2-/u) },
       revision: {
         problemArtifact: { path: expect.stringMatching(/^problem-revision-batches\/v1-/u) },
         classificationArtifact: { path: expect.stringMatching(/^classification-revision-batches\/v1-/u) },
@@ -391,7 +391,9 @@ describe("exam corpus targeted problem repair", () => {
       .toMatchObject({
         contextFrom: 1,
         contextTo: 4,
-        sourcePage: 4,
+        targetsDigest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        diagnosticEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        members: [{ sourcePage: 4, baseTranscriptionEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u) }],
         items: [{ question: expect.stringContaining("만나게") }],
       });
     expect(JSON.parse(readFileSync(join(root, repaired.repairs[0].classificationArtifact.path), "utf8")))

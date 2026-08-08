@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,12 +11,13 @@ vi.mock("../src/codex-provider", async (importOriginal) => ({
   getCodexProvider: () => ({ complete: providerMock.complete }),
 }));
 
-import type { QuizItemEx, SolutionItem } from "../src/claude";
+import { TARGETED_PROBLEM_BATCH_VERSION, type QuizItemEx, type SolutionItem } from "../src/claude";
 import {
   CLASSIFIER_DIGEST,
   CLASSIFIER_VERSION,
   TRANSCRIPTION_GATE_VERSION,
   TRANSCRIPTION_PROMPT_DIGEST,
+  TARGETED_PROBLEM_BATCH_PROMPT_DIGEST,
   canonicalEvidenceHash,
   parseCorpusManifest,
   repairAndAuditOfficialAnswers,
@@ -37,11 +38,23 @@ const writeJson = (path: string, value: unknown) => {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 };
+const canonicalize = (value: unknown): unknown => Array.isArray(value)
+  ? value.map(canonicalize)
+  : value && typeof value === "object"
+    ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => [key, canonicalize(item)]))
+    : value;
+const writeCanonicalJson = (path: string, value: unknown) => {
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(canonicalize(value), null, 2)}\n`);
+};
 
 describe("exam corpus page-batch problem repair", () => {
   it("resumes a frozen three-key batch, maps shuffled decisions by key, and revises one terminal mismatch once", async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-problem-batch-"));
     const problemDocument = await PDFDocument.create();
+    problemDocument.addPage([100, 100]);
+    problemDocument.addPage([100, 100]);
     problemDocument.addPage([100, 100]);
     const solutionDocument = await PDFDocument.create();
     solutionDocument.addPage([100, 100]);
@@ -74,7 +87,7 @@ describe("exam corpus page-batch problem repair", () => {
       path: problemPath,
       sha256: sha256(problemBytes),
       bytes: problemBytes.length,
-      pageCount: 1,
+      pageCount: 3,
       requestedUrl: entry.problemPdfUrl,
       resolvedUrl: entry.problemPdfUrl,
     };
@@ -97,13 +110,13 @@ describe("exam corpus page-batch problem repair", () => {
       choices: null,
       answer: String(index + 1),
       explanation: "",
-      page: 1,
+      page: index + 1 === 3 ? 2 : index + 1 === 24 ? 3 : 1,
       figure: false,
       figure_description: null,
       box: null,
     }));
     const decision = (number: number, status: "exact" | "mismatch"): ClassificationDecision => ({
-      key: `1:${number}`,
+      key: `${questions[number - 1].page}:${number}`,
       decision: number === 3 ? "accept" : "reject",
       canonical_subject: number === 3 ? "math_B" : null,
       curriculum_course: number === 3 ? "2015 수학Ⅰ" : null,
@@ -130,9 +143,9 @@ describe("exam corpus page-batch problem repair", () => {
       version: 2,
       sourceHash: problem.sha256,
       from: 1,
-      to: 1,
+      to: 3,
       ownedFrom: 1,
-      ownedTo: 1,
+      ownedTo: 3,
       model: "gpt-5.6-sol",
       reasoningEffort: "high",
       items: questions,
@@ -141,9 +154,9 @@ describe("exam corpus page-batch problem repair", () => {
       version: CLASSIFIER_VERSION,
       sourceHash: problem.sha256,
       from: 1,
-      to: 1,
+      to: 3,
       ownedFrom: 1,
-      ownedTo: 1,
+      ownedTo: 3,
       rulesDigest: CLASSIFIER_DIGEST,
       transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
       transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
@@ -170,8 +183,10 @@ describe("exam corpus page-batch problem repair", () => {
         calls.extract++;
         const numberList = calls.extract === 1 ? [24, 3, 1] : [24];
         if (calls.extract === 1) {
-          expect(request.prompt).toContain("1:1, 1:24, 1:3");
+          expect(request.prompt).toContain("1:1, 2:3, 3:24");
           expect(request.prompt).toContain("Emit EVERY listed page:number target exactly once");
+          expect(request.prompt).toContain("Previous fidelity diagnostic");
+          expect(request.prompt).toContain("공유 지문이 축약됐다");
         } else {
           expect(request.prompt).toContain("SECOND SOURCE-GROUNDED REVISION");
           expect(request.prompt).toContain("Q24의 전환 문장이 축약됐다");
@@ -193,8 +208,8 @@ describe("exam corpus page-batch problem repair", () => {
         const inputs = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{ key: string }>;
         return { text: JSON.stringify(inputs.map((input) => ({
           key: input.key,
-          status: calls.terminal === 1 && input.key === "1:24" ? "mismatch" : "exact",
-          evidence: calls.terminal === 1 && input.key === "1:24"
+          status: calls.terminal === 1 && input.key === "3:24" ? "mismatch" : "exact",
+          evidence: calls.terminal === 1 && input.key === "3:24"
             ? "Q24의 전환 문장이 축약됐다."
             : "원본 픽셀과 일치한다.",
         }))) };
@@ -202,7 +217,7 @@ describe("exam corpus page-batch problem repair", () => {
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
         calls.solution++;
         return { text: JSON.stringify([{
-          key: "1:3",
+          key: "2:3",
           sourcePage: 1,
           answerStatus: "exact",
           explanationStatus: "exact",
@@ -216,16 +231,32 @@ describe("exam corpus page-batch problem repair", () => {
       entry, problem, solution, root, classified, solutions
     )).rejects.toThrow("simulated batch classification interruption");
     expect(calls).toEqual({ extract: 1, classify: 1, terminal: 0, solution: 0 });
+    const [v2Name] = readdirSync(join(root, "problem-repair-batches"));
+    expect(v2Name).toMatch(/^v2-0001-0003-[a-f0-9]{64}\.json$/u);
+    const v2Checkpoint = JSON.parse(readFileSync(join(root, "problem-repair-batches", v2Name), "utf8"));
+    expect(v2Checkpoint).toMatchObject({
+      version: 2,
+      contextFrom: 1,
+      contextTo: 3,
+      targetsDigest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      diagnosticEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      members: [
+        { key: "1:1", sourcePage: 1, baseTranscriptionEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u) },
+        { key: "2:3", sourcePage: 2, baseTranscriptionEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u) },
+        { key: "3:24", sourcePage: 3, baseTranscriptionEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u) },
+      ],
+    });
+    expect(v2Checkpoint).not.toHaveProperty("sourcePage");
 
     crashClassification = false;
     const repaired = await repairAndAuditOfficialAnswers(
       entry, problem, solution, root, classified, solutions
     );
     expect(calls).toEqual({ extract: 2, classify: 3, terminal: 2, solution: 1 });
-    expect(repaired.repairs.map((repair) => repair.key)).toEqual(["1:1", "1:24", "1:3"]);
+    expect(repaired.repairs.map((repair) => repair.key)).toEqual(["1:1", "2:3", "3:24"]);
     expect(new Set(repaired.repairs.map((repair) => repair.problemArtifact.path)).size).toBe(1);
     expect(new Set(repaired.repairs.map((repair) => repair.classificationArtifact.path)).size).toBe(1);
-    expect(repaired.repairs.find((repair) => repair.key === "1:24")?.revision).toMatchObject({
+    expect(repaired.repairs.find((repair) => repair.key === "3:24")?.revision).toMatchObject({
       trigger: {
         kind: "terminal",
         terminalCheckpoint: { path: expect.stringMatching(/^problem-terminal-fidelity\/v1-/u) },
@@ -234,8 +265,8 @@ describe("exam corpus page-batch problem repair", () => {
       problemArtifact: { path: expect.stringMatching(/^problem-revision-batches\/v1-/u) },
       classificationArtifact: { path: expect.stringMatching(/^classification-revision-batches\/v1-/u) },
     });
-    expect(repaired.classified.find((item) => item.classification.key === "1:3")?.classification.decision).toBe("accept");
-    expect(repaired.classified.find((item) => item.classification.key === "1:24")?.classification.decision).toBe("reject");
+    expect(repaired.classified.find((item) => item.classification.key === "2:3")?.classification.decision).toBe("accept");
+    expect(repaired.classified.find((item) => item.classification.key === "3:24")?.classification.decision).toBe("reject");
     expect(repaired.problemTerminalFidelityItems).toHaveLength(30);
     expect(repaired.problemTerminalFidelityItems.every((item) => item.status === "exact")).toBe(true);
     expect(repaired.auditPath).toMatch(/^answer-audit\/v3-/u);
@@ -250,10 +281,71 @@ describe("exam corpus page-batch problem repair", () => {
     await writeAnswerAttestation(root, entry.id, problem.sha256, solution.sha256, receipt, repaired);
     const childPath = join(root, repaired.problemTerminalFidelityCheckpoints[0].path);
     const child = JSON.parse(readFileSync(childPath, "utf8"));
+    const originalEvidence = child.items[0].evidence;
     child.items[0].evidence = "tampered";
     writeFileSync(childPath, `${JSON.stringify(child, null, 2)}\n`);
     await expect(writeAnswerAttestation(
       root, entry.id, problem.sha256, solution.sha256, receipt, repaired
     )).rejects.toThrow("problem terminal fidelity child hash가 다릅니다");
+    child.items[0].evidence = originalEvidence;
+    writeCanonicalJson(childPath, child);
+
+    const malformedName = "v1-0001-0003-bad.json";
+    writeJson(join(root, "problem-repair-batches", malformedName), {});
+    await expect(repairAndAuditOfficialAnswers(
+      entry, problem, solution, root, classified, solutions
+    )).rejects.toThrow("problem repair batch filename이 유효하지 않습니다");
+    rmSync(join(root, "problem-repair-batches", malformedName));
+
+    const [{ sourcePage: _sourcePage, baseTranscriptionEvidenceHash: _evidenceHash, ...legacyMember }] =
+      v2Checkpoint.members;
+    const legacyMembers = [legacyMember];
+    const legacyDigest = canonicalEvidenceHash(legacyMembers);
+    const legacyName = `v1-0001-0003-0001-${legacyDigest}.json`;
+    writeCanonicalJson(join(root, "problem-repair-batches", legacyName), {
+      version: 1,
+      entryId: entry.id,
+      sourceHash: problem.sha256,
+      contextFrom: 1,
+      contextTo: 3,
+      sourcePage: 1,
+      membersDigest: legacyDigest,
+      members: legacyMembers,
+      promptVersion: TARGETED_PROBLEM_BATCH_VERSION,
+      promptDigest: TARGETED_PROBLEM_BATCH_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      items: [v2Checkpoint.items.find((item: QuizItemEx) => item.page === 1 && item.number === "1")],
+    });
+    await expect(repairAndAuditOfficialAnswers(
+      entry, problem, solution, root, classified, solutions
+    )).rejects.toThrow("v1/v2 authority가 섞였습니다");
+
+    rmSync(join(root, "problem-repair-batches", v2Name));
+    const legacyCalls = { extract: 0, classify: 0 };
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      if (request.schema?.name === "studywork_file_quiz_items") {
+        legacyCalls.extract++;
+        const number = request.prompt.includes("2:3") ? 3 : 24;
+        const revisedSuffix = request.prompt.includes("SECOND SOURCE-GROUNDED REVISION") ? " 최종" : "";
+        return { text: JSON.stringify([{
+          ...questions[number - 1],
+          question: `[공유 지문 전체와 전환 문장] ${number}번${revisedSuffix}`,
+          choiceCount: null,
+        }]) };
+      }
+      if (request.schema?.name === "studywork_exam_corpus_classification") {
+        legacyCalls.classify++;
+        const inputs = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{ key: string }>;
+        return { text: JSON.stringify(inputs.map(({ key }) => decision(Number(key.split(":")[1]), "exact"))) };
+      }
+      throw new Error(`unexpected legacy schema ${request.schema?.name}`);
+    });
+    const legacyReplay = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
+    expect(legacyCalls).toEqual({ extract: 3, classify: 2 });
+    expect(new Set(legacyReplay.repairs.map((repair) => repair.problemArtifact.path)).size).toBe(3);
+    expect(legacyReplay.repairs.every((repair) => /^problem-repair-batches\/v1-/u.test(repair.problemArtifact.path)))
+      .toBe(true);
+    expect(readdirSync(join(root, "problem-repair-batches")).every((name) => name.startsWith("v1-"))).toBe(true);
   });
 });
