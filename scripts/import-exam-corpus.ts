@@ -67,7 +67,7 @@ export const IMPORT_MODEL = "gpt-5.6-sol";
 export const IMPORT_REASONING_EFFORT = "high" as const;
 export const IMPORT_CONCURRENCY = 15;
 export function parseImporterFullContextConcurrency(value: string | undefined): number {
-  const parsed = value?.trim() ? Number(value) : 8;
+  const parsed = value?.trim() ? Number(value) : 5;
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > IMPORT_CONCURRENCY) {
     throw new Error(`STUDYWORK_IMPORT_FULL_CONCURRENCY는 1-${IMPORT_CONCURRENCY} 정수여야 합니다`);
   }
