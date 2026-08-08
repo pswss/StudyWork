@@ -65,7 +65,7 @@ import { MAX_PDF_BYTES, MAX_PDF_PAGES, safeUploadName } from "../src/upload";
 
 export const IMPORT_MODEL = "gpt-5.6-sol";
 export const IMPORT_REASONING_EFFORT = "high" as const;
-export const IMPORT_CONCURRENCY = 10;
+export const IMPORT_CONCURRENCY = 15;
 export const FULL_CONTEXT_CONCURRENCY = 5;
 export const PROBLEM_SLICE_PAGES = 20;
 export const PROBLEM_SLICE_STRIDE = 18;

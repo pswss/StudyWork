@@ -115,8 +115,8 @@ describe("Codex CLI provider config", () => {
     })).toMatchObject({ model: "legacy-env-model", reasoningEffort: "xhigh" });
     expect(() => loadCodexProviderConfig({ STUDYWORK_AI_REASONING_EFFORT: "pro" }))
       .toThrow("reasoning effort");
-    expect(loadCodexProviderConfig({ STUDYWORK_AI_MAX_CONCURRENCY: "11" }).maxConcurrency).toBe(11);
-    expect(() => loadCodexProviderConfig({ STUDYWORK_AI_MAX_CONCURRENCY: "12" }))
+    expect(loadCodexProviderConfig({ STUDYWORK_AI_MAX_CONCURRENCY: "16" }).maxConcurrency).toBe(16);
+    expect(() => loadCodexProviderConfig({ STUDYWORK_AI_MAX_CONCURRENCY: "17" }))
       .toThrow("AI concurrency");
   });
 });

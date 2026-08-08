@@ -28,6 +28,8 @@ import {
   PROBLEM_REPAIR_VERSION,
   PROBLEM_TERMINAL_FIDELITY_VERSION,
   PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+  IMPORT_CONCURRENCY,
+  FULL_CONTEXT_CONCURRENCY,
   assertImportSchema,
   buildImageOnlyPdfFromPngs,
   canonicalEvidenceHash,
@@ -57,8 +59,10 @@ import {
 const execFileP = promisify(execFile);
 
 describe("exam corpus importer", () => {
-  it("caps mixed AI work at total 10 and full-context 5", async () => {
-    const scheduler = createImporterAiScheduler(10, 5);
+  it("caps mixed AI work at total 15 and full-context 5", async () => {
+    expect(IMPORT_CONCURRENCY).toBe(15);
+    expect(FULL_CONTEXT_CONCURRENCY).toBe(5);
+    const scheduler = createImporterAiScheduler(IMPORT_CONCURRENCY, FULL_CONTEXT_CONCURRENCY);
     let total = 0;
     let full = 0;
     let maxTotal = 0;
@@ -76,7 +80,7 @@ describe("exam corpus importer", () => {
       ...Array.from({ length: 20 }, () => scheduler.targeted(() => run(false))),
       ...Array.from({ length: 10 }, () => scheduler.full(() => run(true))),
     ]);
-    expect(maxTotal).toBeLessThanOrEqual(10);
+    expect(maxTotal).toBeLessThanOrEqual(15);
     expect(maxFull).toBeLessThanOrEqual(5);
   });
 
