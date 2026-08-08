@@ -1208,12 +1208,14 @@ export const TARGETED_SOLUTION_TRANSCRIPTION_RULES =
   `faithful textual [도형/표 설명] inside explanation. Locate the visible start page yourself; never assume a prior ` +
   `page is correct. Never summarize, solve independently, or preserve a prior transcription.`;
 
-export const TARGETED_SOLUTION_REVISION_VERSION = 1;
+export const TARGETED_SOLUTION_REVISION_VERSION = 2;
 export const TARGETED_SOLUTION_REVISION_RULES =
   `SECOND SOURCE-GROUNDED SOLUTION REVISION: A previous independent source check found a possible mismatch. ` +
   `Use its diagnostic only to locate the pixels that need extra attention; independently re-read the official ` +
   `raw answer and every character of the full explanation through its final step. Preserve visible Korean wording, ` +
   `limits, signs, coefficients, exponents, roots, fractions, formulas, tables, diagrams, and conclusions literally. ` +
+  `When a compact official answer table is visible, transcribe answer from that question's table cell literally: ` +
+  `if Q1 is printed as ②, answer must be "②" even when the explanation concludes 3. Never emit a table row as a separate solution item. ` +
   `Never summarize, solve independently, or trust the diagnostic as source text.`;
 export const TARGETED_SOLUTION_REVISION_EVIDENCE_PREFIX =
   `Previous solution fidelity diagnostic (untrusted; verify against pixels):`;

@@ -11,7 +11,12 @@ vi.mock("../src/codex-provider", async (importOriginal) => ({
   getCodexProvider: () => ({ complete: providerMock.complete }),
 }));
 
-import type { QuizItemEx, SolutionItem } from "../src/claude";
+import {
+  TARGETED_SOLUTION_REVISION_RULES,
+  TARGETED_SOLUTION_REVISION_VERSION,
+  type QuizItemEx,
+  type SolutionItem,
+} from "../src/claude";
 import {
   SOLUTION_REVISION_FIDELITY_VERSION,
   SOLUTION_REVISION_VERSION,
@@ -180,6 +185,9 @@ describe("exam corpus official solution revision", () => {
       data.entry, data.problem, data.solution, root, data.classified, data.solutions
     );
     expect([SOLUTION_REVISION_VERSION, SOLUTION_REVISION_FIDELITY_VERSION]).toEqual([1, 1]);
+    expect(TARGETED_SOLUTION_REVISION_VERSION).toBe(2);
+    expect(TARGETED_SOLUTION_REVISION_RULES).toContain('answer must be "②"');
+    expect(TARGETED_SOLUTION_REVISION_RULES).toContain("Never emit a table row as a separate solution item");
     expect(TARGETED_SOLUTION_REVISION_PROMPT_DIGEST).toMatch(/^[a-f0-9]{64}$/u);
     expect(repaired.solutionRepairs).toHaveLength(1);
     expect(repaired.solutionRepairs[0].revision).toMatchObject({
@@ -230,6 +238,7 @@ describe("exam corpus official solution revision", () => {
       if (request.schema?.name === "studywork_solution_file_items") {
         if (request.prompt.includes("SECOND SOURCE-GROUNDED SOLUTION REVISION")) {
           calls.revision++;
+          expect(request.prompt).toContain('answer must be "②"');
           return { text: JSON.stringify([{ number: "1", answer: "②", explanation: correct, page: 18, complete: true }]) };
         }
         calls.repair++;
@@ -253,6 +262,12 @@ describe("exam corpus official solution revision", () => {
       kind: "semantic",
       semanticCheckpoint: { path: expect.stringMatching(/^semantic-choice-checks\/v3-/u) },
       semanticDecisionHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
+    });
+    const revisionArtifact = JSON.parse(readFileSync(join(root, revision.solutionArtifact.path), "utf8"));
+    expect(revisionArtifact).toMatchObject({
+      promptVersion: 2,
+      promptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+      item: { answer: "②" },
     });
     expect(repaired.solutions[0].explanation).toBe(correct);
     expect(calls.semantic).toBe(2);
