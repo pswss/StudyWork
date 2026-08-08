@@ -1440,7 +1440,10 @@ function assertTerminalProblemPolicy(
   for (const current of classified) {
     const key = questionKey(current.question);
     const item = itemByKey.get(key);
-    const independentlyExact = item?.status === "exact" && current.classification.transcription_status === "exact";
+    const acceptedScopeAgrees = current.classification.decision !== "accept" ||
+      (item?.scopeDecision === "accept" && item.scopeConfidence >= 0.9);
+    const independentlyExact = item?.status === "exact" &&
+      current.classification.transcription_status === "exact" && acceptedScopeAgrees;
     if (!item || (!independentlyExact && !isAuthorizedScopeRejectedMismatch(current, item, repairedKeys))) {
       throw new Error(`${key} terminal 문제 fidelity가 최종 정책을 만족하지 않습니다`);
     }

@@ -157,7 +157,7 @@ async function fixture() {
   return { entry, problem, solution, questions, classified, solutions, rejectDecision };
 }
 
-type Mode = "promote" | "safe-reject" | "fallback-reject" | "unverifiable";
+type Mode = "promote" | "safe-reject" | "fallback-reject" | "accept-disagreement" | "unverifiable";
 function mockMode(data: Awaited<ReturnType<typeof fixture>>, mode: Mode) {
   const calls = { terminal: 0, extract: 0, classify: 0, solution: 0 };
   providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
@@ -176,7 +176,9 @@ function mockMode(data: Awaited<ReturnType<typeof fixture>>, mode: Mode) {
         const status = !isQ5 || (!initial && mode !== "unverifiable")
           ? "exact"
           : mode === "unverifiable" ? "unverifiable" : "mismatch";
-        const scopeDecision = input.key === "1:6" || (isQ5 && ["promote", "fallback-reject"].includes(mode))
+        const scopeDecision = input.key === "1:6" || (isQ5 && (
+          ["promote", "fallback-reject"].includes(mode) || (mode === "accept-disagreement" && initial)
+        ))
           ? "accept"
           : "reject";
         return {
@@ -199,7 +201,7 @@ function mockMode(data: Awaited<ReturnType<typeof fixture>>, mode: Mode) {
     }
     if (request.schema?.name === "studywork_exam_corpus_classification") {
       calls.classify++;
-      const accepted = mode === "promote";
+      const accepted = mode === "promote" || mode === "accept-disagreement";
       return { text: JSON.stringify([accepted ? {
         key: "1:5",
         decision: "accept",
@@ -287,6 +289,15 @@ describe("exam corpus independent terminal scope", () => {
     expect(calls).toEqual({ terminal: 2, extract: 1, classify: 1, solution: 0 });
     expect(result.repairs.map((repair) => repair.key)).toEqual(["1:5"]);
     expect(result.classified[4].classification).toMatchObject({ decision: "reject", transcription_status: "exact" });
+  });
+
+  it("fails closed when an exact accepted classification disagrees with terminal scope", async () => {
+    const data = await fixture();
+    const calls = mockMode(data, "accept-disagreement");
+    await expect(repairAndAuditOfficialAnswers(
+      data.entry, data.problem, data.solution, root, data.classified, data.solutions
+    )).rejects.toThrow("terminal 문제 fidelity가 최종 정책을 만족하지 않습니다");
+    expect(calls).toEqual({ terminal: 2, extract: 1, classify: 1, solution: 0 });
   });
 
   it("fails closed when source fidelity remains unverifiable after the one allowed revision", async () => {
