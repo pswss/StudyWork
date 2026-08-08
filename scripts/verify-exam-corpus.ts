@@ -26,6 +26,9 @@ import {
   TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX,
   TARGETED_PROBLEM_REVISION_RULES,
   TARGETED_PROBLEM_REVISION_VERSION,
+  TARGETED_PROBLEM_RECOVERY_EVIDENCE_PREFIX,
+  TARGETED_PROBLEM_RECOVERY_RULES,
+  TARGETED_PROBLEM_RECOVERY_VERSION,
   TARGETED_SOLUTION_TRANSCRIPTION_RULES,
   TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
   TARGETED_SOLUTION_REVISION_EVIDENCE_PREFIX,
@@ -266,6 +269,8 @@ const CLASSIFICATION_REVISION_VERSION = 1;
 const CURRENT_CLASSIFICATION_REVISION_VERSION = 2;
 const PROBLEM_REVISION_BATCH_VERSION = 1;
 const CLASSIFICATION_REVISION_BATCH_VERSION = 1;
+const PROBLEM_RECOVERY_VERSION = 1;
+const CLASSIFICATION_RECOVERY_VERSION = 1;
 const PROBLEM_SLICE_PAGES = 20;
 const SOLUTION_SLICE_PAGES = 6;
 const SOLUTION_SLICE_STRIDE = 4;
@@ -339,6 +344,11 @@ const TARGETED_PROBLEM_BATCH_REVISION_PROMPT_DIGEST = sha256(
   `${TARGETED_PROBLEM_REVISION_VERSION}\n${TARGETED_PROBLEM_REVISION_RULES}\n` +
   `${TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX}\n` +
   `${TARGETED_PROBLEM_BATCH_VERSION}\n${TARGETED_PROBLEM_BATCH_RULES}\n${QUIZ_EXTRACT_SPEC}`,
+);
+const TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST = sha256(
+  `${TARGETED_PROBLEM_RECOVERY_VERSION}\n${TARGETED_PROBLEM_RECOVERY_RULES}\n` +
+  `${TARGETED_PROBLEM_RECOVERY_EVIDENCE_PREFIX}\n` +
+  `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256(
   `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`,
@@ -2319,6 +2329,44 @@ type V3RevisionRow = {
   classificationArtifactItemHash: string;
 };
 
+function verifyProblemRecoveryCoverage(
+  values: unknown[],
+  stateDir: string,
+  contract: VerificationContract,
+): void {
+  const declared = new Set<string>();
+  for (const [index, value] of values.entries()) {
+    const repair = object(value, `answer audit repairs[${index}]`);
+    if (repair.revision === undefined) continue;
+    const revision = object(repair.revision, `answer audit repairs[${index}].revision`);
+    if (revision.recovery === undefined) continue;
+    if (contract.auditVersion !== 4) throw new Error("problem recovery requires answer audit v4");
+    const recovery = object(revision.recovery, `answer audit repairs[${index}].revision.recovery`);
+    for (const [label, raw] of [
+      ["problem", recovery.problemArtifact],
+      ["classification", recovery.classificationArtifact],
+    ] as const) {
+      const envelope = object(raw, `problem recovery ${label} artifact`);
+      const pointer = evidencePointer(
+        label === "classification" ? { path: envelope.path, sha256: envelope.sha256 } : envelope,
+        `problem recovery ${label} artifact`,
+      );
+      if (declared.has(pointer.path)) throw new Error(`${pointer.path}: duplicate problem recovery authority`);
+      declared.add(pointer.path);
+    }
+  }
+  for (const [directory, pattern] of [
+    ["problem-recoveries", /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u],
+    ["classification-recoveries", /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u],
+  ] as const) {
+    for (const name of listJson(join(stateDir, directory), /\.json$/u)) {
+      if (!pattern.test(name)) throw new Error(`${directory}/${name}: malformed problem recovery artifact name`);
+      const path = `${directory}/${name}`;
+      if (!declared.has(path)) throw new Error(`${path}: problem recovery artifact is not declared by the terminal audit`);
+    }
+  }
+}
+
 function prepareV3RevisionRows(
   values: V3FirstRepair[],
   kind: "classification" | "terminal",
@@ -2474,6 +2522,174 @@ function prepareV3RevisionRows(
   });
 }
 
+function verifyProblemRecovery(
+  row: V3RevisionRow,
+  revisedQuestion: ProblemQuestion,
+  revisedClassification: ClassificationEvidence,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  rulesDigest: string,
+  cache: EvidenceCache,
+): { classified: ClassifiedEvidence; evidence: Record<string, unknown> } {
+  const key = row.first.row.key;
+  if (revisedClassification.transcription_status === "exact") {
+    throw new Error(`${key}: exact problem revision cannot have a recovery`);
+  }
+  const recovery = object(row.raw.recovery, `${key}.revision.recovery`);
+  const baseProblemRepairArtifact = row.first.row.problemArtifact;
+  const baseClassificationRepairArtifact = row.first.row.classificationArtifact;
+  const baseProblemRevisionArtifact = row.problemArtifact;
+  const baseClassificationRevisionArtifact = row.classificationArtifact;
+  const problemBasis = {
+    key,
+    printedNumber: row.first.row.printedNumber,
+    sourcePage: row.first.row.sourcePage,
+    sourceHash: problemEvidence.sha256,
+    contextFrom: row.first.row.contextFrom,
+    contextTo: row.first.row.contextTo,
+    baseProblemRepairArtifact,
+    baseProblemRepairItemHash: row.first.row.problemArtifactItemHash,
+    baseClassificationRepairArtifact,
+    baseClassificationRepairItemHash: row.first.row.classificationArtifactItemHash,
+    baseProblemRevisionArtifact,
+    baseProblemRevisionItemHash: row.problemArtifactItemHash,
+    baseClassificationRevisionArtifact,
+    baseClassificationRevisionItemHash: row.classificationArtifactItemHash,
+    baseQuestionHash: canonicalEvidenceHash(revisedQuestion.evidence),
+    baseClassificationHash: canonicalEvidenceHash(revisedClassification),
+    failedClassificationEvidenceHash: sha256(revisedClassification.transcription_evidence),
+  };
+  const basisDigest = canonicalEvidenceHash(problemBasis);
+  const problemArtifact = evidencePointer(recovery.problemArtifact, `${key}.recovery.problemArtifact`);
+  const expectedProblemPath = `problem-recoveries/v${PROBLEM_RECOVERY_VERSION}-` +
+    `${String(row.first.row.sourcePage).padStart(4, "0")}-` +
+    `${row.first.row.printedNumber.padStart(4, "0")}-${basisDigest}.json`;
+  if (problemArtifact.path !== expectedProblemPath) throw new Error(`${key}: problem recovery path is stale`);
+  const problemCheckpoint = readBoundEvidenceCached(cache, stateDir, problemArtifact, expectedProblemPath);
+  const recoveredQuestion = parseProblem(problemCheckpoint.item, `${key}.problem recovery.item`);
+  const expectedProblemCheckpoint = {
+    version: PROBLEM_RECOVERY_VERSION,
+    entryId: entry.id,
+    basisDigest,
+    basis: problemBasis,
+    promptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+    promptDigest: TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    item: recoveredQuestion.evidence,
+  };
+  if (!isDeepStrictEqual(problemCheckpoint, expectedProblemCheckpoint)
+    || recoveredQuestion.key !== key || recoveredQuestion.page !== row.first.row.sourcePage
+    || recoveredQuestion.printedNumber !== row.first.row.printedNumber) {
+    throw new Error(`${key}: problem recovery metadata/content is stale`);
+  }
+  const problemArtifactItemHash = canonicalEvidenceHash(recoveredQuestion.evidence);
+  const classificationBasis = {
+    ...problemBasis,
+    problemArtifact,
+    problemArtifactItemHash,
+    effectiveQuestionHash: problemArtifactItemHash,
+  };
+  const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+  const classificationEnvelope = object(recovery.classificationArtifact, `${key}.recovery.classificationArtifact`);
+  if (Object.keys(classificationEnvelope).sort().join(",") !==
+    "path,recoveryPromptDigest,recoveryPromptVersion,rulesDigest,sha256,transcriptionGateVersion,transcriptionPromptDigest") {
+    throw new Error(`${key}: recovery classification artifact has unexpected fields`);
+  }
+  const classificationArtifact = evidencePointer({
+    path: classificationEnvelope.path,
+    sha256: classificationEnvelope.sha256,
+  }, `${key}.recovery.classificationArtifact`);
+  const expectedClassificationPath = `classification-recoveries/v${CLASSIFICATION_RECOVERY_VERSION}-` +
+    `${String(row.first.row.sourcePage).padStart(4, "0")}-` +
+    `${row.first.row.printedNumber.padStart(4, "0")}-${classificationBasisDigest}-${rulesDigest}.json`;
+  if (classificationArtifact.path !== expectedClassificationPath) {
+    throw new Error(`${key}: classification recovery path is stale`);
+  }
+  const classificationCheckpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    classificationArtifact,
+    expectedClassificationPath,
+  );
+  if (!Array.isArray(classificationCheckpoint.items) || classificationCheckpoint.items.length !== 1) {
+    throw new Error(`${key}: classification recovery must contain exactly one decision`);
+  }
+  const recoveredClassification = parseClassificationEvidence(
+    classificationCheckpoint.items[0],
+    recoveredQuestion,
+    entry,
+    `${key}.classification recovery.items[0]`,
+  );
+  const expectedClassificationCheckpoint = {
+    version: CLASSIFICATION_RECOVERY_VERSION,
+    entryId: entry.id,
+    basisDigest: classificationBasisDigest,
+    basis: classificationBasis,
+    classifierVersion: CLASSIFIER_VERSION,
+    rulesDigest,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    recoveryPromptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+    recoveryPromptDigest: TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    items: [recoveredClassification],
+  };
+  if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)
+    || recoveredClassification.transcription_status !== "exact") {
+    throw new Error(`${key}: classification recovery metadata/content is stale or non-exact`);
+  }
+  const classificationArtifactItemHash = canonicalEvidenceHash(recoveredClassification);
+  const evidence = {
+    key,
+    printedNumber: row.first.row.printedNumber,
+    sourcePage: row.first.row.sourcePage,
+    sourceHash: problemEvidence.sha256,
+    contextFrom: row.first.row.contextFrom,
+    contextTo: row.first.row.contextTo,
+    baseProblemRepairArtifact,
+    baseProblemRepairItemHash: row.first.row.problemArtifactItemHash,
+    baseClassificationRepairArtifact,
+    baseClassificationRepairItemHash: row.first.row.classificationArtifactItemHash,
+    baseProblemRevisionArtifact,
+    baseProblemRevisionItemHash: row.problemArtifactItemHash,
+    baseClassificationRevisionArtifact,
+    baseClassificationRevisionItemHash: row.classificationArtifactItemHash,
+    problemArtifact,
+    problemArtifactItemHash,
+    classificationArtifact: {
+      ...classificationArtifact,
+      rulesDigest,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      recoveryPromptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+      recoveryPromptDigest: TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
+    },
+    classificationArtifactItemHash,
+    failedClassificationEvidenceHash: problemBasis.failedClassificationEvidenceHash,
+    baseQuestionHash: problemBasis.baseQuestionHash,
+    effectiveQuestionHash: problemArtifactItemHash,
+    baseClassificationHash: problemBasis.baseClassificationHash,
+    effectiveClassificationHash: classificationArtifactItemHash,
+  };
+  if (!isDeepStrictEqual(recovery, evidence)) {
+    throw new Error(`${key}: problem recovery evidence envelope does not match its exact chain`);
+  }
+  return {
+    classified: {
+      question: recoveredQuestion,
+      classification: recoveredClassification,
+      problemCheckpoint: row.first.row.base.problemCheckpoint,
+      classificationCheckpoint: row.first.row.base.classificationCheckpoint,
+      contextFrom: row.first.row.contextFrom,
+      contextTo: row.first.row.contextTo,
+    },
+    evidence,
+  };
+}
+
 function verifyV3RevisionArtifacts(
   rows: V3RevisionRow[],
   stateDir: string,
@@ -2627,9 +2843,6 @@ function verifyV3RevisionArtifacts(
       const key = row.first.row.key;
       const question = revisedQuestions.get(key)!;
       const classification = byKey.get(key)!;
-      if (classification.transcription_status !== "exact") {
-        throw new Error(`${key}: second source-grounded revision is not exact`);
-      }
       const effectiveQuestionHash = canonicalEvidenceHash(question.evidence);
       const effectiveClassificationHash = canonicalEvidenceHash(classification);
       if (row.raw.effectiveQuestionHash !== effectiveQuestionHash
@@ -2657,11 +2870,28 @@ function verifyV3RevisionArtifacts(
         classificationArtifactItemHash: row.classificationArtifactItemHash,
         trigger: row.trigger,
       };
-      if (!isDeepStrictEqual(row.raw, evidence)) {
+      const recovery = row.raw.recovery === undefined ? null : verifyProblemRecovery(
+        row,
+        question,
+        classification,
+        stateDir,
+        entry,
+        problemEvidence,
+        rulesDigest,
+        cache,
+      );
+      if (classification.transcription_status === "exact" && recovery !== null) {
+        throw new Error(`${key}: exact problem revision cannot have a recovery`);
+      }
+      if (classification.transcription_status !== "exact" && recovery === null) {
+        throw new Error(`${key}: non-exact problem revision has no recovery`);
+      }
+      const expectedEvidence = recovery === null ? evidence : { ...evidence, recovery: recovery.evidence };
+      if (!isDeepStrictEqual(row.raw, expectedEvidence)) {
         throw new Error(`${key}: revision evidence envelope does not match its exact shared chain`);
       }
       result.set(key, {
-        classified: {
+        classified: recovery?.classified ?? {
           question,
           classification,
           problemCheckpoint: row.first.row.base.problemCheckpoint,
@@ -2669,7 +2899,7 @@ function verifyV3RevisionArtifacts(
           contextFrom: row.first.row.contextFrom,
           contextTo: row.first.row.contextTo,
         },
-        evidence,
+        evidence: expectedEvidence,
       });
     }
   }
@@ -2776,6 +3006,7 @@ function applyDeclaredRepairsV3(
   cache: EvidenceCache,
   contract: VerificationContract,
 ): Map<string, ClassifiedEvidence> {
+  verifyProblemRecoveryCoverage(values, stateDir, contract);
   const rows = prepareV3RepairRows(values, stateDir, base, solutions);
   const corrected = verifyV3FirstProblemArtifacts(rows, stateDir, entry, problemEvidence, cache);
   const first = verifyV3FirstClassificationArtifacts(
@@ -3939,6 +4170,8 @@ function selectVerificationContract(
   if (result?.version === 4) return CURRENT_CONTRACT;
   const v4GenerationSignal = (
     listJson(join(stateDir, "problem-terminal-fidelity"), /^v2-.*\.json$/u).length > 0
+    || listJson(join(stateDir, "problem-recoveries"), /\.json$/u).length > 0
+    || listJson(join(stateDir, "classification-recoveries"), /\.json$/u).length > 0
     || listJson(join(stateDir, "answer-audit"), /^v4-.*\.json$/u).length > 0
     || listJson(join(stateDir, "answer-attestation"), /^v4-.*\.json$/u).length > 0
   );

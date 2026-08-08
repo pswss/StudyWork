@@ -22,6 +22,9 @@ import {
   TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX,
   TARGETED_PROBLEM_REVISION_RULES,
   TARGETED_PROBLEM_REVISION_VERSION,
+  TARGETED_PROBLEM_RECOVERY_EVIDENCE_PREFIX,
+  TARGETED_PROBLEM_RECOVERY_RULES,
+  TARGETED_PROBLEM_RECOVERY_VERSION,
   TARGETED_SOLUTION_TRANSCRIPTION_RULES,
   TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
   TARGETED_SOLUTION_REVISION_EVIDENCE_PREFIX,
@@ -88,6 +91,11 @@ const TARGETED_BATCH_REVISION_PROMPT_DIGEST = hash(
   `${TARGETED_PROBLEM_REVISION_VERSION}\n${TARGETED_PROBLEM_REVISION_RULES}\n` +
   `${TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX}\n` +
   `${TARGETED_PROBLEM_BATCH_VERSION}\n${TARGETED_PROBLEM_BATCH_RULES}\n${QUIZ_EXTRACT_SPEC}`,
+);
+const TARGETED_RECOVERY_PROMPT_DIGEST = hash(
+  `${TARGETED_PROBLEM_RECOVERY_VERSION}\n${TARGETED_PROBLEM_RECOVERY_RULES}\n` +
+  `${TARGETED_PROBLEM_RECOVERY_EVIDENCE_PREFIX}\n` +
+  `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
 const TARGETED_PROMPT_DIGEST = hash(
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
@@ -740,6 +748,7 @@ function upgradeEntryToV3(
     mixedTerminal?: boolean;
     staleTriggerBase?: boolean;
     crossPageBatchRepair?: boolean;
+    problemRecovery?: boolean;
     terminalScope?: "authorized-reject" | "scope-accept" | "terminal-exact" | "low-confidence"
       | "accepted-scope-reject";
   } = {},
@@ -751,6 +760,8 @@ function upgradeEntryToV3(
   classificationBatchArtifact?: string;
   problemRevisionArtifact?: string;
   classificationRevisionArtifact?: string;
+  problemRecoveryArtifact?: string;
+  classificationRecoveryArtifact?: string;
 } {
   const stateDir = files.stateDirs[id];
   const entryStatePath = join(stateDir, "entry.json");
@@ -786,7 +797,7 @@ function upgradeEntryToV3(
     }
   }
   const mixedTerminal = options.mixedTerminal || options.staleTriggerBase;
-  const repairNumbers = options.batchRepair || options.crossPageBatchRepair
+  const repairNumbers = options.batchRepair || options.crossPageBatchRepair || options.problemRecovery
     || options.terminalRevision || options.classificationRevision || mixedTerminal
     ? [3, 10]
     : [];
@@ -813,6 +824,8 @@ function upgradeEntryToV3(
   let classificationBatchArtifact: string | undefined;
   let problemRevisionArtifact: string | undefined;
   let classificationRevisionArtifact: string | undefined;
+  let problemRecoveryArtifact: string | undefined;
+  let classificationRecoveryArtifact: string | undefined;
   if (repairNumbers.length > 0) {
     const baseProblemCheckpoint = {
       path: `problem-chunks/${problemName}`,
@@ -909,8 +922,9 @@ function upgradeEntryToV3(
       const number = Number(member.printedNumber);
       return {
         ...classification.items[number - 1],
-        transcription_status: options.classificationRevision && number === 3 ? "mismatch" : "exact",
-        transcription_evidence: options.classificationRevision && number === 3
+        transcription_status: (options.classificationRevision || options.problemRecovery) && number === 3
+          ? "mismatch" : "exact",
+        transcription_evidence: (options.classificationRevision || options.problemRecovery) && number === 3
           ? "the first repaired classification still found an omitted literal transition"
           : "the repaired full literal source exactly matches the official pixels",
       };
@@ -1089,12 +1103,12 @@ function upgradeEntryToV3(
       compareCorpusQuestionKeys(String(left.key), String(right.key))));
   }
 
-  if (options.terminalRevision || options.classificationRevision || mixedTerminal) {
+  if (options.terminalRevision || options.classificationRevision || options.problemRecovery || mixedTerminal) {
     const targetKey = "1:3";
     const targetIndex = 2;
     const targetRepair = repairs.find((repair) => repair.key === targetKey)!;
     let trigger: Record<string, unknown>;
-    if (options.classificationRevision) {
+    if (options.classificationRevision || options.problemRecovery) {
       trigger = {
         kind: "classification",
         evidenceHash: hash(String(effectiveClassifications[targetIndex].transcription_evidence)),
@@ -1236,8 +1250,10 @@ function upgradeEntryToV3(
     const revisionOverlayDigest = canonicalEvidenceHash([revisionClassificationMember]);
     const revisionClassification = {
       ...effectiveClassifications[targetIndex],
-      transcription_status: "exact",
-      transcription_evidence: "the second source-grounded literal revision is exact",
+      transcription_status: options.problemRecovery ? "mismatch" : "exact",
+      transcription_evidence: options.problemRecovery
+        ? "the second source-grounded revision still omitted one literal source clause"
+        : "the second source-grounded literal revision is exact",
     };
     const revisionClassificationPath =
       `classification-revision-batches/v1-0001-0001-${revisionOverlayDigest}-${DIGEST}.json`;
@@ -1278,8 +1294,122 @@ function upgradeEntryToV3(
       classificationArtifactItemHash: canonicalEvidenceHash(revisionClassification),
       trigger,
     };
-    effectiveProblems[targetIndex] = revisionQuestion;
-    effectiveClassifications[targetIndex] = revisionClassification;
+    if (options.problemRecovery) {
+      const baseProblemRevisionArtifact = { path: revisionProblemPath, sha256: revisionProblemHash };
+      const baseClassificationRevisionArtifact = {
+        path: revisionClassificationPath,
+        sha256: revisionClassificationHash,
+      };
+      const failedClassificationEvidenceHash = hash(revisionClassification.transcription_evidence);
+      const problemBasis = {
+        key: targetKey,
+        printedNumber: "3",
+        sourcePage: 1,
+        sourceHash: downloads.problem.sha256,
+        contextFrom: 1,
+        contextTo: 1,
+        baseProblemRepairArtifact,
+        baseProblemRepairItemHash: targetRepair.problemArtifactItemHash,
+        baseClassificationRepairArtifact,
+        baseClassificationRepairItemHash: targetRepair.classificationArtifactItemHash,
+        baseProblemRevisionArtifact,
+        baseProblemRevisionItemHash: revisionQuestionHash,
+        baseClassificationRevisionArtifact,
+        baseClassificationRevisionItemHash: canonicalEvidenceHash(revisionClassification),
+        baseQuestionHash: revisionQuestionHash,
+        baseClassificationHash: canonicalEvidenceHash(revisionClassification),
+        failedClassificationEvidenceHash,
+      };
+      const basisDigest = canonicalEvidenceHash(problemBasis);
+      const recoveredQuestion = {
+        ...revisionQuestion,
+        question: `${revisionQuestion.question} [final recovery preserves the omitted official clause]`,
+      };
+      const problemRecoveryPath = `problem-recoveries/v1-0001-0003-${basisDigest}.json`;
+      const problemRecoveryHash = writeEvidence(join(stateDir, problemRecoveryPath), {
+        version: 1,
+        entryId: entry.id,
+        basisDigest,
+        basis: problemBasis,
+        promptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+        promptDigest: TARGETED_RECOVERY_PROMPT_DIGEST,
+        model: "gpt-5.6-sol",
+        reasoningEffort: "high",
+        item: recoveredQuestion,
+      });
+      problemRecoveryArtifact = join(stateDir, problemRecoveryPath);
+      const problemRecoveryPointer = { path: problemRecoveryPath, sha256: problemRecoveryHash };
+      const recoveredQuestionHash = canonicalEvidenceHash(recoveredQuestion);
+      const classificationBasis = {
+        ...problemBasis,
+        problemArtifact: problemRecoveryPointer,
+        problemArtifactItemHash: recoveredQuestionHash,
+        effectiveQuestionHash: recoveredQuestionHash,
+      };
+      const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+      const recoveredClassification = {
+        ...revisionClassification,
+        transcription_status: "exact",
+        transcription_evidence: "the bounded recovery exactly matches every official source clause",
+      };
+      const classificationRecoveryPath =
+        `classification-recoveries/v1-0001-0003-${classificationBasisDigest}-${DIGEST}.json`;
+      const classificationRecoveryHash = writeEvidence(join(stateDir, classificationRecoveryPath), {
+        version: 1,
+        entryId: entry.id,
+        basisDigest: classificationBasisDigest,
+        basis: classificationBasis,
+        classifierVersion: 5,
+        rulesDigest: DIGEST,
+        transcriptionGateVersion: 2,
+        transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+        recoveryPromptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+        recoveryPromptDigest: TARGETED_RECOVERY_PROMPT_DIGEST,
+        model: "gpt-5.6-sol",
+        reasoningEffort: "high",
+        items: [recoveredClassification],
+      });
+      classificationRecoveryArtifact = join(stateDir, classificationRecoveryPath);
+      const recoveredClassificationHash = canonicalEvidenceHash(recoveredClassification);
+      (targetRepair.revision as Record<string, unknown>).recovery = {
+        key: targetKey,
+        printedNumber: "3",
+        sourcePage: 1,
+        sourceHash: downloads.problem.sha256,
+        contextFrom: 1,
+        contextTo: 1,
+        baseProblemRepairArtifact,
+        baseProblemRepairItemHash: targetRepair.problemArtifactItemHash,
+        baseClassificationRepairArtifact,
+        baseClassificationRepairItemHash: targetRepair.classificationArtifactItemHash,
+        baseProblemRevisionArtifact,
+        baseProblemRevisionItemHash: revisionQuestionHash,
+        baseClassificationRevisionArtifact,
+        baseClassificationRevisionItemHash: canonicalEvidenceHash(revisionClassification),
+        problemArtifact: problemRecoveryPointer,
+        problemArtifactItemHash: recoveredQuestionHash,
+        classificationArtifact: {
+          path: classificationRecoveryPath,
+          sha256: classificationRecoveryHash,
+          rulesDigest: DIGEST,
+          transcriptionGateVersion: 2,
+          transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+          recoveryPromptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+          recoveryPromptDigest: TARGETED_RECOVERY_PROMPT_DIGEST,
+        },
+        classificationArtifactItemHash: recoveredClassificationHash,
+        failedClassificationEvidenceHash,
+        baseQuestionHash: revisionQuestionHash,
+        effectiveQuestionHash: recoveredQuestionHash,
+        baseClassificationHash: canonicalEvidenceHash(revisionClassification),
+        effectiveClassificationHash: recoveredClassificationHash,
+      };
+      effectiveProblems[targetIndex] = recoveredQuestion;
+      effectiveClassifications[targetIndex] = recoveredClassification;
+    } else {
+      effectiveProblems[targetIndex] = revisionQuestion;
+      effectiveClassifications[targetIndex] = revisionClassification;
+    }
   }
 
   const effectiveCorpus = effectiveProblems.map((question: Record<string, unknown>, index: number) => ({
@@ -1481,6 +1611,8 @@ function upgradeEntryToV3(
     classificationBatchArtifact,
     problemRevisionArtifact,
     classificationRevisionArtifact,
+    problemRecoveryArtifact,
+    classificationRecoveryArtifact,
   };
 }
 
@@ -1655,16 +1787,18 @@ function rewriteCurrentV3Authority(
 ): void {
   const stateDir = files.stateDirs.math;
   const attestationName = readdirSync(join(stateDir, "answer-attestation"))
-    .find((name) => name.startsWith("v3-"))!;
+    .find((name) => name.startsWith("v4-"))
+    ?? readdirSync(join(stateDir, "answer-attestation")).find((name) => name.startsWith("v3-"))!;
   const attestationPath = join(stateDir, "answer-attestation", attestationName);
   const attestation = JSON.parse(readFileSync(attestationPath, "utf8"));
   const audit = JSON.parse(readFileSync(join(stateDir, attestation.answerAudit.path), "utf8"));
+  const version = Number(attestation.version);
   mutate(audit);
   const { version: _auditVersion, auditDigest: _auditDigest, ...auditBasis } = audit;
   const nextAuditDigest = canonicalEvidenceHash(auditBasis);
-  const nextAuditPath = `answer-audit/v3-${nextAuditDigest}.json`;
+  const nextAuditPath = `answer-audit/v${version}-${nextAuditDigest}.json`;
   const nextAuditHash = writeEvidence(join(stateDir, nextAuditPath), {
-    version: 3,
+    version,
     auditDigest: nextAuditDigest,
     ...auditBasis,
   });
@@ -1684,8 +1818,8 @@ function rewriteCurrentV3Authority(
     problemTerminalFidelityItems: audit.problemTerminalFidelityItems,
   });
   const nextAttestationDigest = canonicalEvidenceHash(attestationBasis);
-  writeEvidence(join(stateDir, "answer-attestation", `v3-${nextAttestationDigest}.json`), {
-    version: 3,
+  writeEvidence(join(stateDir, "answer-attestation", `v${version}-${nextAttestationDigest}.json`), {
+    version,
     attestationDigest: nextAttestationDigest,
     ...attestationBasis,
   });
@@ -3421,6 +3555,57 @@ describe("exam corpus verifier", () => {
     upgradeEntryToV3(classificationFiles, "math", { classificationRevision: true });
     const classificationRevision = verifyExamCorpus(classificationFiles);
     expect(classificationRevision, JSON.stringify(classificationRevision.failures)).toMatchObject({ ok: true });
+  });
+
+  it("reconstructs one final problem recovery and rejects tamper, stale, orphan, or repeated chains", () => {
+    const files = fixture();
+    const artifacts = upgradeEntryToV3(files, "math", {
+      problemRecovery: true,
+      terminalScope: "authorized-reject",
+    });
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    expect(artifacts.problemRecoveryArtifact).toContain("problem-recoveries/v1-");
+    expect(artifacts.classificationRecoveryArtifact).toContain("classification-recoveries/v1-");
+
+    const tamperedFiles = fixture();
+    const tamperedArtifacts = upgradeEntryToV3(tamperedFiles, "math", {
+      problemRecovery: true,
+      terminalScope: "authorized-reject",
+    });
+    const tampered = JSON.parse(readFileSync(tamperedArtifacts.problemRecoveryArtifact!, "utf8"));
+    tampered.item.question = "tampered recovery output";
+    writeJson(tamperedArtifacts.problemRecoveryArtifact!, tampered);
+    expect(verifyExamCorpus(tamperedFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const staleFiles = fixture();
+    upgradeEntryToV3(staleFiles, "math", { problemRecovery: true, terminalScope: "authorized-reject" });
+    rewriteCurrentV3Authority(staleFiles, (audit) => {
+      audit.repairs.find((repair: Record<string, any>) => repair.revision?.recovery)
+        .revision.recovery.failedClassificationEvidenceHash = "0".repeat(64);
+    });
+    expect(verifyExamCorpus(staleFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const orphanFiles = fixture();
+    upgradeEntryToV3(orphanFiles, "math", { problemRecovery: true, terminalScope: "authorized-reject" });
+    writeJson(join(
+      orphanFiles.stateDirs.math,
+      "problem-recoveries",
+      `v1-0001-0004-${"1".repeat(64)}.json`,
+    ), {});
+    expect(verifyExamCorpus(orphanFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
+
+    const repeatedFiles = fixture();
+    upgradeEntryToV3(repeatedFiles, "math", { problemRecovery: true, terminalScope: "authorized-reject" });
+    rewriteCurrentV3Authority(repeatedFiles, (audit) => {
+      audit.repairs.find((repair: Record<string, any>) => repair.revision?.recovery)
+        .revision.recovery.recovery = {};
+    });
+    expect(verifyExamCorpus(repeatedFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
   });
 
   it("reconstructs a mixed same-pass first repair plus terminal revision generation", () => {
