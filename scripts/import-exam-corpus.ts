@@ -60,7 +60,8 @@ import { MAX_PDF_BYTES, MAX_PDF_PAGES, safeUploadName } from "../src/upload";
 
 export const IMPORT_MODEL = "gpt-5.6-sol";
 export const IMPORT_REASONING_EFFORT = "high" as const;
-export const IMPORT_CONCURRENCY = 10;
+// gpt-5.6-sol/high는 10개 병렬에서 15분 timeout이 반복됐다. 예약 슬롯을 빼면 실제 bulk 호출은 5개다.
+export const IMPORT_CONCURRENCY = 6;
 export const PROBLEM_SLICE_PAGES = 20;
 export const PROBLEM_SLICE_STRIDE = 18;
 export const SOLUTION_SLICE_PAGES = 6;
