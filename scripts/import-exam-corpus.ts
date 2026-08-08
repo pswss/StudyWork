@@ -487,7 +487,11 @@ export type SolutionRevisionEvidence = {
   trigger: {
     kind: "fidelity" | "semantic";
     fidelityDecisionHash: string;
-    semanticCheckpoint?: EvidencePointer & { inputHash: string };
+    semanticCheckpoint?: EvidencePointer & {
+      inputHash: string;
+      effectiveCorpusHash: string;
+      effectiveSolutionCorpusHash: string;
+    };
     semanticDecisionHash?: string;
   };
   baseRepairPage: number;
@@ -538,7 +542,11 @@ type SolutionRevisionTrigger =
   | { kind: "fidelity" }
   | {
       kind: "semantic";
-      semanticCheckpoint: EvidencePointer & { inputHash: string };
+      semanticCheckpoint: EvidencePointer & {
+        inputHash: string;
+        effectiveCorpusHash: string;
+        effectiveSolutionCorpusHash: string;
+      };
       semanticDecision: SemanticChoiceDecision;
     };
 
@@ -987,6 +995,16 @@ function questionKey(question: QuizItemEx): string {
 
 export function compareCorpusQuestionKeys(left: string, right: string): number {
   return left.localeCompare(right, "en");
+}
+
+export function commitSemanticSolutionRevisionTriggers<T>(
+  target: Map<string, T>,
+  tentative: ReadonlyMap<string, T>,
+  problemRepairCount: number
+): boolean {
+  if (problemRepairCount > 0 || tentative.size === 0) return false;
+  for (const [key, trigger] of tentative) target.set(key, trigger);
+  return true;
 }
 
 function restoredQuizItems(value: unknown): QuizItemEx[] {
@@ -1826,10 +1844,7 @@ async function reviseSolutionItem(
     firstEvidence.effectiveSolutionItemHash !== canonicalEvidenceHash(firstSolution) ||
     firstEvidence.effectivePage !== firstSolution.page ||
     trigger.kind === "fidelity" && firstTerminal ||
-    trigger.kind === "semantic" && (
-      firstDecision.sourcePage !== firstSolution.page || firstDecision.answerStatus !== "exact" ||
-      firstDecision.explanationStatus !== "exact" || trigger.semanticDecision.key !== base.key
-    )
+    trigger.kind === "semantic" && (!firstTerminal || trigger.semanticDecision.key !== base.key)
   ) throw new Error(`${base.key} 해설 revision 입력이 첫 repair evidence와 다릅니다`);
 
   for (const [label, pointer] of [
@@ -1860,6 +1875,13 @@ async function reviseSolutionItem(
     if (await sha256File(semanticPath) !== trigger.semanticCheckpoint.sha256) {
       throw new Error(`${base.key} semantic choice hash가 다릅니다`);
     }
+    const checkpoint = object(JSON.parse(readFileSync(semanticPath, "utf8")), "semantic choice");
+    if (
+      checkpoint.inputHash !== trigger.semanticCheckpoint.inputHash ||
+      checkpoint.effectiveCorpusHash !== effectiveProblemCorpusHash ||
+      checkpoint.effectiveCorpusHash !== trigger.semanticCheckpoint.effectiveCorpusHash ||
+      checkpoint.effectiveSolutionCorpusHash !== trigger.semanticCheckpoint.effectiveSolutionCorpusHash
+    ) throw new Error(`${base.key} semantic choice corpus binding이 다릅니다`);
   }
   const revisionBasisHash = canonicalEvidenceHash({
     key: base.key,
@@ -2050,10 +2072,11 @@ async function reviseSolutionItem(
   if (fidelityArtifactHash !== canonicalEvidenceHash(fidelityCheckpoint)) {
     throw new Error(`${base.key} revision 해설 fidelity hash가 다릅니다`);
   }
+  const terminalAnswer = decision.answerStatus === "exact" ||
+    decision.answerStatus === "not_visible" && base.allowDerivedMarkerAnswer;
   if (
-    decision.sourcePage !== revised.page || decision.answerStatus !== "exact" ||
-    decision.explanationStatus !== "exact"
-  ) throw new Error(`${base.key} 두 번째 source-grounded 해설 revision도 exact/exact가 아닙니다`);
+    decision.sourcePage !== revised.page || decision.explanationStatus !== "exact" || !terminalAnswer
+  ) throw new Error(`${base.key} 두 번째 source-grounded 해설 revision도 terminal이 아닙니다`);
 
   return {
     solution: revised,
@@ -2553,10 +2576,13 @@ async function semanticChoiceCheckpoint(
   stateDir: string,
   effectiveCorpusHash: string,
   effectiveSolutionCorpusHash: string,
-  inputs: Array<{ key: string; choices: string[]; detailedExplanation: string }>
+  inputs: Array<{ key: string; choices: string[]; detailedExplanation: string }>,
+  solutionRevisionApplied = false
 ): Promise<{ decisions: SemanticChoiceDecision[]; path: string; sha256: string; inputHash: string }> {
   const inputHash = canonicalEvidenceHash(inputs);
-  const relativePath = `semantic-choice-checks/v${SEMANTIC_CHOICE_CHECK_VERSION}-${inputHash}.json`;
+  const relativePath = solutionRevisionApplied
+    ? `semantic-choice-checks/v${SEMANTIC_CHOICE_CHECK_VERSION}-${effectiveSolutionCorpusHash}-${inputHash}.json`
+    : `semantic-choice-checks/v${SEMANTIC_CHOICE_CHECK_VERSION}-${inputHash}.json`;
   const path = join(stateDir, relativePath);
   let checkpoint: Record<string, unknown>;
   let decisions: SemanticChoiceDecision[];
@@ -3183,7 +3209,8 @@ export async function repairAndAuditOfficialAnswers(
       stateDir,
       canonicalEvidenceHash(effective),
       finalSolutionAudit.effectiveSolutionCorpusHash,
-      markerInputs
+      markerInputs,
+      finalSolutionAudit.repairs.some((repair) => repair.revision !== undefined)
     );
     const semanticByKey = new Map(finalSemantic?.decisions.map((item) => [item.key, item]) ?? []);
     const semanticMismatch = markerInputs.flatMap((input) => {
@@ -3195,8 +3222,11 @@ export async function repairAndAuditOfficialAnswers(
     });
     if (semanticMismatch.length > 0) {
       const solutionRepairByKey = new Map(finalSolutionAudit.repairs.map((repair) => [repair.key, repair]));
+      const tentativeSolutionRevisions = new Map<
+        string,
+        Extract<SolutionRevisionTrigger, { kind: "semantic" }>
+      >();
       const problemRepairKeys: string[] = [];
-      let addedSolutionRevision = false;
       for (const key of semanticMismatch) {
         const current = effective.find((item) => questionKey(item.question) === key)!;
         const solutionRepair = solutionRepairByKey.get(key);
@@ -3205,16 +3235,17 @@ export async function repairAndAuditOfficialAnswers(
           !solutionRepair.revision && !solutionRevisionTriggers.has(key) && finalSemantic
         ) {
           const semanticDecision = semanticByKey.get(key)!;
-          solutionRevisionTriggers.set(key, {
+          tentativeSolutionRevisions.set(key, {
             kind: "semantic",
             semanticCheckpoint: {
               path: finalSemantic.path,
               sha256: finalSemantic.sha256,
               inputHash: finalSemantic.inputHash,
+              effectiveCorpusHash: canonicalEvidenceHash(effective),
+              effectiveSolutionCorpusHash: finalSolutionAudit.effectiveSolutionCorpusHash,
             },
             semanticDecision,
           });
-          addedSolutionRevision = true;
         } else if (solutionRepair?.revision || solutionRevisionTriggers.has(key)) {
           throw new Error(`${key} 해설 revision 후에도 공식 marker와 상세 해설 의미가 불일치합니다`);
         } else {
@@ -3222,6 +3253,11 @@ export async function repairAndAuditOfficialAnswers(
         }
       }
       const repairedProblem = problemRepairKeys.length > 0 && await applyRepairs(problemRepairKeys);
+      const addedSolutionRevision = commitSemanticSolutionRevisionTriggers(
+        solutionRevisionTriggers,
+        tentativeSolutionRevisions,
+        problemRepairKeys.length
+      );
       if (!addedSolutionRevision && !repairedProblem) {
         throw new Error(`문제 재전사 후에도 공식 marker와 상세 해설 의미가 불일치합니다: ${semanticMismatch.join(", ")}`);
       }

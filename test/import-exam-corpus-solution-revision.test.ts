@@ -16,6 +16,7 @@ import {
   SOLUTION_REVISION_FIDELITY_VERSION,
   SOLUTION_REVISION_VERSION,
   TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+  commitSemanticSolutionRevisionTriggers,
   parseCorpusManifest,
   repairAndAuditOfficialAnswers,
   type ClassificationDecision,
@@ -122,8 +123,16 @@ async function fixture(id: string, targetNumber: number, mcq = false) {
 }
 
 describe("exam corpus official solution revision", () => {
+  it("defers tentative semantic revisions when the same pass needs a problem repair", () => {
+    const committed = new Map<string, string>();
+    expect(commitSemanticSolutionRevisionTriggers(committed, new Map([["11:1", "stale"]]), 1)).toBe(false);
+    expect(committed.size).toBe(0);
+    expect(commitSemanticSolutionRevisionTriggers(committed, new Map([["11:1", "fresh"]]), 0)).toBe(true);
+    expect(committed.get("11:1")).toBe("fresh");
+  });
+
   it("revises Q28 once after a failed repair audit and replays immutable evidence", async () => {
-    const data = await fixture("ebsi:5643101", 28);
+    const data = await fixture("ebsi:5643101", 28, true);
     const firstExplanation =
       "$\\lim_{x\\to2}f(x)=0$, $\\lim_{x\\to2}g(x)=0$이고 함수값이 크게 나와야 한다.";
     const finalExplanation =
@@ -137,23 +146,26 @@ describe("exam corpus official solution revision", () => {
         const pages = (await PDFDocument.load(readFileSync(request.file!.path))).getPageCount();
         if (pages === 22) {
           calls.bulk++;
-          return { text: JSON.stringify([{ key: "11:28", sourcePage: 17, answerStatus: "exact", explanationStatus: "mismatch", evidence: "x→-2 극한 줄이 누락됐다." }]) };
+          return { text: JSON.stringify([{ key: "11:28", sourcePage: 17, answerStatus: "not_visible", explanationStatus: "mismatch", evidence: "x→-2 극한 줄이 누락됐다." }]) };
         }
         if (calls.repairAudit === 0) {
           calls.repairAudit++;
-          return { text: JSON.stringify([{ key: "11:28", sourcePage: 17, answerStatus: "exact", explanationStatus: "mismatch", evidence: "분모·분자의 x→-2 극한과 '크거나 같아야'가 누락됐다." }]) };
+          return { text: JSON.stringify([{ key: "11:28", sourcePage: 17, answerStatus: "not_visible", explanationStatus: "mismatch", evidence: "분모·분자의 x→-2 극한과 '크거나 같아야'가 누락됐다." }]) };
         }
         calls.revisionAudit++;
-        return { text: JSON.stringify([{ key: "11:28", sourcePage: 17, answerStatus: "exact", explanationStatus: "exact", evidence: "±2 네 극한 줄과 문구가 모두 일치한다." }]) };
+        return { text: JSON.stringify([{ key: "11:28", sourcePage: 17, answerStatus: "not_visible", explanationStatus: "exact", evidence: "±2 네 극한 줄과 문구가 모두 일치한다." }]) };
       }
       if (request.schema?.name === "studywork_solution_file_items") {
         if (request.prompt.includes("SECOND SOURCE-GROUNDED SOLUTION REVISION")) {
           calls.revision++;
           if (calls.revision === 1) throw new Error("simulated solution revision interruption");
-          return { text: JSON.stringify([{ number: "28", answer: "28", explanation: finalExplanation, page: 17, complete: true }]) };
+          return { text: JSON.stringify([{ number: "28", answer: "②", explanation: `${finalExplanation} 따라서 값은 3이다.`, page: 17, complete: true }]) };
         }
         calls.repair++;
-        return { text: JSON.stringify([{ number: "28", answer: "28", explanation: firstExplanation, page: 17, complete: true }]) };
+        return { text: JSON.stringify([{ number: "28", answer: "②", explanation: firstExplanation, page: 17, complete: true }]) };
+      }
+      if (request.schema?.name === "studywork_exam_corpus_semantic_choice_check") {
+        return { text: JSON.stringify([{ key: "11:28", status: "resolved", choiceIndex: 2, evidence: "결론의 값 3은 ②이다." }]) };
       }
       throw new Error(`unexpected schema ${request.schema?.name}`);
     });
@@ -172,7 +184,7 @@ describe("exam corpus official solution revision", () => {
       solutionArtifact: { path: expect.stringMatching(/^solution-revisions\/v1-/u) },
       fidelityArtifact: { path: expect.stringMatching(/^solution-fidelity-revisions\/v1-/u) },
     });
-    expect(repaired.solutions[27].explanation).toBe(finalExplanation);
+    expect(repaired.solutions[27].explanation).toBe(`${finalExplanation} 따라서 값은 3이다.`);
     expect(repaired.solutions[27].explanation).toContain("\\lim_{x\\to-2}f(x)");
     expect(repaired.solutions[27].explanation).toContain("\\lim_{x\\to-2}g(x)");
     expect(repaired.solutions[27].explanation).toContain("크거나 같아야");
@@ -194,7 +206,6 @@ describe("exam corpus official solution revision", () => {
 
   it("revises Q1 after false-exact fidelity conflicts with hidden-marker semantics", async () => {
     const data = await fixture("ebsi:5643102", 1, true);
-    const wrong = "$\\left(\\frac{1}{3^2}\\right)^2=\\frac{1}{81}$이다.";
     const correct = "$3^{(\\frac{1}{2})\\times2}=3$이므로 정답은 ②이다.";
     const calls = { bulk: 0, repair: 0, repairAudit: 0, revision: 0, revisionAudit: 0, semantic: 0 };
     providerMock.complete.mockImplementation(async (request: {
@@ -204,14 +215,14 @@ describe("exam corpus official solution revision", () => {
         const pages = (await PDFDocument.load(readFileSync(request.file!.path))).getPageCount();
         if (pages === 22) {
           calls.bulk++;
-          return { text: JSON.stringify([{ key: "11:1", sourcePage: 18, answerStatus: "exact", explanationStatus: "exact", evidence: "일치한다." }]) };
+          return { text: JSON.stringify([{ key: "11:1", sourcePage: 18, answerStatus: "not_visible", explanationStatus: "exact", evidence: "공식 marker는 이 범위에 보이지 않지만 해설은 일치한다." }]) };
         }
         if (calls.repairAudit === 0) {
           calls.repairAudit++;
           return { text: JSON.stringify([{ key: "11:1", sourcePage: 18, answerStatus: "exact", explanationStatus: "exact", evidence: "일치한다." }]) };
         }
         calls.revisionAudit++;
-        return { text: JSON.stringify([{ key: "11:1", sourcePage: 18, answerStatus: "exact", explanationStatus: "exact", evidence: "공식 식과 값 3이 일치한다." }]) };
+        return { text: JSON.stringify([{ key: "11:1", sourcePage: 18, answerStatus: "not_visible", explanationStatus: "exact", evidence: "공식 식과 값 3이 일치한다." }]) };
       }
       if (request.schema?.name === "studywork_solution_file_items") {
         if (request.prompt.includes("SECOND SOURCE-GROUNDED SOLUTION REVISION")) {
@@ -219,14 +230,13 @@ describe("exam corpus official solution revision", () => {
           return { text: JSON.stringify([{ number: "1", answer: "②", explanation: correct, page: 18, complete: true }]) };
         }
         calls.repair++;
-        return { text: JSON.stringify([{ number: "1", answer: "②", explanation: wrong, page: 18, complete: true }]) };
+        return { text: JSON.stringify([{ number: "1", answer: "①", explanation: correct, page: 18, complete: true }]) };
       }
       if (request.schema?.name === "studywork_exam_corpus_semantic_choice_check") {
         calls.semantic++;
-        if (calls.semantic === 1) expect(request.prompt).toContain("\\\\frac{1}{3^2}");
-        else expect(request.prompt).toContain("3^{(\\\\frac{1}{2})\\\\times2}=3");
+        expect(request.prompt).toContain("3^{(\\\\frac{1}{2})\\\\times2}=3");
         return { text: JSON.stringify([calls.semantic === 1
-          ? { key: "11:1", status: "ambiguous", choiceIndex: null, evidence: "해설 계산값이 어떤 보기에도 대응하지 않는다." }
+          ? { key: "11:1", status: "resolved", choiceIndex: 2, evidence: "계산값 3은 ②이므로 marker ①과 충돌한다." }
           : { key: "11:1", status: "resolved", choiceIndex: 2, evidence: "계산값 3은 ②이다." }]) };
       }
       throw new Error(`unexpected schema ${request.schema?.name}`);
@@ -245,6 +255,10 @@ describe("exam corpus official solution revision", () => {
     expect(calls.semantic).toBe(2);
     const audit = JSON.parse(readFileSync(join(root, repaired.auditPath!), "utf8"));
     expect(audit.semanticCheckpoint.path).not.toBe(revision.trigger.semanticCheckpoint!.path);
+    const priorSemantic = JSON.parse(readFileSync(join(root, revision.trigger.semanticCheckpoint!.path), "utf8"));
+    const finalSemantic = JSON.parse(readFileSync(join(root, audit.semanticCheckpoint.path), "utf8"));
+    expect(finalSemantic.inputHash).toBe(priorSemantic.inputHash);
+    expect(audit.semanticCheckpoint.path).toContain(repaired.effectiveSolutionCorpusHash!);
     const beforeReplay = { ...calls };
     const replay = await repairAndAuditOfficialAnswers(
       data.entry, data.problem, data.solution, root, data.classified, data.solutions
