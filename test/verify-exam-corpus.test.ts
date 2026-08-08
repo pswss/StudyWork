@@ -737,6 +737,7 @@ function upgradeEntryToV3(
     classificationRevision?: boolean;
     mixedTerminal?: boolean;
     staleTriggerBase?: boolean;
+    crossPageBatchRepair?: boolean;
   } = {},
 ): {
   terminalArtifact: string;
@@ -757,6 +758,15 @@ function upgradeEntryToV3(
   const problemName = readdirSync(join(stateDir, "problem-chunks"))[0];
   const problemCheckpointPath = join(stateDir, "problem-chunks", problemName);
   const problemCheckpoint = JSON.parse(readFileSync(problemCheckpointPath, "utf8"));
+  const contextTo = options.crossPageBatchRepair ? 2 : 1;
+  if (options.crossPageBatchRepair) {
+    downloads.problem.pageCount = 2;
+    writeJson(join(stateDir, "downloads.json"), downloads);
+    problemCheckpoint.to = 2;
+    problemCheckpoint.ownedTo = 2;
+    for (const item of problemCheckpoint.items.slice(9)) item.page = 2;
+    writeJson(problemCheckpointPath, problemCheckpoint);
+  }
   const legacyClassificationName = readdirSync(join(stateDir, "classification-chunks"))
     .find((name) => name.startsWith("v4-"))!;
   const legacyClassificationPath = join(stateDir, "classification-chunks", legacyClassificationName);
@@ -764,8 +774,16 @@ function upgradeEntryToV3(
   classification.version = 5;
   classification.transcriptionGateVersion = 2;
   classification.transcriptionPromptDigest = CURRENT_TRANSCRIPTION_PROMPT_DIGEST;
+  classification.to = contextTo;
+  classification.ownedTo = contextTo;
+  if (options.crossPageBatchRepair) {
+    for (const [index, item] of classification.items.entries()) {
+      if (index >= 9) item.key = `2:${index + 1}`;
+    }
+  }
   const mixedTerminal = options.mixedTerminal || options.staleTriggerBase;
-  const repairNumbers = options.batchRepair || options.terminalRevision || options.classificationRevision || mixedTerminal
+  const repairNumbers = options.batchRepair || options.crossPageBatchRepair
+    || options.terminalRevision || options.classificationRevision || mixedTerminal
     ? [3, 10]
     : [];
   for (const number of repairNumbers) {
@@ -797,7 +815,8 @@ function upgradeEntryToV3(
       sha256: hash(readFileSync(classificationPath)),
     };
     const members = repairNumbers.map((number) => {
-      const key = `1:${number}`;
+      const sourcePage = Number(problemCheckpoint.items[number - 1].page);
+      const key = `${sourcePage}:${number}`;
       const solutionName = readdirSync(join(stateDir, "solution-chunks")).find((name) => {
         const checkpoint = JSON.parse(readFileSync(join(stateDir, "solution-chunks", name), "utf8"));
         return checkpoint.items.some((item: { number: string }) => item.number === String(number));
@@ -805,13 +824,17 @@ function upgradeEntryToV3(
       const solutionPath = join(stateDir, "solution-chunks", solutionName);
       const solutionCheckpoint = JSON.parse(readFileSync(solutionPath, "utf8"));
       const solutionItem = solutionCheckpoint.items.find((item: { number: string }) => item.number === String(number));
-      return {
+      const member = {
         key,
         printedNumber: String(number),
+        ...(options.crossPageBatchRepair ? { sourcePage } : {}),
         baseProblemCheckpoint,
         baseQuestionHash: canonicalEvidenceHash(problemCheckpoint.items[number - 1]),
         baseClassificationCheckpoint,
         baseClassificationHash: canonicalEvidenceHash(classification.items[number - 1]),
+        ...(options.crossPageBatchRepair ? {
+          baseTranscriptionEvidenceHash: hash(classification.items[number - 1].transcription_evidence),
+        } : {}),
         baseSolutionCheckpoint: {
           path: `solution-chunks/${solutionName}`,
           sha256: hash(readFileSync(solutionPath)),
@@ -819,6 +842,7 @@ function upgradeEntryToV3(
         baseSolutionItemHash: canonicalEvidenceHash(solutionItem),
         officialRawAnswerHash: hash(solutionItem.answer),
       };
+      return member;
     }).sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
     const corrected = members.map((member) => {
       const number = Number(member.printedNumber);
@@ -828,8 +852,30 @@ function upgradeEntryToV3(
       };
     });
     const membersDigest = canonicalEvidenceHash(members);
-    const problemRelativePath = `problem-repair-batches/v1-0001-0001-0001-${membersDigest}.json`;
-    const problemHash = writeEvidence(join(stateDir, problemRelativePath), {
+    const problemRelativePath = options.crossPageBatchRepair
+      ? `problem-repair-batches/v2-0001-${String(contextTo).padStart(4, "0")}-${membersDigest}.json`
+      : `problem-repair-batches/v1-0001-0001-0001-${membersDigest}.json`;
+    const diagnosticEvidence = JSON.stringify(members.map((member) => ({
+      key: member.key,
+      evidence: classification.items[Number(member.printedNumber) - 1].transcription_evidence,
+    })));
+    const problemHash = writeEvidence(join(stateDir, problemRelativePath), options.crossPageBatchRepair ? {
+      version: 2,
+      entryId: entry.id,
+      sourceHash: downloads.problem.sha256,
+      contextFrom: 1,
+      contextTo,
+      targetsDigest: membersDigest,
+      members,
+      batchPromptVersion: TARGETED_PROBLEM_BATCH_VERSION,
+      batchPromptDigest: TARGETED_BATCH_PROMPT_DIGEST,
+      revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+      revisionPromptDigest: TARGETED_BATCH_REVISION_PROMPT_DIGEST,
+      diagnosticEvidenceHash: hash(diagnosticEvidence),
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      items: corrected,
+    } : {
       version: 1,
       entryId: entry.id,
       sourceHash: downloads.problem.sha256,
@@ -870,13 +916,13 @@ function upgradeEntryToV3(
     }));
     const overlayDigest = canonicalEvidenceHash(classificationMembers);
     const classificationRelativePath =
-      `classification-repair-batches/v1-0001-0001-${overlayDigest}-${DIGEST}.json`;
+      `classification-repair-batches/v1-0001-${String(contextTo).padStart(4, "0")}-${overlayDigest}-${DIGEST}.json`;
     const classificationHash = writeEvidence(join(stateDir, classificationRelativePath), {
       version: 1,
       entryId: entry.id,
       sourceHash: downloads.problem.sha256,
       contextFrom: 1,
-      contextTo: 1,
+      contextTo,
       overlayDigest,
       classifierVersion: 5,
       rulesDigest: DIGEST,
@@ -895,9 +941,9 @@ function upgradeEntryToV3(
       repairs.push({
         key: member.key,
         printedNumber: member.printedNumber,
-        sourcePage: 1,
+        sourcePage: Number(problemCheckpoint.items[number - 1].page),
         contextFrom: 1,
-        contextTo: 1,
+        contextTo,
         baseProblemCheckpoint,
         baseClassificationCheckpoint,
         baseSolutionCheckpoint: member.baseSolutionCheckpoint,
@@ -1245,9 +1291,9 @@ function upgradeEntryToV3(
     entryId: entry.id,
     sourceHash: downloads.problem.sha256,
     from: 1,
-    to: 1,
+    to: contextTo,
     ownedFrom: 1,
-    ownedTo: 1,
+    ownedTo: contextTo,
     effectiveCorpusHash,
     inputHash: terminalInputHash,
     transcriptionGateVersion: 2,
@@ -1262,9 +1308,9 @@ function upgradeEntryToV3(
     path: terminalRelativePath,
     sha256: terminalHash,
     from: 1,
-    to: 1,
+    to: contextTo,
     ownedFrom: 1,
-    ownedTo: 1,
+    ownedTo: contextTo,
     inputHash: terminalInputHash,
   }];
 
@@ -1370,6 +1416,11 @@ function upgradeEntryToV3(
     attestationDigest,
     ...attestationBasis,
   });
+  if (options.crossPageBatchRepair) {
+    const db = new Database(files.dbPath);
+    db.prepare("UPDATE book_files SET page_count = 2 WHERE content_hash = ?").run(downloads.problem.sha256);
+    db.close();
+  }
   return {
     terminalArtifact: join(stateDir, terminalRelativePath),
     auditArtifact: join(stateDir, auditRelativePath),
@@ -3182,6 +3233,62 @@ describe("exam corpus verifier", () => {
     expect(duplicate.ok).toBe(false);
     expect(duplicate.failures.some((failure) =>
       failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("duplicate declared repair"))).toBe(true);
+  });
+
+  it("reconstructs cross-page v2 repair batches without mixing legacy v1 authority", () => {
+    const files = fixture();
+    const artifacts = upgradeEntryToV3(files, "math", { crossPageBatchRepair: true });
+    const checkpoint = JSON.parse(readFileSync(artifacts.problemBatchArtifact!, "utf8"));
+    expect(artifacts.problemBatchArtifact).toContain("problem-repair-batches/v2-0001-0002-");
+    expect(checkpoint.members.map((member: { sourcePage: number }) => member.sourcePage)).toEqual([1, 2]);
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+
+    const tamperedFiles = fixture();
+    const tamperedArtifacts = upgradeEntryToV3(tamperedFiles, "math", { crossPageBatchRepair: true });
+    const tampered = JSON.parse(readFileSync(tamperedArtifacts.problemBatchArtifact!, "utf8"));
+    tampered.members[0].baseTranscriptionEvidenceHash = "0".repeat(64);
+    writeJson(tamperedArtifacts.problemBatchArtifact!, tampered);
+    expect(verifyExamCorpus(tamperedFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const mixedFiles = fixture();
+    upgradeEntryToV3(mixedFiles, "math", { crossPageBatchRepair: true });
+    writeJson(join(
+      mixedFiles.stateDirs.math,
+      "problem-repair-batches",
+      `v1-0001-0002-0001-${"0".repeat(64)}.json`,
+    ), {});
+    const mixed = verifyExamCorpus(mixedFiles);
+    expect(mixed.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("cannot share a context"))).toBe(true);
+
+    const conflictingFiles = fixture();
+    upgradeEntryToV3(conflictingFiles, "math", { crossPageBatchRepair: true });
+    rewriteCurrentV3Authority(conflictingFiles, (audit) => {
+      audit.repairs[1].problemArtifact.sha256 = "f".repeat(64);
+    });
+    const conflicting = verifyExamCorpus(conflictingFiles);
+    expect(conflicting.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("conflicting whole-file hashes"))).toBe(true);
+
+    const malformedFiles = fixture();
+    upgradeEntryToV3(malformedFiles, "math", { crossPageBatchRepair: true });
+    writeJson(join(malformedFiles.stateDirs.math, "problem-repair-batches", "v2-0001-0002-bad.json"), {});
+    const malformed = verifyExamCorpus(malformedFiles);
+    expect(malformed.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("malformed"))).toBe(true);
+
+    const orphanFiles = fixture();
+    upgradeEntryToV3(orphanFiles, "math", { crossPageBatchRepair: true });
+    writeJson(join(
+      orphanFiles.stateDirs.math,
+      "problem-repair-batches",
+      `v2-0001-0002-${"1".repeat(64)}.json`,
+    ), {});
+    const orphan = verifyExamCorpus(orphanFiles);
+    expect(orphan.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
   });
 
   it("reconstructs one terminal-triggered shared problem revision generation", () => {

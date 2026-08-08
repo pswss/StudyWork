@@ -258,7 +258,8 @@ const CLASSIFIER_VERSION = 5;
 const PROBLEM_REPAIR_VERSION = 2;
 const CLASSIFICATION_REPAIR_VERSION = 3;
 const CURRENT_CLASSIFICATION_REPAIR_VERSION = 4;
-const PROBLEM_REPAIR_BATCH_VERSION = 1;
+const LEGACY_PROBLEM_REPAIR_BATCH_VERSION = 1;
+const PROBLEM_REPAIR_BATCH_VERSION = 2;
 const CLASSIFICATION_REPAIR_BATCH_VERSION = 1;
 const PROBLEM_REVISION_VERSION = 1;
 const CLASSIFICATION_REVISION_VERSION = 1;
@@ -1914,6 +1915,35 @@ function prepareV3RepairRows(
   });
 }
 
+function problemRepairBatchVersionsByContext(
+  stateDir: string,
+  declaredPaths: Set<string>,
+): Map<string, 1 | 2> {
+  const versions = new Map<string, 1 | 2>();
+  const names = listJson(join(stateDir, "problem-repair-batches"), /\.json$/u);
+  const candidates: string[] = [];
+  for (const name of names) {
+    const legacy = /^v1-(\d{4})-(\d{4})-\d{4}-[a-f0-9]{64}\.json$/u.exec(name);
+    const current = /^v2-(\d{4})-(\d{4})-[a-f0-9]{64}\.json$/u.exec(name);
+    const matched = legacy ?? current;
+    if (!matched) throw new Error(`${name}: malformed problem repair batch artifact name`);
+    const context = `${Number(matched[1])}:${Number(matched[2])}`;
+    const version = legacy ? 1 : 2;
+    const prior = versions.get(context);
+    if (prior !== undefined && prior !== version) {
+      throw new Error(`${context}: legacy v1 and cross-page v2 problem repair batches cannot share a context`);
+    }
+    versions.set(context, version);
+    candidates.push(`problem-repair-batches/${name}`);
+  }
+  for (const candidate of candidates) {
+    if (!declaredPaths.has(candidate)) {
+      throw new Error(`${candidate}: problem repair batch is not declared by the terminal audit`);
+    }
+  }
+  return versions;
+}
+
 function verifyV3FirstProblemArtifacts(
   rows: V3RepairRow[],
   stateDir: string,
@@ -1922,6 +1952,10 @@ function verifyV3FirstProblemArtifacts(
   cache: EvidenceCache,
 ): Map<string, ProblemQuestion> {
   const corrected = new Map<string, ProblemQuestion>();
+  const batchVersions = problemRepairBatchVersionsByContext(stateDir, new Set(rows.flatMap((row) =>
+    row.problemArtifact.path.startsWith("problem-repair-batches/")
+      ? [row.problemArtifact.path]
+      : [])));
   for (const [path, group] of groupByArtifact(rows, (row) => row.problemArtifact)) {
     const pointer = group[0].problemArtifact;
     if (/^problem-repairs\/v2-\d{4}-\d{4}\.json$/u.test(path)) {
@@ -1965,12 +1999,20 @@ function verifyV3FirstProblemArtifacts(
     if (ordered.length > 6) throw new Error(`${path}: shared problem repair exceeds six members`);
     const contextFrom = ordered[0].contextFrom;
     const contextTo = ordered[0].contextTo;
-    const sourcePage = ordered[0].sourcePage;
-    if (ordered.some((row) => row.contextFrom !== contextFrom || row.contextTo !== contextTo
-      || row.sourcePage !== sourcePage)) {
-      throw new Error(`${path}: shared problem repair members do not share context/page`);
+    if (ordered.some((row) => row.contextFrom !== contextFrom || row.contextTo !== contextTo)) {
+      throw new Error(`${path}: shared problem repair members do not share context`);
     }
-    const members = ordered.map((row) => ({
+    const context = `${contextFrom}:${contextTo}`;
+    const legacy = path.startsWith(`problem-repair-batches/v${LEGACY_PROBLEM_REPAIR_BATCH_VERSION}-`);
+    const version = legacy ? LEGACY_PROBLEM_REPAIR_BATCH_VERSION : PROBLEM_REPAIR_BATCH_VERSION;
+    if (batchVersions.get(context) !== version) {
+      throw new Error(`${path}: problem repair batch version conflicts with its context`);
+    }
+    const sourcePage = ordered[0].sourcePage;
+    if (legacy && ordered.some((row) => row.sourcePage !== sourcePage)) {
+      throw new Error(`${path}: legacy shared problem repair members do not share a page`);
+    }
+    const members = ordered.map((row) => legacy ? {
       key: row.key,
       printedNumber: row.printedNumber,
       baseProblemCheckpoint: row.baseProblemCheckpoint,
@@ -1980,11 +2022,26 @@ function verifyV3FirstProblemArtifacts(
       baseSolutionCheckpoint: row.baseSolutionCheckpoint,
       baseSolutionItemHash: row.baseSolutionItemHash,
       officialRawAnswerHash: row.officialRawAnswerHash,
-    }));
+    } : {
+      key: row.key,
+      printedNumber: row.printedNumber,
+      sourcePage: row.sourcePage,
+      baseProblemCheckpoint: row.baseProblemCheckpoint,
+      baseQuestionHash: row.baseQuestionHash,
+      baseClassificationCheckpoint: row.baseClassificationCheckpoint,
+      baseClassificationHash: row.baseClassificationHash,
+      baseTranscriptionEvidenceHash: sha256(row.base.classification.transcription_evidence),
+      baseSolutionCheckpoint: row.baseSolutionCheckpoint,
+      baseSolutionItemHash: row.baseSolutionItemHash,
+      officialRawAnswerHash: row.officialRawAnswerHash,
+    });
     const membersDigest = canonicalEvidenceHash(members);
-    const expectedPath = `problem-repair-batches/v${PROBLEM_REPAIR_BATCH_VERSION}-` +
-      `${String(contextFrom).padStart(4, "0")}-${String(contextTo).padStart(4, "0")}-` +
-      `${String(sourcePage).padStart(4, "0")}-${membersDigest}.json`;
+    const expectedPath = legacy
+      ? `problem-repair-batches/v${LEGACY_PROBLEM_REPAIR_BATCH_VERSION}-` +
+        `${String(contextFrom).padStart(4, "0")}-${String(contextTo).padStart(4, "0")}-` +
+        `${String(sourcePage).padStart(4, "0")}-${membersDigest}.json`
+      : `problem-repair-batches/v${PROBLEM_REPAIR_BATCH_VERSION}-` +
+        `${String(contextFrom).padStart(4, "0")}-${String(contextTo).padStart(4, "0")}-${membersDigest}.json`;
     if (path !== expectedPath) throw new Error(`${path}: shared problem repair path/member set is invalid`);
     const checkpoint = readBoundEvidenceCached(cache, stateDir, pointer, path);
     if (!Array.isArray(checkpoint.items)) throw new Error(`${path}: shared problem repair items are missing`);
@@ -1997,12 +2054,15 @@ function verifyV3FirstProblemArtifacts(
     if (byKey.size !== ordered.length || ordered.some((row) => !byKey.has(row.key))) {
       throw new Error(`${path}: shared problem member/output/reference coverage is not exact`);
     }
-    const expectedCheckpoint = {
-      version: PROBLEM_REPAIR_BATCH_VERSION,
+    const commonCheckpoint = {
+      version,
       entryId: entry.id,
       sourceHash: problemEvidence.sha256,
       contextFrom,
       contextTo,
+    };
+    const expectedCheckpoint = legacy ? {
+      ...commonCheckpoint,
       sourcePage,
       membersDigest,
       members,
@@ -2011,6 +2071,21 @@ function verifyV3FirstProblemArtifacts(
       model: "gpt-5.6-sol",
       reasoningEffort: "high",
       items: items.map((item) => item.evidence),
+    } : {
+      ...commonCheckpoint,
+      targetsDigest: membersDigest,
+      members,
+      batchPromptVersion: TARGETED_PROBLEM_BATCH_VERSION,
+      batchPromptDigest: TARGETED_PROBLEM_BATCH_PROMPT_DIGEST,
+      revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+      revisionPromptDigest: TARGETED_PROBLEM_BATCH_REVISION_PROMPT_DIGEST,
+      diagnosticEvidenceHash: sha256(JSON.stringify(ordered.map((row) => ({
+        key: row.key,
+        evidence: row.base.classification.transcription_evidence,
+      })))),
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      items: ordered.map((row) => byKey.get(row.key)!.evidence),
     };
     if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)) {
       throw new Error(`${path}: shared problem repair metadata/content is stale`);
@@ -3770,7 +3845,7 @@ function selectVerificationContract(
   if (result?.version === 3) return CURRENT_CONTRACT;
   const currentGenerationSignal = (
     listJson(join(stateDir, "classification-chunks"), /^v5-\d{4}-[a-f0-9]{16}\.json$/u).length > 0
-    || listJson(join(stateDir, "problem-repair-batches"), /^v1-.*\.json$/u).length > 0
+    || listJson(join(stateDir, "problem-repair-batches"), /^v[12]-.*\.json$/u).length > 0
     || listJson(join(stateDir, "classification-repair-batches"), /^v1-.*\.json$/u).length > 0
     || listJson(join(stateDir, "problem-revision-batches"), /^v1-.*\.json$/u).length > 0
     || listJson(join(stateDir, "classification-revision-batches"), /^v1-.*\.json$/u).length > 0
