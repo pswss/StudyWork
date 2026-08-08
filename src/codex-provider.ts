@@ -149,7 +149,7 @@ export function loadCodexProviderConfig(
       env.STUDYWORK_AI_MAX_CONCURRENCY,
       DEFAULT_CODEX_MAX_CONCURRENCY,
       1,
-      16,
+      11,
       "AI concurrency"
     ),
   };

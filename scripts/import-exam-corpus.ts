@@ -65,7 +65,7 @@ import { MAX_PDF_BYTES, MAX_PDF_PAGES, safeUploadName } from "../src/upload";
 
 export const IMPORT_MODEL = "gpt-5.6-sol";
 export const IMPORT_REASONING_EFFORT = "high" as const;
-export const IMPORT_CONCURRENCY = 15;
+export const IMPORT_CONCURRENCY = 10;
 export function parseImporterFullContextConcurrency(value: string | undefined): number {
   const parsed = value?.trim() ? Number(value) : 5;
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > IMPORT_CONCURRENCY) {
