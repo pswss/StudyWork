@@ -115,6 +115,67 @@ describe("StudyWork Codex facade", () => {
     expect(request.prompt).toContain("Emit only the requested printed problem and no siblings");
   });
 
+  it("공유 지문 한 쪽의 sparse batch target을 각각 정확히 한 번 재전사함", async () => {
+    const document = await PDFDocument.create();
+    for (let page = 0; page < 4; page++) document.addPage([100, 100]);
+    const problem = join(dir, "batch-target.pdf");
+    writeFileSync(problem, await document.save());
+    const item = (number: string) => ({
+      number,
+      qtype: "short",
+      difficulty: "중",
+      question: `[공유 지문 전체] ${number}번`,
+      choices: null,
+      choiceCount: null,
+      answer: number,
+      explanation: "",
+      page: 3,
+      figure: false,
+      figure_description: null,
+      box: null,
+    });
+    providerMock.complete.mockResolvedValueOnce({
+      text: JSON.stringify([item("3"), item("1"), item("2")]),
+      provider: "codex-cli",
+      model: "gpt-5.6-sol",
+    });
+
+    const result = await extractProblemsFromFile(problem, "pdf", {
+      sliceBase: 1,
+      contentPageCount: 4,
+      targets: [
+        { page: 3, printedNumber: "1" },
+        { page: 3, printedNumber: "2" },
+        { page: 3, printedNumber: "3" },
+      ],
+      selfContained: true,
+      reasoningEffort: "high",
+    });
+    expect(result.map((value) => value.number)).toEqual(["3", "1", "2"]);
+    const request = providerMock.complete.mock.calls[0][0];
+    expect(request.prompt).toContain("3:1, 3:2, 3:3");
+    expect(request.prompt).toContain("Emit EVERY listed page:number target exactly once");
+    expect(request.prompt).not.toContain("Emit only the requested printed problem and no siblings");
+
+    const options = {
+      sliceBase: 1,
+      contentPageCount: 4,
+      targets: [
+        { page: 3, printedNumber: "1" },
+        { page: 3, printedNumber: "2" },
+        { page: 3, printedNumber: "3" },
+      ],
+      selfContained: true,
+      reasoningEffort: "high" as const,
+    };
+    providerMock.complete.mockResolvedValueOnce({ text: JSON.stringify([item("1"), item("3")]) });
+    await expect(extractProblemsFromFile(problem, "pdf", options)).rejects.toThrow("sparse key 집합");
+    providerMock.complete.mockResolvedValueOnce({
+      text: JSON.stringify([item("1"), item("2"), item("3"), item("4")]),
+    });
+    await expect(extractProblemsFromFile(problem, "pdf", options)).rejects.toThrow("sparse key 집합");
+  });
+
   it("기존 쪽을 신뢰하지 않고 bounded context에서 지정 해설 번호만 high로 재전사함", async () => {
     const document = await PDFDocument.create();
     for (let page = 0; page < 6; page++) document.addPage([100, 100]);

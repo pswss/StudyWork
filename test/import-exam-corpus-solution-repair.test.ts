@@ -164,6 +164,18 @@ describe("exam corpus official solution repair", () => {
       reasoningEffort?: string;
     }) => {
       expect(request.reasoningEffort).toBe("high");
+      if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
+        const inputs = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{ key: string }>;
+        return {
+          text: JSON.stringify(inputs.map((input) => ({
+            key: input.key,
+            status: "exact",
+            evidence: "공식 문제 픽셀과 최종 전사가 일치한다.",
+          }))),
+          provider: "codex-cli",
+          model: "gpt-5.6-sol",
+        };
+      }
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
         const attached = await PDFDocument.load(readFileSync(request.file!.path));
         if (attached.getPageCount() === 22) {
@@ -241,8 +253,8 @@ describe("exam corpus official solution repair", () => {
     expect(SOLUTION_FIDELITY_SLICE_STRIDE).toBe(18);
     expect(SOLUTION_REPAIR_VERSION).toBe(1);
     expect(SOLUTION_REPAIR_FIDELITY_VERSION).toBe(1);
-    expect(ANSWER_AUDIT_VERSION).toBe(2);
-    expect(ANSWER_ATTESTATION_VERSION).toBe(2);
+    expect(ANSWER_AUDIT_VERSION).toBe(3);
+    expect(ANSWER_ATTESTATION_VERSION).toBe(3);
     expect(SOLUTION_FIDELITY_PROMPT_DIGEST).toMatch(/^[a-f0-9]{64}$/u);
     expect(sha256(readFileSync(baseChunkPath))).toBe(baseChunkHash);
     expect(repaired.solutionRepairs).toHaveLength(1);
@@ -265,7 +277,7 @@ describe("exam corpus official solution repair", () => {
       answerStatus: "exact",
       explanationStatus: "exact",
     })]);
-    expect(repaired.auditPath).toMatch(/^answer-audit\/v2-[a-f0-9]{64}\.json$/u);
+    expect(repaired.auditPath).toMatch(/^answer-audit\/v3-[a-f0-9]{64}\.json$/u);
 
     const imported = matchOfficialSolutions(entry, repaired.classified, repaired.solutions);
     expect(imported).toHaveLength(1);
@@ -289,7 +301,7 @@ describe("exam corpus official solution repair", () => {
       { version: 2, status: "committed", entryId: entry.id },
       repaired
     );
-    expect(attestation.path).toMatch(/^answer-attestation\/v2-[a-f0-9]{64}\.json$/u);
+    expect(attestation.path).toMatch(/^answer-attestation\/v3-[a-f0-9]{64}\.json$/u);
     const attested = JSON.parse(readFileSync(join(root, attestation.path), "utf8"));
     expect(attested).toMatchObject({
       solutionFidelityVersion: 1,

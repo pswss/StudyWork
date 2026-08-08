@@ -41,7 +41,7 @@ const sha256 = (value: Uint8Array | string) => createHash("sha256").update(value
 async function fixture(id: string, targetNumber: number, mcq = false) {
   root = mkdtempSync(join(tmpdir(), "studywork-solution-revision-"));
   const problemDocument = await PDFDocument.create();
-  problemDocument.addPage([100, 100]);
+  for (let page = 0; page < 11; page++) problemDocument.addPage([100, 100]);
   const solutionDocument = await PDFDocument.create();
   for (let page = 0; page < 22; page++) solutionDocument.addPage([100, 100]);
   const problemBytes = await problemDocument.save();
@@ -69,7 +69,7 @@ async function fixture(id: string, targetNumber: number, mcq = false) {
     }],
   }).entries[0];
   const problem: PdfEvidence = {
-    path: problemPath, sha256: sha256(problemBytes), bytes: problemBytes.length, pageCount: 1,
+    path: problemPath, sha256: sha256(problemBytes), bytes: problemBytes.length, pageCount: 11,
     requestedUrl: entry.problemPdfUrl, resolvedUrl: entry.problemPdfUrl,
   };
   const solution: PdfEvidence = {
@@ -150,6 +150,14 @@ describe("exam corpus official solution revision", () => {
     providerMock.complete.mockImplementation(async (request: {
       schema?: { name?: string }; prompt: string; file?: { path: string };
     }) => {
+      if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
+        const inputs = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{ key: string }>;
+        return { text: JSON.stringify(inputs.map((input) => ({
+          key: input.key,
+          status: "exact",
+          evidence: "공식 문제 픽셀과 최종 전사가 일치한다.",
+        }))) };
+      }
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
         const pages = (await PDFDocument.load(readFileSync(request.file!.path))).getPageCount();
         if (pages === 22) {
@@ -222,6 +230,14 @@ describe("exam corpus official solution revision", () => {
     providerMock.complete.mockImplementation(async (request: {
       schema?: { name?: string }; prompt: string; file?: { path: string };
     }) => {
+      if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
+        const inputs = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{ key: string }>;
+        return { text: JSON.stringify(inputs.map((input) => ({
+          key: input.key,
+          status: "exact",
+          evidence: "공식 문제 픽셀과 최종 전사가 일치한다.",
+        }))) };
+      }
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
         const pages = (await PDFDocument.load(readFileSync(request.file!.path))).getPageCount();
         if (pages === 22) {
@@ -260,7 +276,7 @@ describe("exam corpus official solution revision", () => {
     const revision = repaired.solutionRepairs[0].revision!;
     expect(revision.trigger).toMatchObject({
       kind: "semantic",
-      semanticCheckpoint: { path: expect.stringMatching(/^semantic-choice-checks\/v3-/u) },
+      semanticCheckpoint: { path: expect.stringMatching(/^semantic-choice-checks\/v4-/u) },
       semanticDecisionHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
     });
     const revisionArtifact = JSON.parse(readFileSync(join(root, revision.solutionArtifact.path), "utf8"));

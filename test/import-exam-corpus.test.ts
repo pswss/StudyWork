@@ -31,6 +31,7 @@ import {
   canonicalEvidenceHash,
   compareCorpusQuestionKeys,
   commitCorpusEntry,
+  createImporterAiScheduler,
   ensureCanonicalSubjects,
   examBookTitle,
   isAllowedAchievementCode,
@@ -54,6 +55,29 @@ import {
 const execFileP = promisify(execFile);
 
 describe("exam corpus importer", () => {
+  it("caps mixed AI work at total 10 and full-context 5", async () => {
+    const scheduler = createImporterAiScheduler(10, 5);
+    let total = 0;
+    let full = 0;
+    let maxTotal = 0;
+    let maxFull = 0;
+    const run = async (isFull: boolean) => {
+      total++;
+      if (isFull) full++;
+      maxTotal = Math.max(maxTotal, total);
+      maxFull = Math.max(maxFull, full);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      total--;
+      if (isFull) full--;
+    };
+    await Promise.all([
+      ...Array.from({ length: 20 }, () => scheduler.targeted(() => run(false))),
+      ...Array.from({ length: 10 }, () => scheduler.full(() => run(true))),
+    ]);
+    expect(maxTotal).toBeLessThanOrEqual(10);
+    expect(maxFull).toBeLessThanOrEqual(5);
+  });
+
   it("uses one stable canonical evidence hash vector", () => {
     expect(canonicalEvidenceHash({ b: 1, a: ["x", null] }))
       .toBe("2dccb31ca7d4b9dc00ebe9e1b2fca5314ca2563469fbf6ba1c69752939768835");
@@ -62,11 +86,11 @@ describe("exam corpus importer", () => {
   });
 
   it("defines the q20 same-target and q29 excluded-dependency boundary", () => {
-    expect(CLASSIFIER_VERSION).toBe(4);
+    expect(CLASSIFIER_VERSION).toBe(5);
     expect(PROBLEM_REPAIR_VERSION).toBe(2);
-    expect(CLASSIFICATION_REPAIR_VERSION).toBe(3);
-    expect(SEMANTIC_CHOICE_CHECK_VERSION).toBe(3);
-    expect(TRANSCRIPTION_GATE_VERSION).toBe(1);
+    expect(CLASSIFICATION_REPAIR_VERSION).toBe(4);
+    expect(SEMANTIC_CHOICE_CHECK_VERSION).toBe(4);
+    expect(TRANSCRIPTION_GATE_VERSION).toBe(2);
     expect(TRANSCRIPTION_PROMPT_DIGEST).toMatch(/^[a-f0-9]{64}$/u);
     expect(SOLUTION_FIDELITY_VERSION).toBe(1);
     expect(SOLUTION_FIDELITY_PROMPT_DIGEST).toMatch(/^[a-f0-9]{64}$/u);
@@ -77,6 +101,8 @@ describe("exam corpus importer", () => {
     expect(TRANSCRIPTION_GATE_RULES).toContain("every answer choice and distractor");
     expect(TRANSCRIPTION_GATE_RULES).toContain("Base the curriculum decision on the source pixels");
     expect(TRANSCRIPTION_GATE_RULES).toContain("reject and review items still require this source check");
+    expect(TRANSCRIPTION_GATE_RULES).toContain("Any summary, abridgment, omission, or paraphrase is mismatch");
+    expect(TRANSCRIPTION_GATE_RULES).toContain("genuinely non-text visual glyph");
     expect(CURRICULUM_RULES).toContain(
       "If every necessary concept belongs to one canonical subject, accept under that canonical subject even when multiple domains or codes are required"
     );
@@ -291,7 +317,7 @@ describe("exam corpus importer", () => {
         rulesDigest: "stale",
       }, entry.id)).toThrow("transcription gate가 오래되었습니다");
       expect(validateFilteredResult({
-        version: 2,
+        version: 3,
         status: "filtered",
         entryId: entry.id,
         reason: "NO_IN_SCOPE_QUESTIONS",
@@ -299,6 +325,7 @@ describe("exam corpus importer", () => {
         classifierVersion: CLASSIFIER_VERSION,
         transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
         transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+        answerAudit: { path: "answer-audit/v3-test.json", sha256: "test" },
       }, entry.id)).toBe("NO_IN_SCOPE_QUESTIONS");
       expect(() => parseCorpusManifest({
         schemaVersion: 2,

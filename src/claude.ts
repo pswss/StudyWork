@@ -1188,6 +1188,13 @@ export const TARGETED_PROBLEM_TRANSCRIPTION_RULES =
   `inequality endpoints, signs, coefficients, exponents, radicals, fractions, pi factors, and every answer choice. ` +
   `Do not preserve, infer from, or repair toward any prior transcription or supplied answer.`;
 
+export const TARGETED_PROBLEM_BATCH_VERSION = 1;
+export const TARGETED_PROBLEM_BATCH_RULES =
+  `TARGETED BATCH CORRECTION: Emit EVERY listed page:number target exactly once and emit no other problems. ` +
+  `For each target, inspect the entire bounded context, including earlier or later pages containing required shared ` +
+  `passages, tables, figures, or <보기>. Re-read every character from source pixels; never summarize, paraphrase, ` +
+  `infer from, or repair toward a prior transcription or supplied answer.`;
+
 export const TARGETED_PROBLEM_REVISION_VERSION = 1;
 export const TARGETED_PROBLEM_REVISION_RULES =
   `SECOND SOURCE-GROUNDED REVISION: A previous independent source check found a possible transcription mismatch. ` +
@@ -1315,6 +1322,7 @@ export async function extractProblemsFromFile(
     answerKeyPages?: number[];
     selfContained?: boolean;
     target?: { page: number; printedNumber: string };
+    targets?: Array<{ page: number; printedNumber: string }>;
     revisionEvidence?: string;
     reasoningEffort?: ReasoningEffort;
   }
@@ -1328,14 +1336,24 @@ export async function extractProblemsFromFile(
   const firstPage = opts?.sliceBase ?? 1;
   const lastPage = firstPage + contentPageCount - 1;
   const target = opts?.target;
+  const targets = opts?.targets;
+  if (target && targets) throw new AIProviderError("invalid_file", "문제 단일·복수 target을 함께 지정할 수 없습니다");
   const targetNumber = target ? numericPrintedLocator(target.printedNumber) : null;
+  const targetList = target ? [target] : targets ?? [];
+  const targetKeys = new Set(targetList.map((item) => `${item.page}:${numericPrintedLocator(item.printedNumber)}`));
   const revisionEvidence = opts?.revisionEvidence;
   if (target && (
     !Number.isInteger(target.page) || target.page < firstPage || target.page > lastPage || targetNumber === null
   )) throw new AIProviderError("invalid_file", "문제 재전사 대상 페이지 또는 인쇄 번호가 유효하지 않습니다");
+  if (targets && (
+    targets.length < 1 || targets.length > 6 || targetKeys.size !== targets.length ||
+    targets.some((item) => !Number.isInteger(item.page) || item.page < firstPage || item.page > lastPage ||
+      numericPrintedLocator(item.printedNumber) === null) ||
+    new Set(targets.map((item) => item.page)).size !== 1
+  )) throw new AIProviderError("invalid_file", "문제 batch 재전사 target이 유효하지 않습니다");
   if (revisionEvidence !== undefined && (
-    !target || !revisionEvidence.trim() || revisionEvidence !== revisionEvidence.trim() ||
-    revisionEvidence.includes("\0") || revisionEvidence.length > 2000
+    targetList.length === 0 || !revisionEvidence.trim() || revisionEvidence !== revisionEvidence.trim() ||
+    revisionEvidence.includes("\0") || revisionEvidence.length > (targets ? 16_000 : 2_000)
   )) throw new AIProviderError("invalid_file", "문제 revision 근거가 유효하지 않습니다");
   const pageRule =
     opts?.sliceBase !== undefined
@@ -1345,15 +1363,19 @@ export async function extractProblemsFromFile(
     ? ` The final ${opts.answerKeyPages.length} attached page image(s) show possible official answer-table pages from original PDF pages ${opts.answerKeyPages.join(", ")}. Use them only as answer references; never emit their rows as problems.`
     : "";
   const readInstruction = kind === "pdf"
-    ? target
-      ? `Read the attached bounded context for original document pages ${firstPage}-${lastPage}, locate printed ` +
-        `problem ${targetNumber} on page ${target.page}, and use surrounding pages only for source material ` +
-        `required to make that one problem self-contained.`
+    ? targetList.length > 0
+      ? target
+        ? `Read the attached bounded context for original document pages ${firstPage}-${lastPage}, locate printed problem ` +
+          `${targetNumber} starting on page ${target.page}. Use surrounding pages only for source material required to make ` +
+          `that requested problem self-contained.`
+        : `Read the attached bounded context for original document pages ${firstPage}-${lastPage}, locate exactly ` +
+          `these printed problems: ${targetList.map((item) => `${item.page}:${numericPrintedLocator(item.printedNumber)}`).join(", ")}. ` +
+          `Use surrounding pages only for source material required to make each requested problem self-contained.`
       : `Read the first ${contentPageCount} attached page image(s) as original document pages ${firstPage}-${lastPage}; cover that content range without gaps.${answerKeyNote}`
     : `Read the attached file "${absPath}".`;
   const selfContainedRule = problemExtractionSelfContainedRule(opts?.selfContained === true);
-  const extractionTask = target
-    ? `${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n` + (revisionEvidence === undefined ? "" :
+  const extractionTask = targetList.length > 0
+    ? `${targets ? TARGETED_PROBLEM_BATCH_RULES : TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n` + (revisionEvidence === undefined ? "" :
       `${TARGETED_PROBLEM_REVISION_RULES}\n` +
       `${TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX} ${JSON.stringify(revisionEvidence)}\n`)
     : `This file is a study workbook. Read all pages and transcribe EVERY problem you find as this strict JSON array:\n` +
@@ -1412,19 +1434,35 @@ export async function extractProblemsFromFile(
     if (added === 0) {
       throw new ProblemChunkValidationError("문제 추출 이어받기 실패: 새로 복구된 항목이 없습니다");
     }
-    const last = all[all.length - 1];
-    cont =
-      `\n\nIMPORTANT: your previous JSON was CUT OFF by the output limit. You already listed problems up to ` +
-      `page ${last?.page ?? "?"} ("${(last?.question ?? "").slice(0, 30)}..."). Continue from the very NEXT problem after that ` +
-      `and output ONLY the problems you have NOT listed yet, as the same JSON array. Do NOT repeat earlier problems.`;
+    if (targetList.length > 0) {
+      const emitted = new Set(all.map((item) => `${item.page}:${numericPrintedLocator(item.number)}`));
+      const missing = targetList.filter((item) =>
+        !emitted.has(`${item.page}:${numericPrintedLocator(item.printedNumber)}`)
+      );
+      if (missing.length === 0) {
+        complete = true;
+        break;
+      }
+      cont = `\n\nIMPORTANT: the previous JSON was cut off. Emit ONLY these still-missing targets exactly once: ` +
+        `${missing.map((item) => `${item.page}:${numericPrintedLocator(item.printedNumber)}`).join(", ")}. ` +
+        `Do not repeat any target already returned.`;
+    } else {
+      const last = all[all.length - 1];
+      cont =
+        `\n\nIMPORTANT: your previous JSON was CUT OFF by the output limit. You already listed problems up to ` +
+        `page ${last?.page ?? "?"} ("${(last?.question ?? "").slice(0, 30)}..."). Continue from the very NEXT problem after that ` +
+        `and output ONLY the problems you have NOT listed yet, as the same JSON array. Do NOT repeat earlier problems.`;
+    }
   }
   if (!complete) {
     throw new ProblemChunkValidationError("문제 추출 실패: 응답이 6회 연속 출력 한도에서 잘렸습니다");
   }
-  try {
-    validatePrintedQuestionSequence(all);
-  } catch (error) {
-    throw new ProblemChunkValidationError(error instanceof Error ? error.message : "인쇄 문제 번호 검증 실패");
+  if (targetList.length === 0) {
+    try {
+      validatePrintedQuestionSequence(all);
+    } catch (error) {
+      throw new ProblemChunkValidationError(error instanceof Error ? error.message : "인쇄 문제 번호 검증 실패");
+    }
   }
   if (target && (
     all.length !== 1 || numericPrintedLocator(all[0].number) !== targetNumber || all[0].page !== target.page
@@ -1432,6 +1470,12 @@ export async function extractProblemsFromFile(
     throw new ProblemChunkValidationError(
       `문제 재전사는 원본 ${target.page}쪽 ${targetNumber}번을 정확히 한 번 반환해야 합니다`
     );
+  }
+  if (targets) {
+    const actual = new Set(all.map((item) => `${item.page}:${numericPrintedLocator(item.number)}`));
+    if (all.length !== targetKeys.size || actual.size !== targetKeys.size || [...actual].some((key) => !targetKeys.has(key))) {
+      throw new ProblemChunkValidationError("문제 batch 재전사가 요청한 sparse key 집합과 다릅니다");
+    }
   }
   return all;
 }

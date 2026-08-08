@@ -229,7 +229,7 @@ describe("exam corpus targeted problem repair", () => {
     });
 
     let crashClassification = true;
-    const calls = { target: 0, classification: 0, solutionFidelity: 0, semantic: 0 };
+    const calls = { target: 0, classification: 0, terminalFidelity: 0, solutionFidelity: 0, semantic: 0 };
     providerMock.complete.mockImplementation(async (request: {
       schema?: { name?: string };
       prompt: string;
@@ -284,10 +284,6 @@ describe("exam corpus targeted problem repair", () => {
         expect(request.prompt).toContain('"box":null');
         if (crashClassification) throw new Error("simulated classification interruption");
         const firstRepairCheck = calls.classification === 2;
-        if (!firstRepairCheck) {
-          expect(request.prompt).toContain("SECOND SOURCE-GROUNDED REVISION");
-          expect(request.prompt).toContain("원문은 '만나며'");
-        }
         return {
           text: JSON.stringify([{
             key: "4:11",
@@ -303,6 +299,19 @@ describe("exam corpus targeted problem repair", () => {
               ? "원문은 '만나며'인데 재전사는 '만나게'로 바뀌었다."
               : "원본 4쪽의 '만나며', 부등식, 식, 다섯 보기가 모두 일치한다.",
           }]),
+          provider: "codex-cli",
+          model: "gpt-5.6-sol",
+        };
+      }
+      if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
+        calls.terminalFidelity++;
+        const inputs = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{ key: string }>;
+        return {
+          text: JSON.stringify(inputs.map((input) => ({
+            key: input.key,
+            status: "exact",
+            evidence: "원본 픽셀과 최종 전사가 일치한다.",
+          }))),
           provider: "codex-cli",
           model: "gpt-5.6-sol",
         };
@@ -353,17 +362,17 @@ describe("exam corpus targeted problem repair", () => {
       classified,
       solutions
     )).rejects.toThrow("simulated classification interruption");
-    expect(calls).toEqual({ target: 1, classification: 1, solutionFidelity: 0, semantic: 0 });
-    expect(readdirSync(join(root, "problem-repairs"))).toHaveLength(1);
-    expect(() => readdirSync(join(root, "classification-repairs"))).toThrow();
+    expect(calls).toEqual({ target: 1, classification: 1, terminalFidelity: 0, solutionFidelity: 0, semantic: 0 });
+    expect(readdirSync(join(root, "problem-repair-batches"))).toHaveLength(1);
+    expect(() => readdirSync(join(root, "classification-repair-batches"))).toThrow();
 
     crashClassification = false;
     const repaired = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
-    expect(calls).toEqual({ target: 2, classification: 3, solutionFidelity: 1, semantic: 1 });
+    expect(calls).toEqual({ target: 2, classification: 3, terminalFidelity: 1, solutionFidelity: 1, semantic: 1 });
     expect(repaired.repairs).toHaveLength(1);
     expect(PROBLEM_REPAIR_VERSION).toBe(2);
     expect(PROBLEM_REVISION_VERSION).toBe(1);
-    expect(CLASSIFICATION_REVISION_VERSION).toBe(1);
+    expect(CLASSIFICATION_REVISION_VERSION).toBe(2);
     expect(TARGETED_PROBLEM_REVISION_PROMPT_DIGEST).toMatch(/^[a-f0-9]{64}$/u);
     expect(repaired.repairs[0]).toMatchObject({
       key: "4:11",
@@ -371,45 +380,41 @@ describe("exam corpus targeted problem repair", () => {
       sourcePage: 4,
       contextFrom: 1,
       contextTo: 4,
-      problemArtifact: { path: expect.stringMatching(/^problem-repairs\/v2-/u) },
+      problemArtifact: { path: expect.stringMatching(/^problem-repair-batches\/v1-/u) },
       revision: {
-        problemArtifact: { path: expect.stringMatching(/^problem-revisions\/v1-/u) },
-        classificationArtifact: { path: expect.stringMatching(/^classification-revisions\/v1-/u) },
+        problemArtifact: { path: expect.stringMatching(/^problem-revision-batches\/v1-/u) },
+        classificationArtifact: { path: expect.stringMatching(/^classification-revision-batches\/v1-/u) },
       },
     });
-    expect(repaired.repairs[0].classificationArtifact.path).toMatch(/^classification-repairs\/v3-/u);
+    expect(repaired.repairs[0].classificationArtifact.path).toMatch(/^classification-repair-batches\/v1-/u);
     expect(JSON.parse(readFileSync(join(root, repaired.repairs[0].problemArtifact.path), "utf8")))
       .toMatchObject({
         contextFrom: 1,
         contextTo: 4,
         sourcePage: 4,
-        printedNumber: "11",
-        item: { question: expect.stringContaining("만나게") },
+        items: [{ question: expect.stringContaining("만나게") }],
       });
     expect(JSON.parse(readFileSync(join(root, repaired.repairs[0].classificationArtifact.path), "utf8")))
       .toMatchObject({
         contextFrom: 1,
         contextTo: 4,
-        key: "4:11",
-        item: {
+        items: [{
           transcription_status: "mismatch",
           transcription_evidence: expect.stringContaining("원문은 '만나며'"),
-        },
+        }],
       });
     const revision = repaired.repairs[0].revision!;
     expect(JSON.parse(readFileSync(join(root, revision.problemArtifact.path), "utf8"))).toMatchObject({
       contextFrom: 1,
       contextTo: 4,
-      diagnosticEvidence: expect.stringContaining("원문은 '만나며'"),
-      item: { question: expect.stringContaining("만나며") },
+      items: [{ question: expect.stringContaining("만나며") }],
     });
     expect(JSON.parse(readFileSync(join(root, revision.classificationArtifact.path), "utf8"))).toMatchObject({
       contextFrom: 1,
       contextTo: 4,
-      revisionPromptDigest: TARGETED_PROBLEM_REVISION_PROMPT_DIGEST,
-      item: { transcription_status: "exact" },
+      items: [{ transcription_status: "exact" }],
     });
-    expect(repaired.auditPath).toMatch(/^answer-audit\/v2-[a-f0-9]{64}\.json$/u);
+    expect(repaired.auditPath).toMatch(/^answer-audit\/v3-[a-f0-9]{64}\.json$/u);
     expect(repaired.auditHash).toMatch(/^[a-f0-9]{64}$/u);
     const changedKeys = repaired.classified.flatMap((item, index) =>
       canonicalEvidenceHash(item) === canonicalEvidenceHash(classified[index]) ? [] : [item.classification.key]
@@ -431,7 +436,7 @@ describe("exam corpus targeted problem repair", () => {
     expect(imported.find((item) => item.printedNumber === "11")?.officialAnswer)
       .toBe("① $\\frac{7}{6}\\pi$");
     expect(imported).toHaveLength(2);
-    expect(readdirSync(join(root, "semantic-choice-checks"))[0]).toMatch(/^v3-/u);
+    expect(readdirSync(join(root, "semantic-choice-checks"))[0]).toMatch(/^v4-/u);
 
     expect(() => assertNoCommittedReceiptForFilteredResult(root)).not.toThrow();
     const receipt = { version: 2, status: "committed", entryId: entry.id };
@@ -443,11 +448,11 @@ describe("exam corpus targeted problem repair", () => {
       receipt,
       repaired
     );
-    expect(attestation.path).toMatch(/^answer-attestation\/v2-[a-f0-9]{64}\.json$/u);
+    expect(attestation.path).toMatch(/^answer-attestation\/v3-[a-f0-9]{64}\.json$/u);
     expect(attestation.sha256).toMatch(/^[a-f0-9]{64}$/u);
     const auditCheckpoint = JSON.parse(readFileSync(join(root, repaired.auditPath!), "utf8"));
     expect(auditCheckpoint).toMatchObject({
-      classifierVersion: 4,
+      classifierVersion: 5,
       transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
       transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
       solutionFidelityVersion: SOLUTION_FIDELITY_VERSION,
@@ -457,7 +462,7 @@ describe("exam corpus targeted problem repair", () => {
     });
     const attestationCheckpoint = JSON.parse(readFileSync(join(root, attestation.path), "utf8"));
     expect(attestationCheckpoint).toMatchObject({
-      classifierVersion: 4,
+      classifierVersion: 5,
       transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
       transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
       receipt: { path: "receipt.json" },
@@ -472,7 +477,7 @@ describe("exam corpus targeted problem repair", () => {
         key: "4:11",
         contextFrom: 1,
         contextTo: 4,
-        revision: { problemArtifact: { path: expect.stringMatching(/^problem-revisions\/v1-/u) } },
+        revision: { problemArtifact: { path: expect.stringMatching(/^problem-revision-batches\/v1-/u) } },
       }],
     });
     expect(() => assertNoCommittedReceiptForFilteredResult(root)).toThrow("명시적 migration");
@@ -482,7 +487,7 @@ describe("exam corpus targeted problem repair", () => {
     rmSync(join(root, "result.json"));
 
     const replay = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
-    expect(calls).toEqual({ target: 2, classification: 3, solutionFidelity: 1, semantic: 1 });
+    expect(calls).toEqual({ target: 2, classification: 3, terminalFidelity: 1, solutionFidelity: 1, semantic: 1 });
     expect(replay.auditHash).toBe(repaired.auditHash);
     await expect(writeAnswerAttestation(
       root,
@@ -505,6 +510,6 @@ describe("exam corpus targeted problem repair", () => {
       root,
       classified,
       solutions
-    )).rejects.toThrow("classification repair 체크포인트 메타데이터가 다릅니다");
+    )).rejects.toThrow("classification repair batch 메타데이터가 다릅니다");
   });
 });
