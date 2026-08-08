@@ -1007,6 +1007,13 @@ export function commitSemanticSolutionRevisionTriggers<T>(
   return true;
 }
 
+export function invalidateSemanticSolutionRevisionTriggers<T>(
+  triggers: Map<string, T>,
+  problemCorpusChanged: boolean
+): void {
+  if (problemCorpusChanged) triggers.clear();
+}
+
 function restoredQuizItems(value: unknown): QuizItemEx[] {
   if (!Array.isArray(value)) throw new Error("문제 체크포인트 items가 배열이 아닙니다");
   return parseQuizItemsEx(JSON.stringify(value.map((item) => {
@@ -2581,7 +2588,8 @@ async function semanticChoiceCheckpoint(
 ): Promise<{ decisions: SemanticChoiceDecision[]; path: string; sha256: string; inputHash: string }> {
   const inputHash = canonicalEvidenceHash(inputs);
   const relativePath = solutionRevisionApplied
-    ? `semantic-choice-checks/v${SEMANTIC_CHOICE_CHECK_VERSION}-${effectiveSolutionCorpusHash}-${inputHash}.json`
+    ? `semantic-choice-checks/v${SEMANTIC_CHOICE_CHECK_VERSION}-` +
+      `${effectiveCorpusHash}-${effectiveSolutionCorpusHash}-${inputHash}.json`
     : `semantic-choice-checks/v${SEMANTIC_CHOICE_CHECK_VERSION}-${inputHash}.json`;
   const path = join(stateDir, relativePath);
   let checkpoint: Record<string, unknown>;
@@ -3122,6 +3130,7 @@ export async function repairAndAuditOfficialAnswers(
       effectiveKeys.some((key) => !baseByKey.has(key))
     ) throw new Error("문제 repair가 원본 key 집합을 바꾸었습니다");
     validateProblemNumberRange(entry, effective);
+    invalidateSemanticSolutionRevisionTriggers(solutionRevisionTriggers, changed);
     return changed;
   };
 

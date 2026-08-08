@@ -17,6 +17,7 @@ import {
   SOLUTION_REVISION_VERSION,
   TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
   commitSemanticSolutionRevisionTriggers,
+  invalidateSemanticSolutionRevisionTriggers,
   parseCorpusManifest,
   repairAndAuditOfficialAnswers,
   type ClassificationDecision,
@@ -129,6 +130,8 @@ describe("exam corpus official solution revision", () => {
     expect(committed.size).toBe(0);
     expect(commitSemanticSolutionRevisionTriggers(committed, new Map([["11:1", "fresh"]]), 0)).toBe(true);
     expect(committed.get("11:1")).toBe("fresh");
+    invalidateSemanticSolutionRevisionTriggers(committed, true);
+    expect(committed.size).toBe(0);
   });
 
   it("revises Q28 once after a failed repair audit and replays immutable evidence", async () => {
@@ -258,7 +261,9 @@ describe("exam corpus official solution revision", () => {
     const priorSemantic = JSON.parse(readFileSync(join(root, revision.trigger.semanticCheckpoint!.path), "utf8"));
     const finalSemantic = JSON.parse(readFileSync(join(root, audit.semanticCheckpoint.path), "utf8"));
     expect(finalSemantic.inputHash).toBe(priorSemantic.inputHash);
-    expect(audit.semanticCheckpoint.path).toContain(repaired.effectiveSolutionCorpusHash!);
+    expect(audit.semanticCheckpoint.path).toContain(
+      `${audit.effectiveCorpusHash}-${repaired.effectiveSolutionCorpusHash}`
+    );
     const beforeReplay = { ...calls };
     const replay = await repairAndAuditOfficialAnswers(
       data.entry, data.problem, data.solution, root, data.classified, data.solutions
