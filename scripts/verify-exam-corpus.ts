@@ -276,7 +276,10 @@ const SOLUTION_REPAIR_VERSION = 1;
 const SOLUTION_REPAIR_FIDELITY_VERSION = 1;
 const SOLUTION_REVISION_VERSION = 1;
 const SOLUTION_REVISION_FIDELITY_VERSION = 1;
-const PROBLEM_TERMINAL_FIDELITY_VERSION = 1;
+const LEGACY_PROBLEM_TERMINAL_FIDELITY_VERSION = 1;
+const PROBLEM_TERMINAL_FIDELITY_VERSION = 2;
+const PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST =
+  "ebb005195877305dc3416d3158d7bd9765c4c7fa425a3e7fd28b46280df2cbf2";
 const LEGACY_TRANSCRIPTION_GATE_VERSION = 1;
 const LEGACY_TRANSCRIPTION_GATE_RULES = `
 Independently compare every supplied transcription with the attached official source pixels. Check the complete shared passage and source material, the full stem, every answer choice and distractor, inequalities, signs, coefficients, exponents, fractions, formulas, tables, qtype, and all figure or visual dependencies including figure_description. Check that box plausibly covers the source problem and figure, without requiring pixel-perfect crop decimals. Do not infer fidelity from plausibility or from the proposed answer. Base the curriculum decision on the source pixels, not on an inaccurate supplied transcription.
@@ -347,13 +350,15 @@ const TARGETED_SOLUTION_REVISION_PROMPT_DIGEST = sha256(
 );
 
 type VerificationContract = {
-  auditVersion: 2 | 3;
-  attestationVersion: 2 | 3;
+  auditVersion: 2 | 3 | 4;
+  attestationVersion: 2 | 3 | 4;
   classifierVersion: 4 | 5;
   transcriptionGateVersion: 1 | 2;
   transcriptionPromptDigest: string;
   semanticChoiceVersion: 3 | 4;
   semanticPromptDigest: string;
+  problemTerminalFidelityVersion: 1 | 2 | null;
+  problemTerminalScopePromptDigest: string | null;
 };
 
 const LEGACY_CONTRACT: VerificationContract = {
@@ -364,9 +369,11 @@ const LEGACY_CONTRACT: VerificationContract = {
   transcriptionPromptDigest: LEGACY_TRANSCRIPTION_PROMPT_DIGEST,
   semanticChoiceVersion: LEGACY_ANSWER_SEMANTIC_CHOICE_VERSION,
   semanticPromptDigest: LEGACY_ANSWER_SEMANTIC_CHOICE_PROMPT_DIGEST,
+  problemTerminalFidelityVersion: null,
+  problemTerminalScopePromptDigest: null,
 };
 
-const CURRENT_CONTRACT: VerificationContract = {
+const V3_CONTRACT: VerificationContract = {
   auditVersion: 3,
   attestationVersion: 3,
   classifierVersion: CLASSIFIER_VERSION,
@@ -374,6 +381,16 @@ const CURRENT_CONTRACT: VerificationContract = {
   transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
   semanticChoiceVersion: SEMANTIC_CHOICE_VERSION,
   semanticPromptDigest: SEMANTIC_CHOICE_PROMPT_DIGEST,
+  problemTerminalFidelityVersion: LEGACY_PROBLEM_TERMINAL_FIDELITY_VERSION,
+  problemTerminalScopePromptDigest: null,
+};
+
+const CURRENT_CONTRACT: VerificationContract = {
+  ...V3_CONTRACT,
+  auditVersion: 4,
+  attestationVersion: 4,
+  problemTerminalFidelityVersion: PROBLEM_TERMINAL_FIDELITY_VERSION,
+  problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
 };
 
 const OFFICIAL_CIRCLED_ANSWERS = "①②③④⑤⑥⑦⑧⑨⑩";
@@ -1549,7 +1566,15 @@ type ProblemTerminalFidelityItem = {
   key: string;
   status: "exact" | "mismatch" | "unverifiable";
   evidence: string;
-};
+} & ({
+  scopeDecision: "accept" | "reject" | "review";
+  scopeConfidence: number;
+  scopeEvidence: string;
+} | {
+  scopeDecision?: never;
+  scopeConfidence?: never;
+  scopeEvidence?: never;
+});
 
 type ProblemTerminalFidelityCheckpoint = EvidencePointer & {
   from: number;
@@ -1637,19 +1662,41 @@ function problemTerminalInput(record: ClassifiedEvidence): Record<string, unknow
   };
 }
 
-function parseProblemTerminalFidelityItem(value: unknown, label: string): ProblemTerminalFidelityItem {
+function parseProblemTerminalFidelityItem(
+  value: unknown,
+  label: string,
+  contract: VerificationContract,
+): ProblemTerminalFidelityItem {
   const row = object(value, label);
-  if (Object.keys(row).sort().join(",") !== "evidence,key,status") {
+  const scoped = contract.problemTerminalFidelityVersion === PROBLEM_TERMINAL_FIDELITY_VERSION;
+  const expectedFields = scoped
+    ? "evidence,key,scopeConfidence,scopeDecision,scopeEvidence,status"
+    : "evidence,key,status";
+  if (Object.keys(row).sort().join(",") !== expectedFields) {
     throw new Error(`${label} has unexpected fields`);
   }
   const status = row.status;
   if (status !== "exact" && status !== "mismatch" && status !== "unverifiable") {
     throw new Error(`${label}.status is invalid`);
   }
-  return {
+  const base = {
     key: exactString(row.key, `${label}.key`),
-    status,
+    status: status as ProblemTerminalFidelityItem["status"],
     evidence: exactString(row.evidence, `${label}.evidence`),
+  };
+  if (!scoped) return base;
+  if (row.scopeDecision !== "accept" && row.scopeDecision !== "reject" && row.scopeDecision !== "review") {
+    throw new Error(`${label}.scopeDecision is invalid`);
+  }
+  if (typeof row.scopeConfidence !== "number" || !Number.isFinite(row.scopeConfidence)
+    || row.scopeConfidence < 0 || row.scopeConfidence > 1) {
+    throw new Error(`${label}.scopeConfidence is invalid`);
+  }
+  return {
+    ...base,
+    scopeDecision: row.scopeDecision,
+    scopeConfidence: row.scopeConfidence,
+    scopeEvidence: exactString(row.scopeEvidence, `${label}.scopeEvidence`),
   };
 }
 
@@ -1661,9 +1708,13 @@ function verifyProblemTerminalFidelityCheckpoint(
   effectiveCorpusHash: string,
   pointer: ProblemTerminalFidelityCheckpoint,
   cache: EvidenceCache,
+  contract: VerificationContract,
 ): ProblemTerminalFidelityItem[] {
-  const pathMatch = /^problem-terminal-fidelity\/v1-(\d{4})-([a-f0-9]{64})-([a-f0-9]{64})\.json$/u
-    .exec(pointer.path);
+  const pathMatch = new RegExp(
+    `^problem-terminal-fidelity/v${contract.problemTerminalFidelityVersion}-(\\d{4})-` +
+      "([a-f0-9]{64})-([a-f0-9]{64})\\.json$",
+    "u",
+  ).exec(pointer.path);
   if (!pathMatch || pathMatch[2] !== effectiveCorpusHash || pathMatch[3] !== pointer.inputHash) {
     throw new Error(`${pointer.path}: terminal problem fidelity path is stale`);
   }
@@ -1686,7 +1737,7 @@ function verifyProblemTerminalFidelityCheckpoint(
   const inputKeys = checkpoint.inputs.map((value, index) =>
     exactString(object(value, `${pointer.path}.inputs[${index}]`).key, `${pointer.path}.inputs[${index}].key`));
   const items = checkpoint.items.map((value, index) =>
-    parseProblemTerminalFidelityItem(value, `${pointer.path}.items[${index}]`));
+    parseProblemTerminalFidelityItem(value, `${pointer.path}.items[${index}]`, contract));
   const itemKeys = items.map((item) => item.key);
   const sortedExpected = [...expectedKeys].sort(compareCorpusQuestionKeys);
   const exactCoverage = (keys: string[]) => keys.length === sortedExpected.length
@@ -1696,7 +1747,7 @@ function verifyProblemTerminalFidelityCheckpoint(
     throw new Error(`${pointer.path}: terminal problem fidelity child key coverage is not exact`);
   }
   const expectedCheckpoint = {
-    version: PROBLEM_TERMINAL_FIDELITY_VERSION,
+    version: contract.problemTerminalFidelityVersion,
     entryId: entry.id,
     sourceHash: problemEvidence.sha256,
     from: slice.from,
@@ -1707,6 +1758,10 @@ function verifyProblemTerminalFidelityCheckpoint(
     inputHash,
     transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
     transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    ...(contract.problemTerminalScopePromptDigest === null ? {} : {
+      rulesDigest: effective.rulesDigest,
+      scopePromptDigest: contract.problemTerminalScopePromptDigest,
+    }),
     model: "gpt-5.6-sol",
     reasoningEffort: "high",
     inputs,
@@ -1725,6 +1780,8 @@ function verifyProblemTerminalFidelity(
   effective: DecisionSummary,
   audit: Record<string, unknown>,
   cache: EvidenceCache,
+  repairKeys: Set<string>,
+  contract: VerificationContract,
 ): { checkpoints: ProblemTerminalFidelityCheckpoint[]; items: ProblemTerminalFidelityItem[] } {
   if (!Array.isArray(audit.problemTerminalFidelityCheckpoints)
     || !Array.isArray(audit.problemTerminalFidelityItems)) {
@@ -1752,16 +1809,39 @@ function verifyProblemTerminalFidelity(
     effectiveCorpusHash,
     pointer,
     cache,
+    contract,
   ));
   const items = audit.problemTerminalFidelityItems.map((value, index) =>
-    parseProblemTerminalFidelityItem(value, `problemTerminalFidelityItems[${index}]`));
+    parseProblemTerminalFidelityItem(value, `problemTerminalFidelityItems[${index}]`, contract));
   const sortedActual = [...actualItems].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
   const sortedExpected = [...items].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+  const itemByKey = new Map(items.map((item) => [item.key, item]));
+  const policyInvalid = effective.order.some((key) => {
+    const record = effective.records.get(key)!;
+    const item = itemByKey.get(key);
+    if (!item) return true;
+    if (record.classification.transcription_status === "exact") {
+      return item.status !== "exact" || (
+        contract.problemTerminalFidelityVersion === PROBLEM_TERMINAL_FIDELITY_VERSION
+        && record.classification.decision === "accept"
+        && (item.scopeDecision !== "accept" || item.scopeConfidence < 0.9)
+      );
+    }
+    return contract.problemTerminalFidelityVersion !== PROBLEM_TERMINAL_FIDELITY_VERSION
+      || repairKeys.has(key)
+      || record.classification.decision !== "reject"
+      || record.classification.transcription_status !== "mismatch"
+      || item.status !== "mismatch"
+      || item.scopeDecision !== "reject"
+      || item.scopeConfidence < 0.9;
+  });
   if (new Set(actualItems.map((item) => item.key)).size !== effective.order.length
     || actualItems.length !== effective.order.length
     || !isDeepStrictEqual(sortedActual, sortedExpected)
-    || items.some((item) => item.status !== "exact")) {
-    throw new Error("terminal problem fidelity must cover every source key exactly once with exact status");
+    || policyInvalid) {
+    throw new Error(
+      "terminal problem fidelity must cover every source key exactly once and satisfy exact-or-independent-reject policy",
+    );
   }
   if (!isDeepStrictEqual(checkpoints, audit.problemTerminalFidelityCheckpoints)
     || !isDeepStrictEqual(items, audit.problemTerminalFidelityItems)) {
@@ -2246,7 +2326,9 @@ function prepareV3RevisionRows(
   stateDir: string,
   entry: ManifestEntry,
   problemEvidence: DownloadEvidence,
+  rulesDigest: string,
   cache: EvidenceCache,
+  contract: VerificationContract,
 ): V3RevisionRow[] {
   return values.map((first) => {
     const key = first.row.key;
@@ -2272,8 +2354,11 @@ function prepareV3RevisionRows(
         triggerRow.terminalCheckpoint,
         `${key}.revision.trigger.terminalCheckpoint`,
       );
-      const pathMatch = /^problem-terminal-fidelity\/v1-(\d{4})-([a-f0-9]{64})-([a-f0-9]{64})\.json$/u
-        .exec(terminalCheckpoint.path);
+      const pathMatch = new RegExp(
+        `^problem-terminal-fidelity/v${contract.problemTerminalFidelityVersion}-(\\d{4})-` +
+          "([a-f0-9]{64})-([a-f0-9]{64})\\.json$",
+        "u",
+      ).exec(terminalCheckpoint.path);
       const slice = pathMatch && expectedProblemFidelitySlices(problemEvidence.pageCount)[Number(pathMatch[1])];
       if (!pathMatch || !slice || pathMatch[3] !== terminalCheckpoint.inputHash
         || terminalCheckpoint.from !== slice.from || terminalCheckpoint.to !== slice.to
@@ -2287,13 +2372,17 @@ function prepareV3RevisionRows(
         terminalCheckpoint,
         `${key} terminal revision checkpoint`,
       );
-      if (checkpoint.version !== PROBLEM_TERMINAL_FIDELITY_VERSION || checkpoint.entryId !== entry.id
+      if (checkpoint.version !== contract.problemTerminalFidelityVersion || checkpoint.entryId !== entry.id
         || checkpoint.sourceHash !== problemEvidence.sha256 || checkpoint.from !== slice.from
         || checkpoint.to !== slice.to || checkpoint.ownedFrom !== slice.ownedFrom
         || checkpoint.ownedTo !== slice.ownedTo || checkpoint.effectiveCorpusHash !== pathMatch[2]
         || checkpoint.inputHash !== terminalCheckpoint.inputHash
         || checkpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION
         || checkpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST
+        || contract.problemTerminalScopePromptDigest !== null && (
+          checkpoint.rulesDigest !== rulesDigest
+          || checkpoint.scopePromptDigest !== contract.problemTerminalScopePromptDigest
+        )
         || checkpoint.model !== "gpt-5.6-sol" || checkpoint.reasoningEffort !== "high"
         || !Array.isArray(checkpoint.inputs) || !Array.isArray(checkpoint.items)
         || canonicalEvidenceHash(checkpoint.inputs) !== terminalCheckpoint.inputHash) {
@@ -2304,7 +2393,7 @@ function prepareV3RevisionRows(
         `${key} terminal inputs[${index}].key`,
       ));
       const terminalItems = checkpoint.items.map((value, index) =>
-        parseProblemTerminalFidelityItem(value, `${key} terminal items[${index}]`));
+        parseProblemTerminalFidelityItem(value, `${key} terminal items[${index}]`, contract));
       const itemKeys = terminalItems.map((item) => item.key);
       if (new Set(inputKeys).size !== inputKeys.length || new Set(itemKeys).size !== itemKeys.length
         || !isDeepStrictEqual(
@@ -2685,6 +2774,7 @@ function applyDeclaredRepairsV3(
   base: DecisionSummary,
   solutions: Map<string, OfficialSolution>,
   cache: EvidenceCache,
+  contract: VerificationContract,
 ): Map<string, ClassifiedEvidence> {
   const rows = prepareV3RepairRows(values, stateDir, base, solutions);
   const corrected = verifyV3FirstProblemArtifacts(rows, stateDir, entry, problemEvidence, cache);
@@ -2723,7 +2813,9 @@ function applyDeclaredRepairsV3(
       stateDir,
       entry,
       problemEvidence,
+      rulesDigest,
       cache,
+      contract,
     );
     classificationRevisionResults = verifyV3RevisionArtifacts(
       prepared,
@@ -2753,7 +2845,9 @@ function applyDeclaredRepairsV3(
       stateDir,
       entry,
       problemEvidence,
+      rulesDigest,
       cache,
+      contract,
     );
     terminalRevisionResults = verifyV3RevisionArtifacts(
       prepared,
@@ -3842,8 +3936,15 @@ function selectVerificationContract(
   receipt: Record<string, unknown> | null,
   result: Record<string, unknown> | null,
 ): VerificationContract {
-  if (result?.version === 3) return CURRENT_CONTRACT;
-  const currentGenerationSignal = (
+  if (result?.version === 4) return CURRENT_CONTRACT;
+  const v4GenerationSignal = (
+    listJson(join(stateDir, "problem-terminal-fidelity"), /^v2-.*\.json$/u).length > 0
+    || listJson(join(stateDir, "answer-audit"), /^v4-.*\.json$/u).length > 0
+    || listJson(join(stateDir, "answer-attestation"), /^v4-.*\.json$/u).length > 0
+  );
+  if (v4GenerationSignal) return CURRENT_CONTRACT;
+  if (result?.version === 3) return V3_CONTRACT;
+  const v3GenerationSignal = (
     listJson(join(stateDir, "classification-chunks"), /^v5-\d{4}-[a-f0-9]{16}\.json$/u).length > 0
     || listJson(join(stateDir, "problem-repair-batches"), /^v[12]-.*\.json$/u).length > 0
     || listJson(join(stateDir, "classification-repair-batches"), /^v1-.*\.json$/u).length > 0
@@ -3853,7 +3954,7 @@ function selectVerificationContract(
     || listJson(join(stateDir, "answer-audit"), /^v3-[a-f0-9]{64}\.json$/u).length > 0
     || listJson(join(stateDir, "answer-attestation"), /^v3-[a-f0-9]{64}\.json$/u).length > 0
   );
-  if (currentGenerationSignal) return CURRENT_CONTRACT;
+  if (v3GenerationSignal) return V3_CONTRACT;
   if (!receipt) return LEGACY_CONTRACT;
   return LEGACY_CONTRACT;
 }
@@ -3914,8 +4015,11 @@ function verifyAnswerAudit(
         && value.transcriptionPromptDigest === contract.transcriptionPromptDigest
         && value.solutionFidelityVersion === SOLUTION_FIDELITY_VERSION
         && value.solutionFidelityPromptDigest === SOLUTION_FIDELITY_PROMPT_DIGEST
-        && (contract.auditVersion === 2
-          || value.problemTerminalFidelityVersion === PROBLEM_TERMINAL_FIDELITY_VERSION)
+        && (contract.problemTerminalFidelityVersion === null || (
+          value.problemTerminalFidelityVersion === contract.problemTerminalFidelityVersion
+          && (contract.problemTerminalScopePromptDigest === null
+            || value.problemTerminalScopePromptDigest === contract.problemTerminalScopePromptDigest)
+        ))
         && receipt.path === "receipt.json"
         && receipt.sha256 === receiptHash;
       if (looksCurrent) candidates.push({ name, path, value });
@@ -3978,7 +4082,7 @@ function verifyAnswerAudit(
     }
     if (!Array.isArray(audit.repairs) || !Array.isArray(audit.solutionFidelityCheckpoints)
       || !Array.isArray(audit.solutionFidelityItems) || !Array.isArray(audit.solutionRepairs)
-      || contract.auditVersion === 3 && (!Array.isArray(audit.problemTerminalFidelityCheckpoints)
+      || contract.problemTerminalFidelityVersion !== null && (!Array.isArray(audit.problemTerminalFidelityCheckpoints)
         || !Array.isArray(audit.problemTerminalFidelityItems))) {
       throw new Error("answer audit repair/fidelity arrays are missing");
     }
@@ -3996,9 +4100,12 @@ function verifyAnswerAudit(
       transcriptionPromptDigest: contract.transcriptionPromptDigest,
       solutionFidelityVersion: SOLUTION_FIDELITY_VERSION,
       solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
-      ...(contract.auditVersion === 3
-        ? { problemTerminalFidelityVersion: PROBLEM_TERMINAL_FIDELITY_VERSION }
-        : {}),
+      ...(contract.problemTerminalFidelityVersion === null ? {} : {
+        problemTerminalFidelityVersion: contract.problemTerminalFidelityVersion,
+        ...(contract.problemTerminalScopePromptDigest === null ? {} : {
+          problemTerminalScopePromptDigest: contract.problemTerminalScopePromptDigest,
+        }),
+      }),
       receipt: receiptPointer,
       answerAudit: {
         ...auditPointer,
@@ -4009,7 +4116,7 @@ function verifyAnswerAudit(
       solutionFidelityCheckpoints: audit.solutionFidelityCheckpoints,
       solutionFidelityItems: audit.solutionFidelityItems,
       solutionRepairs: audit.solutionRepairs,
-      ...(contract.auditVersion === 3 ? {
+      ...(contract.problemTerminalFidelityVersion !== null ? {
         problemTerminalFidelityCheckpoints: audit.problemTerminalFidelityCheckpoints,
         problemTerminalFidelityItems: audit.problemTerminalFidelityItems,
       } : {}),
@@ -4018,7 +4125,7 @@ function verifyAnswerAudit(
       throw new Error("answer attestation does not exactly bind receipt/audit/repairs");
     }
     const evidenceCache: EvidenceCache = new Map();
-    const records = contract.auditVersion === 3
+    const records = contract.auditVersion >= 3
       ? applyDeclaredRepairsV3(
           audit.repairs,
           stateDir,
@@ -4028,6 +4135,7 @@ function verifyAnswerAudit(
           base,
           solutions,
           evidenceCache,
+          contract,
         )
       : (() => {
           const legacy = new Map(base.records);
@@ -4065,13 +4173,15 @@ function verifyAnswerAudit(
     const effectiveCorpusHash = canonicalEvidenceHash(effectiveCorpus);
     const nonExact = effective.order.filter((key) =>
       effective.records.get(key)!.classification.transcription_status !== "exact");
-    if (nonExact.length > 0) {
+    if (contract.problemTerminalFidelityVersion === null && nonExact.length > 0) {
       throw new Error(`terminal corpus has non-exact source transcriptions: ${nonExact.join(", ")}`);
     }
     if (auditEnvelope.effectiveCorpusHash !== effectiveCorpusHash) {
       throw new Error("attested effective corpus hash does not match reconstructed corpus");
     }
-    const problemTerminalFidelity = contract.auditVersion === 3
+    const repairKeys = new Set(audit.repairs.map((value, index) =>
+      exactString(object(value, `answer audit repairs[${index}]`).key, `answer audit repairs[${index}].key`)));
+    const problemTerminalFidelity = contract.problemTerminalFidelityVersion !== null
       ? verifyProblemTerminalFidelity(
           stateDir,
           entry,
@@ -4079,6 +4189,8 @@ function verifyAnswerAudit(
           effective,
           audit,
           evidenceCache,
+          repairKeys,
+          contract,
         )
       : null;
     const solutionFidelity = verifySolutionFidelity(
@@ -4181,9 +4293,12 @@ function verifyAnswerAudit(
       transcriptionPromptDigest: contract.transcriptionPromptDigest,
       solutionFidelityVersion: SOLUTION_FIDELITY_VERSION,
       solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
-      ...(contract.auditVersion === 3
-        ? { problemTerminalFidelityVersion: PROBLEM_TERMINAL_FIDELITY_VERSION }
-        : {}),
+      ...(contract.problemTerminalFidelityVersion === null ? {} : {
+        problemTerminalFidelityVersion: contract.problemTerminalFidelityVersion,
+        ...(contract.problemTerminalScopePromptDigest === null ? {} : {
+          problemTerminalScopePromptDigest: contract.problemTerminalScopePromptDigest,
+        }),
+      }),
       semanticChoiceVersion: contract.semanticChoiceVersion,
       semanticPromptDigest: contract.semanticPromptDigest,
       sourceQuestionCount: effective.problems.size,
@@ -4245,12 +4360,12 @@ function verifyFilteredAnswerAudit(
   const nonExactBase = base.order.filter((key) =>
     base.records.get(key)!.classification.transcription_status !== "exact");
   if (result.answerAudit === undefined) {
-    if (contract.auditVersion === 3 || nonExactBase.length > 0) {
+    if (contract.problemTerminalFidelityVersion !== null || nonExactBase.length > 0) {
       add({
         code: "TRANSCRIPTION_GATE",
         entryId: entry.id,
-        message: contract.auditVersion === 3
-          ? "current filtered result has no terminal v3 answer audit"
+        message: contract.problemTerminalFidelityVersion !== null
+          ? `current filtered result has no terminal v${contract.auditVersion} answer audit`
           : `filtered result has unverified source transcriptions: ${nonExactBase.join(", ")}`,
       });
     }
@@ -4265,8 +4380,8 @@ function verifyFilteredAnswerAudit(
       throw new Error("filtered repair audit problem/solution number sets differ");
     }
     const pointer = evidencePointer(result.answerAudit, "filtered result answerAudit");
-    const pathMatch = (contract.auditVersion === 3
-      ? /^answer-audit\/v(3)-([a-f0-9]{64})\.json$/u
+    const pathMatch = (contract.auditVersion >= 3
+      ? new RegExp(`^answer-audit/v(${contract.auditVersion})-([a-f0-9]{64})\\.json$`, "u")
       : /^answer-audit\/v([12])-([a-f0-9]{64})\.json$/u).exec(pointer.path);
     if (!pathMatch) throw new Error("filtered answer audit path is invalid");
     const version = Number(pathMatch[1]);
@@ -4280,7 +4395,7 @@ function verifyFilteredAnswerAudit(
       throw new Error("filtered answer audit canonical digest/repairs are invalid");
     }
     const evidenceCache: EvidenceCache = new Map();
-    const records = contract.auditVersion === 3
+    const records = contract.auditVersion >= 3
       ? applyDeclaredRepairsV3(
           audit.repairs,
           stateDir,
@@ -4290,6 +4405,7 @@ function verifyFilteredAnswerAudit(
           base,
           solutions,
           evidenceCache,
+          contract,
         )
       : (() => {
           const legacy = new Map(base.records);
@@ -4322,8 +4438,13 @@ function verifyFilteredAnswerAudit(
     }));
     const nonExact = effective.order.filter((key) =>
       effective.records.get(key)!.classification.transcription_status !== "exact");
-    if (nonExact.length > 0) throw new Error(`filtered corpus remains non-exact: ${nonExact.join(", ")}`);
-    const problemTerminalFidelity = contract.auditVersion === 3
+    if (contract.problemTerminalFidelityVersion === null && nonExact.length > 0) {
+      throw new Error(`filtered corpus remains non-exact: ${nonExact.join(", ")}`);
+    }
+    const repairKeys = new Set(audit.repairs.map((value, index) =>
+      exactString(object(value, `filtered answer audit repairs[${index}]`).key,
+        `filtered answer audit repairs[${index}].key`)));
+    const problemTerminalFidelity = contract.problemTerminalFidelityVersion !== null
       ? verifyProblemTerminalFidelity(
           stateDir,
           entry,
@@ -4331,6 +4452,8 @@ function verifyFilteredAnswerAudit(
           effective,
           audit,
           evidenceCache,
+          repairKeys,
+          contract,
         )
       : null;
     const expectedBasis = {
@@ -4344,7 +4467,12 @@ function verifyFilteredAnswerAudit(
       ...(version >= 2 ? {
         solutionFidelityVersion: SOLUTION_FIDELITY_VERSION,
         solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
-        ...(version === 3 ? { problemTerminalFidelityVersion: PROBLEM_TERMINAL_FIDELITY_VERSION } : {}),
+        ...(contract.problemTerminalFidelityVersion === null ? {} : {
+          problemTerminalFidelityVersion: contract.problemTerminalFidelityVersion,
+          ...(contract.problemTerminalScopePromptDigest === null ? {} : {
+            problemTerminalScopePromptDigest: contract.problemTerminalScopePromptDigest,
+          }),
+        }),
         semanticChoiceVersion: contract.semanticChoiceVersion,
         semanticPromptDigest: contract.semanticPromptDigest,
       } : {
@@ -4386,7 +4514,11 @@ function verifyFilteredAnswerAudit(
       || result.acceptedQuestionCount !== 0
       || result.rejectedQuestionCount !== effective.rejected
       || result.reviewQuestionCount !== 0
-      || contract.auditVersion === 3 && result.effectiveCorpusHash !== effectiveCorpusHash) {
+      || contract.problemTerminalFidelityVersion !== null && result.effectiveCorpusHash !== effectiveCorpusHash
+      || contract.problemTerminalScopePromptDigest !== null && (
+        result.problemTerminalFidelityVersion !== contract.problemTerminalFidelityVersion
+        || result.problemTerminalScopePromptDigest !== contract.problemTerminalScopePromptDigest
+      )) {
       throw new Error("filtered answer audit/result does not match the exact effective corpus");
     }
     return effective;
@@ -4822,7 +4954,7 @@ export function verifyExamCorpus(options: {
         receipt,
         result,
       );
-      if (contract.auditVersion === 3 && entrySchemaVersion !== null && entrySchemaVersion !== 2) {
+      if (contract.auditVersion >= 3 && entrySchemaVersion !== null && entrySchemaVersion !== 2) {
         add({
           code: "ENTRY_MISMATCH",
           entryId: entry.id,
@@ -4832,7 +4964,7 @@ export function verifyExamCorpus(options: {
       let decisions = loadDecisions(stateDir, entry, problemEvidence, terminalDigest, contract, add);
 
       if (result) {
-        const needsFilteredAudit = result.version === 3 || result.answerAudit !== undefined || decisions.order.some((key) =>
+        const needsFilteredAudit = Number(result.version) >= 3 || result.answerAudit !== undefined || decisions.order.some((key) =>
           decisions.records.get(key)!.classification.transcription_status !== "exact");
         if (needsFilteredAudit) {
           const filteredSolutions = loadSolutions(stateDir, entry, solutionEvidence, add);
@@ -4856,12 +4988,16 @@ export function verifyExamCorpus(options: {
           result.classifierVersion === contract.classifierVersion
           && result.transcriptionGateVersion === contract.transcriptionGateVersion
           && result.transcriptionPromptDigest === contract.transcriptionPromptDigest
+          && (contract.problemTerminalScopePromptDigest === null || (
+            result.problemTerminalFidelityVersion === contract.problemTerminalFidelityVersion
+            && result.problemTerminalScopePromptDigest === contract.problemTerminalScopePromptDigest
+          ))
         );
         const sourceGradeResult = result.reason === "SOURCE_GRADE_OUT_OF_SCOPE" && result.version === 2
           && result.sourceQuestionCount === null && result.rejectedQuestionCount === null;
         const currentAuditPointer = result.answerAudit && typeof result.answerAudit === "object"
           && !Array.isArray(result.answerAudit) ? result.answerAudit as Record<string, unknown> : null;
-        const currentFilteredBinding = contract.auditVersion !== 3 || (
+        const currentFilteredBinding = contract.problemTerminalFidelityVersion === null || (
           typeof result.effectiveCorpusHash === "string" && /^[a-f0-9]{64}$/u.test(result.effectiveCorpusHash)
           && typeof currentAuditPointer?.path === "string" && typeof currentAuditPointer.sha256 === "string"
         );

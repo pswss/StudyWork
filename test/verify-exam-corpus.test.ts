@@ -79,6 +79,8 @@ Visible text, formulas, numbers, and labels must remain literal. Whitespace, lay
 Return transcription_status exact only when all source-required content is faithfully represented. Return mismatch when any omission, substitution, changed bound/sign/value/formula/choice, wrong qtype, or inaccurate visual description is visible. Return unverifiable when the pixels or required context do not let you decide confidently; never guess exact. Give concise page-grounded transcription_evidence. Curriculum decision and transcription fidelity are independent, so reject and review items still require this source check.
 `.trim();
 const CURRENT_TRANSCRIPTION_PROMPT_DIGEST = hash(`2\n${CURRENT_TRANSCRIPTION_GATE_RULES}`);
+const PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST =
+  "ebb005195877305dc3416d3158d7bd9765c4c7fa425a3e7fd28b46280df2cbf2";
 const TARGETED_BATCH_PROMPT_DIGEST = hash(
   `${TARGETED_PROBLEM_BATCH_VERSION}\n${TARGETED_PROBLEM_BATCH_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
@@ -738,6 +740,8 @@ function upgradeEntryToV3(
     mixedTerminal?: boolean;
     staleTriggerBase?: boolean;
     crossPageBatchRepair?: boolean;
+    terminalScope?: "authorized-reject" | "scope-accept" | "terminal-exact" | "low-confidence"
+      | "accepted-scope-reject";
   } = {},
 ): {
   terminalArtifact: string;
@@ -792,6 +796,10 @@ function upgradeEntryToV3(
     classification.items[number - 1].transcription_evidence = falseExactBase
       ? "the initial classifier incorrectly considered the abbreviated source exact"
       : "shared source text was abbreviated";
+  }
+  if (options.terminalScope && options.terminalScope !== "accepted-scope-reject") {
+    classification.items[2].transcription_status = "mismatch";
+    classification.items[2].transcription_evidence = "base transcription omitted source detail for rejected Q3";
   }
   const classificationName = legacyClassificationName.replace(/^v4-/u, "v5-");
   const classificationPath = join(stateDir, "classification-chunks", classificationName);
@@ -1121,10 +1129,17 @@ function upgradeEntryToV3(
           : mixedTerminal && input.key === "1:10"
             ? "the terminal source gate found an abbreviated sibling source"
           : "the final transcription is exact",
+        ...(options.terminalScope ? {
+          scopeDecision: effectiveClassifications[Number(input.key.split(":")[1]) - 1].decision,
+          scopeConfidence: 0.99,
+          scopeEvidence: "the official source page independently establishes the curriculum scope",
+        } : {}),
       })).sort((left: { key: string }, right: { key: string }) => compareCorpusQuestionKeys(left.key, right.key));
-      const triggerPath = `problem-terminal-fidelity/v1-0000-${triggerCorpusHash}-${triggerInputHash}.json`;
+      const triggerTerminalVersion = options.terminalScope ? 2 : 1;
+      const triggerPath =
+        `problem-terminal-fidelity/v${triggerTerminalVersion}-0000-${triggerCorpusHash}-${triggerInputHash}.json`;
       const triggerHash = writeEvidence(join(stateDir, triggerPath), {
-        version: 1,
+        version: triggerTerminalVersion,
         entryId: entry.id,
         sourceHash: downloads.problem.sha256,
         from: 1,
@@ -1135,6 +1150,10 @@ function upgradeEntryToV3(
         inputHash: triggerInputHash,
         transcriptionGateVersion: 2,
         transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+        ...(options.terminalScope ? {
+          rulesDigest: DIGEST,
+          scopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+        } : {}),
         model: "gpt-5.6-sol",
         reasoningEffort: "high",
         inputs: triggerInputs,
@@ -1268,6 +1287,8 @@ function upgradeEntryToV3(
     classification: effectiveClassifications[index],
   }));
   const effectiveCorpusHash = canonicalEvidenceHash(effectiveCorpus);
+  const terminalVersion = options.terminalScope ? 2 : 1;
+  const answerAuditVersion = options.terminalScope ? 4 : 3;
   const terminalInputs = effectiveProblems.map((question: Record<string, unknown>) => ({
     key: `${question.page}:${question.number}`,
     printed_number: String(question.number),
@@ -1279,15 +1300,36 @@ function upgradeEntryToV3(
     figure_description: question.figure_description,
     box: question.box,
   }));
-  const terminalItems = terminalInputs.map((input: { key: string }) => ({
-    key: input.key,
-    status: "exact",
-    evidence: "final transcription exactly matches every official source pixel",
-  })).sort((left: { key: string }, right: { key: string }) => compareCorpusQuestionKeys(left.key, right.key));
+  const terminalItems = terminalInputs.map((input: { key: string }) => {
+    const number = Number(input.key.split(":")[1]);
+    const classificationItem = effectiveClassifications[number - 1];
+    if (!options.terminalScope) return {
+      key: input.key,
+      status: "exact",
+      evidence: "final transcription exactly matches every official source pixel",
+    };
+    const targetReject = number === 3 && classificationItem.transcription_status === "mismatch"
+      && options.terminalScope !== "accepted-scope-reject";
+    const acceptedScopeReject = number === 1 && options.terminalScope === "accepted-scope-reject";
+    const scopeDecision = targetReject && options.terminalScope === "scope-accept"
+      ? "accept"
+      : acceptedScopeReject ? "reject" : classificationItem.decision;
+    return {
+      key: input.key,
+      status: targetReject && options.terminalScope !== "terminal-exact" ? "mismatch" : "exact",
+      evidence: targetReject
+        ? "official pixels confirm the omitted detail"
+        : "final transcription exactly matches every official source pixel",
+      scopeDecision,
+      scopeConfidence: targetReject && options.terminalScope === "low-confidence" ? 0.89 : 0.99,
+      scopeEvidence: "the official source page independently establishes the required curriculum scope",
+    };
+  }).sort((left: { key: string }, right: { key: string }) => compareCorpusQuestionKeys(left.key, right.key));
   const terminalInputHash = canonicalEvidenceHash(terminalInputs);
-  const terminalRelativePath = `problem-terminal-fidelity/v1-0000-${effectiveCorpusHash}-${terminalInputHash}.json`;
+  const terminalRelativePath =
+    `problem-terminal-fidelity/v${terminalVersion}-0000-${effectiveCorpusHash}-${terminalInputHash}.json`;
   const terminalCheckpoint = {
-    version: 1,
+    version: terminalVersion,
     entryId: entry.id,
     sourceHash: downloads.problem.sha256,
     from: 1,
@@ -1298,6 +1340,10 @@ function upgradeEntryToV3(
     inputHash: terminalInputHash,
     transcriptionGateVersion: 2,
     transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+    ...(options.terminalScope ? {
+      rulesDigest: DIGEST,
+      scopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+    } : {}),
     model: "gpt-5.6-sol",
     reasoningEffort: "high",
     inputs: terminalInputs,
@@ -1353,7 +1399,10 @@ function upgradeEntryToV3(
     transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
     solutionFidelityVersion: 1,
     solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
-    problemTerminalFidelityVersion: 1,
+    problemTerminalFidelityVersion: terminalVersion,
+    ...(options.terminalScope ? {
+      problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+    } : {}),
     semanticChoiceVersion: 4,
     semanticPromptDigest: CURRENT_SEMANTIC_PROMPT_DIGEST,
     sourceQuestionCount: legacyAudit.sourceQuestionCount,
@@ -1377,9 +1426,9 @@ function upgradeEntryToV3(
     items: legacyAudit.items,
   };
   const auditDigest = canonicalEvidenceHash(auditBasis);
-  const auditRelativePath = `answer-audit/v3-${auditDigest}.json`;
+  const auditRelativePath = `answer-audit/v${answerAuditVersion}-${auditDigest}.json`;
   const auditHash = writeEvidence(join(stateDir, auditRelativePath), {
-    version: 3,
+    version: answerAuditVersion,
     auditDigest,
     ...auditBasis,
   });
@@ -1394,7 +1443,10 @@ function upgradeEntryToV3(
     transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
     solutionFidelityVersion: 1,
     solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
-    problemTerminalFidelityVersion: 1,
+    problemTerminalFidelityVersion: terminalVersion,
+    ...(options.terminalScope ? {
+      problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+    } : {}),
     receipt: { path: "receipt.json", sha256: canonicalEvidenceHash(receipt) },
     answerAudit: {
       path: auditRelativePath,
@@ -1410,9 +1462,9 @@ function upgradeEntryToV3(
     problemTerminalFidelityItems: terminalItems,
   };
   const attestationDigest = canonicalEvidenceHash(attestationBasis);
-  const attestationRelativePath = `answer-attestation/v3-${attestationDigest}.json`;
+  const attestationRelativePath = `answer-attestation/v${answerAuditVersion}-${attestationDigest}.json`;
   writeEvidence(join(stateDir, attestationRelativePath), {
-    version: 3,
+    version: answerAuditVersion,
     attestationDigest,
     ...attestationBasis,
   });
@@ -1432,8 +1484,14 @@ function upgradeEntryToV3(
   };
 }
 
-function convertMathToFilteredV3(files: ReturnType<typeof fixture>): string {
-  upgradeEntryToV3(files);
+function convertMathToFilteredV3(
+  files: ReturnType<typeof fixture>,
+  current = false,
+  authorizedMismatch = false,
+): string {
+  upgradeEntryToV3(files, "math", current ? { terminalScope: "authorized-reject" } : {});
+  const terminalVersion = current ? 2 : 1;
+  const auditVersion = current ? 4 : 3;
   const stateDir = files.stateDirs.math;
   const entry = JSON.parse(readFileSync(join(stateDir, "entry.json"), "utf8")).entry;
   const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
@@ -1454,6 +1512,10 @@ function convertMathToFilteredV3(files: ReturnType<typeof fixture>): string {
     transcription_status: "exact",
     transcription_evidence: "the literal source transcription is exact",
   }));
+  if (current && authorizedMismatch) {
+    classification.items[2].transcription_status = "mismatch";
+    classification.items[2].transcription_evidence = "the rejected source was intentionally not fully transcribed";
+  }
   writeJson(classificationPath, classification);
   const effectiveCorpus = problems.map((question: Record<string, unknown>, index: number) => ({
     question,
@@ -1473,13 +1535,21 @@ function convertMathToFilteredV3(files: ReturnType<typeof fixture>): string {
   }));
   const items = inputs.map((input: { key: string }) => ({
     key: input.key,
-    status: "exact",
-    evidence: "the final literal transcription exactly matches official pixels",
+    status: current && authorizedMismatch && input.key === "1:3" ? "mismatch" : "exact",
+    evidence: current && authorizedMismatch && input.key === "1:3"
+      ? "official pixels confirm the omitted rejected detail"
+      : "the final literal transcription exactly matches official pixels",
+    ...(current ? {
+      scopeDecision: "reject",
+      scopeConfidence: 0.99,
+      scopeEvidence: "the official source page independently establishes out-of-scope content",
+    } : {}),
   })).sort((left: { key: string }, right: { key: string }) => compareCorpusQuestionKeys(left.key, right.key));
   const inputHash = canonicalEvidenceHash(inputs);
-  const terminalPath = `problem-terminal-fidelity/v1-0000-${effectiveCorpusHash}-${inputHash}.json`;
+  const terminalPath =
+    `problem-terminal-fidelity/v${terminalVersion}-0000-${effectiveCorpusHash}-${inputHash}.json`;
   const terminalHash = writeEvidence(join(stateDir, terminalPath), {
-    version: 1,
+    version: terminalVersion,
     entryId: entry.id,
     sourceHash: downloads.problem.sha256,
     from: 1,
@@ -1490,6 +1560,10 @@ function convertMathToFilteredV3(files: ReturnType<typeof fixture>): string {
     inputHash,
     transcriptionGateVersion: 2,
     transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+    ...(current ? {
+      rulesDigest: DIGEST,
+      scopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+    } : {}),
     model: "gpt-5.6-sol",
     reasoningEffort: "high",
     inputs,
@@ -1514,7 +1588,8 @@ function convertMathToFilteredV3(files: ReturnType<typeof fixture>): string {
     transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
     solutionFidelityVersion: 1,
     solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
-    problemTerminalFidelityVersion: 1,
+    problemTerminalFidelityVersion: terminalVersion,
+    ...(current ? { problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST } : {}),
     semanticChoiceVersion: 4,
     semanticPromptDigest: CURRENT_SEMANTIC_PROMPT_DIGEST,
     sourceQuestionCount: problems.length,
@@ -1538,11 +1613,11 @@ function convertMathToFilteredV3(files: ReturnType<typeof fixture>): string {
     items: [],
   };
   const auditDigest = canonicalEvidenceHash(auditBasis);
-  const auditPath = `answer-audit/v3-${auditDigest}.json`;
-  const auditHash = writeEvidence(join(stateDir, auditPath), { version: 3, auditDigest, ...auditBasis });
+  const auditPath = `answer-audit/v${auditVersion}-${auditDigest}.json`;
+  const auditHash = writeEvidence(join(stateDir, auditPath), { version: auditVersion, auditDigest, ...auditBasis });
   rmSync(join(stateDir, "receipt.json"));
   writeJson(join(stateDir, "result.json"), {
-    version: 3,
+    version: auditVersion,
     status: "filtered",
     entryId: entry.id,
     reason: "NO_IN_SCOPE_QUESTIONS",
@@ -1550,6 +1625,10 @@ function convertMathToFilteredV3(files: ReturnType<typeof fixture>): string {
     classifierVersion: 5,
     transcriptionGateVersion: 2,
     transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+    ...(current ? {
+      problemTerminalFidelityVersion: terminalVersion,
+      problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+    } : {}),
     sourceQuestionCount: problems.length,
     acceptedQuestionCount: 0,
     rejectedQuestionCount: problems.length,
@@ -3201,6 +3280,36 @@ describe("exam corpus verifier", () => {
     expect(artifacts.attestationArtifact).toContain("answer-attestation/v3-");
   });
 
+  it("accepts only terminal-v2 independent reject authority and high-confidence accepted scope agreement", () => {
+    const authorizedFiles = fixture();
+    const authorizedArtifacts = upgradeEntryToV3(authorizedFiles, "math", { terminalScope: "authorized-reject" });
+    const authorized = verifyExamCorpus(authorizedFiles);
+    expect(authorized, JSON.stringify(authorized.failures)).toMatchObject({ ok: true });
+    expect(authorizedArtifacts.auditArtifact).toContain("answer-audit/v4-");
+    expect(authorizedArtifacts.attestationArtifact).toContain("answer-attestation/v4-");
+    expect(authorizedArtifacts.terminalArtifact).toContain("problem-terminal-fidelity/v2-");
+
+    for (const repairOptions of [
+      { batchRepair: true, terminalScope: "authorized-reject" as const },
+      { terminalRevision: true, terminalScope: "authorized-reject" as const },
+    ]) {
+      const files = fixture();
+      upgradeEntryToV3(files, "math", repairOptions);
+      const report = verifyExamCorpus(files);
+      expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    }
+
+    for (const terminalScope of ["scope-accept", "terminal-exact", "low-confidence", "accepted-scope-reject"] as const) {
+      const files = fixture();
+      upgradeEntryToV3(files, "math", { terminalScope });
+      const report = verifyExamCorpus(files);
+      expect(report.ok, terminalScope).toBe(false);
+      expect(report.failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID"
+        && failure.message.includes("exact-or-independent-reject policy")), terminalScope).toBe(true);
+    }
+  });
+
   it("reconstructs one shared v3 problem/classification repair batch", () => {
     const files = fixture();
     const artifacts = upgradeEntryToV3(files, "math", { batchRepair: true });
@@ -3348,6 +3457,28 @@ describe("exam corpus verifier", () => {
     expect(missingReport.ok).toBe(false);
     expect(missingReport.failures.some((failure) =>
       failure.message.includes("no terminal v3 answer audit"))).toBe(true);
+
+    const currentFiles = fixture();
+    const currentResultPath = convertMathToFilteredV3(currentFiles, true, true);
+    const current = verifyExamCorpus(currentFiles);
+    expect(current, JSON.stringify(current.failures)).toMatchObject({ ok: true });
+    const staleCurrent = JSON.parse(readFileSync(currentResultPath, "utf8"));
+    staleCurrent.problemTerminalScopePromptDigest = "0".repeat(64);
+    writeJson(currentResultPath, staleCurrent);
+    expect(verifyExamCorpus(currentFiles).failures.some((failure) =>
+      failure.code === "RESULT_INVALID" || failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const staleGenerationFiles = fixture();
+    convertMathToFilteredV3(staleGenerationFiles);
+    writeJson(join(
+      staleGenerationFiles.stateDirs.math,
+      "problem-terminal-fidelity",
+      `v2-0000-${"1".repeat(64)}-${"2".repeat(64)}.json`,
+    ), {});
+    const staleGeneration = verifyExamCorpus(staleGenerationFiles);
+    expect(staleGeneration.ok).toBe(false);
+    expect(staleGeneration.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" || failure.code === "RESULT_INVALID")).toBe(true);
 
     const partialFiles = fixture();
     const partial = upgradeEntryToV3(partialFiles);
