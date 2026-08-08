@@ -43,6 +43,7 @@ import {
   officialAnswerForStorage,
   parseCorpusManifest,
   parseDecisions,
+  parseImporterFullContextConcurrency,
   parsePdfInfoOutput,
   problemChunkCount,
   problemOwnedRange,
@@ -59,9 +60,13 @@ import {
 const execFileP = promisify(execFile);
 
 describe("exam corpus importer", () => {
-  it("caps mixed AI work at total 15 and full-context 5", async () => {
+  it("caps mixed AI work at total 15 and full-context 8", async () => {
     expect(IMPORT_CONCURRENCY).toBe(15);
-    expect(FULL_CONTEXT_CONCURRENCY).toBe(5);
+    expect(FULL_CONTEXT_CONCURRENCY).toBe(8);
+    expect(parseImporterFullContextConcurrency(undefined)).toBe(8);
+    expect(parseImporterFullContextConcurrency("15")).toBe(15);
+    expect(() => parseImporterFullContextConcurrency("16")).toThrow("1-15");
+    expect(() => parseImporterFullContextConcurrency("1.5")).toThrow("1-15");
     const scheduler = createImporterAiScheduler(IMPORT_CONCURRENCY, FULL_CONTEXT_CONCURRENCY);
     let total = 0;
     let full = 0;
@@ -81,7 +86,7 @@ describe("exam corpus importer", () => {
       ...Array.from({ length: 10 }, () => scheduler.full(() => run(true))),
     ]);
     expect(maxTotal).toBeLessThanOrEqual(15);
-    expect(maxFull).toBeLessThanOrEqual(5);
+    expect(maxFull).toBeLessThanOrEqual(8);
   });
 
   it("uses one stable canonical evidence hash vector", () => {

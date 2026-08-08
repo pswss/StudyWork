@@ -66,7 +66,16 @@ import { MAX_PDF_BYTES, MAX_PDF_PAGES, safeUploadName } from "../src/upload";
 export const IMPORT_MODEL = "gpt-5.6-sol";
 export const IMPORT_REASONING_EFFORT = "high" as const;
 export const IMPORT_CONCURRENCY = 15;
-export const FULL_CONTEXT_CONCURRENCY = 5;
+export function parseImporterFullContextConcurrency(value: string | undefined): number {
+  const parsed = value?.trim() ? Number(value) : 8;
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > IMPORT_CONCURRENCY) {
+    throw new Error(`STUDYWORK_IMPORT_FULL_CONCURRENCY는 1-${IMPORT_CONCURRENCY} 정수여야 합니다`);
+  }
+  return parsed;
+}
+export const FULL_CONTEXT_CONCURRENCY = parseImporterFullContextConcurrency(
+  process.env.STUDYWORK_IMPORT_FULL_CONCURRENCY
+);
 export const PROBLEM_SLICE_PAGES = 20;
 export const PROBLEM_SLICE_STRIDE = 18;
 export const SOLUTION_SLICE_PAGES = 6;
@@ -5744,7 +5753,10 @@ async function main(): Promise<void> {
   const manifest = parseCorpusManifest(JSON.parse(readFileSync(options.manifest, "utf8")));
   const supported = manifest.entries.filter((entry) => SUPPORTED_SOURCES.has(entry.subject));
   console.log(`manifest ${manifest.entries.length}개, 대상 ${supported.length}개, 제외 ${manifest.entries.length - supported.length}개`);
-  console.log(`AI ${IMPORT_MODEL} / ${IMPORT_REASONING_EFFORT}, 동시 작업 ${IMPORT_CONCURRENCY}개`);
+  console.log(
+    `AI ${IMPORT_MODEL} / ${IMPORT_REASONING_EFFORT}, 동시 작업 ${IMPORT_CONCURRENCY}개` +
+    ` (full-context ${FULL_CONTEXT_CONCURRENCY}개)`
+  );
   if (!options.commit) {
     console.log("dry-run 완료. 다운로드·AI·DB 쓰기 없음. 실제 실행은 --commit 추가.");
     return;
