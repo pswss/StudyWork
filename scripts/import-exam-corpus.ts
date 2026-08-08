@@ -1262,6 +1262,11 @@ function restoredQuizItems(value: unknown): QuizItemEx[] {
   })));
 }
 
+function restoredSparseQuizItems(value: unknown): QuizItemEx[] {
+  if (!Array.isArray(value)) throw new Error("sparse 문제 체크포인트 items가 배열이 아닙니다");
+  return value.flatMap((item) => restoredQuizItems([item]));
+}
+
 export function parseDecisions(
   value: unknown,
   questions: QuizItemEx[],
@@ -3106,7 +3111,7 @@ async function problemRepairBatchAuthorityVersion(
       ? checkpoint.members.map((value, index) => object(value, `${relativePath}.members[${index}]`))
       : [];
     const memberKeys = members.map((member, index) => exactString(member.key, `${relativePath}.members[${index}].key`));
-    const corrected = restoredQuizItems(checkpoint.items);
+    const corrected = restoredSparseQuizItems(checkpoint.items);
     const actualKeys = corrected.map(questionKey);
     if (
       checkpoint.version !== version || checkpoint.entryId !== entry.id || checkpoint.sourceHash !== problem.sha256 ||
@@ -3197,7 +3202,7 @@ async function persistedProblemRepairAttemptKeys(
       ? checkpoint.members.map((value, index) => object(value, `${relativePath}.members[${index}]`))
       : [];
     const memberKeys = members.map((member, index) => exactString(member.key, `${relativePath}.members[${index}].key`, 100));
-    const items = restoredQuizItems(checkpoint.items);
+    const items = restoredSparseQuizItems(checkpoint.items);
     const itemKeys = items.map(questionKey);
     const digest = version === 1 ? v1![4] : v2![3];
     if (
@@ -3348,7 +3353,7 @@ async function repairClassifiedQuestionsBatch(
           if (commonMismatch || versionMismatch) {
             throw new Error(`기존 problem repair batch 메타데이터가 다릅니다: ${path}`);
           }
-          corrected = restoredQuizItems(checkpoint.items);
+          corrected = restoredSparseQuizItems(checkpoint.items);
         } else {
           corrected = await withTargetedAi(() => extractProblemsFromFile(contextPath, "pdf", {
             sliceBase: contextFrom,
@@ -3853,7 +3858,7 @@ async function reviseClassifiedQuestionsBatch(
             checkpoint.model !== IMPORT_MODEL || checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
             canonicalEvidenceHash(checkpoint.members) !== canonicalEvidenceHash(memberBasis)
           ) throw new Error(`기존 problem revision batch 메타데이터가 다릅니다: ${path}`);
-          revised = restoredQuizItems(checkpoint.items);
+          revised = restoredSparseQuizItems(checkpoint.items);
         } else {
           const diagnostics = JSON.stringify(Object.fromEntries(
             group.map((member) => [member.key, member.trigger.evidence])

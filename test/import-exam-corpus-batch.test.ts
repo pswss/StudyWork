@@ -99,7 +99,7 @@ describe("exam corpus page-batch problem repair", () => {
       requestedUrl: entry.solutionPdfUrl,
       resolvedUrl: entry.solutionPdfUrl,
     };
-    const repairNumbers = new Set([1, 3, 24]);
+    const repairNumbers = new Set([17, 22, 23]);
     const questions: QuizItemEx[] = Array.from({ length: 30 }, (_, index) => ({
       number: String(index + 1),
       qtype: "short",
@@ -110,20 +110,20 @@ describe("exam corpus page-batch problem repair", () => {
       choices: null,
       answer: String(index + 1),
       explanation: "",
-      page: index + 1 === 3 ? 2 : index + 1 === 24 ? 3 : 1,
+      page: index + 1 === 22 ? 2 : index + 1 === 23 ? 3 : 1,
       figure: false,
       figure_description: null,
       box: null,
     }));
     const decision = (number: number, status: "exact" | "mismatch"): ClassificationDecision => ({
       key: `${questions[number - 1].page}:${number}`,
-      decision: number === 3 ? "accept" : "reject",
-      canonical_subject: number === 3 ? "math_B" : null,
-      curriculum_course: number === 3 ? "2015 수학Ⅰ" : null,
-      domain: number === 3 ? "수열" : null,
-      achievement_codes: number === 3 ? ["12수학Ⅰ03-01"] : [],
+      decision: number === 22 ? "accept" : "reject",
+      canonical_subject: number === 22 ? "math_B" : null,
+      curriculum_course: number === 22 ? "2015 수학Ⅰ" : null,
+      domain: number === 22 ? "수열" : null,
+      achievement_codes: number === 22 ? ["12수학Ⅰ03-01"] : [],
       confidence: 0.99,
-      reason_codes: [number === 3 ? "IN_SCOPE_SEQUENCE" : "OUT_OF_SCOPE"],
+      reason_codes: [number === 22 ? "IN_SCOPE_SEQUENCE" : "OUT_OF_SCOPE"],
       transcription_status: status,
       transcription_evidence: status === "exact" ? "원본과 일치한다." : "공유 지문이 축약됐다.",
     });
@@ -181,15 +181,15 @@ describe("exam corpus page-batch problem repair", () => {
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       if (request.schema?.name === "studywork_file_quiz_items") {
         calls.extract++;
-        const numberList = calls.extract === 1 ? [24, 3, 1] : [24];
+        const numberList = calls.extract === 1 ? [23, 22, 17] : [23];
         if (calls.extract === 1) {
-          expect(request.prompt).toContain("1:1, 2:3, 3:24");
+          expect(request.prompt).toContain("1:17, 2:22, 3:23");
           expect(request.prompt).toContain("Emit EVERY listed page:number target exactly once");
           expect(request.prompt).toContain("Previous fidelity diagnostic");
           expect(request.prompt).toContain("공유 지문이 축약됐다");
         } else {
           expect(request.prompt).toContain("SECOND SOURCE-GROUNDED REVISION");
-          expect(request.prompt).toContain("Q24의 전환 문장이 축약됐다");
+          expect(request.prompt).toContain("Q23의 전환 문장이 축약됐다");
         }
         return { text: JSON.stringify(numberList.map((number) => ({
           ...questions[number - 1],
@@ -200,7 +200,7 @@ describe("exam corpus page-batch problem repair", () => {
       if (request.schema?.name === "studywork_exam_corpus_classification") {
         calls.classify++;
         if (crashClassification) throw new Error("simulated batch classification interruption");
-        const numbers = calls.classify === 2 ? [24, 3, 1] : [24];
+        const numbers = calls.classify === 2 ? [23, 22, 17] : [23];
         return { text: JSON.stringify(numbers.map((number) => decision(number, "exact"))) };
       }
       if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
@@ -208,11 +208,11 @@ describe("exam corpus page-batch problem repair", () => {
         const inputs = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{ key: string; question: string }>;
         return { text: JSON.stringify(inputs.map((input) => ({
           key: input.key,
-          status: input.key === "3:24" && !input.question.includes("최종") ? "mismatch" : "exact",
-          evidence: input.key === "3:24" && !input.question.includes("최종")
-            ? "Q24의 전환 문장이 축약됐다."
+          status: input.key === "3:23" && !input.question.includes("최종") ? "mismatch" : "exact",
+          evidence: input.key === "3:23" && !input.question.includes("최종")
+            ? "Q23의 전환 문장이 축약됐다."
             : "원본 픽셀과 일치한다.",
-          scopeDecision: input.key === "2:3" || (input.key === "3:24" && !input.question.includes("최종"))
+          scopeDecision: input.key === "2:22" || (input.key === "3:23" && !input.question.includes("최종"))
             ? "accept"
             : "reject",
           scopeConfidence: 0.99,
@@ -222,7 +222,7 @@ describe("exam corpus page-batch problem repair", () => {
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
         calls.solution++;
         return { text: JSON.stringify([{
-          key: "2:3",
+          key: "2:22",
           sourcePage: 1,
           answerStatus: "exact",
           explanationStatus: "exact",
@@ -246,9 +246,9 @@ describe("exam corpus page-batch problem repair", () => {
       targetsDigest: expect.stringMatching(/^[a-f0-9]{64}$/u),
       diagnosticEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
       members: [
-        { key: "1:1", sourcePage: 1, baseTranscriptionEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u) },
-        { key: "2:3", sourcePage: 2, baseTranscriptionEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u) },
-        { key: "3:24", sourcePage: 3, baseTranscriptionEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u) },
+        { key: "1:17", sourcePage: 1, baseTranscriptionEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u) },
+        { key: "2:22", sourcePage: 2, baseTranscriptionEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u) },
+        { key: "3:23", sourcePage: 3, baseTranscriptionEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u) },
       ],
     });
     expect(v2Checkpoint).not.toHaveProperty("sourcePage");
@@ -258,10 +258,10 @@ describe("exam corpus page-batch problem repair", () => {
       entry, problem, solution, root, classified, solutions
     );
     expect(calls).toEqual({ extract: 2, classify: 3, terminal: 3, solution: 1 });
-    expect(repaired.repairs.map((repair) => repair.key)).toEqual(["1:1", "2:3", "3:24"]);
+    expect(repaired.repairs.map((repair) => repair.key)).toEqual(["1:17", "2:22", "3:23"]);
     expect(new Set(repaired.repairs.map((repair) => repair.problemArtifact.path)).size).toBe(1);
     expect(new Set(repaired.repairs.map((repair) => repair.classificationArtifact.path)).size).toBe(1);
-    expect(repaired.repairs.find((repair) => repair.key === "3:24")?.revision).toMatchObject({
+    expect(repaired.repairs.find((repair) => repair.key === "3:23")?.revision).toMatchObject({
       trigger: {
         kind: "terminal",
         terminalCheckpoint: { path: expect.stringMatching(/^problem-terminal-fidelity\/v2-/u) },
@@ -270,8 +270,8 @@ describe("exam corpus page-batch problem repair", () => {
       problemArtifact: { path: expect.stringMatching(/^problem-revision-batches\/v1-/u) },
       classificationArtifact: { path: expect.stringMatching(/^classification-revision-batches\/v1-/u) },
     });
-    expect(repaired.classified.find((item) => item.classification.key === "2:3")?.classification.decision).toBe("accept");
-    expect(repaired.classified.find((item) => item.classification.key === "3:24")?.classification.decision).toBe("reject");
+    expect(repaired.classified.find((item) => item.classification.key === "2:22")?.classification.decision).toBe("accept");
+    expect(repaired.classified.find((item) => item.classification.key === "3:23")?.classification.decision).toBe("reject");
     expect(repaired.problemTerminalFidelityItems).toHaveLength(30);
     expect(repaired.problemTerminalFidelityItems.every((item) => item.status === "exact")).toBe(true);
     expect(repaired.auditPath).toMatch(/^answer-audit\/v4-/u);
@@ -320,7 +320,7 @@ describe("exam corpus page-batch problem repair", () => {
       promptDigest: TARGETED_PROBLEM_BATCH_PROMPT_DIGEST,
       model: "gpt-5.6-sol",
       reasoningEffort: "high",
-      items: [v2Checkpoint.items.find((item: QuizItemEx) => item.page === 1 && item.number === "1")],
+      items: [v2Checkpoint.items.find((item: QuizItemEx) => item.page === 1 && item.number === "17")],
     });
     await expect(repairAndAuditOfficialAnswers(
       entry, problem, solution, root, classified, solutions
@@ -331,7 +331,7 @@ describe("exam corpus page-batch problem repair", () => {
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       if (request.schema?.name === "studywork_file_quiz_items") {
         legacyCalls.extract++;
-        const number = request.prompt.includes("2:3") ? 3 : 24;
+        const number = request.prompt.includes("2:22") ? 22 : 23;
         const revisedSuffix = request.prompt.includes("SECOND SOURCE-GROUNDED REVISION") ? " 최종" : "";
         return { text: JSON.stringify([{
           ...questions[number - 1],
