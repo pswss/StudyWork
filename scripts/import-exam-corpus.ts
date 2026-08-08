@@ -100,9 +100,9 @@ export const SOLUTION_REPAIR_FIDELITY_VERSION = 1;
 export const SOLUTION_REVISION_VERSION = 1;
 export const SOLUTION_REVISION_FIDELITY_VERSION = 1;
 export const PROBLEM_TERMINAL_FIDELITY_VERSION = 2;
-export const SEMANTIC_CHOICE_CHECK_VERSION = 4;
-export const ANSWER_AUDIT_VERSION = 4;
-export const ANSWER_ATTESTATION_VERSION = 4;
+export const SEMANTIC_CHOICE_CHECK_VERSION = 5;
+export const ANSWER_AUDIT_VERSION = 5;
+export const ANSWER_ATTESTATION_VERSION = 5;
 
 const execFileP = promisify(execFile);
 
@@ -3009,6 +3009,18 @@ function parseSemanticChoiceDecisions(
   return decisions;
 }
 
+export function semanticChoiceCheckpointPath(
+  effectiveCorpusHash: string,
+  effectiveSolutionCorpusHash: string,
+  inputHash: string
+): string {
+  if ([effectiveCorpusHash, effectiveSolutionCorpusHash, inputHash].some((hash) => !/^[a-f0-9]{64}$/u.test(hash))) {
+    throw new Error("semantic choice checkpoint hash가 유효하지 않습니다");
+  }
+  return `semantic-choice-checks/v${SEMANTIC_CHOICE_CHECK_VERSION}-` +
+    `${effectiveCorpusHash}-${effectiveSolutionCorpusHash}-${inputHash}.json`;
+}
+
 async function semanticChoiceCheckpoint(
   entry: CorpusManifestEntry,
   problem: PdfEvidence,
@@ -3016,14 +3028,10 @@ async function semanticChoiceCheckpoint(
   stateDir: string,
   effectiveCorpusHash: string,
   effectiveSolutionCorpusHash: string,
-  inputs: Array<{ key: string; choices: string[]; detailedExplanation: string }>,
-  solutionRevisionApplied = false
+  inputs: Array<{ key: string; choices: string[]; detailedExplanation: string }>
 ): Promise<{ decisions: SemanticChoiceDecision[]; path: string; sha256: string; inputHash: string }> {
   const inputHash = canonicalEvidenceHash(inputs);
-  const relativePath = solutionRevisionApplied
-    ? `semantic-choice-checks/v${SEMANTIC_CHOICE_CHECK_VERSION}-` +
-      `${effectiveCorpusHash}-${effectiveSolutionCorpusHash}-${inputHash}.json`
-    : `semantic-choice-checks/v${SEMANTIC_CHOICE_CHECK_VERSION}-${inputHash}.json`;
+  const relativePath = semanticChoiceCheckpointPath(effectiveCorpusHash, effectiveSolutionCorpusHash, inputHash);
   const path = join(stateDir, relativePath);
   let checkpoint: Record<string, unknown>;
   let decisions: SemanticChoiceDecision[];
@@ -4822,8 +4830,7 @@ export async function repairAndAuditOfficialAnswers(
       stateDir,
       canonicalEvidenceHash(effective),
       finalSolutionAudit.effectiveSolutionCorpusHash,
-      markerInputs,
-      finalSolutionAudit.repairs.some((repair) => repair.revision !== undefined)
+      markerInputs
     );
     const semanticByKey = new Map(finalSemantic?.decisions.map((item) => [item.key, item]) ?? []);
     const semanticMismatch = markerInputs.flatMap((input) => {
@@ -5002,6 +5009,7 @@ export async function repairAndAuditOfficialAnswers(
       path: finalSemantic.path,
       sha256: finalSemantic.sha256,
       inputHash: finalSemantic.inputHash,
+      effectiveCorpusHash,
       effectiveSolutionCorpusHash: finalSolutionAudit.effectiveSolutionCorpusHash,
     },
     repairs: repairList,
@@ -5559,12 +5567,15 @@ type EntryResult = {
 
 export function validateFilteredResult(value: unknown, entryId: string): string {
   const result = object(value, "result.json");
-  if (![2, 4].includes(Number(result.version)) || result.status !== "filtered" || result.entryId !== entryId) {
+  if (
+    typeof result.version !== "number" || !Number.isInteger(result.version) ||
+    ![2, 4, 5].includes(result.version) || result.status !== "filtered" || result.entryId !== entryId
+  ) {
     throw new Error("기존 result.json이 유효하지 않습니다");
   }
   const reason = exactString(result.reason, "result.json.reason", 100);
   if (reason === "NO_IN_SCOPE_QUESTIONS" && (
-    result.version !== 4 ||
+    ![4, 5].includes(result.version) ||
     result.rulesDigest !== CLASSIFIER_DIGEST || result.classifierVersion !== CLASSIFIER_VERSION ||
     result.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
     result.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
@@ -5579,6 +5590,13 @@ export function validateFilteredResult(value: unknown, entryId: string): string 
     throw new Error("기존 result.json reason이 유효하지 않습니다");
   }
   return reason;
+}
+
+function hasCurrentAnswerEvidence(stateDir: string): boolean {
+  return ["semantic-choice-checks", "answer-audit", "answer-attestation"].some((directory) => {
+    const path = join(stateDir, directory);
+    return existsSync(path) && readdirSync(path).some((name) => name.startsWith("v5-") && name.endsWith(".json"));
+  });
 }
 
 export function assertNoCommittedReceiptForFilteredResult(stateDir: string): void {
@@ -5609,6 +5627,9 @@ async function processEntry(
     assertNoCommittedReceiptForFilteredResult(stateDir);
     const rawResult = JSON.parse(readFileSync(resultPath, "utf8"));
     const reason = validateFilteredResult(rawResult, entry.id);
+    if (object(rawResult, "result.json").version === 4 && hasCurrentAnswerEvidence(stateDir)) {
+      throw new Error("legacy v4 filtered result와 current v5 evidence가 함께 존재합니다; 명시적 migration이 필요합니다");
+    }
     if (reason === "NO_IN_SCOPE_QUESTIONS") {
       const result = object(rawResult, "result.json");
       const pointer = object(result.answerAudit, "result.json.answerAudit");
@@ -5617,6 +5638,7 @@ async function processEntry(
       const path = confinedStateFile(stateDir, relativePath, "filtered answer audit");
       if (await sha256File(path) !== expectedHash) throw new Error("filtered answer audit hash가 다릅니다");
       const audit = object(JSON.parse(readFileSync(path, "utf8")), "filtered answer audit");
+      const filteredVersion = Number(object(rawResult, "result.json").version);
       const terminalItems = Array.isArray(audit.problemTerminalFidelityItems)
         ? audit.problemTerminalFidelityItems.map((item) => object(item, "filtered terminal fidelity item"))
         : [];
@@ -5653,7 +5675,7 @@ async function processEntry(
         : [];
       const { version: _version, auditDigest, ...auditBasis } = audit;
       if (
-        audit.version !== ANSWER_AUDIT_VERSION || audit.entryId !== entry.id ||
+        audit.version !== filteredVersion || audit.entryId !== entry.id ||
         audit.classifierVersion !== CLASSIFIER_VERSION || audit.rulesDigest !== CLASSIFIER_DIGEST ||
         audit.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
         audit.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
@@ -5669,7 +5691,7 @@ async function processEntry(
           )
         ) ||
         typeof auditDigest !== "string" || canonicalEvidenceHash(auditBasis) !== auditDigest ||
-        relativePath !== `answer-audit/v${ANSWER_AUDIT_VERSION}-${auditDigest}.json`
+        relativePath !== `answer-audit/v${filteredVersion}-${auditDigest}.json`
       ) throw new Error("filtered answer audit terminal binding이 다릅니다");
       await assertProblemTerminalFidelityEvidence(
         stateDir,
@@ -5739,10 +5761,10 @@ async function processEntry(
   if (repairedAcceptedCount === 0) {
     assertNoCommittedReceiptForFilteredResult(stateDir);
     if (!answerAudit.auditPath || !answerAudit.auditHash || !answerAudit.effectiveCorpusHash) {
-      throw new Error("filtered corpus의 v4 terminal audit이 없습니다");
+      throw new Error("filtered corpus의 current terminal audit이 없습니다");
     }
     writeImmutableJson(resultPath, {
-      version: 4,
+      version: 5,
       status: "filtered",
       entryId: entry.id,
       reason: "NO_IN_SCOPE_QUESTIONS",

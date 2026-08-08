@@ -282,7 +282,7 @@ describe("exam corpus official solution revision", () => {
     const revision = repaired.solutionRepairs[0].revision!;
     expect(revision.trigger).toMatchObject({
       kind: "semantic",
-      semanticCheckpoint: { path: expect.stringMatching(/^semantic-choice-checks\/v4-/u) },
+      semanticCheckpoint: { path: expect.stringMatching(/^semantic-choice-checks\/v5-/u) },
       semanticDecisionHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
     });
     const revisionArtifact = JSON.parse(readFileSync(join(root, revision.solutionArtifact.path), "utf8"));

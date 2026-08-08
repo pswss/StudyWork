@@ -48,6 +48,7 @@ import {
   problemChunkCount,
   problemOwnedRange,
   solutionOwnedStartRange,
+  semanticChoiceCheckpointPath,
   semanticExplanationWithoutMarkers,
   transcriptionRepairKeys,
   validateFilteredResult,
@@ -94,13 +95,20 @@ describe("exam corpus importer", () => {
       .toBe("2dccb31ca7d4b9dc00ebe9e1b2fca5314ca2563469fbf6ba1c69752939768835");
     expect(["1:1", "2:6", "10:25"].sort(compareCorpusQuestionKeys))
       .toEqual(["1:1", "10:25", "2:6"]);
+    const solutionHash = "1".repeat(64);
+    const inputHash = "2".repeat(64);
+    const first = semanticChoiceCheckpointPath(`e525${"0".repeat(60)}`, solutionHash, inputHash);
+    const second = semanticChoiceCheckpointPath(`2dd7${"0".repeat(60)}`, solutionHash, inputHash);
+    expect(first).toMatch(/^semantic-choice-checks\/v5-/u);
+    expect(second).not.toBe(first);
+    expect(() => semanticChoiceCheckpointPath("bad", solutionHash, inputHash)).toThrow("hash가 유효하지 않습니다");
   });
 
   it("defines the q20 same-target and q29 excluded-dependency boundary", () => {
     expect(CLASSIFIER_VERSION).toBe(5);
     expect(PROBLEM_REPAIR_VERSION).toBe(2);
     expect(CLASSIFICATION_REPAIR_VERSION).toBe(4);
-    expect(SEMANTIC_CHOICE_CHECK_VERSION).toBe(4);
+    expect(SEMANTIC_CHOICE_CHECK_VERSION).toBe(5);
     expect(TRANSCRIPTION_GATE_VERSION).toBe(2);
     expect(TRANSCRIPTION_PROMPT_DIGEST).toMatch(/^[a-f0-9]{64}$/u);
     expect(SOLUTION_FIDELITY_VERSION).toBe(1);
@@ -327,6 +335,12 @@ describe("exam corpus importer", () => {
         reason: "NO_IN_SCOPE_QUESTIONS",
         rulesDigest: "stale",
       }, entry.id)).toThrow("transcription gate가 오래되었습니다");
+      expect(() => validateFilteredResult({
+        version: "4",
+        status: "filtered",
+        entryId: entry.id,
+        reason: "NO_IN_SCOPE_QUESTIONS",
+      }, entry.id)).toThrow("result.json이 유효하지 않습니다");
       expect(validateFilteredResult({
         version: 4,
         status: "filtered",
@@ -339,6 +353,19 @@ describe("exam corpus importer", () => {
         problemTerminalFidelityVersion: PROBLEM_TERMINAL_FIDELITY_VERSION,
         problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
         answerAudit: { path: "answer-audit/v4-test.json", sha256: "test" },
+      }, entry.id)).toBe("NO_IN_SCOPE_QUESTIONS");
+      expect(validateFilteredResult({
+        version: 5,
+        status: "filtered",
+        entryId: entry.id,
+        reason: "NO_IN_SCOPE_QUESTIONS",
+        rulesDigest: CLASSIFIER_DIGEST,
+        classifierVersion: CLASSIFIER_VERSION,
+        transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+        transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+        problemTerminalFidelityVersion: PROBLEM_TERMINAL_FIDELITY_VERSION,
+        problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+        answerAudit: { path: "answer-audit/v5-test.json", sha256: "test" },
       }, entry.id)).toBe("NO_IN_SCOPE_QUESTIONS");
       expect(() => parseCorpusManifest({
         schemaVersion: 2,

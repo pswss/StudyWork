@@ -274,7 +274,7 @@ describe("exam corpus page-batch problem repair", () => {
     expect(repaired.classified.find((item) => item.classification.key === "3:23")?.classification.decision).toBe("reject");
     expect(repaired.problemTerminalFidelityItems).toHaveLength(30);
     expect(repaired.problemTerminalFidelityItems.every((item) => item.status === "exact")).toBe(true);
-    expect(repaired.auditPath).toMatch(/^answer-audit\/v4-/u);
+    expect(repaired.auditPath).toMatch(/^answer-audit\/v5-/u);
 
     const beforeReplay = { ...calls };
     const replay = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);

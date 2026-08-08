@@ -507,7 +507,7 @@ describe("exam corpus targeted problem repair", () => {
         transcription_status: "exact",
       }],
     });
-    expect(repaired.auditPath).toMatch(/^answer-audit\/v4-[a-f0-9]{64}\.json$/u);
+    expect(repaired.auditPath).toMatch(/^answer-audit\/v5-[a-f0-9]{64}\.json$/u);
     expect(repaired.auditHash).toMatch(/^[a-f0-9]{64}$/u);
     const changedKeys = repaired.classified.flatMap((item, index) =>
       canonicalEvidenceHash(item) === canonicalEvidenceHash(classified[index]) ? [] : [item.classification.key]
@@ -529,7 +529,7 @@ describe("exam corpus targeted problem repair", () => {
     const imported = matchOfficialSolutions(entry, repaired.classified, repaired.solutions);
     expect(imported.some((item) => item.printedNumber === "11")).toBe(false);
     expect(imported).toHaveLength(1);
-    expect(readdirSync(join(root, "semantic-choice-checks"))[0]).toMatch(/^v4-/u);
+    expect(readdirSync(join(root, "semantic-choice-checks"))[0]).toMatch(/^v5-/u);
 
     expect(() => assertNoCommittedReceiptForFilteredResult(root)).not.toThrow();
     const receipt = { version: 2, status: "committed", entryId: entry.id };
@@ -541,7 +541,7 @@ describe("exam corpus targeted problem repair", () => {
       receipt,
       repaired
     );
-    expect(attestation.path).toMatch(/^answer-attestation\/v4-[a-f0-9]{64}\.json$/u);
+    expect(attestation.path).toMatch(/^answer-attestation\/v5-[a-f0-9]{64}\.json$/u);
     expect(attestation.sha256).toMatch(/^[a-f0-9]{64}$/u);
     const auditCheckpoint = JSON.parse(readFileSync(join(root, repaired.auditPath!), "utf8"));
     expect(auditCheckpoint).toMatchObject({
@@ -608,6 +608,23 @@ describe("exam corpus targeted problem repair", () => {
     expect(canonicalEvidenceHash(replay.repairs)).toBe(canonicalEvidenceHash(repaired.repairs));
     expect(readdirSync(join(root, "problem-recoveries"))).toHaveLength(1);
     expect(readdirSync(join(root, "classification-recoveries"))).toHaveLength(1);
+
+    const semanticPath = join(root, auditCheckpoint.semanticCheckpoint.path);
+    const semanticCheckpoint = JSON.parse(readFileSync(semanticPath, "utf8"));
+    semanticCheckpoint.effectiveCorpusHash = "0".repeat(64);
+    writeCanonicalJson(semanticPath, semanticCheckpoint);
+    const beforeSemanticTamperReplay = { ...calls };
+    await expect(repairAndAuditOfficialAnswers(
+      entry,
+      problem,
+      solution,
+      root,
+      classified,
+      solutions
+    )).rejects.toThrow("semantic choice 체크포인트 메타데이터가 다릅니다");
+    expect(calls).toEqual(beforeSemanticTamperReplay);
+    semanticCheckpoint.effectiveCorpusHash = repaired.effectiveCorpusHash;
+    writeCanonicalJson(semanticPath, semanticCheckpoint);
 
     const recoveryClassificationPath = join(root, recovery.classificationArtifact.path);
     const recoveryClassification = JSON.parse(readFileSync(recoveryClassificationPath, "utf8"));

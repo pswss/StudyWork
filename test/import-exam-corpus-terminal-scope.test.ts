@@ -243,7 +243,7 @@ describe("exam corpus independent terminal scope", () => {
       transcription_status: "exact",
     });
     expect(result.repairs.map((repair) => repair.key)).toEqual(["1:5"]);
-    expect(result.auditPath).toMatch(/^answer-audit\/v4-/u);
+    expect(result.auditPath).toMatch(/^answer-audit\/v5-/u);
     const attestation = await writeAnswerAttestation(
       root, data.entry.id, data.problem.sha256, data.solution.sha256,
       { version: 2, status: "committed", entryId: data.entry.id }, result
@@ -267,7 +267,7 @@ describe("exam corpus independent terminal scope", () => {
       scopeDecision: "reject",
       scopeConfidence: 0.99,
     });
-    expect(result.auditPath).toMatch(/^answer-audit\/v4-/u);
+    expect(result.auditPath).toMatch(/^answer-audit\/v5-/u);
     await expect(writeAnswerAttestation(
       root, data.entry.id, data.problem.sha256, data.solution.sha256,
       { version: 2, status: "committed", entryId: data.entry.id },

@@ -256,8 +256,8 @@ describe("exam corpus official solution repair", () => {
     expect(SOLUTION_FIDELITY_SLICE_STRIDE).toBe(18);
     expect(SOLUTION_REPAIR_VERSION).toBe(1);
     expect(SOLUTION_REPAIR_FIDELITY_VERSION).toBe(1);
-    expect(ANSWER_AUDIT_VERSION).toBe(4);
-    expect(ANSWER_ATTESTATION_VERSION).toBe(4);
+    expect(ANSWER_AUDIT_VERSION).toBe(5);
+    expect(ANSWER_ATTESTATION_VERSION).toBe(5);
     expect(SOLUTION_FIDELITY_PROMPT_DIGEST).toMatch(/^[a-f0-9]{64}$/u);
     expect(sha256(readFileSync(baseChunkPath))).toBe(baseChunkHash);
     expect(repaired.solutionRepairs).toHaveLength(1);
@@ -280,7 +280,7 @@ describe("exam corpus official solution repair", () => {
       answerStatus: "exact",
       explanationStatus: "exact",
     })]);
-    expect(repaired.auditPath).toMatch(/^answer-audit\/v4-[a-f0-9]{64}\.json$/u);
+    expect(repaired.auditPath).toMatch(/^answer-audit\/v5-[a-f0-9]{64}\.json$/u);
 
     const imported = matchOfficialSolutions(entry, repaired.classified, repaired.solutions);
     expect(imported).toHaveLength(1);
@@ -304,7 +304,7 @@ describe("exam corpus official solution repair", () => {
       { version: 2, status: "committed", entryId: entry.id },
       repaired
     );
-    expect(attestation.path).toMatch(/^answer-attestation\/v4-[a-f0-9]{64}\.json$/u);
+    expect(attestation.path).toMatch(/^answer-attestation\/v5-[a-f0-9]{64}\.json$/u);
     const attested = JSON.parse(readFileSync(join(root, attestation.path), "utf8"));
     expect(attested).toMatchObject({
       solutionFidelityVersion: 1,

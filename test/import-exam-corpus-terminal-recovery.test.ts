@@ -282,7 +282,7 @@ describe("exam corpus terminal-trigger problem recovery", () => {
       status: "exact",
       scopeDecision: "reject",
     });
-    expect(repaired.auditPath).toMatch(/^answer-audit\/v4-/u);
+    expect(repaired.auditPath).toMatch(/^answer-audit\/v5-/u);
 
     const beforeReplay = { ...calls };
     const replay = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
