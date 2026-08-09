@@ -71,6 +71,14 @@ const cases = [{
     "data/import-exam-corpus/7755c70fefaa45f755086e2b/" +
       "problem-recoveries/v1-0003-0008-8a81b3c4948de9fe7211cd8db475f5858850e48d88de6dda267d3538cdebf7ad.json"
   ),
+}, {
+  entryId: "ebsi:5656593",
+  sourceHash: "e1b0ffd692634a4a2b1500877691cf0f4ff622fb85c6dd1dba4aff65dfd29e1d",
+  path: join(
+    process.cwd(),
+    "data/import-exam-corpus/714fd4581f778a9c559fd16e/" +
+      "problem-recoveries/v1-0007-0018-8dc9e3101914ced2b5380528cdf56f5c607f0911f8a4f4460835260ae4cd6b3a.json"
+  ),
 }] as const;
 
 const available = cases.every((item) => existsSync(item.path));
@@ -87,6 +95,7 @@ const recoveryCases = [{
   questionCount: 45,
   pageCount: 16,
   finalAnchor: "가로선은 총 2개",
+  expectedDecision: "accept",
 }, {
   index: 2,
   stateDir: join(process.cwd(), "data/import-exam-corpus/7755c70fefaa45f755086e2b"),
@@ -98,6 +107,19 @@ const recoveryCases = [{
   questionCount: 30,
   pageCount: 12,
   finalAnchor: "원점 $O=(0,0)$에는 뚫린 점",
+  expectedDecision: "accept",
+}, {
+  index: 3,
+  stateDir: join(process.cwd(), "data/import-exam-corpus/714fd4581f778a9c559fd16e"),
+  classificationPath: join(
+    process.cwd(),
+    "data/import-exam-corpus/714fd4581f778a9c559fd16e/" +
+      "classification-recoveries/v1-0007-0018-eadc507490e4723cf09f622b2231222ff5cb12db3609ab381b79951dc1de3144-7bb7cb863c8c4855.json"
+  ),
+  questionCount: 30,
+  pageCount: 12,
+  finalAnchor: "읽는 순서는 단일, 단일, 복합, 복합",
+  expectedDecision: "reject",
 }] as const;
 
 const recoveryCasesAvailable = recoveryCases.every((item) =>
@@ -253,6 +275,9 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
         key: string;
         figure_description: string | null;
       }>;
+      const targetScopeDecision = testCase.expectedDecision === "reject" && calls.terminal === 1
+        ? "accept"
+        : testCase.expectedDecision;
       return { text: JSON.stringify(inputs.map((input) => ({
         key: input.key,
         status: input.key !== targetKey || input.figure_description?.includes(testCase.finalAnchor)
@@ -261,9 +286,11 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
         evidence: input.key === targetKey && !input.figure_description?.includes(testCase.finalAnchor)
           ? "공식 source의 시각 세부가 누락됐다."
           : "공식 source pixels와 일치한다.",
-        scopeDecision: input.key === targetKey ? "accept" : "reject",
+        scopeDecision: input.key === targetKey ? targetScopeDecision : "reject",
         scopeConfidence: 0.99,
-        scopeEvidence: input.key === targetKey ? "요청 교과 범위이다." : "요청 범위 밖이다.",
+        scopeEvidence: input.key === targetKey && targetScopeDecision === "accept"
+          ? "요청 교과 범위이다."
+          : "요청 범위 밖이다.",
       }))) };
     }
     if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
@@ -291,11 +318,11 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
   });
   expect(result.classified.find((item) => item.classification.key === targetKey)).toMatchObject({
     question: { figure_description: expect.stringContaining(testCase.finalAnchor) },
-    classification: { decision: "accept", transcription_status: "exact" },
+    classification: { decision: testCase.expectedDecision, transcription_status: "exact" },
   });
   expect(result.problemTerminalFidelityItems.find((item) => item.key === targetKey)).toMatchObject({
     status: "exact",
-    scopeDecision: "accept",
+    scopeDecision: testCase.expectedDecision,
   });
   expect(result.auditPath).toMatch(/^answer-audit\/v5-/u);
 
@@ -327,7 +354,7 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
 }
 
 describe("exact allowlisted problem manual adjudication", () => {
-  it("pins the three audited sources and exhausted child hashes", () => {
+  it("pins the four audited sources and exhausted child hashes", () => {
     expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.map((item) => ({
       entryId: item.entryId,
       key: item.key,
@@ -356,6 +383,13 @@ describe("exact allowlisted problem manual adjudication", () => {
       sourceHash: cases[2].sourceHash,
       parentKind: "recovery",
       failedQuestionHash: "9e4b37f842ef38b07710ff9ce1e358d847abadb1f57387c8a3b7174205027a78",
+    }, {
+      entryId: "ebsi:5656593",
+      key: "7:18",
+      sourcePage: 7,
+      sourceHash: cases[3].sourceHash,
+      parentKind: "recovery",
+      failedQuestionHash: "79c49b622b055d72423e33d5a7038766173bf3923cf10d7c15a36a4bd7eb5e9e",
     }]);
   });
 
@@ -374,7 +408,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(corrected.figure_description).toContain("[A], ㉮, [B] 표지");
   });
 
-  it.skipIf(!available)("preserves Q30 diagram roles and Q8 open/filled graph states", () => {
+  it.skipIf(!available)("preserves Q30/Q18 diagram roles and Q8 open/filled graph states", () => {
     const q30 = applyAllowlistedProblemManualCorrection(cases[1].entryId, cases[1].sourceHash, itemAt(1));
     expect(q30.question).toContain("㉢ 명제 논리학");
     expect(q30.question).toContain("$p$이다.                  ⇒       $p$");
@@ -386,6 +420,15 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(q8.figure_description).toContain("원점 $O=(0,0)$에는 뚫린 점");
     expect(q8.figure_description).toContain("$(0,-2)$에는 채운 점");
     expect(q8.figure_description).toContain("$(1,-3)$에는 뚫린 점");
+
+    const q18 = applyAllowlistedProblemManualCorrection(cases[3].entryId, cases[3].sourceHash, itemAt(3));
+    expect(q18.question.match(/호 \$\\overset\{\\frown\}\{N_1L_1\}\$/gu)).toHaveLength(2);
+    expect(q18.question.match(/\[단일 곡선삼각형 도형문자\]/gu)).toHaveLength(2);
+    expect(q18.question.match(/\[세 단일 곡선삼각형이 결합된 복합 도형문자\]/gu)).toHaveLength(2);
+    expect(q18.question).not.toContain("△ 모양의 도형");
+    expect(q18.figure_description).toContain("읽는 순서는 단일, 단일, 복합, 복합");
+    expect(q18.figure_description).toContain("호 표기는 정확히 2회");
+    expect(q18.figure_description).toContain("$R_1$, $R_2$, $R_3$ 세 단계 그림");
   });
 
   it.skipIf(!available)("rejects a changed parent item before applying any correction", () => {
