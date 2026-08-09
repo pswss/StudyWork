@@ -336,6 +336,13 @@ describe("exact allowlisted first-repair scope adjudication", () => {
       sourcePage: 10,
       sourceHash: "1e15589c2682dbabcbddea62b48fb218658fb15d000de1daf96be52e7d92386d",
       solutionSourceHash: "d7e8497ec003f0eca0d1023c5179ecd8d621ca519c513baab6481a3c3e06e5d0",
+    }, {
+      allowlistId: "ebsi-5696441-q30-repair-scope-v1",
+      entryId: "ebsi:5696441",
+      key: "12:30",
+      sourcePage: 12,
+      sourceHash: "b164d4dc867f0790525ca7ddae3c1003113f454c4d015f161db3d5ec4a1c9fc2",
+      solutionSourceHash: "1aff1dcfcb4954d355661ebe03f823d1d4227db1339f604f2391ce0673552557",
     }]);
   });
 
