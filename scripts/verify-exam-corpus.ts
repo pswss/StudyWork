@@ -449,6 +449,7 @@ type ProblemManualAdjudicationSpec = ProblemCropAdjudicationSpec & {
   replacements: readonly ProblemManualReplacement[];
   figure?: boolean;
   figureDescription?: string;
+  expectedDecision?: "reject";
 };
 
 const PROBLEM_SCOPE_ADJUDICATION_ALLOWLIST: readonly ProblemScopeAdjudicationSpec[] = [{
@@ -549,6 +550,20 @@ const Q8_MANUAL_FIGURE_DESCRIPTION =
   "$1$과 $3$, $y$축에는 $3$, $2$, $-2$, $-3$이 표시되어 있다. $(0,-2)$에는 채운 점이 있고, " +
   "$(1,-3)$에는 뚫린 점이 있다. $(1,-3)$에서 오른쪽 위로 올라가는 직선 조각은 $x$축의 " +
   "$x=3$을 지나며, 그 옆에 $y=f(x)$가 표시되어 있다.";
+
+const Q18_MANUAL_FIGURE_DESCRIPTION =
+  "공식 7쪽 18번 본문에는 비문자 도형문자가 정확히 4개 있고, 읽는 순서는 단일, 단일, 복합, " +
+  "복합이다. 첫째 단일 도형문자는 호와 두 선분으로 둘러싸인 $T_1$의 곡선삼각형을, 둘째 단일 " +
+  "도형문자는 같은 방법으로 만든 $T_2$, $T_3$ 각각의 곡선삼각형을 나타낸다. 각 단일 도형은 " +
+  "위 꼭짓점에서 내려오는 좌우 두 선분과, 가운데가 두 끝점보다 위로 볼록한 아래쪽 원호 하나로 " +
+  "둘러싸인 한 영역이다. 셋째 복합 도형문자는 $T_1$, $T_2$, $T_3$ 세 단일 영역이 위쪽 하나와 " +
+  "아래쪽 좌우 둘로 결합된 $R_1$의 색칠 영역을, 넷째 복합 도형문자는 같은 세 영역의 결합을 " +
+  "$R_2$ 안에 반복하는 역할을 한다. 본문의 $\\overset{\\frown}{N_1L_1}$ 호 표기는 정확히 2회이다. " +
+  "아래에는 $R_1$, $R_2$, $R_3$ 세 단계 그림이 있다. $R_1$은 정삼각형 $A_1B_1C_1$ 안의 " +
+  "$T_1$, $T_2$, $T_3$ 세 회색 곡선삼각형을 보여 준다. $R_2$는 호 " +
+  "$\\overset{\\frown}{N_1L_1}$의 이등분점 $A_2$와 $B_2$, $C_2$로 만든 중앙 정삼각형 안에 " +
+  "같은 구조를 한 단계 반복하고, $R_3$은 더 작은 중앙 정삼각형 안에 다시 반복한다. 각 그림 " +
+  "아래의 $R_1$, $R_2$, $R_3$ 표지와 $R_3$ 오른쪽의 줄임표는 단계와 계속되는 과정을 나타낸다.";
 
 const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationSpec[] = [
   {
@@ -672,6 +687,63 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     replacements: [],
     figure: true,
     figureDescription: Q8_MANUAL_FIGURE_DESCRIPTION,
+  },
+  {
+    allowlistId: "ebsi-5656593-q18-manual-v1",
+    entryId: "ebsi:5656593",
+    key: "7:18",
+    sourcePage: 7,
+    sourceHash: "e1b0ffd692634a4a2b1500877691cf0f4ff622fb85c6dd1dba4aff65dfd29e1d",
+    parentKind: "recovery",
+    failedQuestionHash: "79c49b622b055d72423e33d5a7038766173bf3923cf10d7c15a36a4bd7eb5e9e",
+    failedClassificationHash: "c75e05e33c6abf21173ef7e5108ecb13f89ef42fb0a778862cc061ed223efc68",
+    failedClassificationEvidenceHash: "40489cac4ba70d49a4e9279053e63a42c3bcb07e2e62e8ae77e96e72a8640dfb",
+    views: [
+      { sourcePage: 7, label: "p7 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 7, label: "p7 Q18 statement", rect: [0.50, 0.09, 0.94, 0.48] },
+      { sourcePage: 7, label: "p7 Q18 R1-R3 diagrams", rect: [0.51, 0.42, 0.94, 0.88] },
+    ],
+    requiredTokens: [
+      "호 $\\overset{\\frown}{N_1L_1}$", "호 표기는 정확히 2회",
+      "[단일 곡선삼각형 도형문자]", "[세 단일 곡선삼각형이 결합된 복합 도형문자]",
+      "읽는 순서는 단일, 단일, 복합, 복합", "$R_1$", "$R_2$", "$R_3$", "$T_1$", "$T_2$", "$T_3$",
+      "① $\\dfrac{3(3\\sqrt{3}-\\pi)}{11}$",
+      "⑤ $\\dfrac{4(3\\sqrt{3}-\\pi)}{11}$",
+    ],
+    replacements: [
+      {
+        field: "question", from: "호 $N_1L_1$", to: "호 $\\overset{\\frown}{N_1L_1}$", count: 2,
+      },
+      {
+        field: "question",
+        from: "둘러싸인 부분인 △ 모양의 도형을 $T_1$이라 하자.",
+        to: "둘러싸인 부분인 [단일 곡선삼각형 도형문자] 모양의 도형을 $T_1$이라 하자.",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "두 선분으로 둘러싸인 부분인 △ 모양의 도형을 각각 $T_2$, $T_3$이라 하자.",
+        to: "두 선분으로 둘러싸인 부분인 [단일 곡선삼각형 도형문자] 모양의 도형을 각각 " +
+          "$T_2$, $T_3$이라 하자.",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "세 도형 $T_1$, $T_2$, $T_3$으로 이루어진 △ 모양의 도형에 색칠하여",
+        to: "세 도형 $T_1$, $T_2$, $T_3$으로 이루어진 " +
+          "[세 단일 곡선삼각형이 결합된 복합 도형문자] 모양의 도형에 색칠하여",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "만들어지는 △ 모양의 도형에 색칠하여",
+        to: "만들어지는 [세 단일 곡선삼각형이 결합된 복합 도형문자] 모양의 도형에 색칠하여",
+        count: 1,
+      },
+    ],
+    figure: true,
+    figureDescription: Q18_MANUAL_FIGURE_DESCRIPTION,
+    expectedDecision: "reject",
   },
 ] as const;
 
@@ -3157,7 +3229,19 @@ function problemManualCorrectionSpecHash(spec: ProblemManualAdjudicationSpec): s
     replacements: spec.replacements,
     figure: spec.figure,
     figureDescription: spec.figureDescription,
+    ...(spec.expectedDecision ? { expectedDecision: spec.expectedDecision } : {}),
   });
+}
+
+function matchesProblemManualExpectedDecision(
+  spec: ProblemManualAdjudicationSpec,
+  classification: Pick<ClassificationEvidence,
+    "decision" | "canonical_subject" | "curriculum_course" | "domain" | "achievement_codes">,
+): boolean {
+  if (!spec.expectedDecision) return true;
+  return classification.decision === "reject" && classification.canonical_subject === null
+    && classification.curriculum_course === null && classification.domain === null
+    && classification.achievement_codes.length === 0;
 }
 
 function applyProblemManualCorrection(
@@ -3817,6 +3901,7 @@ function verifyProblemManualAdjudication(
   };
   if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)
     || classification.transcription_status !== "exact"
+    || !matchesProblemManualExpectedDecision(spec, classification)
     || manual.classificationArtifactItemHash !== classificationArtifactItemHash
     || manual.baseClassificationHash !== spec.failedClassificationHash
     || manual.effectiveClassificationHash !== classificationArtifactItemHash) {
