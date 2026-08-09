@@ -694,7 +694,7 @@ describe("exam corpus targeted problem repair", () => {
     const replay = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
     expect(calls).toEqual({
       target: 3, classification: 4, scopeAdjudication: 1,
-      terminalFidelity: 5, solutionFidelity: 1, semantic: 1,
+      terminalFidelity: 4, solutionFidelity: 1, semantic: 1,
     });
     expect(replay.auditHash).toBe(repaired.auditHash);
     await expect(writeAnswerAttestation(
@@ -810,7 +810,7 @@ describe("exam corpus targeted problem repair", () => {
       root,
       classified,
       solutions
-    )).rejects.toThrow("classification repair batch 메타데이터가 다릅니다");
+    )).rejects.toThrow("classification repair graph가 유효하지 않습니다");
     }
   );
 });

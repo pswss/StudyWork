@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -11,13 +11,19 @@ vi.mock("../src/codex-provider", async (importOriginal) => ({
   getCodexProvider: () => ({ complete: providerMock.complete }),
 }));
 
-import { TARGETED_PROBLEM_BATCH_VERSION, type QuizItemEx, type SolutionItem } from "../src/claude";
+import {
+  TARGETED_PROBLEM_BATCH_VERSION,
+  TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+  type QuizItemEx,
+  type SolutionItem,
+} from "../src/claude";
 import {
   CLASSIFIER_DIGEST,
   CLASSIFIER_VERSION,
   TRANSCRIPTION_GATE_VERSION,
   TRANSCRIPTION_PROMPT_DIGEST,
   TARGETED_PROBLEM_BATCH_PROMPT_DIGEST,
+  TARGETED_PROBLEM_PROMPT_DIGEST,
   canonicalEvidenceHash,
   parseCorpusManifest,
   repairAndAuditOfficialAnswers,
@@ -200,7 +206,7 @@ describe("exam corpus page-batch problem repair", () => {
       if (request.schema?.name === "studywork_exam_corpus_classification") {
         calls.classify++;
         if (crashClassification) throw new Error("simulated batch classification interruption");
-        const numbers = calls.classify === 2 ? [23, 22, 17] : [23];
+        const numbers = calls.classify === 2 ? [1] : calls.classify === 3 ? [23, 22, 17] : [23];
         return { text: JSON.stringify(numbers.map((number) => decision(number, "exact"))) };
       }
       if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
@@ -252,15 +258,41 @@ describe("exam corpus page-batch problem repair", () => {
       ],
     });
     expect(v2Checkpoint).not.toHaveProperty("sourcePage");
+    const legacySinglePath = join(root, "problem-repairs", "v2-0001-0001.json");
+    const baseProblemPath = join(root, "problem-chunks", "v2-0000.json");
+    const baseSolutionPath = join(root, "solution-chunks", "v3-0000.json");
+    writeCanonicalJson(legacySinglePath, {
+      version: 2,
+      entryId: entry.id,
+      sourceHash: problem.sha256,
+      key: "1:1",
+      sourcePage: 1,
+      printedNumber: "1",
+      contextFrom: 1,
+      contextTo: 3,
+      baseProblemCheckpoint: { path: "problem-chunks/v2-0000.json", sha256: sha256(readFileSync(baseProblemPath)) },
+      baseQuestionHash: canonicalEvidenceHash(questions[0]),
+      baseSolutionCheckpoint: { path: "solution-chunks/v3-0000.json", sha256: sha256(readFileSync(baseSolutionPath)) },
+      baseSolutionItemHash: canonicalEvidenceHash(solutions[0]),
+      officialRawAnswerHash: sha256(solutions[0].answer),
+      promptVersion: TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+      promptDigest: TARGETED_PROBLEM_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      item: questions[0],
+    });
 
     crashClassification = false;
     const repaired = await repairAndAuditOfficialAnswers(
       entry, problem, solution, root, classified, solutions
     );
-    expect(calls).toEqual({ extract: 2, classify: 3, terminal: 3, solution: 1 });
-    expect(repaired.repairs.map((repair) => repair.key)).toEqual(["1:17", "2:22", "3:23"]);
-    expect(new Set(repaired.repairs.map((repair) => repair.problemArtifact.path)).size).toBe(1);
-    expect(new Set(repaired.repairs.map((repair) => repair.classificationArtifact.path)).size).toBe(1);
+    expect(calls).toEqual({ extract: 2, classify: 4, terminal: 3, solution: 1 });
+    expect(repaired.repairs.map((repair) => repair.key)).toEqual(["1:1", "1:17", "2:22", "3:23"]);
+    expect(new Set(repaired.repairs.map((repair) => repair.problemArtifact.path)).size).toBe(2);
+    expect(new Set(repaired.repairs.map((repair) => repair.classificationArtifact.path)).size).toBe(2);
+    expect(repaired.repairs.find((repair) => repair.key === "1:1")?.classificationArtifact.path)
+      .toMatch(/^classification-repair-batches\/v1-/u);
+    expect(existsSync(join(root, "classification-repairs"))).toBe(false);
     expect(repaired.repairs.find((repair) => repair.key === "3:23")?.revision).toMatchObject({
       trigger: {
         kind: "terminal",
@@ -281,6 +313,56 @@ describe("exam corpus page-batch problem repair", () => {
     expect(calls).toEqual(beforeReplay);
     expect(replay.auditHash).toBe(repaired.auditHash);
     expect(canonicalEvidenceHash(replay.classified)).toBe(canonicalEvidenceHash(repaired.classified));
+
+    const copiedSinglePath = join(root, "problem-repairs", "v2-9999-9999.json");
+    writeFileSync(copiedSinglePath, readFileSync(legacySinglePath));
+    await expect(repairAndAuditOfficialAnswers(
+      entry, problem, solution, root, classified, solutions
+    )).rejects.toThrow("persisted problem repair가 유효하지 않습니다");
+    expect(calls).toEqual(beforeReplay);
+    rmSync(copiedSinglePath);
+
+    const overlapPath = join(root, "problem-repairs", "v2-0001-0017.json");
+    const overlapMember = v2Checkpoint.members.find((member: { key: string }) => member.key === "1:17");
+    writeCanonicalJson(overlapPath, {
+      version: 2,
+      entryId: entry.id,
+      sourceHash: problem.sha256,
+      key: "1:17",
+      sourcePage: 1,
+      printedNumber: "17",
+      contextFrom: 1,
+      contextTo: 3,
+      baseProblemCheckpoint: overlapMember.baseProblemCheckpoint,
+      baseQuestionHash: overlapMember.baseQuestionHash,
+      baseSolutionCheckpoint: overlapMember.baseSolutionCheckpoint,
+      baseSolutionItemHash: overlapMember.baseSolutionItemHash,
+      officialRawAnswerHash: overlapMember.officialRawAnswerHash,
+      promptVersion: TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+      promptDigest: TARGETED_PROBLEM_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      item: v2Checkpoint.items.find((item: QuizItemEx) => item.page === 1 && item.number === "17"),
+    });
+    await expect(repairAndAuditOfficialAnswers(
+      entry, problem, solution, root, classified, solutions
+    )).rejects.toThrow("problem repair key가 중복되었습니다");
+    expect(calls).toEqual(beforeReplay);
+    rmSync(overlapPath);
+
+    const mixedClassificationPath = join(
+      root,
+      repaired.repairs.find((repair) => repair.key === "1:17")!.classificationArtifact.path
+    );
+    const originalClassificationBytes = readFileSync(mixedClassificationPath);
+    const mixedClassification = JSON.parse(originalClassificationBytes.toString("utf8"));
+    mixedClassification.members[0].problemAuthority.path = "problem-repairs/v2-0001-0001.json";
+    writeCanonicalJson(mixedClassificationPath, mixedClassification);
+    await expect(repairAndAuditOfficialAnswers(
+      entry, problem, solution, root, classified, solutions
+    )).rejects.toThrow("classification repair graph가 유효하지 않습니다");
+    expect(calls).toEqual(beforeReplay);
+    writeFileSync(mixedClassificationPath, originalClassificationBytes);
 
     const receipt = { version: 2, status: "committed", entryId: entry.id };
     await writeAnswerAttestation(root, entry.id, problem.sha256, solution.sha256, receipt, repaired);
@@ -324,9 +406,14 @@ describe("exam corpus page-batch problem repair", () => {
     });
     await expect(repairAndAuditOfficialAnswers(
       entry, problem, solution, root, classified, solutions
-    )).rejects.toThrow("v1/v2 authority가 섞였습니다");
+    )).rejects.toThrow("problem repair key가 중복되었습니다");
 
     rmSync(join(root, "problem-repair-batches", v2Name));
+    rmSync(legacySinglePath);
+    rmSync(join(root, "classification-repairs"), { recursive: true, force: true });
+    rmSync(join(root, "classification-repair-batches"), { recursive: true, force: true });
+    rmSync(join(root, "problem-revision-batches"), { recursive: true, force: true });
+    rmSync(join(root, "classification-revision-batches"), { recursive: true, force: true });
     const legacyCalls = { extract: 0, classify: 0 };
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       if (request.schema?.name === "studywork_file_quiz_items") {
