@@ -278,6 +278,12 @@ const PROBLEM_TERMINAL_RECOVERY_VERSION = 2;
 const CLASSIFICATION_TERMINAL_RECOVERY_VERSION = 2;
 const PROBLEM_CROP_ADJUDICATION_VERSION = 1;
 const CLASSIFICATION_CROP_ADJUDICATION_VERSION = 1;
+const PROBLEM_MANUAL_ADJUDICATION_VERSION = 1;
+const CLASSIFICATION_MANUAL_ADJUDICATION_VERSION = 1;
+const PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST =
+  "28434a9872d33e0ef364b6030c6f32b4a51cab9182a9d6c372f225884794d7e9";
+const PROBLEM_MANUAL_CORRECTION_DIGEST =
+  "a116ca7dd3fb35028db717aac3aa09e78d7c7671ab5ca9ecdaa3364bdb397b46";
 const PROBLEM_SCOPE_ADJUDICATION_VERSION = 1;
 const PROBLEM_SCOPE_ADJUDICATION_PROMPT_DIGEST =
   "cec5be77bf9745d05593e497842a3642c8a30c1ef1105ba1940f0a74fad3124e";
@@ -406,6 +412,23 @@ type ProblemScopeAdjudicationSpec = {
   solutionSourceHash: string;
 };
 
+type ProblemManualReplacement = {
+  field: "question" | "figure_description";
+  from: string;
+  to: string;
+  count: number;
+};
+
+type ProblemManualAdjudicationSpec = ProblemCropAdjudicationSpec & {
+  parentKind: "recovery" | "crop";
+  failedQuestionHash: string;
+  failedClassificationHash: string;
+  failedClassificationEvidenceHash: string;
+  replacements: readonly ProblemManualReplacement[];
+  figure?: boolean;
+  figureDescription?: string;
+};
+
 const PROBLEM_SCOPE_ADJUDICATION_ALLOWLIST: readonly ProblemScopeAdjudicationSpec[] = [{
   allowlistId: "ebsi-5577055-q11-scope-v1",
   entryId: "ebsi:5577055",
@@ -463,6 +486,160 @@ const PROBLEM_CROP_ADJUDICATION_ALLOWLIST: readonly ProblemCropAdjudicationSpec[
     ],
   },
 ] as const;
+
+const Q30_MANUAL_FIGURE_DESCRIPTION =
+  "공식 11쪽 오른쪽의 (4)와 (4′) 논증 도식이 좌우로 배치되어 있다. 왼쪽 (4)는 첫째 전제 " +
+  "‘만약 p이면 q이다.’와 둘째 전제 ‘p이다.’ 아래에 수평 가로선 하나가 있고, 그 아래 결론 " +
+  "‘그러므로 q이다.’가 놓인다. 오른쪽 (4′)는 첫째 전제 ‘p → q’와 둘째 전제 ‘p’ 아래에 수평 " +
+  "가로선 하나가 있고, 그 아래 결론 ‘q’가 놓인다. 두 도식 사이에는 왼쪽에서 오른쪽을 가리키는 " +
+  "‘⇒’가 하나 있다. 가로선은 총 2개이며 각각 두 전제와 한 결론을 구분한다.";
+
+const Q34_MANUAL_FIGURE_DESCRIPTION =
+  "공식 12쪽의 (가)에는 왼쪽 세로 묶음 괄호가 3개 있다. 각 괄호는 세로선 하나와 오른쪽을 향한 " +
+  "위·아래 가로 캡 2개로 이루어져 가로 캡은 모두 6개이다. 첫째 [A] 괄호는 ‘마님, 나으리께서 " +
+  "드십니다.’부터 ‘치수는 어머니의 흩어진 모습을 본 일이 없었다.’까지를 묶는다. 둘째 ㉮ 괄호는 " +
+  "‘앞으로 혼자 있을 수 없는 일이며’부터 ‘신랑감이 필요할 뿐이지요.’까지의 혼사 대화를 묶는다. " +
+  "셋째 [B] 괄호는 ‘이듬해 이월달 꽃바람이’부터 ‘불렀을 때 어머니의 눈은 불꽃이 튀는 듯 " +
+  "험악했다.’까지의 회상 장면을 묶는다. [A], ㉮, [B] 표지는 각 괄호의 왼쪽에 놓인다.";
+
+const Q8_MANUAL_FIGURE_DESCRIPTION =
+  "좌표평면에 함수 $y=f(x)$의 그래프가 그려져 있다. $x$축은 오른쪽, $y$축은 위쪽을 향하는 " +
+  "화살표이며 원점 $O=(0,0)$에는 뚫린 점이 표시되어 있다. 왼쪽 위에서 뚫린 원점 $O$까지 " +
+  "내려오는 직선 조각과, 뚫린 원점 $O$에서 $(1,2)$의 뚫린 점까지 올라가는 직선 조각이 있다. " +
+  "$(1,3)$에는 채운 점이 있다. $y=3$, $y=2$, $y=-3$에서 각각 $y$축과 $x=1$ 사이에 수평 " +
+  "점선이 그어져 있고, $x=1$에는 $y=-3$부터 $y=3$까지 수직 점선이 그어져 있다. $x$축에는 " +
+  "$1$과 $3$, $y$축에는 $3$, $2$, $-2$, $-3$이 표시되어 있다. $(0,-2)$에는 채운 점이 있고, " +
+  "$(1,-3)$에는 뚫린 점이 있다. $(1,-3)$에서 오른쪽 위로 올라가는 직선 조각은 $x$축의 " +
+  "$x=3$을 지나며, 그 옆에 $y=f(x)$가 표시되어 있다.";
+
+const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationSpec[] = [
+  {
+    allowlistId: "ebsi-5594499-q34-manual-v1",
+    entryId: "ebsi:5594499",
+    key: "13:34",
+    sourcePage: 13,
+    sourceHash: "0ddccee92ce4e4ba3da53ed253e780cd7b41b5962f7e9761a920079619f81c31",
+    parentKind: "crop",
+    failedQuestionHash: "050900567ea5583ed78cf4fbeafc6cc0e014cb3eb480222bcf2cae22ed70ec7b",
+    failedClassificationHash: "8fcdb502ffaf611d5fd93f57f583974bbaf453d1ee8fb82ace1e0bab7a3d6737",
+    failedClassificationEvidenceHash: "c715e00259263307b62cda0f784b13df3e38bc3c2e088c465de18884d905d8e3",
+    views: [...PROBLEM_CROP_ADJUDICATION_ALLOWLIST[1].views],
+    requiredTokens: [
+      ...PROBLEM_CROP_ADJUDICATION_ALLOWLIST[1].requiredTokens.filter((token) => token !== "갑월"),
+      "삼월이", "흩어진 모습", "뚜드려 만든 쇠붙이 같으다", "쌍방이 혼신의 힘으로 겨루는",
+      "쾌적해지는", "너 생각", "어머님", "당치 않는 혹", "회피였었고", "할머니는 당혹했다",
+      "아씬 절로 가시야겄십니다", "[B]", "O.L*", "왼쪽 세로 묶음 괄호가 3개", "가로 캡은 모두 6개",
+    ],
+    replacements: [
+      { field: "question", from: "나오리께서", to: "나으리께서", count: 2 },
+      { field: "question", from: "갑월이", to: "삼월이", count: 1 },
+      { field: "question", from: "흐트러진 모습을", to: "흩어진 모습을", count: 1 },
+      {
+        field: "question",
+        from: "‘여전하시다! 언제나 저 모습, 저 눈빛, 대장간에서 수천 번을 두드려 만든 쇠붙이 같다.’",
+        to: "‘여전하시다! 언제나 저 모습, 저 눈빛, 대장간에서 수천 번을 뚜드려 만든 쇠붙이 같으다.’",
+        count: 1,
+      },
+      { field: "question", from: "적과 적이 칼이", to: "적과 적의 칼이", count: 1 },
+      { field: "question", from: "쌩쌩이 혼신의", to: "쌍방이 혼신의", count: 1 },
+      { field: "question", from: "쾌척해지는", to: "쾌적해지는", count: 1 },
+      { field: "question", from: "“네 생각이 그렇다면", to: "“너 생각이 그렇다면", count: 1 },
+      { field: "question", from: "않으십니까, 어머니.’", to: "않으십니까, 어머님.’", count: 1 },
+      {
+        field: "question",
+        from: "“그럴 리 있겠습니까. 서희에게 당치 않은 흠이 하나 생길 뿐이지요. 서희에게는 유순하고 글이나 읽으며 소일할 신랑감이 필요할 뿐이지요.”",
+        to: "‘그럴 리 있겠습니까. 서희에게 당치 않는 혹이 하나 생길 뿐이지요. 서희에게는 유순하고 글이나 읽으며 소일할 신랑감이 필요할 뿐이지요.’",
+        count: 1,
+      },
+      { field: "question", from: "자연스러운 회피였고", to: "자연스러운 회피였었고", count: 1 },
+      { field: "question", from: "할머니는 당황했다.", to: "할머니는 당혹했다.", count: 1 },
+      {
+        field: "question",
+        from: "“야싯 절로 가시야겠십니다.”",
+        to: "“아씬 절로 가시야겄십니다.”",
+        count: 1,
+      },
+      { field: "question", from: "“어머니!”", to: "“어머님!”", count: 2 },
+      { field: "question", from: "\n[B]\n이듬해", to: "\n이듬해", count: 1 },
+      {
+        field: "question",
+        from: "가마가 내려지고 어머니가 뜰에 나섰을 때,",
+        to: "가마가 내려지고 어머니가 뜰에 나섰\n[B]\n을 때,",
+        count: 1,
+      },
+      { field: "question", from: "치수의 두 눈에서 O.L*.", to: "치수의 두 눈에서 O.L*", count: 1 },
+      { field: "question", from: "- 박경리, 「토지」 -", to: "― 박경리, 「토지」 ―", count: 1 },
+      {
+        field: "question",
+        from: "- 박경리 원작, 이형우 각색, 「토지」 -",
+        to: "― 박경리 원작, 이형우 각색, 「토지」 ―",
+        count: 1,
+      },
+    ],
+    figure: true,
+    figureDescription: Q34_MANUAL_FIGURE_DESCRIPTION,
+  },
+  {
+    allowlistId: "ebsi-5578421-q30-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "12:30",
+    sourcePage: 12,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    failedQuestionHash: "0bf9903e40726584efe854ea1e91984a7d8f99c4b43ff9529ed75a2903802dfc",
+    failedClassificationHash: "f0155898f6972fefa7ce4d18025fbe08a785fdb98d875681173d4d7b6bdd2c32",
+    failedClassificationEvidenceHash: "e5ae78fca62817761efa9cefcccb2aabf5a3065c54657878f684f8f14775f1d6",
+    views: [
+      { sourcePage: 11, label: "p11 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 11, label: "p11 right passage", rect: [0.49, 0.08, 0.94, 0.90] },
+      { sourcePage: 11, label: "p11 (4) and (4-prime) diagram", rect: [0.50, 0.42, 0.92, 0.60] },
+      { sourcePage: 12, label: "p12 Q30", rect: [0.08, 0.04, 0.53, 0.27] },
+    ],
+    requiredTokens: [
+      "[29~34]", "(4)", "(4′)", "⇒", "────────", "㉢ 명제 논리학",
+      "30. 윗글의 내용과 일치하지 않는 것은?",
+      "③ 주어와 술어로 구성된 모든 문장은 정언 문장이다.",
+    ],
+    replacements: [
+      { field: "question", from: "ⓒ 명제 논리학", to: "㉢ 명제 논리학", count: 1 },
+      {
+        field: "question",
+        from: "(4) 만약 $p$이면 $q$이다.      (4′) $p \\to q$\n$p$이다.                          $p$\n그러므로 $q$이다.                 $q$",
+        to: "(4) 만약 $p$이면 $q$이다.      (4′) $p \\to q$\n$p$이다.                  ⇒       $p$\n────────                         ────────\n그러므로 $q$이다.                 $q$",
+        count: 1,
+      },
+    ],
+    figure: true,
+    figureDescription: Q30_MANUAL_FIGURE_DESCRIPTION,
+  },
+  {
+    allowlistId: "ebsi-5525984-q8-manual-v1",
+    entryId: "ebsi:5525984",
+    key: "3:8",
+    sourcePage: 3,
+    sourceHash: "1621eca42821e5feccbb56604249cbcedd8adf6bae6109960f6c790a61c14ec1",
+    parentKind: "recovery",
+    failedQuestionHash: "9e4b37f842ef38b07710ff9ce1e358d847abadb1f57387c8a3b7174205027a78",
+    failedClassificationHash: "7c2ee3c8fc9424599b974e9e0e7f0060099a6d64f94626b976662e5f8e59ef3a",
+    failedClassificationEvidenceHash: "ac058745cf4b353b1c20b7faa9ee1f1f1a22221d85d2bf89769aa1eec4f2558e",
+    views: [
+      { sourcePage: 3, label: "p3 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 3, label: "p3 Q8", rect: [0.07, 0.08, 0.51, 0.44] },
+      { sourcePage: 3, label: "p3 Q8 graph", rect: [0.18, 0.12, 0.43, 0.32] },
+    ],
+    requiredTokens: [
+      "원점 $O=(0,0)$에는 뚫린 점", "$(0,-2)$에는 채운 점", "$(1,2)$의 뚫린 점",
+      "$(1,3)$에는 채운 점", "$(1,-3)$에는 뚫린 점", "\\lim_{x\\to 0^-}", "\\lim_{x\\to 1^+}",
+    ],
+    replacements: [],
+    figure: true,
+    figureDescription: Q8_MANUAL_FIGURE_DESCRIPTION,
+  },
+] as const;
+
+export function manualAdjudicationAllowlistFingerprint(): string {
+  return canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
+}
 
 type VerificationContract = {
   auditVersion: 2 | 3 | 4 | 5;
@@ -1947,7 +2124,7 @@ function verifyProblemTerminalFidelity(
       const revision = object(repair.revision, `answer audit repairs[${index}].revision`);
       if (revision.recovery === undefined) continue;
       const recovery = object(revision.recovery, `answer audit repairs[${index}].revision.recovery`);
-      if (recovery.scopeAdjudication !== undefined) {
+      if (recovery.scopeAdjudication !== undefined || recovery.manualAdjudication !== undefined) {
         scopeAdjudicatedKeys.add(exactString(repair.key, `answer audit repairs[${index}].key`));
       }
     }
@@ -2464,6 +2641,7 @@ function verifyProblemRecoveryCoverage(
   const declared = new Set<string>();
   const declaredCrop = new Set<string>();
   const declaredScope = new Set<string>();
+  const declaredManual = new Set<string>();
   for (const [index, value] of values.entries()) {
     const repair = object(value, `answer audit repairs[${index}]`);
     if (repair.revision === undefined) continue;
@@ -2483,8 +2661,9 @@ function verifyProblemRecoveryCoverage(
       if (declared.has(pointer.path)) throw new Error(`${pointer.path}: duplicate problem recovery authority`);
       declared.add(pointer.path);
     }
-    if (recovery.adjudication !== undefined && recovery.scopeAdjudication !== undefined) {
-      throw new Error("problem recovery cannot declare both crop and scope adjudication");
+    if ((recovery.adjudication !== undefined && recovery.scopeAdjudication !== undefined)
+      || (recovery.manualAdjudication !== undefined && recovery.scopeAdjudication !== undefined)) {
+      throw new Error("problem recovery cannot combine scope adjudication with another terminal child");
     }
     if (recovery.scopeAdjudication !== undefined) {
       if (contract.auditVersion !== 5) throw new Error("problem scope adjudication requires answer audit v5");
@@ -2501,6 +2680,41 @@ function verifyProblemRecoveryCoverage(
         throw new Error(`${pointer.path}: duplicate scope adjudication authority`);
       }
       declaredScope.add(pointer.path);
+    }
+    if (recovery.manualAdjudication !== undefined) {
+      if (contract.auditVersion !== 5) throw new Error("problem manual adjudication requires answer audit v5");
+      const manual = object(
+        recovery.manualAdjudication,
+        `answer audit repairs[${index}].revision.recovery.manualAdjudication`,
+      );
+      const manualPointers: Array<[string, unknown, boolean]> = [
+        ["manual crop evidence", manual.cropEvidenceArtifact, false],
+        ["manual crop evidence PDF", manual.cropEvidencePdf, false],
+        ["problem manual adjudication", manual.problemArtifact, true],
+        ["classification manual adjudication", manual.classificationArtifact, true],
+      ];
+      if (!Array.isArray(manual.cropViews)) {
+        throw new Error(`answer audit repairs[${index}] manual adjudication views are missing`);
+      }
+      for (const [viewIndex, raw] of manual.cropViews.entries()) {
+        manualPointers.push([
+          `manual crop view ${viewIndex + 1}`,
+          object(raw, `answer audit repairs[${index}] manual cropViews[${viewIndex}]`).artifact,
+          false,
+        ]);
+      }
+      for (const [label, raw, alwaysManual] of manualPointers) {
+        const envelope = object(raw, `${label} artifact`);
+        const pointer = evidencePointer(
+          { path: envelope.path, sha256: envelope.sha256 },
+          `${label} artifact`,
+        );
+        if (!alwaysManual && !pointer.path.startsWith("problem-manual-evidence/")) continue;
+        if (declaredManual.has(pointer.path)) {
+          throw new Error(`${pointer.path}: duplicate manual adjudication authority`);
+        }
+        declaredManual.add(pointer.path);
+      }
     }
     if (recovery.adjudication === undefined) continue;
     if (contract.auditVersion !== 5) throw new Error("problem crop adjudication requires answer audit v5");
@@ -2593,6 +2807,41 @@ function verifyProblemRecoveryCoverage(
   for (const path of declaredScope) {
     if (!existsSync(join(stateDir, path))) {
       throw new Error(`${path}: declared scope adjudication artifact is missing`);
+    }
+  }
+  for (const [directory, patterns] of [
+    ["problem-manual-evidence", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.pdf$/u,
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}-view-\d{2}\.png$/u,
+    ]],
+    ["problem-manual-adjudications", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
+    ]],
+    ["classification-manual-adjudications", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u,
+    ]],
+  ] as const) {
+    const absolute = join(stateDir, directory);
+    if (!existsSync(absolute)) continue;
+    for (const entry of readdirSync(absolute, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name))) {
+      if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
+      if (!entry.isFile() || entry.isSymbolicLink()) {
+        throw new Error(`${directory}/${entry.name}: manual adjudication artifact must be a regular file`);
+      }
+      if (!patterns.some((pattern) => pattern.test(entry.name))) {
+        throw new Error(`${directory}/${entry.name}: malformed manual adjudication artifact name`);
+      }
+      const path = `${directory}/${entry.name}`;
+      if (!declaredManual.has(path)) {
+        throw new Error(`${path}: manual adjudication artifact is not declared by the terminal audit`);
+      }
+    }
+  }
+  for (const path of declaredManual) {
+    if (!existsSync(join(stateDir, path))) {
+      throw new Error(`${path}: declared manual adjudication artifact is missing`);
     }
   }
 }
@@ -2769,6 +3018,79 @@ function problemCropAdjudicationSpec(
   return matches[0];
 }
 
+function problemManualAdjudicationSpec(
+  entry: ManifestEntry,
+  key: string,
+  sourcePage: number,
+  sourceHash: string,
+): ProblemManualAdjudicationSpec {
+  const matches = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
+    spec.entryId === entry.id && spec.key === key && spec.sourcePage === sourcePage);
+  if (matches.length !== 1) {
+    throw new Error(`${entry.id} ${key}: manual adjudication is not uniquely allowlisted`);
+  }
+  if (matches[0].sourceHash !== sourceHash) {
+    throw new Error(`${entry.id} ${key}: official manual source hash does not match the allowlist`);
+  }
+  return matches[0];
+}
+
+function exactOccurrenceCount(source: string, target: string): number {
+  if (!target) throw new Error("manual adjudication replacement target is empty");
+  let count = 0;
+  let offset = 0;
+  for (;;) {
+    const index = source.indexOf(target, offset);
+    if (index < 0) return count;
+    count += 1;
+    offset = index + target.length;
+  }
+}
+
+function problemManualCorrectionSpecHash(spec: ProblemManualAdjudicationSpec): string {
+  return canonicalEvidenceHash({
+    allowlistId: spec.allowlistId,
+    parentKind: spec.parentKind,
+    views: spec.views,
+    requiredTokens: spec.requiredTokens,
+    replacements: spec.replacements,
+    figure: spec.figure,
+    figureDescription: spec.figureDescription,
+  });
+}
+
+function applyProblemManualCorrection(
+  failed: ProblemQuestion,
+  spec: ProblemManualAdjudicationSpec,
+): ProblemQuestion {
+  if (canonicalEvidenceHash(failed.evidence) !== spec.failedQuestionHash) {
+    throw new Error(`${failed.key}: manual adjudication failed question hash is stale`);
+  }
+  const corrected = structuredClone(failed.evidence);
+  for (const replacement of spec.replacements) {
+    const current = replacement.field === "question"
+      ? exactString(corrected.question, `${failed.key}.manual.question`)
+      : corrected.figure_description === null
+        ? ""
+        : exactString(corrected.figure_description, `${failed.key}.manual.figure_description`);
+    if (exactOccurrenceCount(current, replacement.from) !== replacement.count) {
+      throw new Error(`${failed.key}: manual replacement occurrence is stale: ${replacement.from}`);
+    }
+    corrected[replacement.field] = current.split(replacement.from).join(replacement.to);
+  }
+  if (spec.figure !== undefined) corrected.figure = spec.figure;
+  if (spec.figureDescription !== undefined) corrected.figure_description = spec.figureDescription;
+  const question = parseProblem(corrected, `${failed.key} allowlisted manual correction`);
+  if (question.key !== failed.key || question.page !== spec.sourcePage) {
+    throw new Error(`${failed.key}: manual correction changed the immutable identity`);
+  }
+  assertProblemCropTokens(question, spec);
+  if (canonicalEvidenceHash(question.evidence) === spec.failedQuestionHash) {
+    throw new Error(`${failed.key}: manual correction did not change the failed item`);
+  }
+  return question;
+}
+
 function cropPngDimensions(path: string, label: string): { width: number; height: number } {
   const header = Buffer.alloc(24);
   const descriptor = openSync(path, "r");
@@ -2812,6 +3134,7 @@ function verifyProblemCropAdjudication(
   rulesDigest: string,
   cache: EvidenceCache,
   contract: VerificationContract,
+  allowNonExact = false,
 ): { question: ProblemQuestion; classification: ClassificationEvidence; evidence: Record<string, unknown> } {
   const key = failedQuestion.key;
   if (contract.auditVersion !== 5 || failedClassification.transcription_status === "exact") {
@@ -3052,7 +3375,7 @@ function verifyProblemCropAdjudication(
   };
   const classificationArtifactItemHash = canonicalEvidenceHash(classification);
   if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)
-    || classification.transcription_status !== "exact"
+    || (!allowNonExact && classification.transcription_status !== "exact")
     || adjudication.classificationArtifactItemHash !== classificationArtifactItemHash) {
     throw new Error(`${key}: classification crop adjudication is stale or non-exact`);
   }
@@ -3090,6 +3413,352 @@ function verifyProblemCropAdjudication(
   };
   if (!isDeepStrictEqual(adjudication, evidence)) {
     throw new Error(`${key}: crop adjudication evidence envelope does not match its exact chain`);
+  }
+  return { question, classification, evidence };
+}
+
+function verifyProblemManualAdjudication(
+  value: unknown,
+  parentRecovery: Record<string, unknown>,
+  failedQuestion: ProblemQuestion,
+  failedClassification: ClassificationEvidence,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  rulesDigest: string,
+  cache: EvidenceCache,
+  contract: VerificationContract,
+): { question: ProblemQuestion; classification: ClassificationEvidence; evidence: Record<string, unknown> } {
+  const key = failedQuestion.key;
+  if (contract.auditVersion !== 5 || failedClassification.transcription_status === "exact") {
+    throw new Error(`${key}: manual adjudication requires a current non-exact exhausted recovery`);
+  }
+  const spec = problemManualAdjudicationSpec(entry, key, failedQuestion.page, problemEvidence.sha256);
+  const manual = object(value, `${key}.revision.recovery.manualAdjudication`);
+  const parentCrop = parentRecovery.adjudication === undefined
+    ? null
+    : object(parentRecovery.adjudication, `${key}.manual parent crop adjudication`);
+  const parentRecoveryEvidenceHash = canonicalEvidenceHash(parentRecovery);
+  const parentCropAdjudicationHash = parentCrop === null ? undefined : canonicalEvidenceHash(parentCrop);
+  const sourcePages = [...new Set(spec.views.map((view) => view.sourcePage))].sort((left, right) => left - right);
+  if (sourcePages.some((page) => page < 1 || page > problemEvidence.pageCount)
+    || parentRecovery.manualAdjudication !== undefined || parentRecovery.scopeAdjudication !== undefined
+    || parentRecovery.key !== key || parentRecovery.printedNumber !== failedQuestion.printedNumber
+    || parentRecovery.sourcePage !== failedQuestion.page || parentRecovery.sourceHash !== problemEvidence.sha256
+    || (spec.parentKind === "crop") !== (parentCrop !== null)
+    || manual.allowlistId !== spec.allowlistId || manual.key !== key
+    || manual.printedNumber !== failedQuestion.printedNumber || manual.sourcePage !== spec.sourcePage
+    || manual.sourceHash !== problemEvidence.sha256
+    || manual.parentRecoveryEvidenceHash !== parentRecoveryEvidenceHash
+    || manual.parentCropAdjudicationHash !== parentCropAdjudicationHash
+    || manual.failedQuestionHash !== spec.failedQuestionHash
+    || manual.failedQuestionHash !== canonicalEvidenceHash(failedQuestion.evidence)
+    || manual.failedClassificationHash !== spec.failedClassificationHash
+    || manual.failedClassificationHash !== canonicalEvidenceHash(failedClassification)
+    || manual.failedClassificationEvidenceHash !== spec.failedClassificationEvidenceHash
+    || manual.failedClassificationEvidenceHash !== sha256(failedClassification.transcription_evidence)
+    || manual.correctionSpecHash !== problemManualCorrectionSpecHash(spec)
+    || !isDeepStrictEqual(manual.sourcePages, sourcePages)) {
+    throw new Error(`${key}: manual adjudication allowlist/parent authority is stale`);
+  }
+
+  const cropEvidenceArtifact = evidencePointer(
+    manual.cropEvidenceArtifact,
+    `${key}.manualAdjudication.cropEvidenceArtifact`,
+  );
+  const cropEvidencePdf = evidencePointer(
+    manual.cropEvidencePdf,
+    `${key}.manualAdjudication.cropEvidencePdf`,
+  );
+  if (!Array.isArray(manual.cropViews) || manual.cropViews.length !== spec.views.length) {
+    throw new Error(`${key}: manual crop view coverage is not exact`);
+  }
+  let cropViews: Array<{
+    sourcePage: number;
+    label: string;
+    rect: number[];
+    pixelWidth: number;
+    pixelHeight: number;
+    pixelSha256: string;
+    artifact: EvidencePointer;
+  }>;
+  if (spec.parentKind === "recovery") {
+    const evidenceBasis = {
+      allowlistId: spec.allowlistId,
+      entryId: entry.id,
+      key,
+      sourcePage: spec.sourcePage,
+      sourcePages,
+      sourceHash: problemEvidence.sha256,
+      dpi: PROBLEM_CROP_DPI,
+      views: spec.views,
+      requiredTokens: spec.requiredTokens,
+    };
+    const evidenceDigest = canonicalEvidenceHash(evidenceBasis);
+    const evidenceStem = `v${PROBLEM_MANUAL_ADJUDICATION_VERSION}-` +
+      `${String(spec.sourcePage).padStart(4, "0")}-${failedQuestion.printedNumber.padStart(4, "0")}-` +
+      evidenceDigest;
+    if (cropEvidenceArtifact.path !== `problem-manual-evidence/${evidenceStem}.json`
+      || cropEvidencePdf.path !== `problem-manual-evidence/${evidenceStem}.pdf`) {
+      throw new Error(`${key}: manual crop evidence paths are stale`);
+    }
+    const cropCheckpoint = readBoundEvidenceCached(
+      cache,
+      stateDir,
+      cropEvidenceArtifact,
+      `${key} manual crop evidence checkpoint`,
+    );
+    if (!Array.isArray(cropCheckpoint.views) || cropCheckpoint.views.length !== spec.views.length) {
+      throw new Error(`${key}: manual crop evidence checkpoint has incomplete views`);
+    }
+    cropViews = cropCheckpoint.views.map((raw, index) => {
+      const row = object(raw, `${key}.manual crop views[${index}]`);
+      const expected = spec.views[index];
+      if (!Array.isArray(row.rect) || row.rect.length !== 4
+        || !isDeepStrictEqual(row.rect, [...expected.rect])
+        || row.sourcePage !== expected.sourcePage || row.label !== expected.label) {
+        throw new Error(`${key}: manual crop view ${index} does not match the allowlist`);
+      }
+      const pixelWidth = integer(row.pixelWidth, `${key}.manual.cropViews[${index}].pixelWidth`, 1);
+      const pixelHeight = integer(row.pixelHeight, `${key}.manual.cropViews[${index}].pixelHeight`, 1);
+      const pixelSha256 = digest(row.pixelSha256, `${key}.manual.cropViews[${index}].pixelSha256`);
+      const artifact = evidencePointer(row.artifact, `${key}.manual.cropViews[${index}].artifact`);
+      const expectedPath = `problem-manual-evidence/${evidenceStem}-view-${String(index).padStart(2, "0")}.png`;
+      if (artifact.path !== expectedPath || artifact.sha256 !== pixelSha256) {
+        throw new Error(`${key}: manual crop view ${index} path/hash is stale`);
+      }
+      const absolute = confinedEvidencePath(stateDir, artifact, `${key} manual crop view ${index}`);
+      if (hashFile(absolute) !== pixelSha256) throw new Error(`${key}: manual crop view ${index} hash mismatch`);
+      const dimensions = cropPngDimensions(absolute, `${key} manual crop view ${index}`);
+      if (dimensions.width !== pixelWidth || dimensions.height !== pixelHeight) {
+        throw new Error(`${key}: manual crop view ${index} dimensions are stale`);
+      }
+      return {
+        sourcePage: expected.sourcePage,
+        label: expected.label,
+        rect: [...expected.rect],
+        pixelWidth,
+        pixelHeight,
+        pixelSha256,
+        artifact,
+      };
+    });
+    const cropPdfPath = confinedEvidencePath(stateDir, cropEvidencePdf, `${key} manual crop evidence PDF`);
+    if (hashFile(cropPdfPath) !== cropEvidencePdf.sha256) {
+      throw new Error(`${key}: manual crop evidence PDF hash mismatch`);
+    }
+    const expectedCropCheckpoint = {
+      version: PROBLEM_MANUAL_ADJUDICATION_VERSION,
+      entryId: entry.id,
+      basisDigest: evidenceDigest,
+      basis: evidenceBasis,
+      renderer: "pdftocairo-png+pdf-lib",
+      dpi: PROBLEM_CROP_DPI,
+      evidencePdf: cropEvidencePdf,
+      views: cropViews,
+    };
+    if (!isDeepStrictEqual(cropCheckpoint, expectedCropCheckpoint)
+      || !isDeepStrictEqual(manual.cropViews, cropViews)) {
+      throw new Error(`${key}: manual crop evidence checkpoint/envelope is stale or incomplete`);
+    }
+  } else {
+    if (parentCrop === null || !isDeepStrictEqual(manual.cropEvidenceArtifact, parentCrop.cropEvidenceArtifact)
+      || !isDeepStrictEqual(manual.cropEvidencePdf, parentCrop.cropEvidencePdf)
+      || !isDeepStrictEqual(manual.cropViews, parentCrop.cropViews)) {
+      throw new Error(`${key}: manual adjudication changed the attested parent crop evidence`);
+    }
+    cropViews = manual.cropViews.map((raw, index) => {
+      const row = object(raw, `${key}.manual crop views[${index}]`);
+      const expected = spec.views[index];
+      const artifact = evidencePointer(row.artifact, `${key}.manual.cropViews[${index}].artifact`);
+      const pixelWidth = integer(row.pixelWidth, `${key}.manual.cropViews[${index}].pixelWidth`, 1);
+      const pixelHeight = integer(row.pixelHeight, `${key}.manual.cropViews[${index}].pixelHeight`, 1);
+      const pixelSha256 = digest(row.pixelSha256, `${key}.manual.cropViews[${index}].pixelSha256`);
+      if (!Array.isArray(row.rect) || !isDeepStrictEqual(row.rect, [...expected.rect])
+        || row.sourcePage !== expected.sourcePage || row.label !== expected.label
+        || artifact.sha256 !== pixelSha256) {
+        throw new Error(`${key}: reused crop view ${index} is stale`);
+      }
+      return {
+        sourcePage: expected.sourcePage,
+        label: expected.label,
+        rect: [...expected.rect],
+        pixelWidth,
+        pixelHeight,
+        pixelSha256,
+        artifact,
+      };
+    });
+  }
+
+  const commonBasis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key,
+    printedNumber: failedQuestion.printedNumber,
+    sourcePage: spec.sourcePage,
+    sourcePages,
+    sourceHash: problemEvidence.sha256,
+    parentRecovery,
+    parentRecoveryEvidenceHash,
+    ...(parentCropAdjudicationHash ? { parentCropAdjudicationHash } : {}),
+    failedQuestionHash: spec.failedQuestionHash,
+    failedClassificationHash: spec.failedClassificationHash,
+    failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
+    correctionSpecHash: problemManualCorrectionSpecHash(spec),
+    cropEvidenceArtifact,
+    cropEvidencePdf,
+    cropViews,
+  };
+  const basisDigest = canonicalEvidenceHash(commonBasis);
+  const stem = `v${PROBLEM_MANUAL_ADJUDICATION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+    `${failedQuestion.printedNumber.padStart(4, "0")}-${basisDigest}`;
+  const problemEnvelope = object(manual.problemArtifact, `${key}.manualAdjudication.problemArtifact`);
+  if (Object.keys(problemEnvelope).sort().join(",") !== "correctionDigest,correctionVersion,path,sha256"
+    || problemEnvelope.correctionVersion !== PROBLEM_MANUAL_ADJUDICATION_VERSION
+    || problemEnvelope.correctionDigest !== PROBLEM_MANUAL_CORRECTION_DIGEST) {
+    throw new Error(`${key}: problem manual adjudication envelope is stale`);
+  }
+  const problemArtifact = evidencePointer(
+    { path: problemEnvelope.path, sha256: problemEnvelope.sha256 },
+    `${key}.manualAdjudication.problemArtifact`,
+  );
+  const expectedProblemPath = `problem-manual-adjudications/${stem}.json`;
+  if (problemArtifact.path !== expectedProblemPath) {
+    throw new Error(`${key}: problem manual adjudication path is stale`);
+  }
+  const problemCheckpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    problemArtifact,
+    `${key} problem manual adjudication`,
+  );
+  const question = parseProblem(problemCheckpoint.item, `${key} problem manual adjudication.item`);
+  const expectedQuestion = applyProblemManualCorrection(failedQuestion, spec);
+  const problemArtifactItemHash = canonicalEvidenceHash(question.evidence);
+  const expectedProblemCheckpoint = {
+    version: PROBLEM_MANUAL_ADJUDICATION_VERSION,
+    entryId: entry.id,
+    basisDigest,
+    basis: commonBasis,
+    correctionVersion: PROBLEM_MANUAL_ADJUDICATION_VERSION,
+    correctionDigest: PROBLEM_MANUAL_CORRECTION_DIGEST,
+    item: expectedQuestion.evidence,
+  };
+  if (!isDeepStrictEqual(question.evidence, expectedQuestion.evidence)
+    || !isDeepStrictEqual(problemCheckpoint, expectedProblemCheckpoint)
+    || manual.problemArtifactItemHash !== problemArtifactItemHash
+    || manual.baseQuestionHash !== spec.failedQuestionHash
+    || manual.effectiveQuestionHash !== problemArtifactItemHash) {
+    throw new Error(`${key}: problem manual adjudication metadata/content is stale`);
+  }
+
+  const classificationBasis = {
+    ...commonBasis,
+    problemArtifact,
+    problemArtifactItemHash,
+    effectiveQuestionHash: problemArtifactItemHash,
+  };
+  const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+  const classificationEnvelope = object(
+    manual.classificationArtifact,
+    `${key}.manualAdjudication.classificationArtifact`,
+  );
+  if (Object.keys(classificationEnvelope).sort().join(",") !==
+      "adjudicationPromptDigest,adjudicationVersion,path,rulesDigest,sha256,transcriptionGateVersion,transcriptionPromptDigest"
+    || classificationEnvelope.rulesDigest !== rulesDigest
+    || classificationEnvelope.transcriptionGateVersion !== contract.transcriptionGateVersion
+    || classificationEnvelope.transcriptionPromptDigest !== contract.transcriptionPromptDigest
+    || classificationEnvelope.adjudicationVersion !== PROBLEM_MANUAL_ADJUDICATION_VERSION
+    || classificationEnvelope.adjudicationPromptDigest !== PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST) {
+    throw new Error(`${key}: classification manual adjudication envelope is stale`);
+  }
+  const classificationArtifact = evidencePointer(
+    { path: classificationEnvelope.path, sha256: classificationEnvelope.sha256 },
+    `${key}.manualAdjudication.classificationArtifact`,
+  );
+  const expectedClassificationPath = `classification-manual-adjudications/` +
+    `v${CLASSIFICATION_MANUAL_ADJUDICATION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+    `${failedQuestion.printedNumber.padStart(4, "0")}-${classificationBasisDigest}-${rulesDigest}.json`;
+  if (classificationArtifact.path !== expectedClassificationPath) {
+    throw new Error(`${key}: classification manual adjudication path is stale`);
+  }
+  const classificationCheckpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    classificationArtifact,
+    `${key} classification manual adjudication`,
+  );
+  if (!Array.isArray(classificationCheckpoint.items) || classificationCheckpoint.items.length !== 1) {
+    throw new Error(`${key}: classification manual adjudication must contain exactly one decision`);
+  }
+  const classification = parseClassificationEvidence(
+    classificationCheckpoint.items[0],
+    question,
+    entry,
+    `${key} classification manual adjudication.items[0]`,
+  );
+  const classificationArtifactItemHash = canonicalEvidenceHash(classification);
+  const expectedClassificationCheckpoint = {
+    version: CLASSIFICATION_MANUAL_ADJUDICATION_VERSION,
+    entryId: entry.id,
+    basisDigest: classificationBasisDigest,
+    basis: classificationBasis,
+    classifierVersion: contract.classifierVersion,
+    rulesDigest,
+    transcriptionGateVersion: contract.transcriptionGateVersion,
+    transcriptionPromptDigest: contract.transcriptionPromptDigest,
+    adjudicationVersion: PROBLEM_MANUAL_ADJUDICATION_VERSION,
+    adjudicationPromptDigest: PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    items: [classification],
+  };
+  if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)
+    || classification.transcription_status !== "exact"
+    || manual.classificationArtifactItemHash !== classificationArtifactItemHash
+    || manual.baseClassificationHash !== spec.failedClassificationHash
+    || manual.effectiveClassificationHash !== classificationArtifactItemHash) {
+    throw new Error(`${key}: classification manual adjudication is stale or non-exact`);
+  }
+  const evidence = {
+    allowlistId: spec.allowlistId,
+    key,
+    printedNumber: failedQuestion.printedNumber,
+    sourcePage: spec.sourcePage,
+    sourcePages,
+    sourceHash: problemEvidence.sha256,
+    parentRecoveryEvidenceHash,
+    ...(parentCropAdjudicationHash ? { parentCropAdjudicationHash } : {}),
+    failedQuestionHash: spec.failedQuestionHash,
+    failedClassificationHash: spec.failedClassificationHash,
+    failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
+    correctionSpecHash: problemManualCorrectionSpecHash(spec),
+    cropEvidenceArtifact,
+    cropEvidencePdf,
+    cropViews,
+    problemArtifact: {
+      ...problemArtifact,
+      correctionVersion: PROBLEM_MANUAL_ADJUDICATION_VERSION,
+      correctionDigest: PROBLEM_MANUAL_CORRECTION_DIGEST,
+    },
+    problemArtifactItemHash,
+    classificationArtifact: {
+      ...classificationArtifact,
+      rulesDigest,
+      transcriptionGateVersion: contract.transcriptionGateVersion,
+      transcriptionPromptDigest: contract.transcriptionPromptDigest,
+      adjudicationVersion: PROBLEM_MANUAL_ADJUDICATION_VERSION,
+      adjudicationPromptDigest: PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST,
+    },
+    classificationArtifactItemHash,
+    baseQuestionHash: spec.failedQuestionHash,
+    effectiveQuestionHash: problemArtifactItemHash,
+    baseClassificationHash: spec.failedClassificationHash,
+    effectiveClassificationHash: classificationArtifactItemHash,
+  };
+  if (!isDeepStrictEqual(manual, evidence)) {
+    throw new Error(`${key}: manual adjudication evidence envelope does not match its exact chain`);
   }
   return { question, classification, evidence };
 }
@@ -3725,6 +4394,9 @@ function verifyProblemRecovery(
     effectiveClassificationHash: classificationArtifactItemHash,
   };
   if (recoveredClassification.transcription_status === "exact") {
+    if (recovery.manualAdjudication !== undefined) {
+      throw new Error(`${key}: exact classification recovery must not declare manual adjudication`);
+    }
     if (recovery.adjudication !== undefined) {
       throw new Error(`${key}: exact classification recovery must not declare crop adjudication`);
     }
@@ -3777,14 +4449,55 @@ function verifyProblemRecovery(
       terminalGeneration,
     };
   }
-  if (recovery.adjudication === undefined) {
-    throw new Error(`${key}: non-exact classification recovery lacks allowlisted crop adjudication`);
+  let failedQuestion = recoveredQuestion;
+  let failedClassification = recoveredClassification;
+  let parentRecoveryEvidence: Record<string, unknown> = recoveryEvidence;
+  if (recovery.adjudication !== undefined) {
+    const adjudicated = verifyProblemCropAdjudication(
+      recovery.adjudication,
+      recoveryEvidence,
+      recoveredQuestion,
+      recoveredClassification,
+      stateDir,
+      entry,
+      problemEvidence,
+      rulesDigest,
+      cache,
+      contract,
+      recovery.manualAdjudication !== undefined,
+    );
+    failedQuestion = adjudicated.question;
+    failedClassification = adjudicated.classification;
+    parentRecoveryEvidence = { ...recoveryEvidence, adjudication: adjudicated.evidence };
   }
-  const adjudicated = verifyProblemCropAdjudication(
-    recovery.adjudication,
-    recoveryEvidence,
-    recoveredQuestion,
-    recoveredClassification,
+  if (failedClassification.transcription_status === "exact") {
+    if (recovery.manualAdjudication !== undefined) {
+      throw new Error(`${key}: exact crop adjudication must not declare manual adjudication`);
+    }
+    if (!isDeepStrictEqual(recovery, parentRecoveryEvidence)) {
+      throw new Error(`${key}: problem recovery evidence envelope does not match its exact chain`);
+    }
+    return {
+      classified: {
+        question: failedQuestion,
+        classification: failedClassification,
+        problemCheckpoint: row.first.row.base.problemCheckpoint,
+        classificationCheckpoint: row.first.row.base.classificationCheckpoint,
+        contextFrom: row.first.row.contextFrom,
+        contextTo: row.first.row.contextTo,
+      },
+      evidence: parentRecoveryEvidence,
+      terminalGeneration,
+    };
+  }
+  if (recovery.manualAdjudication === undefined) {
+    throw new Error(`${key}: non-exact exhausted recovery lacks allowlisted manual adjudication`);
+  }
+  const manual = verifyProblemManualAdjudication(
+    recovery.manualAdjudication,
+    parentRecoveryEvidence,
+    failedQuestion,
+    failedClassification,
     stateDir,
     entry,
     problemEvidence,
@@ -3792,14 +4505,14 @@ function verifyProblemRecovery(
     cache,
     contract,
   );
-  const evidence = { ...recoveryEvidence, adjudication: adjudicated.evidence };
+  const evidence = { ...parentRecoveryEvidence, manualAdjudication: manual.evidence };
   if (!isDeepStrictEqual(recovery, evidence)) {
     throw new Error(`${key}: problem recovery evidence envelope does not match its exact chain`);
   }
   return {
     classified: {
-      question: adjudicated.question,
-      classification: adjudicated.classification,
+      question: manual.question,
+      classification: manual.classification,
       problemCheckpoint: row.first.row.base.problemCheckpoint,
       classificationCheckpoint: row.first.row.base.classificationCheckpoint,
       contextFrom: row.first.row.contextFrom,
@@ -6406,11 +7119,21 @@ function selectVerificationContract(
   const scopeAdjudicationSignal = existsSync(scopeAdjudicationDirectory)
     && readdirSync(scopeAdjudicationDirectory, { withFileTypes: true }).some((entry) =>
       !(entry.isFile() && entry.name.endsWith(".tmp")));
+  const manualAdjudicationSignal = [
+    "problem-manual-evidence",
+    "problem-manual-adjudications",
+    "classification-manual-adjudications",
+  ].some((directory) => {
+    const absolute = join(stateDir, directory);
+    return existsSync(absolute) && readdirSync(absolute, { withFileTypes: true }).some((entry) =>
+      !(entry.isFile() && entry.name.endsWith(".tmp")));
+  });
   const v5GenerationSignal = (
     listJson(join(stateDir, "semantic-choice-checks"), /^v5-.*\.json$/u).length > 0
     || listJson(join(stateDir, "answer-audit"), /^v5-.*\.json$/u).length > 0
     || listJson(join(stateDir, "answer-attestation"), /^v5-.*\.json$/u).length > 0
     || scopeAdjudicationSignal
+    || manualAdjudicationSignal
     || hasPersistedSolutionGenerationSignal(stateDir)
   );
   if (v5GenerationSignal) return CURRENT_CONTRACT;
