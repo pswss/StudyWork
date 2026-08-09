@@ -79,6 +79,14 @@ const cases = [{
     "data/import-exam-corpus/714fd4581f778a9c559fd16e/" +
       "problem-recoveries/v1-0007-0018-8dc9e3101914ced2b5380528cdf56f5c607f0911f8a4f4460835260ae4cd6b3a.json"
   ),
+}, {
+  entryId: "ebsi:5854871",
+  sourceHash: "c41b1ee2f3897cbde107c4ffcdec493583bacba4d14299c6c3a6a749b29a80d6",
+  path: join(
+    process.cwd(),
+    "data/import-exam-corpus/a915803b3da3a6ea056eecd6/" +
+      "problem-recoveries/v1-0002-0009-ce5a6650673a79cd5cebf9a1d0593bcc75f9acd7fc5a57551ea1becf69e443d5.json"
+  ),
 }] as const;
 
 const available = cases.every((item) => existsSync(item.path));
@@ -120,6 +128,20 @@ const recoveryCases = [{
   pageCount: 12,
   finalAnchor: "읽는 순서는 단일, 단일, 복합, 복합",
   expectedDecision: "reject",
+}, {
+  index: 4,
+  stateDir: join(process.cwd(), "data/import-exam-corpus/a915803b3da3a6ea056eecd6"),
+  classificationPath: join(
+    process.cwd(),
+    "data/import-exam-corpus/a915803b3da3a6ea056eecd6/" +
+      "classification-recoveries/v1-0002-0009-284f685922e94c9eca6aef2dc7cb776f8ee4fc04601b32ecf959f840d264fc34-7bb7cb863c8c4855.json"
+  ),
+  questionCount: 20,
+  pageCount: 4,
+  finalAnchor: "A는 노르웨이",
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "integrated_social",
+  expectedDpi: 600,
 }] as const;
 
 const recoveryCasesAvailable = recoveryCases.every((item) =>
@@ -318,13 +340,21 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
   });
   expect(result.classified.find((item) => item.classification.key === targetKey)).toMatchObject({
     question: { figure_description: expect.stringContaining(testCase.finalAnchor) },
-    classification: { decision: testCase.expectedDecision, transcription_status: "exact" },
+    classification: {
+      decision: testCase.expectedDecision,
+      transcription_status: "exact",
+      ...("expectedCanonicalSubject" in testCase
+        ? { canonical_subject: testCase.expectedCanonicalSubject }
+        : {}),
+    },
   });
   expect(result.problemTerminalFidelityItems.find((item) => item.key === targetKey)).toMatchObject({
     status: "exact",
     scopeDecision: testCase.expectedDecision,
   });
   expect(result.auditPath).toMatch(/^answer-audit\/v5-/u);
+  const cropCheckpoint = JSON.parse(readFileSync(join(root, manual.cropEvidenceArtifact.path), "utf8"));
+  expect(cropCheckpoint.dpi).toBe("expectedDpi" in testCase ? testCase.expectedDpi : 300);
 
   const beforeReplay = { ...calls };
   const replay = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
@@ -354,7 +384,7 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
 }
 
 describe("exact allowlisted problem manual adjudication", () => {
-  it("pins the four audited sources and exhausted child hashes", () => {
+  it("pins the five audited sources and exhausted child hashes", () => {
     expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.map((item) => ({
       entryId: item.entryId,
       key: item.key,
@@ -390,6 +420,13 @@ describe("exact allowlisted problem manual adjudication", () => {
       sourceHash: cases[3].sourceHash,
       parentKind: "recovery",
       failedQuestionHash: "79c49b622b055d72423e33d5a7038766173bf3923cf10d7c15a36a4bd7eb5e9e",
+    }, {
+      entryId: "ebsi:5854871",
+      key: "2:9",
+      sourcePage: 2,
+      sourceHash: cases[4].sourceHash,
+      parentKind: "recovery",
+      failedQuestionHash: "3356445be5f6d28b112a307219a83cba0fefc3a8f88c30e01e2d2319498c81c1",
     }]);
   });
 
@@ -429,6 +466,18 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(q18.figure_description).toContain("읽는 순서는 단일, 단일, 복합, 복합");
     expect(q18.figure_description).toContain("호 표기는 정확히 2회");
     expect(q18.figure_description).toContain("$R_1$, $R_2$, $R_3$ 세 단계 그림");
+  });
+
+  it.skipIf(!available)("corrects Q9 stem and all three wrong map labels while preserving C/D", () => {
+    const q9 = applyAllowlistedProblemManualCorrection(cases[4].entryId, cases[4].sourceHash, itemAt(4));
+    expect(q9.question).toContain("국가를 지도의 A~E에서 고른 것은?");
+    expect(q9.question).not.toContain("지도에서 A~E에서");
+    expect(q9.figure_description).toContain("A는 노르웨이");
+    expect(q9.figure_description).toContain("B는 베트남");
+    expect(q9.figure_description).toContain("C는 뉴질랜드");
+    expect(q9.figure_description).toContain("D는 아르헨티나");
+    expect(q9.figure_description).toContain("E는 베네수엘라");
+    expect(q9.figure_description).not.toMatch(/영국|필리핀|파나마/u);
   });
 
   it.skipIf(!available)("rejects a changed parent item before applying any correction", () => {
