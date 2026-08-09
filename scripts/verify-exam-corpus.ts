@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import {
   closeSync,
   existsSync,
+  lstatSync,
   openSync,
   readFileSync,
   readSync,
@@ -7895,7 +7896,7 @@ function verifySolutionRevision(
 ): {
   solution: OfficialSolution;
   decision: SolutionFidelityDecision;
-  fidelityArtifact: EvidencePointer;
+  fidelityArtifact: EvidencePointer & { promptDigest?: string };
   evidence: Record<string, unknown>;
 } {
   const key = input.key;
@@ -8175,7 +8176,9 @@ function verifySolutionRevision(
     throw new Error(`${key}: solution revision fidelity metadata/content is stale or incomplete`);
   }
   let terminalDecision = decision;
-  let terminalFidelityArtifact = fidelityArtifact;
+  let terminalFidelityArtifact: EvidencePointer & { promptDigest?: string } = contract.auditVersion >= 5
+    ? { ...fidelityArtifact, promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST }
+    : fidelityArtifact;
   let fidelityAdjudication: SolutionRevisionFidelityAdjudicationEvidence | undefined;
   if (!isTerminalSolutionDecision(input, revised, decision)) {
     if (revision.fidelityAdjudication === undefined || contract.auditVersion !== 5) {
@@ -8583,7 +8586,13 @@ function verifySolutionFidelity(
   expectedRepairs.sort((left, right) => compareCorpusQuestionKeys(String(left.key), String(right.key)));
   if (items.length !== accepted.length || !isDeepStrictEqual(audit.solutionFidelityItems, items)
     || !isDeepStrictEqual(audit.solutionRepairs, expectedRepairs)) {
-    throw new Error("answer audit terminal solution fidelity items/repairs are not exact");
+    const actualItems = Array.isArray(audit.solutionFidelityItems) ? audit.solutionFidelityItems : [];
+    const mismatch = items.findIndex((item, index) => !isDeepStrictEqual(actualItems[index], item));
+    throw new Error(
+      `answer audit terminal solution fidelity items/repairs are not exact` +
+      (mismatch < 0 ? "" : ` at item ${mismatch}: ${canonicalEvidenceHash(actualItems[mismatch])}/` +
+        canonicalEvidenceHash(items[mismatch])),
+    );
   }
   const effectiveSolutionCorpus = acceptedRecords.map((record) => ({
     key: record.question.key,
@@ -8735,7 +8744,14 @@ function hasPersistedSolutionGenerationSignal(stateDir: string): boolean {
   return false;
 }
 
-type VerifiedAnswerAudit = { decisions: DecisionSummary; solutions: Map<string, OfficialSolution> };
+type VerifiedAnswerAudit = {
+  decisions: DecisionSummary;
+  solutions: Map<string, OfficialSolution>;
+  auditPointer?: EvidencePointer;
+  attestationPointer?: EvidencePointer;
+  effectiveCorpusHash?: string;
+  effectiveSolutionCorpusHash?: string;
+};
 
 function selectVerificationContract(
   stateDir: string,
@@ -9186,7 +9202,17 @@ function verifyAnswerAudit(
       || terminal.reviewQuestionCount !== effective.reviews) {
       throw new Error("terminal receipt/result counts do not match answer audit effective corpus");
     }
-    return { decisions: effective, solutions: effectiveSolutions };
+    return {
+      decisions: effective,
+      solutions: effectiveSolutions,
+      auditPointer,
+      attestationPointer: {
+        path: `answer-attestation/${name}`,
+        sha256: hashFile(attestationPath),
+      },
+      effectiveCorpusHash,
+      effectiveSolutionCorpusHash: solutionFidelity.effectiveSolutionCorpusHash,
+    };
   } catch (error) {
     add({
       code: error instanceof CorpusValidationError ? error.code : "ANSWER_AUDIT_INVALID",
@@ -9419,6 +9445,779 @@ function verifyFilteredAnswerAudit(
       message: error instanceof Error ? error.message : String(error),
     });
     return base;
+  }
+}
+
+const EXISTING_CORPUS_MIGRATION_VERSION = 1;
+const MIGRATION_QUESTION_MUTABLE_COLUMNS = [
+  "subject_id", "source", "qtype", "difficulty", "question", "choices", "answer", "explanation",
+  "book_id", "book_number", "printed_number", "src_file_id", "src_page", "has_figure",
+  "figure_description", "figure_box",
+] as const;
+const MIGRATION_QUESTION_COLUMNS = [
+  "id", "subject_id", "source", "qtype", "difficulty", "question", "choices", "answer", "explanation",
+  "correct_count", "wrong_count", "created_at", "from_wrong_note", "book_id", "book_number", "src_file_id",
+  "src_page", "has_figure", "figure_box", "figure_description", "printed_number", "mock_exam_job_id",
+  "mock_exam_title", "exam_order", "exam_points", "exam_section", "passage_group", "passage",
+] as const;
+const MIGRATION_ITEM_COLUMNS = [
+  "id", "book_id", "file_id", "category", "number", "answer", "content", "page", "created_at",
+  "has_figure", "figure_box",
+] as const;
+
+type MigrationRow = Record<string, unknown> & { id: number };
+type OwnedMigrationProjection = {
+  books: MigrationRow[];
+  files: MigrationRow[];
+  questions: MigrationRow[];
+  items: MigrationRow[];
+  guards: {
+    attempts: number;
+    materials: number;
+    bookExtractionChunks: number;
+    materialExtractionChunks: number;
+  };
+};
+type MigrationProjection = OwnedMigrationProjection & {
+  sequences: { questions: number; bookItems: number };
+};
+type MigrationOperations = {
+  questionUpdates: Array<{ id: number; before: MigrationRow; after: MigrationRow }>;
+  questionInserts: Array<{ after: MigrationRow }>;
+  itemUpdates: Array<{ id: number; before: MigrationRow; after: MigrationRow }>;
+  itemInserts: Array<{ after: MigrationRow }>;
+};
+type ExistingMigrationPlan = {
+  version: number;
+  basisDigest: string;
+  identity: {
+    entryId: string;
+    entryRaw: unknown;
+    entryRawHash: string;
+    oldReceipt: { path: "receipt.json"; sha256: string; value: unknown };
+    receiptCore: { sha256: string; value: unknown };
+    receiptHistory: EvidencePointer;
+    answerAudit: EvidencePointer & { effectiveCorpusHash: string; effectiveSolutionCorpusHash: string };
+    problemHash: string;
+    solutionHash: string;
+    ownership: {
+      bookIds: number[];
+      fileIds: number[];
+      beforeQuestionIds: number[];
+      afterQuestionIds: number[];
+      beforeBookItemIds: number[];
+      afterBookItemIds: number[];
+    };
+    beforeProjectionHash: string;
+    afterProjectionHash: string;
+    stableAfterProjectionHash: string;
+    beforeSequences: { questions: number; bookItems: number };
+    afterSequences: { questions: number; bookItems: number };
+    beforeProjection: OwnedMigrationProjection;
+    afterProjection: OwnedMigrationProjection;
+    operations: MigrationOperations;
+    backup: { sha256: string; bytes: number };
+  };
+  finalReceipt: { path: "receipt.json"; sha256: string; value: unknown };
+  backup: { path: string; sha256: string; bytes: number };
+};
+
+const EXISTING_MIGRATION_ALLOWLIST = [{
+  entryId: "ebsi:5695028",
+  entryToken: "bc66d0c1b35ffd8e12edd536",
+  oldReceiptSha256: "5e1fbea9c346a0e89fb21938176c21e00c19527e6369f5251a1f53e6446711a1",
+  receiptCoreSha256: "0b4cad740ed82c70e15deac8568242c6fd89714672820d0526376886e4ca6efe",
+  beforeProjectionHash: "58512b2d03488e009d80064082d7b230fdd1acefeea12401ca2572b670e6c996",
+  afterProjectionHash: "1bedcd46e0c24a5138cd6213708680754caba6b1ae2ffed98cdd167d7a47e6f1",
+  auditPath: "answer-audit/v5-b624ac400f03d3afac4d1f0d1463d40a424a9ec0e86fbc48d6c6021febed2cc6.json",
+  auditSha256: "34fe8f3cd3fe79cc35cea5f33b0aa5edeaba73793130c56d404796eac8adb3fe",
+  effectiveCorpusHash: "b2e4ac74b0c4e60c24926054f19bde5cb3786f7c1e229926eb288f93544c9af0",
+  effectiveSolutionCorpusHash: "6f7a613784c4455377e3af3d72b5326336ff42a214a84dd959da1c3b2f982908",
+  problemHash: "6cf12186b20a757ec3c3b09fa3b27df8a2583cfbeec486b828e4f6ce03aba793",
+  solutionHash: "0d01dd60feabdf068b9cc81f781de4759ee426f5680e2c2fdbff64c2950de3d6",
+  bookIds: [100, 101],
+  fileIds: [148, 149, 150, 151],
+  questionIds: Array.from({ length: 13 }, (_, index) => 3214 + index),
+  bookItemIds: Array.from({ length: 26 }, (_, index) => 6958 + index),
+  newKeys: ["10:26"],
+  newQuestions: [{
+    key: "10:26",
+    targetSubject: "수학 - 수학Ⅱ·미적분Ⅰ" as TargetSubject,
+    qtype: "short",
+    difficulty: "중",
+    question: "곡선 $y=6x^2-12x$와 $x$축으로 둘러싸인 부분의 넓이를 구하시오. $[4점]$",
+    answer: "8",
+    solutionPage: 8,
+  }],
+}] as const;
+
+export function existingCorpusMigrationAllowlistFingerprint(): string {
+  return canonicalEvidenceHash(EXISTING_MIGRATION_ALLOWLIST);
+}
+
+function assertMigrationKeys(value: unknown, keys: readonly string[], label: string): Record<string, unknown> {
+  const row = object(value, label);
+  if (!isDeepStrictEqual(Object.keys(row).sort(), [...keys].sort())) {
+    throw new Error(`${label} has unexpected fields`);
+  }
+  return row;
+}
+
+function migrationHash(value: unknown, label: string): string {
+  const digest = exactString(value, label);
+  if (!/^[a-f0-9]{64}$/u.test(digest)) throw new Error(`${label} is not a SHA-256 digest`);
+  return digest;
+}
+
+function migrationIntegerArray(value: unknown, label: string): number[] {
+  if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
+  const values = value.map((item, index) => integer(item, `${label}[${index}]`));
+  if (new Set(values).size !== values.length || !isDeepStrictEqual(values, [...values].sort((a, b) => a - b))) {
+    throw new Error(`${label} must be unique and sorted`);
+  }
+  return values;
+}
+
+function migrationRows(value: unknown, label: string): MigrationRow[] {
+  if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
+  const rows = value.map((item, index) => {
+    const row = object(item, `${label}[${index}]`) as MigrationRow;
+    integer(row.id, `${label}[${index}].id`, 1);
+    return row;
+  });
+  if (new Set(rows.map((row) => row.id)).size !== rows.length
+    || !isDeepStrictEqual(rows.map((row) => row.id), rows.map((row) => row.id).sort((a, b) => a - b))) {
+    throw new Error(`${label} IDs must be unique and sorted`);
+  }
+  return rows;
+}
+
+function migrationProjection(value: unknown, label: string): OwnedMigrationProjection {
+  const row = assertMigrationKeys(value, ["books", "files", "questions", "items", "guards"], label);
+  const guards = assertMigrationKeys(
+    row.guards,
+    ["attempts", "materials", "bookExtractionChunks", "materialExtractionChunks"],
+    `${label}.guards`,
+  );
+  const projection: OwnedMigrationProjection = {
+    books: migrationRows(row.books, `${label}.books`),
+    files: migrationRows(row.files, `${label}.files`),
+    questions: migrationRows(row.questions, `${label}.questions`),
+    items: migrationRows(row.items, `${label}.items`),
+    guards: {
+      attempts: integer(guards.attempts, `${label}.guards.attempts`),
+      materials: integer(guards.materials, `${label}.guards.materials`),
+      bookExtractionChunks: integer(guards.bookExtractionChunks, `${label}.guards.bookExtractionChunks`),
+      materialExtractionChunks: integer(guards.materialExtractionChunks, `${label}.guards.materialExtractionChunks`),
+    },
+  };
+  for (const question of projection.questions) {
+    if (!isDeepStrictEqual(Object.keys(question).sort(), [...MIGRATION_QUESTION_COLUMNS].sort())) {
+      throw new Error(`${label} question ${question.id} column set is invalid`);
+    }
+  }
+  for (const item of projection.items) {
+    if (!isDeepStrictEqual(Object.keys(item).sort(), [...MIGRATION_ITEM_COLUMNS].sort())) {
+      throw new Error(`${label} item ${item.id} column set is invalid`);
+    }
+  }
+  return projection;
+}
+
+function ownedMigrationProjectionHash(value: OwnedMigrationProjection | MigrationProjection): string {
+  const { sequences: _sequences, ...owned } = value as MigrationProjection;
+  return canonicalEvidenceHash(owned);
+}
+
+function stableMigrationProjectionHash(value: OwnedMigrationProjection): string {
+  return canonicalEvidenceHash({
+    books: value.books,
+    files: value.files.map((row) => ({
+      id: row.id,
+      book_id: row.book_id,
+      name: row.name,
+      r2_key: row.r2_key,
+      mime: row.mime,
+      created_at: row.created_at,
+      content_hash: row.content_hash,
+      page_count: row.page_count,
+    })),
+    questions: value.questions.map((row) => ({
+      id: row.id,
+      created_at: row.created_at,
+      ...Object.fromEntries(MIGRATION_QUESTION_MUTABLE_COLUMNS.map((column) => [column, row[column]])),
+    })),
+    items: value.items,
+  });
+}
+
+function migrationQuestionKey(row: MigrationRow): string {
+  const page = integer(row.src_page, `migration question ${row.id}.src_page`, 1);
+  const number = Number(row.printed_number);
+  if (!Number.isSafeInteger(number) || number < 1 || String(number) !== String(row.printed_number)) {
+    throw new Error(`migration question ${row.id} printed_number is invalid`);
+  }
+  return `${page}:${number}`;
+}
+
+function assertMigrationOperationColumns(
+  before: MigrationRow,
+  after: MigrationRow,
+  mutable: readonly string[],
+  label: string,
+): void {
+  if (!isDeepStrictEqual(Object.keys(before).sort(), Object.keys(after).sort())) {
+    throw new Error(`${label} column set changed`);
+  }
+  const allowed = new Set(mutable);
+  for (const key of Object.keys(before)) {
+    if (!allowed.has(key) && !isDeepStrictEqual(before[key], after[key])) {
+      throw new Error(`${label} changed immutable column ${key}`);
+    }
+  }
+}
+
+function applyMigrationOperations(
+  before: OwnedMigrationProjection,
+  operations: MigrationOperations,
+): OwnedMigrationProjection {
+  const questions = new Map(before.questions.map((row) => [row.id, row]));
+  const items = new Map(before.items.map((row) => [row.id, row]));
+  for (const operation of operations.questionUpdates) {
+    const current = questions.get(operation.id);
+    if (!current || !isDeepStrictEqual(current, operation.before) || operation.after.id !== operation.id) {
+      throw new Error(`migration question update ${operation.id} parent mismatch`);
+    }
+    assertMigrationOperationColumns(operation.before, operation.after, MIGRATION_QUESTION_MUTABLE_COLUMNS,
+      `migration question update ${operation.id}`);
+    questions.set(operation.id, operation.after);
+  }
+  for (const operation of operations.questionInserts) {
+    if (questions.has(operation.after.id)) throw new Error(`migration duplicate question insert ${operation.after.id}`);
+    questions.set(operation.after.id, operation.after);
+  }
+  for (const operation of operations.itemUpdates) {
+    const current = items.get(operation.id);
+    if (!current || !isDeepStrictEqual(current, operation.before) || operation.after.id !== operation.id) {
+      throw new Error(`migration item update ${operation.id} parent mismatch`);
+    }
+    assertMigrationOperationColumns(operation.before, operation.after, [
+      "book_id", "file_id", "category", "number", "answer", "content", "page", "has_figure", "figure_box",
+    ], `migration item update ${operation.id}`);
+    items.set(operation.id, operation.after);
+  }
+  for (const operation of operations.itemInserts) {
+    if (items.has(operation.after.id)) throw new Error(`migration duplicate item insert ${operation.after.id}`);
+    items.set(operation.after.id, operation.after);
+  }
+  return {
+    books: before.books,
+    files: before.files,
+    questions: [...questions.values()].sort((left, right) => left.id - right.id),
+    items: [...items.values()].sort((left, right) => left.id - right.id),
+    guards: before.guards,
+  };
+}
+
+function readCanonicalMigrationJson(path: string, label: string): { value: Record<string, unknown>; sha256: string } {
+  if (lstatSync(path).isSymbolicLink() || !lstatSync(path).isFile()) {
+    throw new Error(`${label} must be a regular non-symlink file`);
+  }
+  const bytes = readFileSync(path, "utf8");
+  const value = object(JSON.parse(bytes), label);
+  if (bytes !== canonicalJson(value)) throw new Error(`${label} is not canonical JSON`);
+  return { value, sha256: sha256(bytes) };
+}
+
+function migrationArtifacts(
+  stateDir: string,
+  directoryName: "receipt-history" | "migration-plans" | "migration-commits",
+  pattern: RegExp,
+): Array<{ name: string; path: string; value: Record<string, unknown>; sha256: string }> {
+  const directory = join(stateDir, directoryName);
+  if (!existsSync(directory)) return [];
+  if (lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory()
+    || !realpathSync(directory).startsWith(`${realpathSync(stateDir)}/`)) {
+    throw new Error(`${directoryName} must be a confined regular directory`);
+  }
+  return readdirSync(directory, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))
+    .flatMap((entry) => {
+      const path = join(directory, entry.name);
+      const temp = entry.name.endsWith(".tmp") || entry.name.includes(".tmp.");
+      if (temp) {
+        if (!entry.isFile() || entry.isSymbolicLink()) throw new Error(`${directoryName} temp is not a regular file`);
+        return [];
+      }
+      if (!entry.isFile() || entry.isSymbolicLink() || !pattern.test(entry.name)) {
+        throw new Error(`${directoryName} contains malformed or non-file artifact ${entry.name}`);
+      }
+      return [{ name: entry.name, path, ...readCanonicalMigrationJson(path, `${directoryName}/${entry.name}`) }];
+    });
+}
+
+function migrationOperations(value: unknown): MigrationOperations {
+  const row = assertMigrationKeys(
+    value,
+    ["questionUpdates", "questionInserts", "itemUpdates", "itemInserts"],
+    "migration operations",
+  );
+  const updates = (raw: unknown, label: string) => {
+    if (!Array.isArray(raw)) throw new Error(`${label} must be an array`);
+    return raw.map((item, index) => {
+      const operation = assertMigrationKeys(item, ["id", "before", "after"], `${label}[${index}]`);
+      const before = object(operation.before, `${label}[${index}].before`) as MigrationRow;
+      const after = object(operation.after, `${label}[${index}].after`) as MigrationRow;
+      const id = integer(operation.id, `${label}[${index}].id`, 1);
+      if (before.id !== id || after.id !== id) throw new Error(`${label}[${index}] ID mismatch`);
+      return { id, before, after };
+    });
+  };
+  const inserts = (raw: unknown, label: string) => {
+    if (!Array.isArray(raw)) throw new Error(`${label} must be an array`);
+    return raw.map((item, index) => {
+      const operation = assertMigrationKeys(item, ["after"], `${label}[${index}]`);
+      return { after: object(operation.after, `${label}[${index}].after`) as MigrationRow };
+    });
+  };
+  return {
+    questionUpdates: updates(row.questionUpdates, "migration questionUpdates"),
+    questionInserts: inserts(row.questionInserts, "migration questionInserts"),
+    itemUpdates: updates(row.itemUpdates, "migration itemUpdates"),
+    itemInserts: inserts(row.itemInserts, "migration itemInserts"),
+  };
+}
+
+function parseExistingMigrationPlan(value: Record<string, unknown>, entry: ManifestEntry): ExistingMigrationPlan {
+  assertMigrationKeys(value, ["version", "basisDigest", "identity", "finalReceipt", "backup"], "migration plan");
+  const identityRaw = assertMigrationKeys(value.identity, [
+    "entryId", "entryRaw", "entryRawHash", "oldReceipt", "receiptCore", "receiptHistory", "answerAudit",
+    "problemHash", "solutionHash", "ownership", "beforeProjectionHash", "afterProjectionHash",
+    "stableAfterProjectionHash", "beforeSequences", "afterSequences", "beforeProjection", "afterProjection",
+    "operations", "backup",
+  ], "migration identity");
+  const oldReceipt = assertMigrationKeys(identityRaw.oldReceipt, ["path", "sha256", "value"], "migration old receipt");
+  const receiptCore = assertMigrationKeys(identityRaw.receiptCore, ["sha256", "value"], "migration receipt core");
+  const receiptHistory = evidencePointer(identityRaw.receiptHistory, "migration receipt history pointer");
+  const answerAuditRaw = assertMigrationKeys(identityRaw.answerAudit,
+    ["path", "sha256", "effectiveCorpusHash", "effectiveSolutionCorpusHash"], "migration answer audit");
+  const answerAuditPointer = evidencePointer(
+    { path: answerAuditRaw.path, sha256: answerAuditRaw.sha256 }, "migration answer audit pointer",
+  );
+  const ownershipRaw = assertMigrationKeys(identityRaw.ownership, [
+    "bookIds", "fileIds", "beforeQuestionIds", "afterQuestionIds", "beforeBookItemIds", "afterBookItemIds",
+  ], "migration ownership");
+  const beforeSequencesRaw = assertMigrationKeys(identityRaw.beforeSequences,
+    ["questions", "bookItems"], "migration before sequences");
+  const afterSequencesRaw = assertMigrationKeys(identityRaw.afterSequences,
+    ["questions", "bookItems"], "migration after sequences");
+  const identityBackup = assertMigrationKeys(identityRaw.backup, ["sha256", "bytes"], "migration identity backup");
+  const finalReceiptRaw = assertMigrationKeys(value.finalReceipt, ["path", "sha256", "value"], "migration final receipt");
+  const backupRaw = assertMigrationKeys(value.backup, ["path", "sha256", "bytes"], "migration backup");
+  const beforeProjection = migrationProjection(identityRaw.beforeProjection, "migration before projection");
+  const afterProjection = migrationProjection(identityRaw.afterProjection, "migration after projection");
+  const operations = migrationOperations(identityRaw.operations);
+  const plan = {
+    version: integer(value.version, "migration plan.version", 1),
+    basisDigest: migrationHash(value.basisDigest, "migration plan.basisDigest"),
+    identity: {
+      entryId: exactString(identityRaw.entryId, "migration identity.entryId"),
+      entryRaw: identityRaw.entryRaw,
+      entryRawHash: migrationHash(identityRaw.entryRawHash, "migration identity.entryRawHash"),
+      oldReceipt: {
+        path: exactString(oldReceipt.path, "migration old receipt.path") as "receipt.json",
+        sha256: migrationHash(oldReceipt.sha256, "migration old receipt.sha256"),
+        value: oldReceipt.value,
+      },
+      receiptCore: {
+        sha256: migrationHash(receiptCore.sha256, "migration receipt core.sha256"),
+        value: receiptCore.value,
+      },
+      receiptHistory,
+      answerAudit: {
+        ...answerAuditPointer,
+        effectiveCorpusHash: migrationHash(answerAuditRaw.effectiveCorpusHash, "migration effectiveCorpusHash"),
+        effectiveSolutionCorpusHash: migrationHash(
+          answerAuditRaw.effectiveSolutionCorpusHash, "migration effectiveSolutionCorpusHash",
+        ),
+      },
+      problemHash: migrationHash(identityRaw.problemHash, "migration problemHash"),
+      solutionHash: migrationHash(identityRaw.solutionHash, "migration solutionHash"),
+      ownership: {
+        bookIds: migrationIntegerArray(ownershipRaw.bookIds, "migration ownership.bookIds"),
+        fileIds: migrationIntegerArray(ownershipRaw.fileIds, "migration ownership.fileIds"),
+        beforeQuestionIds: migrationIntegerArray(ownershipRaw.beforeQuestionIds, "migration ownership.beforeQuestionIds"),
+        afterQuestionIds: migrationIntegerArray(ownershipRaw.afterQuestionIds, "migration ownership.afterQuestionIds"),
+        beforeBookItemIds: migrationIntegerArray(ownershipRaw.beforeBookItemIds, "migration ownership.beforeBookItemIds"),
+        afterBookItemIds: migrationIntegerArray(ownershipRaw.afterBookItemIds, "migration ownership.afterBookItemIds"),
+      },
+      beforeProjectionHash: migrationHash(identityRaw.beforeProjectionHash, "migration beforeProjectionHash"),
+      afterProjectionHash: migrationHash(identityRaw.afterProjectionHash, "migration afterProjectionHash"),
+      stableAfterProjectionHash: migrationHash(
+        identityRaw.stableAfterProjectionHash, "migration stableAfterProjectionHash",
+      ),
+      beforeSequences: {
+        questions: integer(beforeSequencesRaw.questions, "migration beforeSequences.questions"),
+        bookItems: integer(beforeSequencesRaw.bookItems, "migration beforeSequences.bookItems"),
+      },
+      afterSequences: {
+        questions: integer(afterSequencesRaw.questions, "migration afterSequences.questions"),
+        bookItems: integer(afterSequencesRaw.bookItems, "migration afterSequences.bookItems"),
+      },
+      beforeProjection,
+      afterProjection,
+      operations,
+      backup: {
+        sha256: migrationHash(identityBackup.sha256, "migration identity backup.sha256"),
+        bytes: integer(identityBackup.bytes, "migration identity backup.bytes", 1),
+      },
+    },
+    finalReceipt: {
+      path: exactString(finalReceiptRaw.path, "migration finalReceipt.path") as "receipt.json",
+      sha256: migrationHash(finalReceiptRaw.sha256, "migration finalReceipt.sha256"),
+      value: finalReceiptRaw.value,
+    },
+    backup: {
+      path: exactString(backupRaw.path, "migration backup.path"),
+      sha256: migrationHash(backupRaw.sha256, "migration backup.sha256"),
+      bytes: integer(backupRaw.bytes, "migration backup.bytes", 1),
+    },
+  } satisfies ExistingMigrationPlan;
+
+  const spec = EXISTING_MIGRATION_ALLOWLIST.find((candidate) => candidate.entryId === plan.identity.entryId);
+  if (!spec || plan.version !== EXISTING_CORPUS_MIGRATION_VERSION || plan.identity.entryId !== entry.id
+    || plan.identity.entryRawHash !== canonicalEvidenceHash(plan.identity.entryRaw)
+    || !isDeepStrictEqual(plan.identity.entryRaw, entry.raw)
+    || plan.basisDigest !== canonicalEvidenceHash(plan.identity)
+    || plan.identity.oldReceipt.path !== "receipt.json"
+    || plan.identity.oldReceipt.sha256 !== canonicalEvidenceHash(plan.identity.oldReceipt.value)
+    || plan.identity.receiptCore.sha256 !== canonicalEvidenceHash(plan.identity.receiptCore.value)
+    || plan.identity.receiptHistory.path !== `receipt-history/v1-${plan.identity.oldReceipt.sha256}.json`
+    || plan.identity.beforeProjectionHash !== ownedMigrationProjectionHash(beforeProjection)
+    || plan.identity.afterProjectionHash !== ownedMigrationProjectionHash(afterProjection)
+    || plan.identity.stableAfterProjectionHash !== stableMigrationProjectionHash(afterProjection)
+    || !isDeepStrictEqual(plan.identity.backup, { sha256: plan.backup.sha256, bytes: plan.backup.bytes })
+    || plan.finalReceipt.path !== "receipt.json" || plan.finalReceipt.sha256 !== canonicalEvidenceHash(plan.finalReceipt.value)
+    || plan.identity.beforeSequences.questions > plan.identity.afterSequences.questions
+    || plan.identity.beforeSequences.bookItems > plan.identity.afterSequences.bookItems) {
+    throw new Error("migration plan identity/hash binding is invalid");
+  }
+  if (!isDeepStrictEqual(beforeProjection.guards, {
+    attempts: 0, materials: 0, bookExtractionChunks: 0, materialExtractionChunks: 0,
+  }) || !isDeepStrictEqual(beforeProjection.guards, afterProjection.guards)
+    || !isDeepStrictEqual(beforeProjection.books, afterProjection.books)
+    || !isDeepStrictEqual(beforeProjection.files, afterProjection.files)) {
+    throw new Error("migration historical projection/guards changed outside question/item authority");
+  }
+  const reconstructed = applyMigrationOperations(beforeProjection, operations);
+  if (!isDeepStrictEqual(reconstructed, afterProjection)) {
+    throw new Error("migration operations do not reconstruct the NEW projection");
+  }
+  const sameIds = (actual: number[], expected: readonly number[]) => isDeepStrictEqual(actual, [...expected]);
+  const beforeQuestionIds = beforeProjection.questions.map((row) => row.id);
+  const beforeItemIds = beforeProjection.items.map((row) => row.id);
+  const afterQuestionIds = afterProjection.questions.map((row) => row.id);
+  const afterItemIds = afterProjection.items.map((row) => row.id);
+  const addedQuestions = afterProjection.questions.filter((row) => !beforeQuestionIds.includes(row.id));
+  const addedItems = afterProjection.items.filter((row) => !beforeItemIds.includes(row.id));
+  const addedKeys = addedQuestions.map(migrationQuestionKey).sort(compareCorpusQuestionKeys);
+  if (plan.identity.entryId !== spec.entryId || entryToken(entry) !== spec.entryToken
+    || plan.identity.oldReceipt.sha256 !== spec.oldReceiptSha256
+    || plan.identity.receiptCore.sha256 !== spec.receiptCoreSha256
+    || plan.identity.beforeProjectionHash !== spec.beforeProjectionHash
+    || plan.identity.afterProjectionHash !== spec.afterProjectionHash
+    || plan.identity.answerAudit.path !== spec.auditPath || plan.identity.answerAudit.sha256 !== spec.auditSha256
+    || plan.identity.answerAudit.effectiveCorpusHash !== spec.effectiveCorpusHash
+    || plan.identity.answerAudit.effectiveSolutionCorpusHash !== spec.effectiveSolutionCorpusHash
+    || plan.identity.problemHash !== spec.problemHash || plan.identity.solutionHash !== spec.solutionHash
+    || !sameIds(plan.identity.ownership.bookIds, spec.bookIds)
+    || !sameIds(plan.identity.ownership.fileIds, spec.fileIds)
+    || !sameIds(plan.identity.ownership.beforeQuestionIds, spec.questionIds)
+    || !sameIds(plan.identity.ownership.beforeBookItemIds, spec.bookItemIds)
+    || !sameIds(beforeQuestionIds, spec.questionIds) || !sameIds(beforeItemIds, spec.bookItemIds)
+    || !sameIds(plan.identity.ownership.bookIds, beforeProjection.books.map((row) => row.id))
+    || !sameIds(plan.identity.ownership.fileIds, beforeProjection.files.map((row) => row.id))
+    || !sameIds(plan.identity.ownership.afterQuestionIds, afterQuestionIds)
+    || !sameIds(plan.identity.ownership.afterBookItemIds, afterItemIds)
+    || !isDeepStrictEqual(addedKeys, [...spec.newKeys].sort(compareCorpusQuestionKeys))) {
+    throw new Error("migration plan differs from the exact allowlist");
+  }
+  const sortedIds = (values: number[]) => [...values].sort((left, right) => left - right);
+  if (!isDeepStrictEqual(sortedIds(operations.questionUpdates.map((operation) => operation.id)), beforeQuestionIds)
+    || !isDeepStrictEqual(sortedIds(operations.itemUpdates.map((operation) => operation.id)), beforeItemIds)
+    || !isDeepStrictEqual(sortedIds(operations.questionInserts.map((operation) => operation.after.id)),
+      plan.identity.ownership.afterQuestionIds.filter((id) => !plan.identity.ownership.beforeQuestionIds.includes(id)))
+    || !isDeepStrictEqual(sortedIds(operations.itemInserts.map((operation) => operation.after.id)),
+      plan.identity.ownership.afterBookItemIds.filter((id) => !plan.identity.ownership.beforeBookItemIds.includes(id)))) {
+    throw new Error("migration operation/ownership coverage is invalid");
+  }
+  if (plan.identity.afterSequences.questions !== Math.max(plan.identity.beforeSequences.questions, ...afterQuestionIds)
+    || plan.identity.afterSequences.bookItems !== Math.max(plan.identity.beforeSequences.bookItems, ...afterItemIds)) {
+    throw new Error("migration allocator sequence binding is invalid");
+  }
+  const expectedQuestionInsertIds = Array.from(
+    { length: operations.questionInserts.length },
+    (_, index) => Math.max(plan.identity.beforeSequences.questions, ...beforeQuestionIds, 0) + index + 1,
+  );
+  const expectedItemInsertIds = Array.from(
+    { length: operations.itemInserts.length },
+    (_, index) => Math.max(plan.identity.beforeSequences.bookItems, ...beforeItemIds, 0) + index + 1,
+  );
+  if (!isDeepStrictEqual(operations.questionInserts.map((operation) => operation.after.id), expectedQuestionInsertIds)
+    || !isDeepStrictEqual(operations.itemInserts.map((operation) => operation.after.id), expectedItemInsertIds)) {
+    throw new Error("migration inserted IDs do not follow the bound allocator sequence");
+  }
+  for (const row of addedQuestions) {
+    const key = migrationQuestionKey(row);
+    const pinned = spec.newQuestions.find((candidate) => candidate.key === key);
+    const book = afterProjection.books.find((candidate) => candidate.id === row.book_id);
+    const solutions = addedItems.filter((item) => item.book_id === row.book_id
+      && item.number === row.printed_number && item.category === "해설");
+    if (!pinned || !book || solutions.length !== 1 || book.subject_name !== pinned.targetSubject
+      || row.qtype !== pinned.qtype || row.difficulty !== pinned.difficulty || row.question !== pinned.question
+      || row.answer !== pinned.answer || solutions[0].page !== pinned.solutionPage) {
+      throw new Error(`${key} migration insert differs from its allowlist pin`);
+    }
+  }
+  const receipt = object(plan.finalReceipt.value, "migration final receipt value");
+  const migration = assertMigrationKeys(receipt.migration, [
+    "version", "previousReceipt", "plan", "oldProjectionHash", "newProjectionHash", "receiptCoreSha256",
+  ], "migration receipt envelope");
+  const previous = evidencePointer(migration.previousReceipt, "migration receipt previousReceipt");
+  const planPointer = assertMigrationKeys(migration.plan, ["path", "basisDigest"], "migration receipt plan");
+  const { migration: _migration, ...receiptCoreValue } = receipt;
+  if (migration.version !== EXISTING_CORPUS_MIGRATION_VERSION
+    || !isDeepStrictEqual(previous, plan.identity.receiptHistory)
+    || planPointer.path !== `migration-plans/v1-${plan.basisDigest}.json`
+    || planPointer.basisDigest !== plan.basisDigest
+    || migration.oldProjectionHash !== plan.identity.beforeProjectionHash
+    || migration.newProjectionHash !== plan.identity.afterProjectionHash
+    || migration.receiptCoreSha256 !== plan.identity.receiptCore.sha256
+    || !isDeepStrictEqual(receiptCoreValue, plan.identity.receiptCore.value)) {
+    throw new Error("migration final receipt envelope is invalid");
+  }
+  if (plan.backup.path !== `backups/exam-corpus-migration-v1-${spec.entryToken}-${plan.basisDigest}.db`) {
+    throw new Error("migration backup path is invalid");
+  }
+  return plan;
+}
+
+function sqliteSequence(db: Database.Database, name: string): number {
+  const row = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = ?").get(name) as { seq?: number } | undefined;
+  return Number(row?.seq ?? 0);
+}
+
+function readMigrationProjection(db: Database.Database, bookIds: number[]): MigrationProjection {
+  const placeholders = bookIds.map(() => "?").join(",");
+  const books = db.prepare(
+    `SELECT b.*, s.name AS subject_name FROM books b JOIN subjects s ON s.id = b.subject_id `
+    + `WHERE b.id IN (${placeholders}) ORDER BY b.id`,
+  ).all(...bookIds) as MigrationRow[];
+  const files = db.prepare(`SELECT * FROM book_files WHERE book_id IN (${placeholders}) ORDER BY id`)
+    .all(...bookIds) as MigrationRow[];
+  const questions = db.prepare(`SELECT * FROM questions WHERE book_id IN (${placeholders}) ORDER BY id`)
+    .all(...bookIds) as MigrationRow[];
+  const items = db.prepare(`SELECT * FROM book_items WHERE book_id IN (${placeholders}) ORDER BY id`)
+    .all(...bookIds) as MigrationRow[];
+  const questionIds = questions.map((row) => row.id);
+  const fileIds = files.map((row) => row.id);
+  const questionMarks = questionIds.length ? questionIds.map(() => "?").join(",") : "NULL";
+  const fileMarks = fileIds.length ? fileIds.map(() => "?").join(",") : "NULL";
+  const count = (sql: string, values: unknown[]) => Number(
+    (db.prepare(sql).get(...values) as { count: number }).count,
+  );
+  const materials = count(`SELECT COUNT(*) AS count FROM materials WHERE book_id IN (${placeholders})`, bookIds);
+  return {
+    books,
+    files,
+    questions,
+    items,
+    guards: {
+      attempts: count(`SELECT COUNT(*) AS count FROM question_attempts WHERE question_id IN (${questionMarks})`, questionIds),
+      materials,
+      bookExtractionChunks: count(
+        `SELECT COUNT(*) AS count FROM book_extraction_chunks WHERE file_id IN (${fileMarks})`, fileIds,
+      ),
+      materialExtractionChunks: materials === 0 ? 0 : count(
+        `SELECT COUNT(*) AS count FROM material_extraction_chunks `
+        + `WHERE material_id IN (SELECT id FROM materials WHERE book_id IN (${placeholders}))`, bookIds,
+      ),
+    },
+    sequences: {
+      questions: sqliteSequence(db, "questions"),
+      bookItems: sqliteSequence(db, "book_items"),
+    },
+  };
+}
+
+function verifyMigrationLinkedFiles(dataDir: string, plan: ExistingMigrationPlan): void {
+  const root = join(dataDir, "files");
+  if (lstatSync(root).isSymbolicLink() || !lstatSync(root).isDirectory()) {
+    throw new Error("migration files root is not a regular directory");
+  }
+  const realRoot = realpathSync(root);
+  for (const row of plan.identity.afterProjection.files) {
+    const key = exactString(row.r2_key, `migration file ${row.id}.r2_key`);
+    const expectedHash = migrationHash(row.content_hash, `migration file ${row.id}.content_hash`);
+    const path = resolve(root, key);
+    if (!path.startsWith(`${resolve(root)}/`) || !existsSync(path) || lstatSync(path).isSymbolicLink()
+      || !lstatSync(path).isFile() || !realpathSync(path).startsWith(`${realRoot}/`)
+      || hashFile(path) !== expectedHash) {
+      throw new Error(`migration linked source file ${key} is missing or tampered`);
+    }
+  }
+}
+
+function verifyMigrationBackup(dataDir: string, plan: ExistingMigrationPlan): void {
+  const directory = join(dataDir, "backups");
+  if (!existsSync(directory) || lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory()
+    || !realpathSync(directory).startsWith(`${realpathSync(dataDir)}/`)) {
+    throw new Error("migration backups directory is invalid");
+  }
+  const path = join(dataDir, plan.backup.path);
+  if (!path.startsWith(`${resolve(dataDir)}/`) || !existsSync(path) || lstatSync(path).isSymbolicLink()
+    || !lstatSync(path).isFile() || !realpathSync(path).startsWith(`${realpathSync(directory)}/`)
+    || statSync(path).size !== plan.backup.bytes
+    || hashFile(path) !== plan.backup.sha256) {
+    throw new Error("migration backup artifact is missing or tampered");
+  }
+  const backup = new Database(path, { readonly: true, fileMustExist: true });
+  try {
+    backup.pragma("query_only = ON");
+    const quick = backup.pragma("quick_check") as Array<{ quick_check: string }>;
+    const projection = readMigrationProjection(backup, plan.identity.ownership.bookIds);
+    const journal = backup.pragma("journal_mode", { simple: true });
+    const projectionHash = ownedMigrationProjectionHash(projection);
+    if (quick.length !== 1 || quick[0].quick_check !== "ok" || journal !== "delete"
+      || projectionHash !== plan.identity.beforeProjectionHash
+      || projection.sequences.questions !== plan.identity.beforeSequences.questions
+      || projection.sequences.bookItems !== plan.identity.beforeSequences.bookItems) {
+      throw new Error(
+        `migration backup DB does not reproduce the OLD state ` +
+        `(quick=${JSON.stringify(quick)}, journal=${journal}, projection=${projectionHash}, ` +
+        `sequences=${projection.sequences.questions}/${projection.sequences.bookItems})`,
+      );
+    }
+  } finally {
+    backup.close();
+  }
+}
+
+function verifyExistingMigration(
+  db: Database.Database,
+  dataDir: string,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  solutionEvidence: DownloadEvidence,
+  receipt: Record<string, unknown>,
+  answerAudit: VerifiedAnswerAudit,
+  declaredBackups: Set<string>,
+): void {
+  const histories = migrationArtifacts(stateDir, "receipt-history", /^v1-[a-f0-9]{64}\.json$/u);
+  const plans = migrationArtifacts(stateDir, "migration-plans", /^v1-[a-f0-9]{64}\.json$/u);
+  const commits = migrationArtifacts(stateDir, "migration-commits", /^v1-[a-f0-9]{64}\.json$/u);
+  if (receipt.migration === undefined) {
+    if (histories.length || plans.length || commits.length) {
+      throw new Error("migration artifacts exist without a migration receipt");
+    }
+    return;
+  }
+  if (histories.length !== 1 || plans.length !== 1 || commits.length !== 1) {
+    throw new Error("migration requires exactly one history, plan, and commit artifact");
+  }
+  const nameDigest = /^v1-([a-f0-9]{64})\.json$/u.exec(plans[0].name)![1];
+  const plan = parseExistingMigrationPlan(plans[0].value, entry);
+  if (plan.basisDigest !== nameDigest || plans[0].sha256 !== canonicalEvidenceHash(plan)
+    || !isDeepStrictEqual(receipt, plan.finalReceipt.value)
+    || canonicalEvidenceHash(receipt) !== plan.finalReceipt.sha256
+    || plan.identity.problemHash !== problemEvidence.sha256 || plan.identity.solutionHash !== solutionEvidence.sha256) {
+    throw new Error("migration receipt/plan/source binding is invalid");
+  }
+  const history = histories[0];
+  const expectedHistory = {
+    version: EXISTING_CORPUS_MIGRATION_VERSION,
+    entryId: entry.id,
+    receipt: plan.identity.oldReceipt,
+  };
+  if (history.name !== `v1-${plan.identity.oldReceipt.sha256}.json`
+    || history.sha256 !== plan.identity.receiptHistory.sha256
+    || plan.identity.receiptHistory.path !== `receipt-history/${history.name}`
+    || !isDeepStrictEqual(history.value, expectedHistory)) {
+    throw new Error("migration receipt history binding is invalid");
+  }
+  if (!answerAudit.auditPointer || !answerAudit.attestationPointer
+    || !answerAudit.effectiveCorpusHash || !answerAudit.effectiveSolutionCorpusHash
+    || !isDeepStrictEqual(plan.identity.answerAudit, {
+      ...answerAudit.auditPointer,
+      effectiveCorpusHash: answerAudit.effectiveCorpusHash,
+      effectiveSolutionCorpusHash: answerAudit.effectiveSolutionCorpusHash,
+    })) {
+    throw new Error("migration plan does not bind the selected current answer authority");
+  }
+  verifyMigrationLinkedFiles(dataDir, plan);
+  declaredBackups.add(plan.backup.path);
+  verifyMigrationBackup(dataDir, plan);
+  const live = readMigrationProjection(db, plan.identity.ownership.bookIds);
+  const stableHash = stableMigrationProjectionHash(live);
+  if (stableHash !== plan.identity.stableAfterProjectionHash) {
+    throw new Error("migration live DB stable projection differs from the committed NEW state");
+  }
+  const commit = commits[0];
+  if (commit.name !== `v1-${plan.basisDigest}.json`) throw new Error("migration commit filename is invalid");
+  const commitValue = assertMigrationKeys(commit.value, [
+    "version", "commitDigest", "entryId", "basisDigest", "plan", "receiptHistory", "backup",
+    "dbProjectionHash", "stableDbProjectionHash", "receipt", "answerAttestation",
+  ], "migration commit");
+  const { version: _version, commitDigest, ...commitBasis } = commitValue;
+  const expectedCommitBasis = {
+    entryId: entry.id,
+    basisDigest: plan.basisDigest,
+    plan: { path: `migration-plans/v1-${plan.basisDigest}.json`, sha256: plans[0].sha256 },
+    receiptHistory: plan.identity.receiptHistory,
+    backup: plan.backup,
+    dbProjectionHash: plan.identity.afterProjectionHash,
+    stableDbProjectionHash: plan.identity.stableAfterProjectionHash,
+    receipt: plan.finalReceipt,
+    answerAttestation: answerAudit.attestationPointer,
+  };
+  if (commitValue.version !== EXISTING_CORPUS_MIGRATION_VERSION
+    || migrationHash(commitDigest, "migration commitDigest") !== canonicalEvidenceHash(commitBasis)
+    || !isDeepStrictEqual(commitBasis, expectedCommitBasis)
+    || commit.sha256 !== canonicalEvidenceHash(commitValue)) {
+    throw new Error("migration commit marker is invalid");
+  }
+}
+
+function verifyNoMigrationArtifacts(stateDir: string): void {
+  const count = migrationArtifacts(stateDir, "receipt-history", /^v1-[a-f0-9]{64}\.json$/u).length
+    + migrationArtifacts(stateDir, "migration-plans", /^v1-[a-f0-9]{64}\.json$/u).length
+    + migrationArtifacts(stateDir, "migration-commits", /^v1-[a-f0-9]{64}\.json$/u).length;
+  if (count !== 0) throw new Error("migration artifacts exist without a committed migration receipt");
+}
+
+function verifyMigrationBackupCoverage(dataDir: string, declared: Set<string>): void {
+  const directory = join(dataDir, "backups");
+  if (!existsSync(directory)) {
+    if (declared.size) throw new Error("migration backups directory is missing");
+    return;
+  }
+  if (lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory()
+    || !realpathSync(directory).startsWith(`${realpathSync(dataDir)}/`)) {
+    throw new Error("migration backups directory is invalid");
+  }
+  const actual = new Set<string>();
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const isTemp = entry.name.startsWith(".") && entry.name.includes(".tmp");
+    if (isTemp) {
+      if (!entry.isFile() || entry.isSymbolicLink()) throw new Error("migration backup temp is not a regular file");
+      continue;
+    }
+    if (!entry.name.startsWith("exam-corpus-migration-v1-")) continue;
+    if (!entry.isFile() || entry.isSymbolicLink()) throw new Error("migration backup is not a regular file");
+    actual.add(`backups/${entry.name}`);
+  }
+  if (!isDeepStrictEqual([...actual].sort(), [...declared].sort())) {
+    throw new Error("migration backup coverage has an orphan, duplicate, or missing artifact");
   }
 }
 
@@ -9790,6 +10589,7 @@ export function verifyExamCorpus(options: {
 
     const expectedFiles = new Set<string>();
     const hashCache = new Map<string, string>();
+    const declaredMigrationBackups = new Set<string>();
     for (const entry of entries) {
       const stateDir = join(dataDir, "import-exam-corpus", entryToken(entry));
       const entryPath = join(stateDir, "entry.json");
@@ -9823,6 +10623,17 @@ export function verifyExamCorpus(options: {
       }
       const receipt = hasReceipt ? safeObject(receiptPath, "receipt.json", entry.id, add) : null;
       const result = hasResult ? safeObject(resultPath, "result.json", entry.id, add) : null;
+      if (!receipt) {
+        try {
+          verifyNoMigrationArtifacts(stateDir);
+        } catch (error) {
+          add({
+            code: "MIGRATION_INVALID",
+            entryId: entry.id,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
       const terminalDigestValue = receipt?.rulesDigest ?? result?.rulesDigest;
       const terminalDigest = typeof terminalDigestValue === "string" && /^[a-f0-9]{16}$/.test(terminalDigestValue)
         ? terminalDigestValue
@@ -9949,6 +10760,25 @@ export function verifyExamCorpus(options: {
       );
       decisions = verifiedAudit.decisions;
       const effectiveSolutions = verifiedAudit.solutions;
+      try {
+        verifyExistingMigration(
+          db,
+          dataDir,
+          stateDir,
+          entry,
+          problemEvidence,
+          solutionEvidence,
+          receipt,
+          verifiedAudit,
+          declaredMigrationBackups,
+        );
+      } catch (error) {
+        add({
+          code: "MIGRATION_INVALID",
+          entryId: entry.id,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
       if (decisions.reviews > 0) {
         report.manifest.review += 1;
         add({ code: "REVIEW_COMMITTED", entryId: entry.id, message: "effective repair classifications require review" });
@@ -10054,6 +10884,11 @@ export function verifyExamCorpus(options: {
       if (!expectedFiles.has(file.r2_key)) {
         add({ code: "UNEXPECTED_CORPUS_FILE", target: file.target, message: `${file.r2_key} is not owned by a committed manifest receipt` });
       }
+    }
+    try {
+      verifyMigrationBackupCoverage(dataDir, declaredMigrationBackups);
+    } catch (error) {
+      add({ code: "MIGRATION_INVALID", message: error instanceof Error ? error.message : String(error) });
     }
     for (const target of TARGET_SUBJECTS) {
       const counts = report.targets[target];

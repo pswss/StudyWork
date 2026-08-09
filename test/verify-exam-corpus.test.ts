@@ -1,6 +1,8 @@
 import Database from "better-sqlite3";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -12,7 +14,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import {
   QUIZ_EXTRACT_SPEC,
@@ -39,6 +42,7 @@ import {
   assertTerminalGenerationSearchBound,
   canonicalEvidenceHash,
   compareCorpusQuestionKeys,
+  existingCorpusMigrationAllowlistFingerprint,
   manualAdjudicationAllowlistFingerprint,
   officialAnswerForDb,
   repairScopeAdjudicationAllowlistFingerprint,
@@ -52,6 +56,7 @@ import {
 import {
   applyAllowlistedProblemManualCorrection,
   auditAcceptedSolutions,
+  EXISTING_CORPUS_MIGRATION_ALLOWLIST,
   parseCorpusManifest,
   PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST,
   PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST,
@@ -428,6 +433,98 @@ function writeEvidence(path: string, value: unknown): string {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, `${JSON.stringify(canonicalize(value), null, 2)}\n`);
   return canonicalEvidenceHash(value);
+}
+
+const execFileP = promisify(execFile);
+const migrationRepository = resolve(import.meta.dirname, "..");
+const migrationSourceData = join(migrationRepository, "data");
+const migrationEntryId = "ebsi:5695028";
+const migrationEntryToken = "bc66d0c1b35ffd8e12edd536";
+const migrationOldReceiptSha = "5e1fbea9c346a0e89fb21938176c21e00c19527e6369f5251a1f53e6446711a1";
+
+async function migratedVerifierFixture(): Promise<{
+  root: string;
+  dataDir: string;
+  dbPath: string;
+  manifestPath: string;
+  stateDir: string;
+  planPath: string;
+  plan: Record<string, any>;
+}> {
+  const root = mkdtempSync(join(tmpdir(), "verify-exam-corpus-migration-"));
+  const dataDir = join(root, "data");
+  const stateDir = join(dataDir, "import-exam-corpus", migrationEntryToken);
+  const sourceState = join(migrationSourceData, "import-exam-corpus", migrationEntryToken);
+  mkdirSync(join(dataDir, "import-exam-corpus"), { recursive: true });
+  cpSync(sourceState, stateDir, { recursive: true });
+  mkdirSync(join(dataDir, "files", "corpus"), { recursive: true });
+  cpSync(
+    join(migrationSourceData, "files", "corpus", migrationEntryToken),
+    join(dataDir, "files", "corpus", migrationEntryToken),
+    { recursive: true },
+  );
+  const sourcePlanDir = join(stateDir, "migration-plans");
+  const sourcePlanName = existsSync(sourcePlanDir)
+    ? readdirSync(sourcePlanDir).find((name) => /^v1-[a-f0-9]{64}\.json$/u.test(name))
+    : undefined;
+  if (sourcePlanName) {
+    const sourcePlan = JSON.parse(readFileSync(join(sourcePlanDir, sourcePlanName), "utf8"));
+    const sourceBackup = join(migrationSourceData, sourcePlan.backup.path);
+    const targetBackup = join(dataDir, sourcePlan.backup.path);
+    mkdirSync(resolve(targetBackup, ".."), { recursive: true });
+    cpSync(sourceBackup, targetBackup);
+    cpSync(sourceBackup, join(dataDir, "studywork.db"));
+    const history = JSON.parse(readFileSync(
+      join(stateDir, "receipt-history", `v1-${migrationOldReceiptSha}.json`), "utf8",
+    ));
+    writeEvidence(join(stateDir, "receipt.json"), history.receipt.value);
+    rmSync(join(stateDir, "migration-commits"), { recursive: true, force: true });
+    rmSync(join(stateDir, "answer-attestation"), { recursive: true, force: true });
+  } else {
+    const source = new Database(join(migrationSourceData, "studywork.db"), { readonly: true, fileMustExist: true });
+    try {
+      await source.backup(join(dataDir, "studywork.db"));
+    } finally {
+      source.close();
+    }
+    expect(hash(readFileSync(join(stateDir, "receipt.json")))).toBe(migrationOldReceiptSha);
+  }
+  await execFileP(process.execPath, [
+    "--import", "tsx", "scripts/import-exam-corpus.ts",
+    "--manifest", "data/ebsi-exam-manifest.json",
+    "--data-dir", dataDir,
+    "--commit",
+    "--migrate-existing", migrationEntryId,
+    "--expect-receipt-sha256", migrationOldReceiptSha,
+  ], { cwd: migrationRepository, timeout: 60_000 });
+
+  const dbPath = join(dataDir, "studywork.db");
+  const db = new Database(dbPath);
+  try {
+    db.prepare(
+      "DELETE FROM book_files WHERE r2_key LIKE 'corpus/%' AND id NOT IN (148, 149, 150, 151)",
+    ).run();
+  } finally {
+    db.close();
+  }
+  const sourceManifest = JSON.parse(readFileSync(join(migrationSourceData, "ebsi-exam-manifest.json"), "utf8"));
+  const manifestPath = join(dataDir, "single-migration-manifest.json");
+  writeEvidence(manifestPath, {
+    schemaVersion: 2,
+    entries: sourceManifest.entries.filter((entry: { id: string }) => entry.id === migrationEntryId),
+  });
+  const planName = readdirSync(join(stateDir, "migration-plans"))
+    .find((name) => /^v1-[a-f0-9]{64}\.json$/u.test(name))!;
+  const planPath = join(stateDir, "migration-plans", planName);
+  return {
+    root,
+    dataDir,
+    dbPath,
+    manifestPath,
+    stateDir,
+    planPath,
+    plan: JSON.parse(readFileSync(planPath, "utf8")),
+  };
 }
 
 function pngHeader(width: number, height: number): Buffer {
@@ -6131,10 +6228,7 @@ function migratePersistedSolutionGeneration(
   for (const [index, item] of audit.solutionFidelityItems.entries()) {
     if (item.key === key) {
       historicalTargetTerminal.fidelityArtifact = currentRepair.revision
-        ? {
-            path: currentRepair.revision.fidelityArtifact.path,
-            sha256: currentRepair.revision.fidelityArtifact.sha256,
-          }
+        ? currentRepair.revision.fidelityArtifact
         : repairFidelityPointer;
       if (!currentRepair.revision) historicalTargetTerminal.evidence = currentFirstDecision.evidence;
       audit.solutionFidelityItems[index] = historicalTargetTerminal;
@@ -6534,7 +6628,10 @@ function installCurrentQ1SemanticSibling(files: ReturnType<typeof fixture>): voi
     answerStatus: finalDecision.answerStatus,
     explanationStatus: finalDecision.explanationStatus,
     evidence: finalDecision.evidence,
-    fidelityArtifact: finalFidelityPointer,
+    fidelityArtifact: {
+      ...finalFidelityPointer,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    },
     effectiveSolutionItemHash: finalItemHash,
     effectiveRawAnswerHash: hash(finalSolution.answer),
     effectiveExplanationHash: hash(finalSolution.explanation),
@@ -7594,7 +7691,10 @@ function installSolutionPromptUpgrade(files: ReturnType<typeof fixture>): {
       answerStatus: currentFinalDecision.answerStatus,
       explanationStatus: currentFinalDecision.explanationStatus,
       evidence: currentFinalDecision.evidence,
-      fidelityArtifact: currentRevisionFidelityPointer,
+      fidelityArtifact: {
+        ...currentRevisionFidelityPointer,
+        promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      },
       effectiveSolutionItemHash: finalSolutionHash,
       effectiveRawAnswerHash: hash(finalSolution.answer),
       effectiveExplanationHash: hash(finalSolution.explanation),
@@ -8209,6 +8309,146 @@ function rewriteProblemRepairAuthority(
 }
 
 describe("exam corpus verifier", () => {
+  it("verifies one complete migration chain while tolerating post-import study state", async () => {
+    expect(existingCorpusMigrationAllowlistFingerprint())
+      .toBe(canonicalEvidenceHash(EXISTING_CORPUS_MIGRATION_ALLOWLIST));
+    const files = await migratedVerifierFixture();
+    const verify = () => verifyExamCorpus({
+      manifestPath: files.manifestPath,
+      dbPath: files.dbPath,
+      dataDir: files.dataDir,
+    });
+    try {
+      const initial = verify();
+      expect(initial, JSON.stringify(initial.failures, null, 2))
+        .toMatchObject({ ok: true, failureCount: 0, questions: { expected: 14, actual: 14 } });
+
+      let db = new Database(files.dbPath);
+      try {
+        const q26 = db.prepare(
+          "SELECT id FROM questions WHERE book_id = 101 AND printed_number = '26'",
+        ).get() as { id: number };
+        db.prepare(
+          "UPDATE questions SET correct_count = 3, wrong_count = 2, from_wrong_note = 1 WHERE id = ?",
+        ).run(q26.id);
+        db.prepare(
+          "INSERT INTO question_attempts (question_id, attempt_id, correct) VALUES (?, 'verify-migration', 1)",
+        ).run(q26.id);
+        db.prepare(
+          "UPDATE book_files SET progress = 88, retry_chunk_count = 3, answer_key_pages = '[2]', "
+          + "answer_key_scan_complete = 1 WHERE id = 148",
+        ).run();
+        db.prepare(
+          "INSERT INTO materials (id, subject_id, kind, title, book_id) VALUES (999999, 1, 'pdf', 'post-use', 100)",
+        ).run();
+        db.prepare(
+          "INSERT INTO material_extraction_chunks (material_id, chunk_index, page_from, page_to, content) "
+          + "VALUES (999999, 0, 1, 1, 'post-use')",
+        ).run();
+      } finally {
+        db.close();
+      }
+      expect(verify()).toMatchObject({ ok: true, failureCount: 0 });
+
+      for (const directory of ["receipt-history", "migration-plans", "migration-commits"]) {
+        writeFileSync(join(files.stateDir, directory, `.residue-${directory}.tmp`), "incomplete");
+      }
+      writeFileSync(join(files.dataDir, "backups", ".migration-residue.tmp"), "incomplete");
+      expect(verify()).toMatchObject({ ok: true, failureCount: 0 });
+
+      const planBytes = readFileSync(files.planPath);
+      const tamperedPlan = structuredClone(files.plan);
+      tamperedPlan.identity.problemHash = "f".repeat(64);
+      writeEvidence(files.planPath, tamperedPlan);
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "MIGRATION_INVALID" }),
+      ]));
+      writeFileSync(files.planPath, planBytes);
+
+      const historyPath = join(files.stateDir, files.plan.identity.receiptHistory.path);
+      const historyBytes = readFileSync(historyPath);
+      const tamperedHistory = JSON.parse(historyBytes.toString());
+      tamperedHistory.entryId = "ebsi:tampered";
+      writeEvidence(historyPath, tamperedHistory);
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "MIGRATION_INVALID" }),
+      ]));
+      writeFileSync(historyPath, historyBytes);
+
+      const commitPath = join(
+        files.stateDir,
+        "migration-commits",
+        `v1-${files.plan.basisDigest}.json`,
+      );
+      const commitBytes = readFileSync(commitPath);
+      rmSync(commitPath);
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "MIGRATION_INVALID" }),
+      ]));
+      writeFileSync(commitPath, commitBytes);
+
+      const backupPath = join(files.dataDir, files.plan.backup.path);
+      const backupBytes = readFileSync(backupPath);
+      writeFileSync(backupPath, "tampered backup");
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "MIGRATION_INVALID" }),
+      ]));
+      writeFileSync(backupPath, backupBytes);
+
+      const orphanCommit = join(files.stateDir, "migration-commits", `v1-${"e".repeat(64)}.json`);
+      writeEvidence(orphanCommit, { version: 1, orphan: true });
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "MIGRATION_INVALID" }),
+      ]));
+      rmSync(orphanCommit);
+
+      const orphanBackup = join(files.dataDir, "backups", `exam-corpus-migration-v1-${"e".repeat(64)}.db`);
+      writeFileSync(orphanBackup, "orphan");
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "MIGRATION_INVALID" }),
+      ]));
+      rmSync(orphanBackup);
+
+      db = new Database(files.dbPath);
+      try {
+        db.prepare("UPDATE questions SET question = 'stable field tampered' WHERE id = 3528").run();
+      } finally {
+        db.close();
+      }
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: "MIGRATION_INVALID",
+          message: expect.stringContaining("stable projection"),
+        }),
+      ]));
+    } finally {
+      rmSync(files.root, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("rejects migration sidecars without a migration receipt envelope", () => {
+    const files = fixture();
+    try {
+      writeEvidence(
+        join(files.stateDirs.math, "migration-plans", `v1-${"d".repeat(64)}.json`),
+        { version: 1, orphan: true },
+      );
+      expect(verifyExamCorpus({
+        manifestPath: files.manifestPath,
+        dbPath: files.dbPath,
+        dataDir: files.dataDir,
+      }).failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: "MIGRATION_INVALID",
+          entryId: "ebsi:math",
+          message: expect.stringContaining("without a migration receipt"),
+        }),
+      ]));
+    } finally {
+      rmSync(files.root, { recursive: true, force: true });
+    }
+  });
+
   it("uses localeCompare order for multi-digit page question keys", () => {
     const keys = ["10:25", "2:6", "1:1"];
     expect([...keys].sort(compareCorpusQuestionKeys)).toEqual(["1:1", "10:25", "2:6"]);
