@@ -41,6 +41,7 @@ import {
   compareCorpusQuestionKeys,
   manualAdjudicationAllowlistFingerprint,
   officialAnswerForDb,
+  repairScopeAdjudicationAllowlistFingerprint,
   runCli,
   TARGET_SUBJECTS,
   verifyExamCorpus,
@@ -50,6 +51,8 @@ import {
   PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST,
   PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST,
   PROBLEM_MANUAL_CORRECTION_DIGEST,
+  PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST,
+  PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST,
 } from "../scripts/import-exam-corpus";
 
 type Target = (typeof TARGET_SUBJECTS)[number];
@@ -166,6 +169,14 @@ const Q11_SCOPE_SPEC = {
 const Q11_SCOPE_STATE = join(process.cwd(), "data/import-exam-corpus/b4eeaf53cd6024aa180d1f37");
 const Q11_OFFICIAL_PROBLEM_PATH = join(Q11_SCOPE_STATE, "problem.pdf");
 const Q11_OFFICIAL_SOLUTION_PATH = join(Q11_SCOPE_STATE, "solution.pdf");
+const Q26_REPAIR_SCOPE_SPEC = PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST.find((spec) =>
+  spec.entryId === "ebsi:5643101")!;
+const Q30_REPAIR_SCOPE_SPEC = PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST.find((spec) =>
+  spec.entryId === "ebsi:5696441")!;
+const REPAIR_SCOPE_STATES = new Map([
+  [Q26_REPAIR_SCOPE_SPEC.entryId, join(process.cwd(), "data/import-exam-corpus/5a72e90edfe68c75f79ce8ef")],
+  [Q30_REPAIR_SCOPE_SPEC.entryId, join(process.cwd(), "data/import-exam-corpus/8166de955e4bb324c5a7b92b")],
+]);
 const TARGETED_PROMPT_DIGEST = hash(
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
@@ -331,7 +342,7 @@ function schema(db: Database.Database): void {
     CREATE TABLE questions (
       id INTEGER PRIMARY KEY, subject_id INTEGER NOT NULL, source TEXT NOT NULL,
       qtype TEXT NOT NULL, question TEXT NOT NULL, choices TEXT, answer TEXT NOT NULL,
-      explanation TEXT NOT NULL, book_id INTEGER, book_number TEXT, printed_number TEXT,
+      explanation TEXT NOT NULL, difficulty TEXT NOT NULL, book_id INTEGER, book_number TEXT, printed_number TEXT,
       src_file_id INTEGER, src_page INTEGER
     );
   `);
@@ -734,8 +745,8 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
       db.prepare(
         `INSERT INTO questions
          (id, subject_id, source, qtype, question, choices, answer, explanation, book_id,
-          book_number, printed_number, src_file_id, src_page)
-         VALUES (?, ?, 'uploaded', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+          difficulty, book_number, printed_number, src_file_id, src_page)
+         VALUES (?, ?, 'uploaded', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
       ).run(
         id,
         subjectIds.get(accepted.target),
@@ -745,6 +756,7 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
         answer.storedAnswer,
         officialExplanation,
         targetBookId,
+        problems[index].difficulty,
         String(index + 1),
         String(index + 1),
         problemFileId,
@@ -919,6 +931,106 @@ function prepareQ11ScopeFixture(files: ReturnType<typeof fixture>): void {
   writeJson(receiptPath, receipt);
 }
 
+function prepareRepairScopeFixture(
+  files: ReturnType<typeof fixture>,
+  spec: (typeof PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST)[number],
+): void {
+  const officialState = REPAIR_SCOPE_STATES.get(spec.entryId);
+  if (!officialState) throw new Error(`missing repair-scope fixture state for ${spec.entryId}`);
+  const oldStateDir = files.stateDirs.math;
+  const entryState = JSON.parse(readFileSync(join(oldStateDir, "entry.json"), "utf8"));
+  const oldEntryId = entryState.entry.id;
+  const officialEntry = JSON.parse(readFileSync(join(officialState, "entry.json"), "utf8")).entry;
+  const officialDownloads = JSON.parse(readFileSync(join(officialState, "downloads.json"), "utf8"));
+  Object.assign(entryState.entry, {
+    id: spec.entryId,
+    paperId: officialEntry.paperId,
+    sourcePageUrl: officialEntry.sourcePageUrl,
+    problemPdfUrl: officialDownloads.problem.requestedUrl,
+    solutionPdfUrl: officialDownloads.solution.requestedUrl,
+  });
+  const stateDir = join(files.dataDir, "import-exam-corpus", token(spec.entryId, 24));
+  renameSync(oldStateDir, stateDir);
+  files.stateDirs.math = stateDir;
+  writeJson(join(stateDir, "entry.json"), entryState);
+
+  const manifest = JSON.parse(readFileSync(files.manifestPath, "utf8"));
+  Object.assign(manifest.entries.find((entry: { id: string }) => entry.id === oldEntryId), entryState.entry);
+  writeJson(files.manifestPath, manifest);
+
+  const problemBytes = readFileSync(join(officialState, "problem.pdf"));
+  const solutionBytes = readFileSync(join(officialState, "solution.pdf"));
+  expect(hash(problemBytes)).toBe(spec.sourceHash);
+  expect(hash(solutionBytes)).toBe(spec.solutionSourceHash);
+  writeFileSync(join(stateDir, "problem.pdf"), problemBytes);
+  writeFileSync(join(stateDir, "solution.pdf"), solutionBytes);
+  writeJson(join(stateDir, "downloads.json"), {
+    version: 2,
+    problem: { ...officialDownloads.problem, path: "problem.pdf" },
+    solution: { ...officialDownloads.solution, path: "solution.pdf" },
+  });
+
+  const solutionChunkDir = join(stateDir, "solution-chunks");
+  const syntheticItems = readdirSync(solutionChunkDir)
+    .filter((name) => /^v3-\d{4}\.json$/u.test(name))
+    .sort()
+    .flatMap((name) => JSON.parse(readFileSync(join(solutionChunkDir, name), "utf8")).items)
+    .sort((left: { number: string }, right: { number: string }) => Number(left.number) - Number(right.number));
+  const officialCheckpoint = JSON.parse(readFileSync(
+    join(officialState, "solution-chunks", "v3-0000.json"),
+    "utf8",
+  ));
+  const printedNumber = spec.key.split(":")[1];
+  const officialItem = officialCheckpoint.items.find(
+    (item: { number: string }) => item.number === printedNumber,
+  );
+  const solutionCheckpointPath = join(solutionChunkDir, "v3-0000.json");
+  const solutionCheckpoint = JSON.parse(readFileSync(solutionCheckpointPath, "utf8"));
+  Object.assign(solutionCheckpoint, {
+    sourceHash: spec.solutionSourceHash,
+    from: 1,
+    to: 4,
+    ownedFrom: 1,
+    ownedTo: 4,
+    items: syntheticItems.map((item: Record<string, unknown>) => ({
+      ...item,
+      ...(item.number === printedNumber ? officialItem : {}),
+      page: item.number === printedNumber ? officialItem.page : (Number(item.number) - 1) % 4 + 1,
+    })),
+  });
+  writeJson(solutionCheckpointPath, solutionCheckpoint);
+  for (const name of readdirSync(solutionChunkDir)) {
+    if (/^v3-(?!0000)\d{4}\.json$/u.test(name)) rmSync(join(solutionChunkDir, name));
+  }
+
+  const receiptPath = join(stateDir, "receipt.json");
+  const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+  receipt.entryId = spec.entryId;
+  receipt.problemHash = spec.sourceHash;
+  receipt.solutionHash = spec.solutionSourceHash;
+  const db = new Database(files.dbPath);
+  for (const target of receipt.targetBooks as Array<{
+    subject: Target;
+    problemR2Key: string;
+    solutionR2Key: string;
+  }>) {
+    const prefix = `corpus/${token(spec.entryId, 24)}/${token(target.subject, 16)}`;
+    const problemR2Key = `${prefix}/problem.pdf`;
+    const solutionR2Key = `${prefix}/solution.pdf`;
+    mkdirSync(join(files.dataDir, "files", prefix), { recursive: true });
+    writeFileSync(join(files.dataDir, "files", problemR2Key), problemBytes);
+    writeFileSync(join(files.dataDir, "files", solutionR2Key), solutionBytes);
+    db.prepare("UPDATE book_files SET r2_key = ?, content_hash = ?, page_count = 12 WHERE r2_key = ?")
+      .run(problemR2Key, spec.sourceHash, target.problemR2Key);
+    db.prepare("UPDATE book_files SET r2_key = ?, content_hash = ?, page_count = 4 WHERE r2_key = ?")
+      .run(solutionR2Key, spec.solutionSourceHash, target.solutionR2Key);
+    target.problemR2Key = problemR2Key;
+    target.solutionR2Key = solutionR2Key;
+  }
+  db.close();
+  writeJson(receiptPath, receipt);
+}
+
 function prepareQ30ManualFixture(files: ReturnType<typeof fixture>): void {
   const oldStateDir = files.stateDirs.korean;
   const entryState = JSON.parse(readFileSync(join(oldStateDir, "entry.json"), "utf8"));
@@ -988,7 +1100,9 @@ function upgradeEntryToV3(
     problemRecovery?: boolean;
     cropAdjudication?: boolean;
     scopeAdjudication?: boolean;
+    repairScopeAdjudication?: boolean;
     manualAdjudication?: boolean;
+    difficultyRepair?: boolean;
     terminalRecovery?: boolean;
     mixedTerminalRecovery?: boolean;
     answerV5?: boolean;
@@ -1027,6 +1141,12 @@ function upgradeEntryToV3(
   if (options.scopeAdjudication && entry.id !== Q11_SCOPE_SPEC.entryId) {
     throw new Error("scope adjudication fixture requires the exact Q11 entry");
   }
+  const repairScopeSpec = options.repairScopeAdjudication
+    ? PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST.find((spec) => spec.entryId === entry.id)
+    : undefined;
+  if (options.repairScopeAdjudication && !repairScopeSpec) {
+    throw new Error("repair scope adjudication fixture requires an exact allowlisted entry");
+  }
   if (options.manualAdjudication && entry.id !== Q30_MANUAL_SPEC.entryId) {
     throw new Error("manual adjudication fixture requires the exact Q30 entry");
   }
@@ -1054,26 +1174,29 @@ function upgradeEntryToV3(
   const problemName = readdirSync(join(stateDir, "problem-chunks"))[0];
   const problemCheckpointPath = join(stateDir, "problem-chunks", problemName);
   const problemCheckpoint = JSON.parse(readFileSync(problemCheckpointPath, "utf8"));
-  const recoveryTargetNumber = options.manualAdjudication ? 30
+  const repairScopeKey = repairScopeSpec?.key.split(":");
+  const recoveryTargetNumber = repairScopeKey ? Number(repairScopeKey[1]) : options.manualAdjudication ? 30
     : options.cropAdjudication ? 29 : options.scopeAdjudication ? 11 : 3;
-  const recoveryTargetPage = options.manualAdjudication ? 12
-    : options.cropAdjudication ? 11 : options.scopeAdjudication ? 4 : 1;
+  const recoveryTargetPage = repairScopeSpec?.sourcePage ?? (options.manualAdjudication ? 12
+    : options.cropAdjudication ? 11 : options.scopeAdjudication ? 4 : 1);
   const contextTo = options.manualAdjudication ? 16
-    : options.cropAdjudication ? 16 : options.scopeAdjudication ? 12
+    : options.cropAdjudication ? 16 : options.scopeAdjudication || options.repairScopeAdjudication ? 12
     : options.crossPageBatchRepair ? 2 : 1;
   if (options.crossPageBatchRepair || options.cropAdjudication || options.scopeAdjudication
-    || options.manualAdjudication) {
+    || options.repairScopeAdjudication || options.manualAdjudication) {
     downloads.problem.pageCount = contextTo;
     writeJson(join(stateDir, "downloads.json"), downloads);
     problemCheckpoint.to = contextTo;
     problemCheckpoint.ownedTo = contextTo;
-    if (options.cropAdjudication || options.scopeAdjudication || options.manualAdjudication) {
+    if (options.cropAdjudication || options.scopeAdjudication || options.repairScopeAdjudication
+      || options.manualAdjudication) {
       problemCheckpoint.sourceHash = downloads.problem.sha256;
     }
     if (options.crossPageBatchRepair) {
       for (const item of problemCheckpoint.items.slice(9)) item.page = 2;
     }
-    if (options.cropAdjudication || options.scopeAdjudication || options.manualAdjudication) {
+    if (options.cropAdjudication || options.scopeAdjudication || options.repairScopeAdjudication
+      || options.manualAdjudication) {
       problemCheckpoint.items[recoveryTargetNumber - 1].page = recoveryTargetPage;
     }
     writeJson(problemCheckpointPath, problemCheckpoint);
@@ -1087,7 +1210,8 @@ function upgradeEntryToV3(
   classification.transcriptionPromptDigest = CURRENT_TRANSCRIPTION_PROMPT_DIGEST;
   classification.to = contextTo;
   classification.ownedTo = contextTo;
-  if (options.cropAdjudication || options.scopeAdjudication || options.manualAdjudication) {
+  if (options.cropAdjudication || options.scopeAdjudication || options.repairScopeAdjudication
+    || options.manualAdjudication) {
     classification.sourceHash = downloads.problem.sha256;
   }
   if (options.crossPageBatchRepair) {
@@ -1095,7 +1219,8 @@ function upgradeEntryToV3(
       if (index >= 9) item.key = `2:${index + 1}`;
     }
   }
-  if (options.cropAdjudication || options.scopeAdjudication || options.manualAdjudication) {
+  if (options.cropAdjudication || options.scopeAdjudication || options.repairScopeAdjudication
+    || options.manualAdjudication) {
     classification.items[recoveryTargetNumber - 1].key = `${recoveryTargetPage}:${recoveryTargetNumber}`;
   }
   if (options.scopeAdjudication) {
@@ -1110,8 +1235,10 @@ function upgradeEntryToV3(
     });
   }
   const mixedTerminal = options.mixedTerminal || options.staleTriggerBase;
-  const repairNumbers = options.cropAdjudication || options.scopeAdjudication || options.manualAdjudication
+  const repairNumbers = options.cropAdjudication || options.scopeAdjudication
+    || options.repairScopeAdjudication || options.manualAdjudication
     ? [recoveryTargetNumber]
+    : options.difficultyRepair ? [1]
     : options.batchRepair || options.crossPageBatchRepair || options.problemRecovery
     || options.terminalRecovery || options.mixedTerminalRecovery
     || options.terminalRevision || options.classificationRevision || mixedTerminal
@@ -1208,14 +1335,18 @@ function upgradeEntryToV3(
       const number = Number(member.printedNumber);
       return {
         ...problemCheckpoint.items[number - 1],
-        question: `${problemCheckpoint.items[number - 1].question} [full literal source]`,
+        question: options.difficultyRepair
+          ? problemCheckpoint.items[number - 1].question
+          : `${problemCheckpoint.items[number - 1].question} [full literal source]`,
+        ...(options.difficultyRepair && number === 1 ? { difficulty: "상" } : {}),
       };
     });
     const membersDigest = canonicalEvidenceHash(members);
     const problemRelativePath = options.crossPageBatchRepair
       ? `problem-repair-batches/v2-0001-${String(contextTo).padStart(4, "0")}-${membersDigest}.json`
       : `problem-repair-batches/v1-0001-${String(contextTo).padStart(4, "0")}-` +
-        `${String(options.cropAdjudication || options.scopeAdjudication || options.manualAdjudication
+        `${String(options.cropAdjudication || options.scopeAdjudication
+          || options.repairScopeAdjudication || options.manualAdjudication
           ? recoveryTargetPage : 1).padStart(4, "0")}-${membersDigest}.json`;
     const diagnosticEvidence = JSON.stringify(members.map((member) => ({
       key: member.key,
@@ -1243,7 +1374,8 @@ function upgradeEntryToV3(
       sourceHash: downloads.problem.sha256,
       contextFrom: 1,
       contextTo,
-      sourcePage: options.cropAdjudication || options.scopeAdjudication || options.manualAdjudication
+      sourcePage: options.cropAdjudication || options.scopeAdjudication
+        || options.repairScopeAdjudication || options.manualAdjudication
         ? recoveryTargetPage : 1,
       membersDigest,
       members,
@@ -1264,6 +1396,15 @@ function upgradeEntryToV3(
       const number = Number(member.printedNumber);
       return {
         ...classification.items[number - 1],
+        ...(options.repairScopeAdjudication && number === recoveryTargetNumber ? {
+          decision: "accept",
+          canonical_subject: "math_B",
+          curriculum_course: "2015 수학Ⅰ",
+          domain: "지수함수와 로그함수",
+          achievement_codes: ["12수학Ⅰ01-07"],
+          reason_codes: ["IN_SCOPE_LOGARITHMS"],
+          confidence: 0.99,
+        } : {}),
         transcription_status: (options.classificationRevision || options.problemRecovery || options.cropAdjudication
           || options.scopeAdjudication || options.manualAdjudication)
           && number === recoveryTargetNumber
@@ -1334,6 +1475,185 @@ function upgradeEntryToV3(
       });
     }
     repairs.sort((left, right) => compareCorpusQuestionKeys(String(left.key), String(right.key)));
+  }
+
+  if (repairScopeSpec) {
+    const targetIndex = recoveryTargetNumber - 1;
+    const targetKey = repairScopeSpec.key;
+    const targetRepair = repairs.find((repair) => repair.key === targetKey)!;
+    const parentRepair = { ...targetRepair };
+    const parentRepairEvidenceHash = canonicalEvidenceHash(parentRepair);
+    const preAdjudicationCorpus = effectiveProblems.map((question: Record<string, unknown>, index: number) => ({
+      question,
+      classification: effectiveClassifications[index],
+    })).sort((left: { question: Record<string, unknown> }, right: { question: Record<string, unknown> }) =>
+      Number(left.question.page) - Number(right.question.page)
+      || Number(left.question.number) - Number(right.question.number));
+    const preAdjudicationEffectiveCorpusHash = canonicalEvidenceHash(preAdjudicationCorpus);
+    const preAdjudicationInputs = preAdjudicationCorpus.map(({ question }: {
+      question: Record<string, unknown>;
+    }) => ({
+      key: `${question.page}:${question.number}`,
+      printed_number: String(question.number),
+      source_page: question.page,
+      qtype: question.qtype,
+      question: question.question,
+      choices: question.choices,
+      figure: question.figure,
+      figure_description: question.figure_description,
+      box: question.box,
+    }));
+    const preAdjudicationItems = preAdjudicationInputs.map((input: { key: string }) => {
+      const number = Number(input.key.split(":")[1]);
+      const currentClassification = effectiveClassifications[number - 1];
+      const target = input.key === targetKey;
+      const authorizedRejectMismatch = currentClassification.decision === "reject"
+        && currentClassification.transcription_status === "mismatch";
+      return {
+        key: input.key,
+        status: authorizedRejectMismatch ? "mismatch" : "exact",
+        evidence: authorizedRejectMismatch
+          ? "the independent scope gate authorizes this unrepaired rejected mismatch"
+          : "official pixels exactly match the repaired literal transcription",
+        scopeDecision: target ? "reject" : currentClassification.decision,
+        scopeConfidence: 0.99,
+        scopeEvidence: target
+          ? "the official problem and solution contexts independently establish out-of-scope content"
+          : "the official source page independently establishes the curriculum scope",
+      };
+    }).sort((left: { key: string }, right: { key: string }) =>
+      compareCorpusQuestionKeys(left.key, right.key));
+    const preAdjudicationInputHash = canonicalEvidenceHash(preAdjudicationInputs);
+    const terminalRelativePath = `problem-terminal-fidelity/v2-0000-` +
+      `${preAdjudicationEffectiveCorpusHash}-${preAdjudicationInputHash}.json`;
+    const terminalHash = writeEvidence(join(stateDir, terminalRelativePath), {
+      version: 2,
+      entryId: entry.id,
+      sourceHash: downloads.problem.sha256,
+      from: 1,
+      to: contextTo,
+      ownedFrom: 1,
+      ownedTo: contextTo,
+      effectiveCorpusHash: preAdjudicationEffectiveCorpusHash,
+      inputHash: preAdjudicationInputHash,
+      transcriptionGateVersion: 2,
+      transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+      rulesDigest: DIGEST,
+      scopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      inputs: preAdjudicationInputs,
+      items: preAdjudicationItems,
+    });
+    const terminalCheckpoint = {
+      path: terminalRelativePath,
+      sha256: terminalHash,
+      from: 1,
+      to: contextTo,
+      ownedFrom: 1,
+      ownedTo: contextTo,
+      inputHash: preAdjudicationInputHash,
+    };
+    const terminalItem = preAdjudicationItems.find((item: { key: string }) => item.key === targetKey)!;
+    const trigger = {
+      terminalCheckpoint,
+      terminalItemHash: canonicalEvidenceHash(terminalItem),
+      terminalItem,
+      evidenceHash: hash(terminalItem.evidence),
+      scopeEvidenceHash: hash(terminalItem.scopeEvidence),
+      preAdjudicationEffectiveCorpusHash,
+    };
+    const baseSolutionCheckpoint = targetRepair.baseSolutionCheckpoint as { path: string; sha256: string };
+    const baseSolutionArtifact = JSON.parse(readFileSync(join(stateDir, baseSolutionCheckpoint.path), "utf8"));
+    const baseSolutionItem = baseSolutionArtifact.items.find(
+      (item: { number: string }) => item.number === String(recoveryTargetNumber),
+    );
+    const currentQuestion = effectiveProblems[targetIndex];
+    const currentClassification = effectiveClassifications[targetIndex];
+    const basis = {
+      allowlistId: repairScopeSpec.allowlistId,
+      entryId: entry.id,
+      key: targetKey,
+      printedNumber: String(recoveryTargetNumber),
+      sourcePage: recoveryTargetPage,
+      sourceHash: downloads.problem.sha256,
+      solutionSourceHash: downloads.solution.sha256,
+      problemContextFrom: 1,
+      problemContextTo: contextTo,
+      solutionContextFrom: baseSolutionArtifact.from,
+      solutionContextTo: baseSolutionArtifact.to,
+      baseSolutionCheckpoint,
+      baseSolutionItemHash: canonicalEvidenceHash(baseSolutionItem),
+      parentRepair,
+      parentRepairEvidenceHash,
+      trigger,
+      baseQuestionHash: canonicalEvidenceHash(currentQuestion),
+      baseClassificationHash: canonicalEvidenceHash(currentClassification),
+    };
+    const basisDigest = canonicalEvidenceHash(basis);
+    const finalClassification = {
+      ...currentClassification,
+      decision: "reject",
+      canonical_subject: null,
+      curriculum_course: null,
+      domain: null,
+      achievement_codes: [],
+      confidence: 0.99,
+      reason_codes: ["OUT_OF_SCOPE"],
+      transcription_status: "exact",
+      transcription_evidence: "the exact source is outside the canonical target curriculum",
+    };
+    const classificationRelativePath = `classification-repair-scope-adjudications/v1-` +
+      `${String(recoveryTargetPage).padStart(4, "0")}-` +
+      `${String(recoveryTargetNumber).padStart(4, "0")}-${basisDigest}-${DIGEST}.json`;
+    const classificationHash = writeEvidence(join(stateDir, classificationRelativePath), {
+      version: 1,
+      entryId: entry.id,
+      basisDigest,
+      basis,
+      classifierVersion: 5,
+      rulesDigest: DIGEST,
+      transcriptionGateVersion: 2,
+      transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+      adjudicationPromptVersion: 1,
+      adjudicationPromptDigest: PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      items: [finalClassification],
+    });
+    classificationScopeAdjudicationArtifact = join(stateDir, classificationRelativePath);
+    const classificationArtifactItemHash = canonicalEvidenceHash(finalClassification);
+    targetRepair.scopeAdjudication = {
+      allowlistId: repairScopeSpec.allowlistId,
+      key: targetKey,
+      printedNumber: String(recoveryTargetNumber),
+      sourcePage: recoveryTargetPage,
+      sourceHash: downloads.problem.sha256,
+      solutionSourceHash: downloads.solution.sha256,
+      problemContextFrom: 1,
+      problemContextTo: contextTo,
+      solutionContextFrom: baseSolutionArtifact.from,
+      solutionContextTo: baseSolutionArtifact.to,
+      baseSolutionCheckpoint,
+      baseSolutionItemHash: canonicalEvidenceHash(baseSolutionItem),
+      parentRepairEvidenceHash,
+      trigger,
+      classificationArtifact: {
+        path: classificationRelativePath,
+        sha256: classificationHash,
+        rulesDigest: DIGEST,
+        transcriptionGateVersion: 2,
+        transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+        adjudicationPromptVersion: 1,
+        adjudicationPromptDigest: PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST,
+      },
+      classificationArtifactItemHash,
+      baseQuestionHash: canonicalEvidenceHash(currentQuestion),
+      effectiveQuestionHash: canonicalEvidenceHash(currentQuestion),
+      baseClassificationHash: canonicalEvidenceHash(currentClassification),
+      effectiveClassificationHash: classificationArtifactItemHash,
+    };
+    effectiveClassifications[targetIndex] = finalClassification;
   }
 
   if (mixedTerminal) {
@@ -2727,6 +3047,8 @@ function upgradeEntryToV3(
   const legacyAudit = JSON.parse(readFileSync(join(stateDir, "answer-audit", legacyAuditName), "utf8"));
   const fidelityPointerByLegacyPath = new Map<string, Record<string, unknown>>();
   const fidelityInputByKey = new Map<string, Record<string, unknown>>();
+  const officialSolutionContextTo = options.scopeAdjudication ? 5
+    : options.repairScopeAdjudication ? 4 : undefined;
   const solutionFidelityCheckpoints = legacyAudit.solutionFidelityCheckpoints.map(
     (pointer: Record<string, unknown>) => {
       const childPath = join(stateDir, String(pointer.path));
@@ -2735,7 +3057,7 @@ function upgradeEntryToV3(
       child.transcriptionGateVersion = 2;
       child.transcriptionPromptDigest = CURRENT_TRANSCRIPTION_PROMPT_DIGEST;
       child.effectiveProblemCorpusHash = effectiveCorpusHash;
-      if (options.scopeAdjudication) {
+      if (officialSolutionContextTo !== undefined) {
         const baseSolutionPath = join(stateDir, "solution-chunks", "v3-0000.json");
         const baseSolutionPointer = {
           path: "solution-chunks/v3-0000.json",
@@ -2744,9 +3066,9 @@ function upgradeEntryToV3(
         child.entryId = entry.id;
         child.sourceHash = downloads.solution.sha256;
         child.from = 1;
-        child.to = 5;
+        child.to = officialSolutionContextTo;
         child.ownedFrom = 1;
-        child.ownedTo = 5;
+        child.ownedTo = officialSolutionContextTo;
         child.inputs = child.inputs.map((input: Record<string, unknown>) => ({
           ...(() => {
             const solution = JSON.parse(readFileSync(baseSolutionPath, "utf8")).items.find(
@@ -2761,9 +3083,9 @@ function upgradeEntryToV3(
               baseSolutionCheckpoint: baseSolutionPointer,
               baseSolutionItemHash: canonicalEvidenceHash(solution),
               baseContextFrom: 1,
-              baseContextTo: 5,
+              baseContextTo: officialSolutionContextTo,
               baseOwnedFrom: 1,
-              baseOwnedTo: 5,
+              baseOwnedTo: officialSolutionContextTo,
             };
           })(),
         }));
@@ -2783,7 +3105,12 @@ function upgradeEntryToV3(
         ...pointer,
         path: relativePath,
         sha256,
-        ...(options.scopeAdjudication ? { from: 1, to: 5, ownedFrom: 1, ownedTo: 5 } : {}),
+        ...(officialSolutionContextTo !== undefined ? {
+          from: 1,
+          to: officialSolutionContextTo,
+          ownedFrom: 1,
+          ownedTo: officialSolutionContextTo,
+        } : {}),
         inputHash: child.inputHash,
       };
       fidelityPointerByLegacyPath.set(String(pointer.path), current);
@@ -6258,6 +6585,150 @@ describe("exam corpus verifier", () => {
       .toMatchObject({ ok: true });
   });
 
+  it("keeps the repair-scope allowlist byte-aligned with the importer", () => {
+    expect(repairScopeAdjudicationAllowlistFingerprint())
+      .toBe(canonicalEvidenceHash(PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST));
+  });
+
+  it.skipIf([...REPAIR_SCOPE_STATES.values()].some((stateDir) =>
+    !existsSync(join(stateDir, "problem.pdf")) || !existsSync(join(stateDir, "solution.pdf"))))(
+  "reconstructs both exact first-repair scope children and rejects stale or extra authority",
+  () => {
+    const scopedFixture = (spec = Q26_REPAIR_SCOPE_SPEC) => {
+      const files = fixture();
+      prepareRepairScopeFixture(files, spec);
+      const artifacts = upgradeEntryToV3(files, "math", {
+        repairScopeAdjudication: true,
+        terminalScope: "authorized-reject",
+        answerV5: true,
+      });
+      return { files, artifacts };
+    };
+
+    for (const spec of [Q26_REPAIR_SCOPE_SPEC, Q30_REPAIR_SCOPE_SPEC]) {
+      const { files, artifacts } = scopedFixture(spec);
+      const modifiedBefore = statSync(files.dbPath).mtimeMs;
+      const report = verifyExamCorpus(files);
+      expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+      expect(statSync(files.dbPath).mtimeMs).toBe(modifiedBefore);
+      expect(artifacts.classificationScopeAdjudicationArtifact).toContain(
+        `classification-repair-scope-adjudications/v1-${String(spec.sourcePage).padStart(4, "0")}-` +
+        `${spec.key.split(":")[1].padStart(4, "0")}-`,
+      );
+      const audit = JSON.parse(readFileSync(artifacts.auditArtifact, "utf8"));
+      const repair = audit.repairs.find((value: Record<string, unknown>) => value.key === spec.key);
+      expect(repair.revision).toBeUndefined();
+      expect(repair.scopeAdjudication).toMatchObject({
+        allowlistId: spec.allowlistId,
+        key: spec.key,
+        sourcePage: spec.sourcePage,
+        sourceHash: spec.sourceHash,
+        solutionSourceHash: spec.solutionSourceHash,
+        problemContextFrom: 1,
+        problemContextTo: 12,
+        solutionContextFrom: 1,
+        solutionContextTo: 4,
+      });
+    }
+
+    const parentTamper = scopedFixture();
+    rewriteCurrentV3Authority(parentTamper.files, (audit) => {
+      audit.repairs.find((value: Record<string, unknown>) => value.key === Q26_REPAIR_SCOPE_SPEC.key)
+        .scopeAdjudication.parentRepairEvidenceHash = "0".repeat(64);
+    });
+    expect(verifyExamCorpus(parentTamper.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("parent repair hash"))).toBe(true);
+
+    const contextTamper = scopedFixture();
+    rewriteCurrentV3Authority(contextTamper.files, (audit) => {
+      audit.repairs.find((value: Record<string, unknown>) => value.key === Q26_REPAIR_SCOPE_SPEC.key)
+        .scopeAdjudication.solutionContextTo = 3;
+    });
+    expect(verifyExamCorpus(contextTamper.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("solution/context"))).toBe(true);
+
+    const outputTamper = scopedFixture();
+    const outputCheckpoint = JSON.parse(readFileSync(
+      outputTamper.artifacts.classificationScopeAdjudicationArtifact!,
+      "utf8",
+    ));
+    Object.assign(outputCheckpoint.items[0], {
+      decision: "accept",
+      canonical_subject: "math_B",
+      curriculum_course: "2015 수학Ⅰ",
+      domain: "지수함수와 로그함수",
+      achievement_codes: ["12수학Ⅰ01-07"],
+      reason_codes: ["IN_SCOPE_LOGARITHMS"],
+    });
+    const outputHash = writeEvidence(outputTamper.artifacts.classificationScopeAdjudicationArtifact!, outputCheckpoint);
+    const outputItemHash = canonicalEvidenceHash(outputCheckpoint.items[0]);
+    rewriteCurrentV3Authority(outputTamper.files, (audit) => {
+      const scope = audit.repairs.find(
+        (value: Record<string, unknown>) => value.key === Q26_REPAIR_SCOPE_SPEC.key,
+      ).scopeAdjudication;
+      scope.classificationArtifact.sha256 = outputHash;
+      scope.classificationArtifactItemHash = outputItemHash;
+      scope.effectiveClassificationHash = outputItemHash;
+    });
+    expect(verifyExamCorpus(outputTamper.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("reject/null"))).toBe(true);
+
+    const finalTerminalTamper = scopedFixture();
+    rewriteCurrentV3Authority(finalTerminalTamper.files, (audit) => {
+      const pointer = audit.problemTerminalFidelityCheckpoints[0];
+      const checkpointPath = join(finalTerminalTamper.files.stateDirs.math, pointer.path);
+      const checkpoint = JSON.parse(readFileSync(checkpointPath, "utf8"));
+      const item = checkpoint.items.find((value: { key: string }) => value.key === Q26_REPAIR_SCOPE_SPEC.key);
+      item.scopeDecision = "accept";
+      item.scopeEvidence = "stale final scope output conflicts with the repair-scope rejection";
+      pointer.sha256 = writeEvidence(checkpointPath, checkpoint);
+      Object.assign(audit.problemTerminalFidelityItems.find(
+        (value: { key: string }) => value.key === Q26_REPAIR_SCOPE_SPEC.key,
+      ), item);
+    });
+    expect(verifyExamCorpus(finalTerminalTamper.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("terminal"))).toBe(true);
+
+    const revision = scopedFixture();
+    rewriteCurrentV3Authority(revision.files, (audit) => {
+      audit.repairs.find((value: Record<string, unknown>) => value.key === Q26_REPAIR_SCOPE_SPEC.key)
+        .revision = {};
+    });
+    expect(verifyExamCorpus(revision.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const orphan = scopedFixture();
+    writeJson(join(
+      orphan.files.stateDirs.math,
+      "classification-repair-scope-adjudications",
+      `v1-0010-0026-${"1".repeat(64)}-${DIGEST}.json`,
+    ), {});
+    expect(verifyExamCorpus(orphan.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
+
+    const crash = scopedFixture();
+    rmSync(crash.artifacts.classificationScopeAdjudicationArtifact!);
+    expect(verifyExamCorpus(crash.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("missing"))).toBe(true);
+  });
+
+  it("compares DB difficulty with the immutable base problem instead of a repaired overlay", () => {
+    const files = fixture();
+    upgradeEntryToV3(files, "math", {
+      difficultyRepair: true,
+      terminalScope: "authorized-reject",
+      answerV5: true,
+    });
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+
+    const db = new Database(files.dbPath);
+    db.prepare("UPDATE questions SET difficulty = '상' WHERE printed_number = '1'").run();
+    db.close();
+    expect(verifyExamCorpus(files).failures.some((failure) =>
+      failure.code === "QUESTION_MISMATCH" && failure.message.includes("base difficulty"))).toBe(true);
+  });
+
   it.skipIf(!existsSync(Q11_OFFICIAL_PROBLEM_PATH) || !existsSync(Q11_OFFICIAL_SOLUTION_PATH))(
   "reconstructs the exact Q11 scope adjudication chain",
   () => {
@@ -7084,9 +7555,9 @@ describe("exam corpus verifier", () => {
     db.prepare("UPDATE questions SET explanation = '' WHERE question = 'science question 1'").run();
     db.exec(`
       INSERT INTO questions
-      (subject_id, source, qtype, question, choices, answer, explanation, book_id,
+      (subject_id, source, qtype, question, choices, answer, explanation, difficulty, book_id,
        book_number, printed_number, src_file_id, src_page)
-      SELECT subject_id, source, qtype, question, choices, answer, explanation, book_id,
+      SELECT subject_id, source, qtype, question, choices, answer, explanation, difficulty, book_id,
              book_number, printed_number, src_file_id, src_page
       FROM questions WHERE id = 2;
     `);
