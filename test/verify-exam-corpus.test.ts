@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { createHash } from "node:crypto";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -25,6 +26,9 @@ import {
   TARGETED_PROBLEM_RECOVERY_EVIDENCE_PREFIX,
   TARGETED_PROBLEM_RECOVERY_RULES,
   TARGETED_PROBLEM_RECOVERY_VERSION,
+  TARGETED_PROBLEM_CROP_ADJUDICATION_EVIDENCE_PREFIX,
+  TARGETED_PROBLEM_CROP_ADJUDICATION_RULES,
+  TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
   TARGETED_SOLUTION_TRANSCRIPTION_RULES,
   TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
   TARGETED_SOLUTION_REVISION_EVIDENCE_PREFIX,
@@ -98,6 +102,40 @@ const TARGETED_RECOVERY_PROMPT_DIGEST = hash(
   `${TARGETED_PROBLEM_RECOVERY_EVIDENCE_PREFIX}\n` +
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
+const TARGETED_CROP_ADJUDICATION_PROMPT_DIGEST = hash(
+  `${TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION}\n${TARGETED_PROBLEM_CROP_ADJUDICATION_RULES}\n` +
+  `${TARGETED_PROBLEM_CROP_ADJUDICATION_EVIDENCE_PREFIX}\n` +
+  `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
+);
+const CROP_ADJUDICATION_CLASSIFICATION_PROMPT_DIGEST =
+  "ed8c7770e965f26cdbfead1b0396c9fdc3c97e0afeb40e0bf654a72894d265c0";
+const Q29_CROP_SPEC = {
+  allowlistId: "ebsi-5578421-q29-p11-v1",
+  entryId: "ebsi:5578421",
+  key: "11:29",
+  sourcePage: 11,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  views: [
+    { sourcePage: 11, label: "p11 full", rect: [0, 0, 1, 1] },
+    { sourcePage: 11, label: "p11 left article", rect: [0.075, 0.10, 0.50, 0.92] },
+    { sourcePage: 11, label: "p11 right article", rect: [0.49, 0.10, 0.92, 0.80] },
+    { sourcePage: 11, label: "p11 Q29", rect: [0.49, 0.74, 0.92, 0.92] },
+  ],
+  requiredTokens: [
+    "[29~34]", "ⓐ 전통 논리학", "ⓑ 명제 논리학", "㉠ 정언 삼단 논증", "㉡ 전건 긍정",
+    "㉢ 명제 논리학", "전제에만", "‘p’와 ‘q’는", "선행 조건", "(1)", "(2)", "(3)", "(4)",
+    "명사(名辭)",
+    "① 논리학의 발전 과정을 개괄적으로 소개하고 있다.",
+    "② 논리학의 의의를 다양한 관점에서 고찰하고 있다.",
+    "③ 논리학의 특징을 인접 학문과 비교하여 분석하고 있다.",
+    "④ 논리학의 논증 방식이 단순화된 배경을 설명하고 있다.",
+    "⑤ 논리학의 변화에 영향을 준 여러 학문을 고찰하고 있다.",
+  ],
+} as const;
+const Q29_OFFICIAL_PROBLEM_PATH = join(
+  process.cwd(),
+  "data/import-exam-corpus/f914a5cf8d2237d6c9319e23/problem.pdf",
+);
 const TARGETED_PROMPT_DIGEST = hash(
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
@@ -115,7 +153,14 @@ const TARGETED_SOLUTION_REVISION_PROMPT_DIGEST = hash(
   `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`,
 );
 const SOURCE_COUNTS: Record<string, number> = { 국어: 45, 수학: 30, 통합과학: 20, 통합사회: 20 };
-const CASES: Array<{ id: string; subject: string; grade: number; rawTitle: string; accepted: Accepted[] }> = [
+const CASES: Array<{
+  id: string;
+  entryId?: string;
+  subject: string;
+  grade: number;
+  rawTitle: string;
+  accepted: Accepted[];
+}> = [
   {
     id: "math",
     subject: "수학",
@@ -128,6 +173,7 @@ const CASES: Array<{ id: string; subject: string; grade: number; rawTitle: strin
   },
   {
     id: "korean",
+    entryId: "5578421",
     subject: "국어",
     grade: 3,
     rawTitle: "2025 수능 국어 언어와 매체",
@@ -230,6 +276,15 @@ function writeEvidence(path: string, value: unknown): string {
   return canonicalEvidenceHash(value);
 }
 
+function pngHeader(width: number, height: number): Buffer {
+  const value = Buffer.alloc(24);
+  Buffer.from("89504e470d0a1a0a", "hex").copy(value, 0);
+  value.write("IHDR", 12, "ascii");
+  value.writeUInt32BE(width, 16);
+  value.writeUInt32BE(height, 20);
+  return value;
+}
+
 function schema(db: Database.Database): void {
   db.exec(`
     CREATE TABLE subjects (id INTEGER PRIMARY KEY, name TEXT NOT NULL);
@@ -275,7 +330,7 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
   let itemId = 0;
   for (const testCase of CASES) {
     const entry = {
-      id: `ebsi:${testCase.id}`,
+      id: `ebsi:${testCase.entryId ?? testCase.id}`,
       paperId: testCase.id,
       irecord: "202511130",
       sourceRecordDate: "2025-11-13",
@@ -750,6 +805,7 @@ function upgradeEntryToV3(
     staleTriggerBase?: boolean;
     crossPageBatchRepair?: boolean;
     problemRecovery?: boolean;
+    cropAdjudication?: boolean;
     terminalRecovery?: boolean;
     mixedTerminalRecovery?: boolean;
     answerV5?: boolean;
@@ -766,6 +822,11 @@ function upgradeEntryToV3(
   classificationRevisionArtifact?: string;
   problemRecoveryArtifact?: string;
   classificationRecoveryArtifact?: string;
+  cropEvidenceArtifact?: string;
+  cropEvidencePdf?: string;
+  cropViewArtifacts?: string[];
+  problemCropAdjudicationArtifact?: string;
+  classificationCropAdjudicationArtifact?: string;
 } {
   const stateDir = files.stateDirs[id];
   const entryStatePath = join(stateDir, "entry.json");
@@ -774,16 +835,43 @@ function upgradeEntryToV3(
   writeJson(entryStatePath, entryState);
   const entry = entryState.entry;
   const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
+  if (options.cropAdjudication) {
+    if (entry.id !== "ebsi:5578421") throw new Error("crop adjudication fixture requires Q29 entry");
+    const bytes = readFileSync(Q29_OFFICIAL_PROBLEM_PATH);
+    const sourceHash = hash(bytes);
+    if (sourceHash !== "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e") {
+      throw new Error("crop adjudication fixture official source hash is stale");
+    }
+    writeFileSync(join(stateDir, "problem.pdf"), bytes);
+    Object.assign(downloads.problem, { sha256: sourceHash, bytes: bytes.length, pageCount: 16 });
+    const receiptPath = join(stateDir, "receipt.json");
+    const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+    receipt.problemHash = sourceHash;
+    writeJson(receiptPath, receipt);
+    const db = new Database(files.dbPath);
+    for (const target of receipt.targetBooks as Array<{ problemR2Key: string }>) {
+      writeFileSync(join(files.dataDir, "files", target.problemR2Key), bytes);
+      db.prepare("UPDATE book_files SET content_hash = ?, page_count = 16 WHERE r2_key = ?")
+        .run(sourceHash, target.problemR2Key);
+    }
+    db.close();
+  }
   const problemName = readdirSync(join(stateDir, "problem-chunks"))[0];
   const problemCheckpointPath = join(stateDir, "problem-chunks", problemName);
   const problemCheckpoint = JSON.parse(readFileSync(problemCheckpointPath, "utf8"));
-  const contextTo = options.crossPageBatchRepair ? 2 : 1;
-  if (options.crossPageBatchRepair) {
-    downloads.problem.pageCount = 2;
+  const recoveryTargetNumber = options.cropAdjudication ? 29 : 3;
+  const recoveryTargetPage = options.cropAdjudication ? 11 : 1;
+  const contextTo = options.cropAdjudication ? 16 : options.crossPageBatchRepair ? 2 : 1;
+  if (options.crossPageBatchRepair || options.cropAdjudication) {
+    downloads.problem.pageCount = contextTo;
     writeJson(join(stateDir, "downloads.json"), downloads);
-    problemCheckpoint.to = 2;
-    problemCheckpoint.ownedTo = 2;
-    for (const item of problemCheckpoint.items.slice(9)) item.page = 2;
+    problemCheckpoint.to = contextTo;
+    problemCheckpoint.ownedTo = contextTo;
+    if (options.cropAdjudication) problemCheckpoint.sourceHash = downloads.problem.sha256;
+    if (options.crossPageBatchRepair) {
+      for (const item of problemCheckpoint.items.slice(9)) item.page = 2;
+    }
+    if (options.cropAdjudication) problemCheckpoint.items[recoveryTargetNumber - 1].page = recoveryTargetPage;
     writeJson(problemCheckpointPath, problemCheckpoint);
   }
   const legacyClassificationName = readdirSync(join(stateDir, "classification-chunks"))
@@ -795,17 +883,22 @@ function upgradeEntryToV3(
   classification.transcriptionPromptDigest = CURRENT_TRANSCRIPTION_PROMPT_DIGEST;
   classification.to = contextTo;
   classification.ownedTo = contextTo;
+  if (options.cropAdjudication) classification.sourceHash = downloads.problem.sha256;
   if (options.crossPageBatchRepair) {
     for (const [index, item] of classification.items.entries()) {
       if (index >= 9) item.key = `2:${index + 1}`;
     }
   }
+  if (options.cropAdjudication) {
+    classification.items[recoveryTargetNumber - 1].key = `${recoveryTargetPage}:${recoveryTargetNumber}`;
+  }
   const mixedTerminal = options.mixedTerminal || options.staleTriggerBase;
-  const repairNumbers = options.batchRepair || options.crossPageBatchRepair || options.problemRecovery
+  const repairNumbers = options.cropAdjudication ? [recoveryTargetNumber]
+    : options.batchRepair || options.crossPageBatchRepair || options.problemRecovery
     || options.terminalRecovery || options.mixedTerminalRecovery
     || options.terminalRevision || options.classificationRevision || mixedTerminal
-    ? [3, 10]
-    : [];
+      ? [3, 10]
+      : [];
   for (const number of repairNumbers) {
     const falseExactBase = mixedTerminal && number === 10;
     classification.items[number - 1].transcription_status = falseExactBase ? "exact" : "mismatch";
@@ -843,6 +936,11 @@ function upgradeEntryToV3(
   let classificationRevisionArtifact: string | undefined;
   let problemRecoveryArtifact: string | undefined;
   let classificationRecoveryArtifact: string | undefined;
+  let cropEvidenceArtifact: string | undefined;
+  let cropEvidencePdf: string | undefined;
+  let cropViewArtifacts: string[] | undefined;
+  let problemCropAdjudicationArtifact: string | undefined;
+  let classificationCropAdjudicationArtifact: string | undefined;
   if (repairNumbers.length > 0) {
     const baseProblemCheckpoint = {
       path: `problem-chunks/${problemName}`,
@@ -892,7 +990,8 @@ function upgradeEntryToV3(
     const membersDigest = canonicalEvidenceHash(members);
     const problemRelativePath = options.crossPageBatchRepair
       ? `problem-repair-batches/v2-0001-${String(contextTo).padStart(4, "0")}-${membersDigest}.json`
-      : `problem-repair-batches/v1-0001-0001-0001-${membersDigest}.json`;
+      : `problem-repair-batches/v1-0001-${String(contextTo).padStart(4, "0")}-` +
+        `${String(options.cropAdjudication ? recoveryTargetPage : 1).padStart(4, "0")}-${membersDigest}.json`;
     const diagnosticEvidence = JSON.stringify(members.map((member) => ({
       key: member.key,
       evidence: classification.items[Number(member.printedNumber) - 1].transcription_evidence,
@@ -918,8 +1017,8 @@ function upgradeEntryToV3(
       entryId: entry.id,
       sourceHash: downloads.problem.sha256,
       contextFrom: 1,
-      contextTo: 1,
-      sourcePage: 1,
+      contextTo,
+      sourcePage: options.cropAdjudication ? recoveryTargetPage : 1,
       membersDigest,
       members,
       promptVersion: TARGETED_PROBLEM_BATCH_VERSION,
@@ -939,9 +1038,11 @@ function upgradeEntryToV3(
       const number = Number(member.printedNumber);
       return {
         ...classification.items[number - 1],
-        transcription_status: (options.classificationRevision || options.problemRecovery) && number === 3
+        transcription_status: (options.classificationRevision || options.problemRecovery || options.cropAdjudication)
+          && number === recoveryTargetNumber
           ? "mismatch" : "exact",
-        transcription_evidence: (options.classificationRevision || options.problemRecovery) && number === 3
+        transcription_evidence: (options.classificationRevision || options.problemRecovery || options.cropAdjudication)
+          && number === recoveryTargetNumber
           ? "the first repaired classification still found an omitted literal transition"
           : "the repaired full literal source exactly matches the official pixels",
       };
@@ -1121,12 +1222,13 @@ function upgradeEntryToV3(
   }
 
   if (options.terminalRevision || options.classificationRevision || options.problemRecovery
+    || options.cropAdjudication
     || options.terminalRecovery || options.mixedTerminalRecovery || mixedTerminal) {
-    const targetKey = "1:3";
-    const targetIndex = 2;
+    const targetKey = `${recoveryTargetPage}:${recoveryTargetNumber}`;
+    const targetIndex = recoveryTargetNumber - 1;
     const targetRepair = repairs.find((repair) => repair.key === targetKey)!;
     let trigger: Record<string, unknown>;
-    if (options.classificationRevision || options.problemRecovery) {
+    if (options.classificationRevision || options.problemRecovery || options.cropAdjudication) {
       trigger = {
         kind: "classification",
         evidenceHash: hash(String(effectiveClassifications[targetIndex].transcription_evidence)),
@@ -1219,8 +1321,8 @@ function upgradeEntryToV3(
     };
     const revisionMember = {
       key: targetKey,
-      printedNumber: "3",
-      sourcePage: 1,
+      printedNumber: String(recoveryTargetNumber),
+      sourcePage: recoveryTargetPage,
       baseProblemRepairArtifact,
       baseProblemRepairItemHash: targetRepair.problemArtifactItemHash,
       baseClassificationRepairArtifact,
@@ -1235,14 +1337,16 @@ function upgradeEntryToV3(
       ...effectiveProblems[targetIndex],
       question: `${effectiveProblems[targetIndex].question} [second source-grounded literal revision]`,
     };
-    const revisionProblemPath = `problem-revision-batches/v1-0001-0001-0001-${revisionMembersDigest}.json`;
+    const revisionProblemPath = `problem-revision-batches/v1-0001-` +
+      `${String(contextTo).padStart(4, "0")}-${String(recoveryTargetPage).padStart(4, "0")}-` +
+      `${revisionMembersDigest}.json`;
     const revisionProblemHash = writeEvidence(join(stateDir, revisionProblemPath), {
       version: 1,
       entryId: entry.id,
       sourceHash: downloads.problem.sha256,
       contextFrom: 1,
-      contextTo: 1,
-      sourcePage: 1,
+      contextTo,
+      sourcePage: recoveryTargetPage,
       membersDigest: revisionMembersDigest,
       members: revisionMembers,
       batchPromptVersion: TARGETED_PROBLEM_BATCH_VERSION,
@@ -1271,19 +1375,20 @@ function upgradeEntryToV3(
     const revisionOverlayDigest = canonicalEvidenceHash([revisionClassificationMember]);
     const revisionClassification = {
       ...effectiveClassifications[targetIndex],
-      transcription_status: options.problemRecovery ? "mismatch" : "exact",
-      transcription_evidence: options.problemRecovery
+      transcription_status: options.problemRecovery || options.cropAdjudication ? "mismatch" : "exact",
+      transcription_evidence: options.problemRecovery || options.cropAdjudication
         ? "the second source-grounded revision still omitted one literal source clause"
         : "the second source-grounded literal revision is exact",
     };
     const revisionClassificationPath =
-      `classification-revision-batches/v1-0001-0001-${revisionOverlayDigest}-${DIGEST}.json`;
+      `classification-revision-batches/v1-0001-${String(contextTo).padStart(4, "0")}-` +
+      `${revisionOverlayDigest}-${DIGEST}.json`;
     const revisionClassificationHash = writeEvidence(join(stateDir, revisionClassificationPath), {
       version: 1,
       entryId: entry.id,
       sourceHash: downloads.problem.sha256,
       contextFrom: 1,
-      contextTo: 1,
+      contextTo,
       overlayDigest: revisionOverlayDigest,
       classifierVersion: 5,
       rulesDigest: DIGEST,
@@ -1315,7 +1420,7 @@ function upgradeEntryToV3(
       classificationArtifactItemHash: canonicalEvidenceHash(revisionClassification),
       trigger,
     };
-    if (options.problemRecovery) {
+    if (options.problemRecovery || options.cropAdjudication) {
       const baseProblemRevisionArtifact = { path: revisionProblemPath, sha256: revisionProblemHash };
       const baseClassificationRevisionArtifact = {
         path: revisionClassificationPath,
@@ -1324,11 +1429,11 @@ function upgradeEntryToV3(
       const failedClassificationEvidenceHash = hash(revisionClassification.transcription_evidence);
       const problemBasis = {
         key: targetKey,
-        printedNumber: "3",
-        sourcePage: 1,
+        printedNumber: String(recoveryTargetNumber),
+        sourcePage: recoveryTargetPage,
         sourceHash: downloads.problem.sha256,
         contextFrom: 1,
-        contextTo: 1,
+        contextTo,
         baseProblemRepairArtifact,
         baseProblemRepairItemHash: targetRepair.problemArtifactItemHash,
         baseClassificationRepairArtifact,
@@ -1346,7 +1451,8 @@ function upgradeEntryToV3(
         ...revisionQuestion,
         question: `${revisionQuestion.question} [final recovery preserves the omitted official clause]`,
       };
-      const problemRecoveryPath = `problem-recoveries/v1-0001-0003-${basisDigest}.json`;
+      const problemRecoveryPath = `problem-recoveries/v1-${String(recoveryTargetPage).padStart(4, "0")}-` +
+        `${String(recoveryTargetNumber).padStart(4, "0")}-${basisDigest}.json`;
       const problemRecoveryHash = writeEvidence(join(stateDir, problemRecoveryPath), {
         version: 1,
         entryId: entry.id,
@@ -1370,11 +1476,14 @@ function upgradeEntryToV3(
       const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
       const recoveredClassification = {
         ...revisionClassification,
-        transcription_status: "exact",
-        transcription_evidence: "the bounded recovery exactly matches every official source clause",
+        transcription_status: options.cropAdjudication ? "mismatch" : "exact",
+        transcription_evidence: options.cropAdjudication
+          ? "the latest bounded recovery still omits allowlisted source-pixel details"
+          : "the bounded recovery exactly matches every official source clause",
       };
       const classificationRecoveryPath =
-        `classification-recoveries/v1-0001-0003-${classificationBasisDigest}-${DIGEST}.json`;
+        `classification-recoveries/v1-${String(recoveryTargetPage).padStart(4, "0")}-` +
+        `${String(recoveryTargetNumber).padStart(4, "0")}-${classificationBasisDigest}-${DIGEST}.json`;
       const classificationRecoveryHash = writeEvidence(join(stateDir, classificationRecoveryPath), {
         version: 1,
         entryId: entry.id,
@@ -1394,11 +1503,11 @@ function upgradeEntryToV3(
       const recoveredClassificationHash = canonicalEvidenceHash(recoveredClassification);
       (targetRepair.revision as Record<string, unknown>).recovery = {
         key: targetKey,
-        printedNumber: "3",
-        sourcePage: 1,
+        printedNumber: String(recoveryTargetNumber),
+        sourcePage: recoveryTargetPage,
         sourceHash: downloads.problem.sha256,
         contextFrom: 1,
-        contextTo: 1,
+        contextTo,
         baseProblemRepairArtifact,
         baseProblemRepairItemHash: targetRepair.problemArtifactItemHash,
         baseClassificationRepairArtifact,
@@ -1425,8 +1534,179 @@ function upgradeEntryToV3(
         baseClassificationHash: canonicalEvidenceHash(revisionClassification),
         effectiveClassificationHash: recoveredClassificationHash,
       };
-      effectiveProblems[targetIndex] = recoveredQuestion;
-      effectiveClassifications[targetIndex] = recoveredClassification;
+      let terminalQuestion = recoveredQuestion;
+      let terminalClassification = recoveredClassification;
+      if (options.cropAdjudication) {
+        const parentRecovery = (targetRepair.revision as Record<string, unknown>).recovery as Record<string, unknown>;
+        const sourcePages = [11];
+        const cropEvidenceBasis = {
+          allowlistId: Q29_CROP_SPEC.allowlistId,
+          entryId: entry.id,
+          key: targetKey,
+          sourcePage: recoveryTargetPage,
+          sourcePages,
+          sourceHash: downloads.problem.sha256,
+          dpi: 300,
+          views: Q29_CROP_SPEC.views,
+          requiredTokens: Q29_CROP_SPEC.requiredTokens,
+        };
+        const cropEvidenceBasisDigest = canonicalEvidenceHash(cropEvidenceBasis);
+        const cropStem = `v1-${String(recoveryTargetPage).padStart(4, "0")}-` +
+          `${String(recoveryTargetNumber).padStart(4, "0")}-${cropEvidenceBasisDigest}`;
+        const fullWidth = 3508;
+        const fullHeight = 4961;
+        const cropViews = Q29_CROP_SPEC.views.map((view, index) => {
+          const [left, top, right, bottom] = view.rect;
+          const pixelWidth = Math.ceil(right * fullWidth) - Math.floor(left * fullWidth);
+          const pixelHeight = Math.ceil(bottom * fullHeight) - Math.floor(top * fullHeight);
+          const relativePath = `problem-crop-evidence/${cropStem}-view-${String(index).padStart(2, "0")}.png`;
+          const absolutePath = join(stateDir, relativePath);
+          const bytes = pngHeader(pixelWidth, pixelHeight);
+          mkdirSync(join(absolutePath, ".."), { recursive: true });
+          writeFileSync(absolutePath, bytes);
+          const sha256 = hash(bytes);
+          return {
+            sourcePage: view.sourcePage,
+            label: view.label,
+            rect: [...view.rect],
+            pixelWidth,
+            pixelHeight,
+            pixelSha256: sha256,
+            artifact: { path: relativePath, sha256 },
+          };
+        });
+        cropViewArtifacts = cropViews.map((view) => join(stateDir, view.artifact.path));
+        const cropPdfRelativePath = `problem-crop-evidence/${cropStem}.pdf`;
+        const cropPdfBytes = Buffer.from("%PDF-1.4\n% immutable ordered crop evidence fixture\n");
+        cropEvidencePdf = join(stateDir, cropPdfRelativePath);
+        mkdirSync(join(cropEvidencePdf, ".."), { recursive: true });
+        writeFileSync(cropEvidencePdf, cropPdfBytes);
+        const cropPdfPointer = { path: cropPdfRelativePath, sha256: hash(cropPdfBytes) };
+        const cropEvidenceRelativePath = `problem-crop-evidence/${cropStem}.json`;
+        cropEvidenceArtifact = join(stateDir, cropEvidenceRelativePath);
+        const cropEvidenceHash = writeEvidence(cropEvidenceArtifact, {
+          version: 1,
+          entryId: entry.id,
+          basisDigest: cropEvidenceBasisDigest,
+          basis: cropEvidenceBasis,
+          renderer: "pdftocairo-png+pdf-lib",
+          dpi: 300,
+          evidencePdf: cropPdfPointer,
+          views: cropViews,
+        });
+        const cropEvidencePointer = { path: cropEvidenceRelativePath, sha256: cropEvidenceHash };
+        const parentRecoveryEvidenceHash = canonicalEvidenceHash(parentRecovery);
+        const commonBasis = {
+          allowlistId: Q29_CROP_SPEC.allowlistId,
+          entryId: entry.id,
+          key: targetKey,
+          printedNumber: String(recoveryTargetNumber),
+          sourcePage: recoveryTargetPage,
+          sourcePages,
+          sourceHash: downloads.problem.sha256,
+          parentRecovery,
+          parentRecoveryEvidenceHash,
+          failedRecoveryQuestionHash: canonicalEvidenceHash(recoveredQuestion),
+          failedRecoveryClassificationHash: canonicalEvidenceHash(recoveredClassification),
+          failedRecoveryEvidenceHash: hash(recoveredClassification.transcription_evidence),
+          cropEvidenceArtifact: cropEvidencePointer,
+          cropEvidencePdf: cropPdfPointer,
+          cropViews,
+          requiredTokensHash: canonicalEvidenceHash(Q29_CROP_SPEC.requiredTokens),
+        };
+        const cropBasisDigest = canonicalEvidenceHash(commonBasis);
+        const adjudicationStem = `v1-${String(recoveryTargetPage).padStart(4, "0")}-` +
+          `${String(recoveryTargetNumber).padStart(4, "0")}-${cropBasisDigest}`;
+        const adjudicatedQuestion = {
+          ...recoveredQuestion,
+          question: `${recoveredQuestion.question}\n${Q29_CROP_SPEC.requiredTokens.join("\n")}`,
+        };
+        const adjudicatedQuestionHash = canonicalEvidenceHash(adjudicatedQuestion);
+        const problemCropRelativePath = `problem-crop-adjudications/${adjudicationStem}.json`;
+        problemCropAdjudicationArtifact = join(stateDir, problemCropRelativePath);
+        const problemCropHash = writeEvidence(problemCropAdjudicationArtifact, {
+          version: 1,
+          entryId: entry.id,
+          basisDigest: cropBasisDigest,
+          basis: commonBasis,
+          promptVersion: TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
+          promptDigest: TARGETED_CROP_ADJUDICATION_PROMPT_DIGEST,
+          model: "gpt-5.6-sol",
+          reasoningEffort: "high",
+          item: adjudicatedQuestion,
+        });
+        const problemCropPointer = { path: problemCropRelativePath, sha256: problemCropHash };
+        const classificationBasis = {
+          ...commonBasis,
+          problemArtifact: problemCropPointer,
+          problemArtifactItemHash: adjudicatedQuestionHash,
+          effectiveQuestionHash: adjudicatedQuestionHash,
+        };
+        const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+        const adjudicatedClassification = {
+          ...recoveredClassification,
+          transcription_status: "exact",
+          transcription_evidence: "all allowlisted full-page and crop source pixels match exactly",
+        };
+        const adjudicatedClassificationHash = canonicalEvidenceHash(adjudicatedClassification);
+        const classificationCropRelativePath = `classification-crop-adjudications/` +
+          `v1-${String(recoveryTargetPage).padStart(4, "0")}-` +
+          `${String(recoveryTargetNumber).padStart(4, "0")}-${classificationBasisDigest}-${DIGEST}.json`;
+        classificationCropAdjudicationArtifact = join(stateDir, classificationCropRelativePath);
+        const classificationCropHash = writeEvidence(classificationCropAdjudicationArtifact, {
+          version: 1,
+          entryId: entry.id,
+          basisDigest: classificationBasisDigest,
+          basis: classificationBasis,
+          classifierVersion: 5,
+          rulesDigest: DIGEST,
+          transcriptionGateVersion: 2,
+          transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+          adjudicationPromptVersion: TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
+          adjudicationPromptDigest: TARGETED_CROP_ADJUDICATION_PROMPT_DIGEST,
+          classificationPromptDigest: CROP_ADJUDICATION_CLASSIFICATION_PROMPT_DIGEST,
+          model: "gpt-5.6-sol",
+          reasoningEffort: "high",
+          items: [adjudicatedClassification],
+        });
+        parentRecovery.adjudication = {
+          allowlistId: Q29_CROP_SPEC.allowlistId,
+          key: targetKey,
+          printedNumber: String(recoveryTargetNumber),
+          sourcePage: recoveryTargetPage,
+          sourcePages,
+          sourceHash: downloads.problem.sha256,
+          parentRecoveryEvidenceHash,
+          cropEvidenceArtifact: cropEvidencePointer,
+          cropEvidencePdf: cropPdfPointer,
+          cropViews,
+          problemArtifact: {
+            ...problemCropPointer,
+            promptVersion: TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
+            promptDigest: TARGETED_CROP_ADJUDICATION_PROMPT_DIGEST,
+          },
+          problemArtifactItemHash: adjudicatedQuestionHash,
+          classificationArtifact: {
+            path: classificationCropRelativePath,
+            sha256: classificationCropHash,
+            rulesDigest: DIGEST,
+            transcriptionGateVersion: 2,
+            transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+            adjudicationPromptVersion: TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
+            adjudicationPromptDigest: TARGETED_CROP_ADJUDICATION_PROMPT_DIGEST,
+            classificationPromptDigest: CROP_ADJUDICATION_CLASSIFICATION_PROMPT_DIGEST,
+          },
+          classificationArtifactItemHash: adjudicatedClassificationHash,
+          baseQuestionHash: canonicalEvidenceHash(recoveredQuestion),
+          effectiveQuestionHash: adjudicatedQuestionHash,
+          baseClassificationHash: canonicalEvidenceHash(recoveredClassification),
+          effectiveClassificationHash: adjudicatedClassificationHash,
+        };
+        terminalQuestion = adjudicatedQuestion;
+        terminalClassification = adjudicatedClassification;
+      }
+      effectiveProblems[targetIndex] = terminalQuestion;
+      effectiveClassifications[targetIndex] = terminalClassification;
     } else if (options.terminalRecovery || options.mixedTerminalRecovery) {
       if (!options.terminalScope) throw new Error("terminal recovery fixture requires terminal scope v2");
       effectiveProblems[targetIndex] = revisionQuestion;
@@ -1738,12 +2018,19 @@ function upgradeEntryToV3(
   const effectiveCorpus = effectiveProblems.map((question: Record<string, unknown>, index: number) => ({
     question,
     classification: effectiveClassifications[index],
-  }));
+  })).sort((
+    left: { question: Record<string, unknown> },
+    right: { question: Record<string, unknown> },
+  ) =>
+    Number(left.question.page) - Number(right.question.page)
+    || Number(left.question.number) - Number(right.question.number));
   const effectiveCorpusHash = canonicalEvidenceHash(effectiveCorpus);
   const terminalVersion = options.terminalScope ? 2 : 1;
   if (options.answerV5 && !options.terminalScope) throw new Error("answer v5 fixture requires terminal scope v2");
   const answerAuditVersion = options.answerV5 ? 5 : options.terminalScope ? 4 : 3;
-  const terminalInputs = effectiveProblems.map((question: Record<string, unknown>) => ({
+  const terminalInputs = effectiveCorpus.map(({
+    question,
+  }: { question: Record<string, unknown> }) => ({
     key: `${question.page}:${question.number}`,
     printed_number: String(question.number),
     source_page: question.page,
@@ -1851,6 +2138,7 @@ function upgradeEntryToV3(
     const child = JSON.parse(readFileSync(join(stateDir, String(legacyPointer.path)), "utf8"));
     const semanticVersion = options.answerV5 ? 5 : 4;
     child.version = semanticVersion;
+    child.problemHash = downloads.problem.sha256;
     child.classifierVersion = 5;
     child.transcriptionGateVersion = 2;
     child.transcriptionPromptDigest = CURRENT_TRANSCRIPTION_PROMPT_DIGEST;
@@ -1962,6 +2250,11 @@ function upgradeEntryToV3(
     classificationRevisionArtifact,
     problemRecoveryArtifact,
     classificationRecoveryArtifact,
+    cropEvidenceArtifact,
+    cropEvidencePdf,
+    cropViewArtifacts,
+    problemCropAdjudicationArtifact,
+    classificationCropAdjudicationArtifact,
   };
 }
 
@@ -2137,8 +2430,9 @@ function convertMathToFilteredV3(
 function rewriteCurrentV3Authority(
   files: ReturnType<typeof fixture>,
   mutate: (audit: Record<string, any>) => void,
+  id: "math" | "korean" = "math",
 ): void {
-  const stateDir = files.stateDirs.math;
+  const stateDir = files.stateDirs[id];
   const attestationName = readdirSync(join(stateDir, "answer-attestation"))
     .find((name) => name.startsWith("v5-"))
     ?? readdirSync(join(stateDir, "answer-attestation")).find((name) => name.startsWith("v4-"))
@@ -4067,6 +4361,111 @@ describe("exam corpus verifier", () => {
       orphanFiles.stateDirs.math,
       "classification-recoveries",
       `v2-0001-0004-${"1".repeat(64)}-${DIGEST}.json`,
+    ), {});
+    expect(verifyExamCorpus(orphanFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
+  });
+
+  it.skipIf(!existsSync(Q29_OFFICIAL_PROBLEM_PATH))(
+  "reconstructs only allowlisted Q29 crop evidence and rejects tamper, orphan, stale parent, or a fifth authority",
+  () => {
+    const files = fixture();
+    const artifacts = upgradeEntryToV3(files, "korean", {
+      cropAdjudication: true,
+      terminalScope: "authorized-reject",
+      answerV5: true,
+    });
+    const modifiedBefore = statSync(files.dbPath).mtimeMs;
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    expect(statSync(files.dbPath).mtimeMs).toBe(modifiedBefore);
+    expect(artifacts.auditArtifact).toContain("answer-audit/v5-");
+    expect(artifacts.cropEvidenceArtifact).toContain("problem-crop-evidence/v1-0011-0029-");
+    expect(artifacts.cropEvidencePdf).toContain("problem-crop-evidence/v1-0011-0029-");
+    expect(artifacts.cropViewArtifacts).toHaveLength(4);
+    expect(artifacts.problemCropAdjudicationArtifact).toContain("problem-crop-adjudications/v1-0011-0029-");
+    expect(artifacts.classificationCropAdjudicationArtifact)
+      .toContain("classification-crop-adjudications/v1-0011-0029-");
+    const audit = JSON.parse(readFileSync(artifacts.auditArtifact, "utf8"));
+    const cropRepair = audit.repairs.find((repair: Record<string, any>) =>
+      repair.revision?.recovery?.adjudication);
+    expect(cropRepair).toBeDefined();
+    expect(cropRepair.revision.recovery.adjudication).toMatchObject({
+      allowlistId: Q29_CROP_SPEC.allowlistId,
+      key: Q29_CROP_SPEC.key,
+      sourcePage: Q29_CROP_SPEC.sourcePage,
+      sourceHash: Q29_CROP_SPEC.sourceHash,
+      cropViews: Q29_CROP_SPEC.views.map((view) => ({
+        sourcePage: view.sourcePage,
+        label: view.label,
+        rect: [...view.rect],
+      })),
+    });
+    const terminal = JSON.parse(readFileSync(artifacts.terminalArtifact, "utf8"));
+    const q29Input = terminal.inputs.find((input: { key: string }) => input.key === Q29_CROP_SPEC.key);
+    expect(q29Input.question).toContain("‘p’와 ‘q’는");
+    expect(terminal.items.find((item: { key: string }) => item.key === Q29_CROP_SPEC.key))
+      .toMatchObject({ status: "exact" });
+    writeFileSync(`${artifacts.cropEvidenceArtifact}.123.crash.tmp`, Buffer.from("interrupted immutable write"));
+    expect(verifyExamCorpus(files), "regular .tmp residue must remain resume-compatible")
+      .toMatchObject({ ok: true });
+
+    const pngTamperFiles = fixture();
+    const pngTamperArtifacts = upgradeEntryToV3(pngTamperFiles, "korean", {
+      cropAdjudication: true,
+      terminalScope: "authorized-reject",
+      answerV5: true,
+    });
+    writeFileSync(pngTamperArtifacts.cropViewArtifacts![0], Buffer.from("not a png"));
+    expect(verifyExamCorpus(pngTamperFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("hash mismatch"))).toBe(true);
+
+    const pdfTamperFiles = fixture();
+    const pdfTamperArtifacts = upgradeEntryToV3(pdfTamperFiles, "korean", {
+      cropAdjudication: true,
+      terminalScope: "authorized-reject",
+      answerV5: true,
+    });
+    writeFileSync(pdfTamperArtifacts.cropEvidencePdf!, Buffer.from("not the attested evidence PDF"));
+    expect(verifyExamCorpus(pdfTamperFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("PDF hash mismatch"))).toBe(true);
+
+    const parentTamperFiles = fixture();
+    upgradeEntryToV3(parentTamperFiles, "korean", {
+      cropAdjudication: true,
+      terminalScope: "authorized-reject",
+      answerV5: true,
+    });
+    rewriteCurrentV3Authority(parentTamperFiles, (currentAudit) => {
+      currentAudit.repairs.find((repair: Record<string, any>) => repair.revision?.recovery?.adjudication)
+        .revision.recovery.adjudication.parentRecoveryEvidenceHash = "0".repeat(64);
+    }, "korean");
+    expect(verifyExamCorpus(parentTamperFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("parent recovery hash"))).toBe(true);
+
+    const fifthFiles = fixture();
+    upgradeEntryToV3(fifthFiles, "korean", {
+      cropAdjudication: true,
+      terminalScope: "authorized-reject",
+      answerV5: true,
+    });
+    rewriteCurrentV3Authority(fifthFiles, (currentAudit) => {
+      currentAudit.repairs.find((repair: Record<string, any>) => repair.revision?.recovery?.adjudication)
+        .revision.recovery.adjudication.key = "11:30";
+    }, "korean");
+    expect(verifyExamCorpus(fifthFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const orphanFiles = fixture();
+    upgradeEntryToV3(orphanFiles, "korean", {
+      cropAdjudication: true,
+      terminalScope: "authorized-reject",
+      answerV5: true,
+    });
+    writeJson(join(
+      orphanFiles.stateDirs.korean,
+      "problem-crop-evidence",
+      `v1-0011-0030-${"1".repeat(64)}.json`,
     ), {});
     expect(verifyExamCorpus(orphanFiles).failures.some((failure) =>
       failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);

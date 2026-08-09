@@ -29,6 +29,9 @@ import {
   TARGETED_PROBLEM_RECOVERY_EVIDENCE_PREFIX,
   TARGETED_PROBLEM_RECOVERY_RULES,
   TARGETED_PROBLEM_RECOVERY_VERSION,
+  TARGETED_PROBLEM_CROP_ADJUDICATION_EVIDENCE_PREFIX,
+  TARGETED_PROBLEM_CROP_ADJUDICATION_RULES,
+  TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
   TARGETED_SOLUTION_TRANSCRIPTION_RULES,
   TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
   TARGETED_SOLUTION_REVISION_EVIDENCE_PREFIX,
@@ -273,6 +276,9 @@ const PROBLEM_RECOVERY_VERSION = 1;
 const CLASSIFICATION_RECOVERY_VERSION = 1;
 const PROBLEM_TERMINAL_RECOVERY_VERSION = 2;
 const CLASSIFICATION_TERMINAL_RECOVERY_VERSION = 2;
+const PROBLEM_CROP_ADJUDICATION_VERSION = 1;
+const CLASSIFICATION_CROP_ADJUDICATION_VERSION = 1;
+const PROBLEM_CROP_DPI = 300;
 const PROBLEM_SLICE_PAGES = 20;
 const SOLUTION_SLICE_PAGES = 6;
 const SOLUTION_SLICE_STRIDE = 4;
@@ -356,6 +362,13 @@ const TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST = sha256(
   `${TARGETED_PROBLEM_RECOVERY_EVIDENCE_PREFIX}\n` +
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
+const TARGETED_PROBLEM_CROP_ADJUDICATION_PROMPT_DIGEST = sha256(
+  `${TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION}\n${TARGETED_PROBLEM_CROP_ADJUDICATION_RULES}\n` +
+  `${TARGETED_PROBLEM_CROP_ADJUDICATION_EVIDENCE_PREFIX}\n` +
+  `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
+);
+const PROBLEM_CROP_ADJUDICATION_CLASSIFICATION_PROMPT_DIGEST =
+  "ed8c7770e965f26cdbfead1b0396c9fdc3c97e0afeb40e0bf654a72894d265c0";
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256(
   `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`,
 );
@@ -364,6 +377,69 @@ const TARGETED_SOLUTION_REVISION_PROMPT_DIGEST = sha256(
   `${TARGETED_SOLUTION_REVISION_EVIDENCE_PREFIX}\n` +
   `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`,
 );
+
+type ProblemCropAdjudicationSpec = {
+  allowlistId: string;
+  entryId: string;
+  key: string;
+  sourcePage: number;
+  sourceHash: string;
+  views: ReadonlyArray<{
+    sourcePage: number;
+    label: string;
+    rect: readonly [number, number, number, number];
+  }>;
+  requiredTokens: readonly string[];
+};
+
+const PROBLEM_CROP_ADJUDICATION_ALLOWLIST: readonly ProblemCropAdjudicationSpec[] = [
+  {
+    allowlistId: "ebsi-5578421-q29-p11-v1",
+    entryId: "ebsi:5578421",
+    key: "11:29",
+    sourcePage: 11,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    views: [
+      { sourcePage: 11, label: "p11 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 11, label: "p11 left article", rect: [0.075, 0.10, 0.50, 0.92] },
+      { sourcePage: 11, label: "p11 right article", rect: [0.49, 0.10, 0.92, 0.80] },
+      { sourcePage: 11, label: "p11 Q29", rect: [0.49, 0.74, 0.92, 0.92] },
+    ],
+    requiredTokens: [
+      "[29~34]", "ⓐ 전통 논리학", "ⓑ 명제 논리학", "㉠ 정언 삼단 논증", "㉡ 전건 긍정",
+      "㉢ 명제 논리학", "전제에만", "‘p’와 ‘q’는", "선행 조건", "(1)", "(2)", "(3)", "(4)",
+      "명사(名辭)",
+      "① 논리학의 발전 과정을 개괄적으로 소개하고 있다.",
+      "② 논리학의 의의를 다양한 관점에서 고찰하고 있다.",
+      "③ 논리학의 특징을 인접 학문과 비교하여 분석하고 있다.",
+      "④ 논리학의 논증 방식이 단순화된 배경을 설명하고 있다.",
+      "⑤ 논리학의 변화에 영향을 준 여러 학문을 고찰하고 있다.",
+    ],
+  },
+  {
+    allowlistId: "ebsi-5594499-q34-p12-p13-v1",
+    entryId: "ebsi:5594499",
+    key: "13:34",
+    sourcePage: 13,
+    sourceHash: "0ddccee92ce4e4ba3da53ed253e780cd7b41b5962f7e9761a920079619f81c31",
+    views: [
+      { sourcePage: 12, label: "p12 left", rect: [0.09, 0.09, 0.51, 0.95] },
+      { sourcePage: 12, label: "p12 right", rect: [0.50, 0.09, 0.95, 0.95] },
+      { sourcePage: 13, label: "p13 left top", rect: [0.09, 0.06, 0.53, 0.74] },
+      { sourcePage: 13, label: "p13 Q34 lower left", rect: [0.09, 0.77, 0.55, 0.98] },
+    ],
+    requiredTokens: [
+      "[34~37]", "(가)", "(나)", "[A]", "[B]", "㉮", "S#58", "S#59", "S#60",
+      "ⓐ", "ⓑ", "ⓒ", "ⓓ", "ⓔ", "O.L*", "* O.L", "갑월", "윤씨 부인", "치수", "월선네",
+      "김 서방", "박경리, 「토지」", "박경리 원작, 이형우 각색, 「토지」",
+      "① 풍자적 서술을 통해 인물의 부정적 행위를 비판하고 있다.",
+      "② 작품 밖 서술자를 통해 인물의 내면 심리를 제시하고 있다.",
+      "③ 시대적 배경을 제시하여 사회 현실의 문제를 드러내고 있다.",
+      "④ 의식의 흐름 기법을 활용하여 인물의 내적 욕망을 드러내고 있다.",
+      "⑤ 인물의 과장된 행동을 통해 비극적 분위기의 반전을 꾀하고 있다.",
+    ],
+  },
+] as const;
 
 type VerificationContract = {
   auditVersion: 2 | 3 | 4 | 5;
@@ -2349,6 +2425,7 @@ function verifyProblemRecoveryCoverage(
   contract: VerificationContract,
 ): void {
   const declared = new Set<string>();
+  const declaredCrop = new Set<string>();
   for (const [index, value] of values.entries()) {
     const repair = object(value, `answer audit repairs[${index}]`);
     if (repair.revision === undefined) continue;
@@ -2368,6 +2445,36 @@ function verifyProblemRecoveryCoverage(
       if (declared.has(pointer.path)) throw new Error(`${pointer.path}: duplicate problem recovery authority`);
       declared.add(pointer.path);
     }
+    if (recovery.adjudication === undefined) continue;
+    if (contract.auditVersion !== 5) throw new Error("problem crop adjudication requires answer audit v5");
+    const adjudication = object(
+      recovery.adjudication,
+      `answer audit repairs[${index}].revision.recovery.adjudication`,
+    );
+    const cropPointers: Array<[string, unknown]> = [
+      ["crop evidence", adjudication.cropEvidenceArtifact],
+      ["crop evidence PDF", adjudication.cropEvidencePdf],
+      ["problem adjudication", adjudication.problemArtifact],
+      ["classification adjudication", adjudication.classificationArtifact],
+    ];
+    if (!Array.isArray(adjudication.cropViews)) {
+      throw new Error(`answer audit repairs[${index}] crop adjudication views are missing`);
+    }
+    for (const [viewIndex, raw] of adjudication.cropViews.entries()) {
+      cropPointers.push([
+        `crop view ${viewIndex + 1}`,
+        object(raw, `answer audit repairs[${index}] cropViews[${viewIndex}]`).artifact,
+      ]);
+    }
+    for (const [label, raw] of cropPointers) {
+      const envelope = object(raw, `problem crop ${label} artifact`);
+      const pointer = evidencePointer(
+        { path: envelope.path, sha256: envelope.sha256 },
+        `problem crop ${label} artifact`,
+      );
+      if (declaredCrop.has(pointer.path)) throw new Error(`${pointer.path}: duplicate crop adjudication authority`);
+      declaredCrop.add(pointer.path);
+    }
   }
   for (const [directory, pattern] of [
     ["problem-recoveries", /^v[12]-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u],
@@ -2377,6 +2484,36 @@ function verifyProblemRecoveryCoverage(
       if (!pattern.test(name)) throw new Error(`${directory}/${name}: malformed problem recovery artifact name`);
       const path = `${directory}/${name}`;
       if (!declared.has(path)) throw new Error(`${path}: problem recovery artifact is not declared by the terminal audit`);
+    }
+  }
+  for (const [directory, patterns] of [
+    ["problem-crop-evidence", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.pdf$/u,
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}-view-\d{2}\.png$/u,
+    ]],
+    ["problem-crop-adjudications", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
+    ]],
+    ["classification-crop-adjudications", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u,
+    ]],
+  ] as const) {
+    const absolute = join(stateDir, directory);
+    if (!existsSync(absolute)) continue;
+    for (const entry of readdirSync(absolute, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name))) {
+      if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
+      if (!entry.isFile() || entry.isSymbolicLink()) {
+        throw new Error(`${directory}/${entry.name}: crop adjudication artifact must be a regular file`);
+      }
+      if (!patterns.some((pattern) => pattern.test(entry.name))) {
+        throw new Error(`${directory}/${entry.name}: malformed crop adjudication artifact name`);
+      }
+      const path = `${directory}/${entry.name}`;
+      if (!declaredCrop.has(path)) {
+        throw new Error(`${path}: crop adjudication artifact is not declared by the terminal audit`);
+      }
     }
   }
 }
@@ -2534,6 +2671,348 @@ function prepareV3RevisionRows(
       classificationArtifactItemHash,
     };
   });
+}
+
+function problemCropAdjudicationSpec(
+  entry: ManifestEntry,
+  key: string,
+  sourcePage: number,
+  sourceHash: string,
+): ProblemCropAdjudicationSpec {
+  const matches = PROBLEM_CROP_ADJUDICATION_ALLOWLIST.filter((spec) =>
+    spec.entryId === entry.id && spec.key === key && spec.sourcePage === sourcePage);
+  if (matches.length !== 1) {
+    throw new Error(`${entry.id} ${key}: crop adjudication is not uniquely allowlisted`);
+  }
+  if (matches[0].sourceHash !== sourceHash) {
+    throw new Error(`${entry.id} ${key}: official crop source hash does not match the allowlist`);
+  }
+  return matches[0];
+}
+
+function cropPngDimensions(path: string, label: string): { width: number; height: number } {
+  const header = Buffer.alloc(24);
+  const descriptor = openSync(path, "r");
+  try {
+    if (readSync(descriptor, header, 0, header.length, 0) !== header.length
+      || header.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a"
+      || header.subarray(12, 16).toString("ascii") !== "IHDR") {
+      throw new Error(`${label}: invalid PNG header`);
+    }
+  } finally {
+    closeSync(descriptor);
+  }
+  const width = header.readUInt32BE(16);
+  const height = header.readUInt32BE(20);
+  if (width < 1 || height < 1) throw new Error(`${label}: invalid PNG dimensions`);
+  return { width, height };
+}
+
+function assertProblemCropTokens(question: ProblemQuestion, spec: ProblemCropAdjudicationSpec): void {
+  const figureDescription = question.evidence.figure_description;
+  const source = [
+    question.question,
+    ...(question.choices ?? []),
+    typeof figureDescription === "string" ? figureDescription : "",
+  ].join("\n").replace(/\s+/gu, "");
+  const missing = spec.requiredTokens.filter((token) =>
+    !source.includes(token.replace(/\s+/gu, "")));
+  if (missing.length > 0) {
+    throw new Error(`${question.key}: crop adjudication is missing required source tokens: ${missing.join(", ")}`);
+  }
+}
+
+function verifyProblemCropAdjudication(
+  value: unknown,
+  parentRecovery: Record<string, unknown>,
+  failedQuestion: ProblemQuestion,
+  failedClassification: ClassificationEvidence,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  rulesDigest: string,
+  cache: EvidenceCache,
+  contract: VerificationContract,
+): { question: ProblemQuestion; classification: ClassificationEvidence; evidence: Record<string, unknown> } {
+  const key = failedQuestion.key;
+  if (contract.auditVersion !== 5 || failedClassification.transcription_status === "exact") {
+    throw new Error(`${key}: crop adjudication requires a current non-exact recovery`);
+  }
+  const spec = problemCropAdjudicationSpec(
+    entry,
+    key,
+    failedQuestion.page,
+    problemEvidence.sha256,
+  );
+  const sourcePages = [...new Set(spec.views.map((view) => view.sourcePage))].sort((left, right) => left - right);
+  if (sourcePages.some((page) => page < 1 || page > problemEvidence.pageCount)) {
+    throw new Error(`${key}: crop adjudication source pages escape the official PDF`);
+  }
+  const adjudication = object(value, `${key}.revision.recovery.adjudication`);
+  if (parentRecovery.adjudication !== undefined
+    || parentRecovery.key !== key || parentRecovery.sourcePage !== failedQuestion.page
+    || parentRecovery.sourceHash !== problemEvidence.sha256
+    || parentRecovery.effectiveQuestionHash !== canonicalEvidenceHash(failedQuestion.evidence)
+    || parentRecovery.effectiveClassificationHash !== canonicalEvidenceHash(failedClassification)) {
+    throw new Error(`${key}: crop adjudication does not bind the latest failed recovery`);
+  }
+  const parentRecoveryEvidenceHash = canonicalEvidenceHash(parentRecovery);
+  if (adjudication.parentRecoveryEvidenceHash !== parentRecoveryEvidenceHash) {
+    throw new Error(`${key}: crop adjudication parent recovery hash is stale`);
+  }
+
+  const evidenceBasis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key,
+    sourcePage: spec.sourcePage,
+    sourcePages,
+    sourceHash: problemEvidence.sha256,
+    dpi: PROBLEM_CROP_DPI,
+    views: spec.views,
+    requiredTokens: spec.requiredTokens,
+  };
+  const evidenceBasisDigest = canonicalEvidenceHash(evidenceBasis);
+  const stem = `v${PROBLEM_CROP_ADJUDICATION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+    `${failedQuestion.printedNumber.padStart(4, "0")}-${evidenceBasisDigest}`;
+  const cropEvidenceArtifact = evidencePointer(
+    adjudication.cropEvidenceArtifact,
+    `${key}.adjudication.cropEvidenceArtifact`,
+  );
+  const cropEvidencePdf = evidencePointer(
+    adjudication.cropEvidencePdf,
+    `${key}.adjudication.cropEvidencePdf`,
+  );
+  if (cropEvidenceArtifact.path !== `problem-crop-evidence/${stem}.json`
+    || cropEvidencePdf.path !== `problem-crop-evidence/${stem}.pdf`) {
+    throw new Error(`${key}: crop evidence paths are stale`);
+  }
+  const cropCheckpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    cropEvidenceArtifact,
+    `${key} crop evidence checkpoint`,
+  );
+  if (!Array.isArray(cropCheckpoint.views) || cropCheckpoint.views.length !== spec.views.length) {
+    throw new Error(`${key}: crop evidence view coverage is not exact`);
+  }
+  const cropViews = cropCheckpoint.views.map((raw, index) => {
+    const row = object(raw, `${key} crop evidence views[${index}]`);
+    const expected = spec.views[index];
+    if (!Array.isArray(row.rect) || row.rect.length !== 4
+      || !isDeepStrictEqual(row.rect, [...expected.rect])
+      || row.sourcePage !== expected.sourcePage || row.label !== expected.label) {
+      throw new Error(`${key}: crop evidence view ${index} does not match the allowlist`);
+    }
+    const pixelWidth = integer(row.pixelWidth, `${key}.cropViews[${index}].pixelWidth`, 1);
+    const pixelHeight = integer(row.pixelHeight, `${key}.cropViews[${index}].pixelHeight`, 1);
+    const pixelSha256 = digest(row.pixelSha256, `${key}.cropViews[${index}].pixelSha256`);
+    const artifact = evidencePointer(row.artifact, `${key}.cropViews[${index}].artifact`);
+    const expectedPath = `problem-crop-evidence/${stem}-view-${String(index).padStart(2, "0")}.png`;
+    if (artifact.path !== expectedPath || artifact.sha256 !== pixelSha256) {
+      throw new Error(`${key}: crop evidence view ${index} path/hash is stale`);
+    }
+    const absolute = confinedEvidencePath(stateDir, artifact, `${key} crop evidence view ${index}`);
+    if (hashFile(absolute) !== pixelSha256) throw new Error(`${key}: crop evidence view ${index} hash mismatch`);
+    const dimensions = cropPngDimensions(absolute, `${key} crop evidence view ${index}`);
+    if (dimensions.width !== pixelWidth || dimensions.height !== pixelHeight) {
+      throw new Error(`${key}: crop evidence view ${index} dimensions are stale`);
+    }
+    return {
+      sourcePage: expected.sourcePage,
+      label: expected.label,
+      rect: [...expected.rect],
+      pixelWidth,
+      pixelHeight,
+      pixelSha256,
+      artifact,
+    };
+  });
+  const cropPdfPath = confinedEvidencePath(stateDir, cropEvidencePdf, `${key} crop evidence PDF`);
+  if (hashFile(cropPdfPath) !== cropEvidencePdf.sha256) throw new Error(`${key}: crop evidence PDF hash mismatch`);
+  const expectedCropCheckpoint = {
+    version: PROBLEM_CROP_ADJUDICATION_VERSION,
+    entryId: entry.id,
+    basisDigest: evidenceBasisDigest,
+    basis: evidenceBasis,
+    renderer: "pdftocairo-png+pdf-lib",
+    dpi: PROBLEM_CROP_DPI,
+    evidencePdf: cropEvidencePdf,
+    views: cropViews,
+  };
+  if (!isDeepStrictEqual(cropCheckpoint, expectedCropCheckpoint)
+    || !isDeepStrictEqual(adjudication.cropViews, cropViews)) {
+    throw new Error(`${key}: crop evidence checkpoint/envelope is stale or incomplete`);
+  }
+
+  const commonBasis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key,
+    printedNumber: failedQuestion.printedNumber,
+    sourcePage: spec.sourcePage,
+    sourcePages,
+    sourceHash: problemEvidence.sha256,
+    parentRecovery,
+    parentRecoveryEvidenceHash,
+    failedRecoveryQuestionHash: canonicalEvidenceHash(failedQuestion.evidence),
+    failedRecoveryClassificationHash: canonicalEvidenceHash(failedClassification),
+    failedRecoveryEvidenceHash: sha256(failedClassification.transcription_evidence),
+    cropEvidenceArtifact,
+    cropEvidencePdf,
+    cropViews,
+    requiredTokensHash: canonicalEvidenceHash(spec.requiredTokens),
+  };
+  const basisDigest = canonicalEvidenceHash(commonBasis);
+  const adjudicationStem = `v${PROBLEM_CROP_ADJUDICATION_VERSION}-` +
+    `${String(spec.sourcePage).padStart(4, "0")}-${failedQuestion.printedNumber.padStart(4, "0")}-${basisDigest}`;
+  const problemArtifactEnvelope = object(adjudication.problemArtifact, `${key}.adjudication.problemArtifact`);
+  if (Object.keys(problemArtifactEnvelope).sort().join(",") !== "path,promptDigest,promptVersion,sha256"
+    || problemArtifactEnvelope.promptVersion !== TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION
+    || problemArtifactEnvelope.promptDigest !== TARGETED_PROBLEM_CROP_ADJUDICATION_PROMPT_DIGEST) {
+    throw new Error(`${key}: problem crop adjudication prompt envelope is stale`);
+  }
+  const problemArtifact = evidencePointer(
+    { path: problemArtifactEnvelope.path, sha256: problemArtifactEnvelope.sha256 },
+    `${key}.adjudication.problemArtifact`,
+  );
+  if (problemArtifact.path !== `problem-crop-adjudications/${adjudicationStem}.json`) {
+    throw new Error(`${key}: problem crop adjudication path is stale`);
+  }
+  const problemCheckpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    problemArtifact,
+    `${key} problem crop adjudication`,
+  );
+  const question = parseProblem(problemCheckpoint.item, `${key} problem crop adjudication.item`);
+  if (question.key !== key || question.page !== spec.sourcePage
+    || question.printedNumber !== failedQuestion.printedNumber) {
+    throw new Error(`${key}: problem crop adjudication changed page/number identity`);
+  }
+  assertProblemCropTokens(question, spec);
+  const problemArtifactItemHash = canonicalEvidenceHash(question.evidence);
+  const expectedProblemCheckpoint = {
+    version: PROBLEM_CROP_ADJUDICATION_VERSION,
+    entryId: entry.id,
+    basisDigest,
+    basis: commonBasis,
+    promptVersion: TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
+    promptDigest: TARGETED_PROBLEM_CROP_ADJUDICATION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    item: question.evidence,
+  };
+  if (!isDeepStrictEqual(problemCheckpoint, expectedProblemCheckpoint)
+    || adjudication.problemArtifactItemHash !== problemArtifactItemHash) {
+    throw new Error(`${key}: problem crop adjudication metadata/content is stale`);
+  }
+
+  const classificationBasis = {
+    ...commonBasis,
+    problemArtifact,
+    problemArtifactItemHash,
+    effectiveQuestionHash: problemArtifactItemHash,
+  };
+  const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+  const classificationEnvelope = object(
+    adjudication.classificationArtifact,
+    `${key}.adjudication.classificationArtifact`,
+  );
+  if (Object.keys(classificationEnvelope).sort().join(",") !==
+      "adjudicationPromptDigest,adjudicationPromptVersion,classificationPromptDigest,path,rulesDigest,sha256,transcriptionGateVersion,transcriptionPromptDigest"
+    || classificationEnvelope.rulesDigest !== rulesDigest
+    || classificationEnvelope.transcriptionGateVersion !== contract.transcriptionGateVersion
+    || classificationEnvelope.transcriptionPromptDigest !== contract.transcriptionPromptDigest
+    || classificationEnvelope.adjudicationPromptVersion !== TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION
+    || classificationEnvelope.adjudicationPromptDigest !== TARGETED_PROBLEM_CROP_ADJUDICATION_PROMPT_DIGEST
+    || classificationEnvelope.classificationPromptDigest !==
+      PROBLEM_CROP_ADJUDICATION_CLASSIFICATION_PROMPT_DIGEST) {
+    throw new Error(`${key}: classification crop adjudication envelope is stale`);
+  }
+  const classificationArtifact = evidencePointer(
+    { path: classificationEnvelope.path, sha256: classificationEnvelope.sha256 },
+    `${key}.adjudication.classificationArtifact`,
+  );
+  const expectedClassificationPath = `classification-crop-adjudications/` +
+    `v${CLASSIFICATION_CROP_ADJUDICATION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+    `${failedQuestion.printedNumber.padStart(4, "0")}-${classificationBasisDigest}-${rulesDigest}.json`;
+  if (classificationArtifact.path !== expectedClassificationPath) {
+    throw new Error(`${key}: classification crop adjudication path is stale`);
+  }
+  const classificationCheckpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    classificationArtifact,
+    `${key} classification crop adjudication`,
+  );
+  if (!Array.isArray(classificationCheckpoint.items) || classificationCheckpoint.items.length !== 1) {
+    throw new Error(`${key}: classification crop adjudication must contain exactly one decision`);
+  }
+  const classification = parseClassificationEvidence(
+    classificationCheckpoint.items[0],
+    question,
+    entry,
+    `${key} classification crop adjudication.items[0]`,
+  );
+  const expectedClassificationCheckpoint = {
+    version: CLASSIFICATION_CROP_ADJUDICATION_VERSION,
+    entryId: entry.id,
+    basisDigest: classificationBasisDigest,
+    basis: classificationBasis,
+    classifierVersion: contract.classifierVersion,
+    rulesDigest,
+    transcriptionGateVersion: contract.transcriptionGateVersion,
+    transcriptionPromptDigest: contract.transcriptionPromptDigest,
+    adjudicationPromptVersion: TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
+    adjudicationPromptDigest: TARGETED_PROBLEM_CROP_ADJUDICATION_PROMPT_DIGEST,
+    classificationPromptDigest: PROBLEM_CROP_ADJUDICATION_CLASSIFICATION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    items: [classification],
+  };
+  const classificationArtifactItemHash = canonicalEvidenceHash(classification);
+  if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)
+    || classification.transcription_status !== "exact"
+    || adjudication.classificationArtifactItemHash !== classificationArtifactItemHash) {
+    throw new Error(`${key}: classification crop adjudication is stale or non-exact`);
+  }
+  const evidence = {
+    allowlistId: spec.allowlistId,
+    key,
+    printedNumber: failedQuestion.printedNumber,
+    sourcePage: spec.sourcePage,
+    sourcePages,
+    sourceHash: problemEvidence.sha256,
+    parentRecoveryEvidenceHash,
+    cropEvidenceArtifact,
+    cropEvidencePdf,
+    cropViews,
+    problemArtifact: {
+      ...problemArtifact,
+      promptVersion: TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
+      promptDigest: TARGETED_PROBLEM_CROP_ADJUDICATION_PROMPT_DIGEST,
+    },
+    problemArtifactItemHash,
+    classificationArtifact: {
+      ...classificationArtifact,
+      rulesDigest,
+      transcriptionGateVersion: contract.transcriptionGateVersion,
+      transcriptionPromptDigest: contract.transcriptionPromptDigest,
+      adjudicationPromptVersion: TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
+      adjudicationPromptDigest: TARGETED_PROBLEM_CROP_ADJUDICATION_PROMPT_DIGEST,
+      classificationPromptDigest: PROBLEM_CROP_ADJUDICATION_CLASSIFICATION_PROMPT_DIGEST,
+    },
+    classificationArtifactItemHash,
+    baseQuestionHash: canonicalEvidenceHash(failedQuestion.evidence),
+    effectiveQuestionHash: problemArtifactItemHash,
+    baseClassificationHash: canonicalEvidenceHash(failedClassification),
+    effectiveClassificationHash: classificationArtifactItemHash,
+  };
+  if (!isDeepStrictEqual(adjudication, evidence)) {
+    throw new Error(`${key}: crop adjudication evidence envelope does not match its exact chain`);
+  }
+  return { question, classification, evidence };
 }
 
 function verifyProblemRecovery(
@@ -2804,12 +3283,11 @@ function verifyProblemRecovery(
     reasoningEffort: "high",
     items: [recoveredClassification],
   };
-  if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)
-    || recoveredClassification.transcription_status !== "exact") {
-    throw new Error(`${key}: classification recovery metadata/content is stale or non-exact`);
+  if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)) {
+    throw new Error(`${key}: classification recovery metadata/content is stale`);
   }
   const classificationArtifactItemHash = canonicalEvidenceHash(recoveredClassification);
-  const evidence = {
+  const recoveryEvidence = {
     key,
     printedNumber: row.first.row.printedNumber,
     sourcePage: row.first.row.sourcePage,
@@ -2843,13 +3321,46 @@ function verifyProblemRecovery(
     baseClassificationHash: problemBasis.baseClassificationHash,
     effectiveClassificationHash: classificationArtifactItemHash,
   };
+  if (recoveredClassification.transcription_status === "exact") {
+    if (recovery.adjudication !== undefined || !isDeepStrictEqual(recovery, recoveryEvidence)) {
+      throw new Error(`${key}: exact classification recovery must not declare crop adjudication`);
+    }
+    return {
+      classified: {
+        question: recoveredQuestion,
+        classification: recoveredClassification,
+        problemCheckpoint: row.first.row.base.problemCheckpoint,
+        classificationCheckpoint: row.first.row.base.classificationCheckpoint,
+        contextFrom: row.first.row.contextFrom,
+        contextTo: row.first.row.contextTo,
+      },
+      evidence: recoveryEvidence,
+      terminalGeneration,
+    };
+  }
+  if (recovery.adjudication === undefined) {
+    throw new Error(`${key}: non-exact classification recovery lacks allowlisted crop adjudication`);
+  }
+  const adjudicated = verifyProblemCropAdjudication(
+    recovery.adjudication,
+    recoveryEvidence,
+    recoveredQuestion,
+    recoveredClassification,
+    stateDir,
+    entry,
+    problemEvidence,
+    rulesDigest,
+    cache,
+    contract,
+  );
+  const evidence = { ...recoveryEvidence, adjudication: adjudicated.evidence };
   if (!isDeepStrictEqual(recovery, evidence)) {
     throw new Error(`${key}: problem recovery evidence envelope does not match its exact chain`);
   }
   return {
     classified: {
-      question: recoveredQuestion,
-      classification: recoveredClassification,
+      question: adjudicated.question,
+      classification: adjudicated.classification,
       problemCheckpoint: row.first.row.base.problemCheckpoint,
       classificationCheckpoint: row.first.row.base.classificationCheckpoint,
       contextFrom: row.first.row.contextFrom,
@@ -4755,7 +5266,10 @@ function verifyAnswerAudit(
       throw new Error(`terminal corpus has non-exact source transcriptions: ${nonExact.join(", ")}`);
     }
     if (auditEnvelope.effectiveCorpusHash !== effectiveCorpusHash) {
-      throw new Error("attested effective corpus hash does not match reconstructed corpus");
+      throw new Error(
+        `attested effective corpus hash ${auditEnvelope.effectiveCorpusHash} does not match ` +
+        `reconstructed corpus ${effectiveCorpusHash}`,
+      );
     }
     const repairKeys = new Set(audit.repairs.map((value, index) =>
       exactString(object(value, `answer audit repairs[${index}]`).key, `answer audit repairs[${index}].key`)));
