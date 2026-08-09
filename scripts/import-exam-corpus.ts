@@ -99,6 +99,7 @@ export const PROBLEM_CROP_ADJUDICATION_VERSION = 1;
 export const CLASSIFICATION_CROP_ADJUDICATION_VERSION = 1;
 export const PROBLEM_SCOPE_ADJUDICATION_VERSION = 1;
 export const PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION = 1;
+export const PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_VERSION = 1;
 export const PROBLEM_REVISION_SCOPE_ADJUDICATION_VERSION = 1;
 export const PROBLEM_MANUAL_ADJUDICATION_VERSION = 1;
 export const CLASSIFICATION_MANUAL_ADJUDICATION_VERSION = 1;
@@ -1317,6 +1318,19 @@ export const PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST = sha256Text(
   `${PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION}\n${PROBLEM_SCOPE_ADJUDICATION_RULES}\n` +
   `${TRANSCRIPTION_GATE_VERSION}\n${TRANSCRIPTION_GATE_RULES}\n${CURRICULUM_RULES}`
 );
+export const PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_RULES = `
+${PROBLEM_SCOPE_ADJUDICATION_RULES}
+Distinguish notation that states the standard definition of an in-scope concept from an independently required
+excluded technique. Ground that distinction in the owning official solution rather than the notation alone.
+For an accept result, include the exact reason code ALLOWLISTED_POSITIVE_SCOPE_AUTHORITY.
+`.trim();
+export const PROBLEM_REPAIR_POSITIVE_SCOPE_AUTHORITY_REASON_CODE =
+  "ALLOWLISTED_POSITIVE_SCOPE_AUTHORITY";
+export const PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_PROMPT_DIGEST = sha256Text(
+  `${PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_VERSION}\n` +
+  `${PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_RULES}\n` +
+  `${TRANSCRIPTION_GATE_VERSION}\n${TRANSCRIPTION_GATE_RULES}\n${CURRICULUM_RULES}`
+);
 export const PROBLEM_REVISION_SCOPE_ADJUDICATION_PROMPT_DIGEST = sha256Text(
   `${PROBLEM_REVISION_SCOPE_ADJUDICATION_VERSION}\n${PROBLEM_SCOPE_ADJUDICATION_RULES}\n` +
   `${TRANSCRIPTION_GATE_VERSION}\n${TRANSCRIPTION_GATE_RULES}\n${CURRICULUM_RULES}`
@@ -1332,6 +1346,11 @@ type ProblemScopeAdjudicationSpec = {
   parentProblemArtifactHash?: string;
   parentClassificationArtifactHash?: string;
   terminalArtifactHash?: string;
+};
+
+type ProblemRepairPositiveScopeAdjudicationSpec = ProblemScopeAdjudicationSpec & {
+  expectedCanonicalSubject: CanonicalSubject;
+  allowedAchievementCodes: readonly string[];
 };
 
 export const PROBLEM_SCOPE_ADJUDICATION_ALLOWLIST: readonly ProblemScopeAdjudicationSpec[] = [{
@@ -1357,6 +1376,18 @@ export const PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST: readonly ProblemScopeA
   sourcePage: 12,
   sourceHash: "b164d4dc867f0790525ca7ddae3c1003113f454c4d015f161db3d5ec4a1c9fc2",
   solutionSourceHash: "1aff1dcfcb4954d355661ebe03f823d1d4227db1339f604f2391ce0673552557",
+}] as const;
+
+export const PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_ALLOWLIST:
+readonly ProblemRepairPositiveScopeAdjudicationSpec[] = [{
+  allowlistId: "ebsi-5772822-q10-repair-positive-scope-v1",
+  entryId: "ebsi:5772822",
+  key: "3:10",
+  sourcePage: 3,
+  sourceHash: "fa4a52e9b15510c1ee3e37da0fcb509f203587e15f0baf7797ecf30608fb2f03",
+  solutionSourceHash: "57002552ef8099128b23b2c336946616eded2a741a432fd41919e3e6a6bfa2a9",
+  expectedCanonicalSubject: "math_A",
+  allowedAchievementCodes: ["12수학Ⅱ03-04"],
 }] as const;
 
 export const PROBLEM_REVISION_SCOPE_ADJUDICATION_ALLOWLIST: readonly ProblemScopeAdjudicationSpec[] = [{
@@ -2521,7 +2552,8 @@ function assertTerminalProblemPolicy(
   classified: ClassifiedQuestion[],
   items: ProblemTerminalFidelityItem[],
   repairedKeys: ReadonlySet<string>,
-  scopeAdjudicatedKeys: ReadonlySet<string> = new Set()
+  scopeAdjudicatedKeys: ReadonlySet<string> = new Set(),
+  positiveScopeAuthorityKeys: ReadonlySet<string> = new Set()
 ): void {
   const itemByKey = new Map(items.map((item) => [item.key, item]));
   if (itemByKey.size !== items.length || classified.length !== items.length) {
@@ -2530,7 +2562,9 @@ function assertTerminalProblemPolicy(
   for (const current of classified) {
     const key = questionKey(current.question);
     const item = itemByKey.get(key);
-    const acceptedScopeAgrees = scopeAdjudicatedKeys.has(key)
+    const acceptedScopeAgrees = positiveScopeAuthorityKeys.has(key)
+      ? true
+      : scopeAdjudicatedKeys.has(key)
       ? item?.scopeDecision === current.classification.decision && item.scopeConfidence >= 0.9
       : current.classification.decision !== "accept" ||
         (item?.scopeDecision === "accept" && item.scopeConfidence >= 0.9);
@@ -7465,6 +7499,50 @@ function problemRepairScopeAdjudicationSpec(
   return match ?? null;
 }
 
+function problemRepairPositiveScopeAdjudicationSpec(
+  entry: CorpusManifestEntry,
+  key: string,
+  sourcePage: number,
+  sourceHash: string,
+  solutionSourceHash: string
+): ProblemRepairPositiveScopeAdjudicationSpec | null {
+  const matches = PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_ALLOWLIST.filter((spec) =>
+    spec.entryId === entry.id && spec.key === key && spec.sourcePage === sourcePage
+  );
+  if (matches.length > 1) throw new Error(`${entry.id} ${key} positive repair scope allowlist가 중복입니다`);
+  const match = matches[0];
+  if (match && (match.sourceHash !== sourceHash || match.solutionSourceHash !== solutionSourceHash)) {
+    throw new Error(`${entry.id} ${key} positive repair scope source hash가 allowlist와 다릅니다`);
+  }
+  return match ?? null;
+}
+
+function hasPositiveRepairScopeAuthority(repair: ProblemRepairEvidence): boolean {
+  const adjudication = repair.scopeAdjudication;
+  return Boolean(adjudication && PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_ALLOWLIST.some((spec) =>
+    spec.allowlistId === adjudication.allowlistId && spec.key === repair.key &&
+    spec.sourcePage === adjudication.sourcePage && spec.sourceHash === adjudication.sourceHash &&
+    spec.solutionSourceHash === adjudication.solutionSourceHash
+  ));
+}
+
+function positiveRepairScopeAuthorityKeys(repairs: Iterable<ProblemRepairEvidence>): Set<string> {
+  return new Set([...repairs].filter(hasPositiveRepairScopeAuthority).map((repair) => repair.key));
+}
+
+function isAllowedPositiveRepairScopeDecision(
+  classification: ClassificationDecision,
+  spec: ProblemRepairPositiveScopeAdjudicationSpec
+): boolean {
+  return classification.decision === "accept" &&
+    classification.canonical_subject === spec.expectedCanonicalSubject &&
+    Boolean(classification.curriculum_course) && Boolean(classification.domain) &&
+    classification.achievement_codes.length > 0 && classification.achievement_codes.every((code) =>
+      spec.allowedAchievementCodes.includes(code) && isAllowedAchievementCode(spec.expectedCanonicalSubject, code)
+    ) && classification.reason_codes.includes(PROBLEM_REPAIR_POSITIVE_SCOPE_AUTHORITY_REASON_CODE) &&
+    classification.confidence >= 0.9 && classification.transcription_status === "exact";
+}
+
 function problemRevisionScopeAdjudicationSpec(
   entry: CorpusManifestEntry,
   key: string,
@@ -7793,22 +7871,37 @@ async function adjudicateProblemRepairScope(
   const repairSpec = problemRepairScopeAdjudicationSpec(
     entry, key, sourcePage, problem.sha256, solutionEvidence.sha256
   );
+  const positiveSpec = problemRepairPositiveScopeAdjudicationSpec(
+    entry, key, sourcePage, problem.sha256, solutionEvidence.sha256
+  );
   const revisionSpec = problemRevisionScopeAdjudicationSpec(
     entry, key, sourcePage, problem.sha256, solutionEvidence.sha256
   );
-  if (repairSpec && revisionSpec) throw new Error(`${key} scope adjudication parent mode가 중복입니다`);
-  const spec = revisionSpec ?? repairSpec;
+  if ([repairSpec, positiveSpec, revisionSpec].filter(Boolean).length > 1) {
+    throw new Error(`${key} scope adjudication parent mode가 중복입니다`);
+  }
+  const spec = revisionSpec ?? positiveSpec ?? repairSpec;
   const revisionParent = Boolean(revisionSpec);
+  const positiveAuthority = Boolean(positiveSpec);
   const revision = input.repair.revision;
   const adjudicationVersion = revisionParent
     ? PROBLEM_REVISION_SCOPE_ADJUDICATION_VERSION
-    : PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION;
+    : positiveAuthority
+      ? PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_VERSION
+      : PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION;
   const adjudicationPromptDigest = revisionParent
     ? PROBLEM_REVISION_SCOPE_ADJUDICATION_PROMPT_DIGEST
-    : PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST;
+    : positiveAuthority
+      ? PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_PROMPT_DIGEST
+      : PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST;
+  const adjudicationRules = positiveAuthority
+    ? PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_RULES
+    : PROBLEM_SCOPE_ADJUDICATION_RULES;
   const adjudicationDirectory = revisionParent
     ? "classification-revision-scope-adjudications"
-    : "classification-repair-scope-adjudications";
+    : positiveAuthority
+      ? "classification-repair-positive-scope-adjudications"
+      : "classification-repair-scope-adjudications";
   if (!spec) throw new Error(`${key} repair/revision scope adjudication allowlist에 없습니다`);
   if (
     await sha256File(problem.path) !== problem.sha256 ||
@@ -7951,6 +8044,14 @@ async function adjudicateProblemRepairScope(
     parentRepair: input.repair,
     parentRepairEvidenceHash,
     ...(parentRevisionEvidenceHash ? { parentRevisionEvidenceHash } : {}),
+    ...(positiveSpec ? {
+      scopeAuthority: {
+        decision: "accept",
+        canonicalSubject: positiveSpec.expectedCanonicalSubject,
+        allowedAchievementCodes: [...positiveSpec.allowedAchievementCodes],
+        requiredReasonCode: PROBLEM_REPAIR_POSITIVE_SCOPE_AUTHORITY_REASON_CODE,
+      },
+    } : {}),
     trigger,
     baseQuestionHash: canonicalEvidenceHash(input.current.question),
     baseClassificationHash: canonicalEvidenceHash(input.current.classification),
@@ -8012,7 +8113,7 @@ async function adjudicateProblemRepairScope(
                   `${solutionBase.contextFrom}-${solutionBase.contextTo}. Exam source subject is ${entry.subject}; ` +
                   `source school grade is ${entry.grade ?? "unknown"}. Inspect printed problem ${input.repair.printedNumber} ` +
                   `and its owning official solution. No prior classifier or audit decision is supplied.\n\n` +
-                  `${PROBLEM_SCOPE_ADJUDICATION_RULES}\n\n${TRANSCRIPTION_GATE_RULES}\n\n${CURRICULUM_RULES}\n\n` +
+                  `${adjudicationRules}\n\n${TRANSCRIPTION_GATE_RULES}\n\n${CURRICULUM_RULES}\n\n` +
                   `Allowed exact achievement codes for this source: ${allowedCodes.join(", ")}\n\n` +
                   `Final question:\n${JSON.stringify(question)}`;
                 const result = await withTargetedAi(() => getCodexProvider({
@@ -8055,12 +8156,16 @@ async function adjudicateProblemRepairScope(
   if (sha256 !== canonicalEvidenceHash(checkpoint)) {
     throw new Error(`${key} problem repair scope adjudication hash가 다릅니다`);
   }
-  if (
-    classification.decision !== "reject" || classification.canonical_subject !== null ||
-    classification.curriculum_course !== null || classification.domain !== null ||
-    classification.achievement_codes.length !== 0 || classification.confidence < 0.9 ||
-    classification.transcription_status !== "exact"
-  ) throw new Error(`${key} problem repair scope adjudication이 reject/null exact에 합의하지 않았습니다`);
+  const invalidDecision = positiveSpec
+    ? !isAllowedPositiveRepairScopeDecision(classification, positiveSpec) ||
+      canonicalEvidenceHash(classification) === canonicalEvidenceHash(input.current.classification)
+    : classification.decision !== "reject" || classification.canonical_subject !== null ||
+      classification.curriculum_course !== null || classification.domain !== null ||
+      classification.achievement_codes.length !== 0 || classification.confidence < 0.9 ||
+      classification.transcription_status !== "exact";
+  if (invalidDecision) {
+    throw new Error(`${key} problem repair scope adjudication이 허용된 final scope에 합의하지 않았습니다`);
+  }
   const evidence: ProblemScopeAdjudicationEvidence = {
     allowlistId: spec.allowlistId,
     key,
@@ -8137,18 +8242,27 @@ async function assertProblemScopeAdjudicationAuthority(
 
 async function assertProblemRepairScopeAdjudicationAuthority(
   stateDir: string,
-  repairs: Iterable<ProblemRepairEvidence>
+  repairs: Iterable<ProblemRepairEvidence>,
+  classified: readonly ClassifiedQuestion[]
 ): Promise<void> {
   const declared = new Map<string, string>();
   for (const repair of repairs) {
     const adjudication = repair.scopeAdjudication;
     if (!adjudication) continue;
     const { scopeAdjudication: _scopeAdjudication, ...parentRepair } = repair;
-    const matches = PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST.filter((spec) =>
+    const negativeMatches = PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST.filter((spec) =>
       spec.allowlistId === adjudication.allowlistId && spec.key === adjudication.key &&
       spec.sourcePage === adjudication.sourcePage && spec.sourceHash === adjudication.sourceHash &&
       spec.solutionSourceHash === adjudication.solutionSourceHash
     );
+    const positiveMatches = PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_ALLOWLIST.filter((spec) =>
+      spec.allowlistId === adjudication.allowlistId && spec.key === adjudication.key &&
+      spec.sourcePage === adjudication.sourcePage && spec.sourceHash === adjudication.sourceHash &&
+      spec.solutionSourceHash === adjudication.solutionSourceHash
+    );
+    const matches = [...negativeMatches, ...positiveMatches];
+    const positiveSpec = positiveMatches[0];
+    const currentMatches = classified.filter((item) => questionKey(item.question) === repair.key);
     if (
       matches.length !== 1 || repair.key !== adjudication.key || repair.sourcePage !== adjudication.sourcePage ||
       repair.revision || adjudication.parentRecoveryEvidenceHash !== undefined ||
@@ -8172,7 +8286,14 @@ async function assertProblemRepairScopeAdjudicationAuthority(
       sha256Text(adjudication.trigger.terminalItem.scopeEvidence) !== adjudication.trigger.scopeEvidenceHash ||
       adjudication.classificationArtifact.rulesDigest !== CLASSIFIER_DIGEST ||
       adjudication.classificationArtifact.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
-      adjudication.classificationArtifact.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST
+      adjudication.classificationArtifact.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+      (positiveSpec && (
+        currentMatches.length !== 1 ||
+        canonicalEvidenceHash(currentMatches[0].question) !== adjudication.effectiveQuestionHash ||
+        canonicalEvidenceHash(currentMatches[0].classification) !== adjudication.effectiveClassificationHash ||
+        adjudication.baseClassificationHash === adjudication.effectiveClassificationHash ||
+        !isAllowedPositiveRepairScopeDecision(currentMatches[0].classification, positiveSpec)
+      ))
     ) throw new Error(`${repair.key} problem repair scope adjudication evidence가 parent/allowlist와 다릅니다`);
 
     for (const [label, pointer] of [
@@ -8181,6 +8302,74 @@ async function assertProblemRepairScopeAdjudicationAuthority(
     ] as const) {
       const path = confinedStateFile(stateDir, pointer.path, label);
       if (await sha256File(path) !== pointer.sha256) throw new Error(`${label} hash가 다릅니다: ${pointer.path}`);
+    }
+    if (positiveSpec) {
+      const terminalPointer = adjudication.trigger.terminalCheckpoint;
+      const parentClassificationCheckpoint = object(JSON.parse(readFileSync(confinedStateFile(
+        stateDir,
+        parentRepair.classificationArtifact.path,
+        "positive repair scope parent classification"
+      ), "utf8")), "positive repair scope parent classification");
+      const parentClassificationItems = Array.isArray(parentClassificationCheckpoint.items)
+        ? parentClassificationCheckpoint.items.map((item) => object(item, "positive repair scope parent item"))
+        : [];
+      const parentClassificationMatches = parentClassificationItems.filter((item) => item.key === repair.key);
+      const parentClassification = parentClassificationMatches[0];
+      const preAdjudicationClassified = classified.map((item) => questionKey(item.question) === repair.key
+        ? { question: item.question, classification: parentClassification }
+        : item);
+      const preAdjudicationEffectiveCorpusHash = canonicalEvidenceHash(preAdjudicationClassified);
+      const finalEffectiveCorpusHash = canonicalEvidenceHash(classified);
+      const terminalCheckpoint = object(JSON.parse(readFileSync(confinedStateFile(
+        stateDir,
+        terminalPointer.path,
+        "positive repair scope terminal fidelity"
+      ), "utf8")), "positive repair scope terminal fidelity");
+      const terminalQuestions = classified.filter(({ question }) =>
+        question.page! >= terminalPointer.ownedFrom && question.page! <= terminalPointer.ownedTo
+      );
+      const terminalInputs = terminalQuestions.map(({ question }) => ({
+        key: questionKey(question),
+        printed_number: String(numericPrintedLocator(question.number)),
+        source_page: question.page,
+        qtype: question.qtype,
+        question: question.question,
+        choices: question.choices,
+        figure: question.figure,
+        figure_description: question.figure_description,
+        box: question.box,
+      }));
+      const terminalItems = parseProblemTerminalFidelity(terminalCheckpoint.items, terminalQuestions);
+      const terminalTargetItems = terminalItems.filter((item) => item.key === repair.key);
+      const expectedTerminalPath = `problem-terminal-fidelity/v${PROBLEM_TERMINAL_FIDELITY_VERSION}-0000-` +
+        `${adjudication.trigger.preAdjudicationEffectiveCorpusHash}-${terminalPointer.inputHash}.json`;
+      if (
+        parentClassificationMatches.length !== 1 ||
+        canonicalEvidenceHash(parentClassification) !== parentRepair.effectiveClassificationHash ||
+        canonicalEvidenceHash(parentClassification) !== parentRepair.classificationArtifactItemHash ||
+        preAdjudicationEffectiveCorpusHash !== adjudication.trigger.preAdjudicationEffectiveCorpusHash ||
+        finalEffectiveCorpusHash === preAdjudicationEffectiveCorpusHash ||
+        terminalPointer.path !== expectedTerminalPath || terminalPointer.from !== 1 ||
+        terminalPointer.to !== parentRepair.contextTo || terminalPointer.ownedFrom !== 1 ||
+        terminalPointer.ownedTo !== parentRepair.contextTo || parentRepair.contextFrom !== 1 ||
+        terminalPointer.sha256 !== canonicalEvidenceHash(terminalCheckpoint) ||
+        terminalCheckpoint.version !== PROBLEM_TERMINAL_FIDELITY_VERSION ||
+        terminalCheckpoint.entryId !== positiveSpec.entryId || terminalCheckpoint.sourceHash !== positiveSpec.sourceHash ||
+        terminalCheckpoint.from !== terminalPointer.from || terminalCheckpoint.to !== terminalPointer.to ||
+        terminalCheckpoint.ownedFrom !== terminalPointer.ownedFrom ||
+        terminalCheckpoint.ownedTo !== terminalPointer.ownedTo ||
+        terminalCheckpoint.effectiveCorpusHash !== preAdjudicationEffectiveCorpusHash ||
+        terminalCheckpoint.inputHash !== terminalPointer.inputHash ||
+        terminalCheckpoint.inputHash !== canonicalEvidenceHash(terminalInputs) ||
+        canonicalEvidenceHash(terminalCheckpoint.inputs) !== canonicalEvidenceHash(terminalInputs) ||
+        terminalCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+        terminalCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+        terminalCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+        terminalCheckpoint.scopePromptDigest !== PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST ||
+        terminalCheckpoint.model !== IMPORT_MODEL || terminalCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+        terminalTargetItems.length !== 1 ||
+        canonicalEvidenceHash(terminalTargetItems[0]) !== adjudication.trigger.terminalItemHash
+      ) throw new Error(`${repair.key} positive repair scope terminal checkpoint가 다릅니다`);
     }
     const basis = {
       allowlistId: adjudication.allowlistId,
@@ -8198,13 +8387,30 @@ async function assertProblemRepairScopeAdjudicationAuthority(
       baseSolutionItemHash: adjudication.baseSolutionItemHash,
       parentRepair,
       parentRepairEvidenceHash: adjudication.parentRepairEvidenceHash,
+      ...(positiveSpec ? {
+        scopeAuthority: {
+          decision: "accept",
+          canonicalSubject: positiveSpec.expectedCanonicalSubject,
+          allowedAchievementCodes: [...positiveSpec.allowedAchievementCodes],
+          requiredReasonCode: PROBLEM_REPAIR_POSITIVE_SCOPE_AUTHORITY_REASON_CODE,
+        },
+      } : {}),
       trigger: adjudication.trigger,
       baseQuestionHash: adjudication.baseQuestionHash,
       baseClassificationHash: adjudication.baseClassificationHash,
     };
     const basisDigest = canonicalEvidenceHash(basis);
-    const expectedPath = `classification-repair-scope-adjudications/` +
-      `v${PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION}-${String(adjudication.sourcePage).padStart(4, "0")}-` +
+    const adjudicationVersion = positiveSpec
+      ? PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_VERSION
+      : PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION;
+    const adjudicationPromptDigest = positiveSpec
+      ? PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_PROMPT_DIGEST
+      : PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST;
+    const directory = positiveSpec
+      ? "classification-repair-positive-scope-adjudications"
+      : "classification-repair-scope-adjudications";
+    const expectedPath = `${directory}/` +
+      `v${adjudicationVersion}-${String(adjudication.sourcePage).padStart(4, "0")}-` +
       `${parentRepair.printedNumber.padStart(4, "0")}-${basisDigest}-${CLASSIFIER_DIGEST}.json`;
     const checkpoint = object(
       JSON.parse(readFileSync(confinedStateFile(stateDir, expectedPath, "problem repair scope adjudication"), "utf8")),
@@ -8213,34 +8419,42 @@ async function assertProblemRepairScopeAdjudicationAuthority(
     if (
       adjudication.classificationArtifact.path !== expectedPath ||
       adjudication.classificationArtifact.adjudicationPromptVersion !==
-        PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION ||
+        adjudicationVersion ||
       adjudication.classificationArtifact.adjudicationPromptDigest !==
-        PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST ||
-      checkpoint.version !== PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION || checkpoint.entryId !== matches[0].entryId ||
+        adjudicationPromptDigest ||
+      checkpoint.version !== adjudicationVersion || checkpoint.entryId !== matches[0].entryId ||
       checkpoint.basisDigest !== basisDigest || canonicalEvidenceHash(checkpoint.basis) !== canonicalEvidenceHash(basis) ||
       checkpoint.classifierVersion !== CLASSIFIER_VERSION || checkpoint.rulesDigest !== CLASSIFIER_DIGEST ||
       checkpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
       checkpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
-      checkpoint.adjudicationPromptVersion !== PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION ||
-      checkpoint.adjudicationPromptDigest !== PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST ||
+      checkpoint.adjudicationPromptVersion !== adjudicationVersion ||
+      checkpoint.adjudicationPromptDigest !== adjudicationPromptDigest ||
       checkpoint.model !== IMPORT_MODEL || checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
       !Array.isArray(checkpoint.items) || checkpoint.items.length !== 1 ||
-      canonicalEvidenceHash(checkpoint.items[0]) !== adjudication.classificationArtifactItemHash
+      canonicalEvidenceHash(checkpoint.items[0]) !== adjudication.classificationArtifactItemHash ||
+      (positiveSpec && canonicalEvidenceHash(checkpoint.items[0]) !==
+        canonicalEvidenceHash(currentMatches[0].classification))
     ) throw new Error(`${repair.key} problem repair scope adjudication checkpoint가 다릅니다`);
     if (declared.has(expectedPath)) {
       throw new Error(`problem repair scope adjudication artifact가 중복 선언됐습니다: ${expectedPath}`);
     }
     declared.set(expectedPath, adjudication.classificationArtifact.sha256);
   }
-  const directory = join(stateDir, "classification-repair-scope-adjudications");
   const actual = new Set<string>();
-  if (existsSync(directory)) {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+  for (const directory of [
+    "classification-repair-scope-adjudications",
+    "classification-repair-positive-scope-adjudications",
+  ]) {
+    const path = join(stateDir, directory);
+    if (!existsSync(path)) continue;
+    for (const entry of readdirSync(path, { withFileTypes: true })) {
       if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
       if (!entry.isFile() || entry.isSymbolicLink()) {
-        throw new Error(`problem repair scope adjudication directory에 regular file이 아닌 항목이 있습니다: ${entry.name}`);
+        throw new Error(
+          `problem repair scope adjudication directory에 regular file이 아닌 항목이 있습니다: ${directory}/${entry.name}`
+        );
       }
-      actual.add(`classification-repair-scope-adjudications/${entry.name}`);
+      actual.add(`${directory}/${entry.name}`);
     }
   }
   const extras = [...actual].filter((path) => !declared.has(path));
@@ -9705,11 +9919,17 @@ export async function repairAndAuditOfficialAnswers(
         current.classification.transcription_status !== "exact" || item.status !== "exact" ||
         item.scopeDecision !== "reject" || item.scopeConfidence < 0.9
       ) return false;
+      const positiveSpec = problemRepairPositiveScopeAdjudicationSpec(
+        entry, item.key, current.question.page!, problem.sha256, solutionEvidence.sha256
+      );
+      if (positiveSpec && repairs.get(item.key) && hasPositiveRepairScopeAuthority(repairs.get(item.key)!)) {
+        return false;
+      }
       return problemRepairScopeAdjudicationSpec(
         entry, item.key, current.question.page!, problem.sha256, solutionEvidence.sha256
       ) !== null || problemRevisionScopeAdjudicationSpec(
         entry, item.key, current.question.page!, problem.sha256, solutionEvidence.sha256
-      ) !== null;
+      ) !== null || positiveSpec !== null;
     });
     if (repairScopeConflicts.length > 0) {
       for (const item of repairScopeConflicts) {
@@ -9832,11 +10052,17 @@ export async function repairAndAuditOfficialAnswers(
         ? [repair.key]
         : []
     ));
-    assertTerminalProblemPolicy(effective, finalProblemFidelity.items, repairedKeys, scopeAdjudicatedKeys);
+    assertTerminalProblemPolicy(
+      effective,
+      finalProblemFidelity.items,
+      repairedKeys,
+      scopeAdjudicatedKeys,
+      positiveRepairScopeAuthorityKeys(repairs.values())
+    );
     await assertProblemCropAdjudicationAuthority(stateDir, repairs.values());
     await assertProblemManualAdjudicationAuthority(stateDir, repairs.values());
     await assertProblemScopeAdjudicationAuthority(stateDir, repairs.values());
-    await assertProblemRepairScopeAdjudicationAuthority(stateDir, repairs.values());
+    await assertProblemRepairScopeAdjudicationAuthority(stateDir, repairs.values(), effective);
     await assertProblemRevisionScopeAdjudicationAuthority(stateDir, repairs.values());
     if (effective.some(({ classification }) => classification.decision === "review")) {
       return {
@@ -9999,6 +10225,7 @@ export async function repairAndAuditOfficialAnswers(
       ? [repair.key]
       : []
   ));
+  const finalPositiveScopeAuthorityKeys = positiveRepairScopeAuthorityKeys(repairs.values());
   const remainingTranscriptionIssues = transcriptionRepairKeys(effective).filter((key) => {
     const current = effective.find((item) => questionKey(item.question) === key);
     const terminal = finalTerminalByKey.get(key);
@@ -10011,7 +10238,8 @@ export async function repairAndAuditOfficialAnswers(
     effective,
     finalProblemFidelity.items,
     finalRepairedKeys,
-    finalScopeAdjudicatedKeys
+    finalScopeAdjudicatedKeys,
+    finalPositiveScopeAuthorityKeys
   );
   if (!finalSolutionAudit) throw new Error("terminal 해설 fidelity 결과가 없습니다");
   const finalByNumber = officialSolutionsByNumber(entry, effective, finalSolutionAudit.solutions);
@@ -10242,11 +10470,12 @@ export async function writeAnswerAttestation(
         repair.revision?.recovery?.manualAdjudication
         ? [repair.key]
         : []
-    ))
+    )),
+    positiveRepairScopeAuthorityKeys(answerAudit.repairs)
   );
   await assertProblemManualAdjudicationAuthority(stateDir, answerAudit.repairs);
   await assertProblemScopeAdjudicationAuthority(stateDir, answerAudit.repairs);
-  await assertProblemRepairScopeAdjudicationAuthority(stateDir, answerAudit.repairs);
+  await assertProblemRepairScopeAdjudicationAuthority(stateDir, answerAudit.repairs, answerAudit.classified);
   await assertProblemRevisionScopeAdjudicationAuthority(stateDir, answerAudit.repairs);
   await assertSolutionRevisionFidelityAdjudicationAuthority(stateDir, answerAudit.solutionRepairs);
   if (
