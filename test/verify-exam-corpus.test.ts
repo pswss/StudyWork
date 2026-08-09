@@ -172,6 +172,9 @@ const Q30_FAILED_CLASSIFICATION_PATH = join(
 const Q18_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/714fd4581f778a9c559fd16e");
 const Q18_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5656593" && spec.key === "7:18")!;
+const Q9_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/a915803b3da3a6ea056eecd6");
+const Q9_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
+  spec.entryId === "ebsi:5854871" && spec.key === "2:9")!;
 const MANUAL_FAILED_ARTIFACTS = new Map([
   [Q30_MANUAL_SPEC.entryId, {
     problem: Q30_FAILED_PROBLEM_PATH,
@@ -185,6 +188,16 @@ const MANUAL_FAILED_ARTIFACTS = new Map([
     classification: join(
       Q18_MANUAL_STATE,
       "classification-recoveries/v1-0007-0018-eadc507490e4723cf09f622b2231222ff5cb12db3609ab381b79951dc1de3144-7bb7cb863c8c4855.json",
+    ),
+  }],
+  [Q9_MANUAL_SPEC.entryId, {
+    problem: join(
+      Q9_MANUAL_STATE,
+      "problem-recoveries/v1-0002-0009-ce5a6650673a79cd5cebf9a1d0593bcc75f9acd7fc5a57551ea1becf69e443d5.json",
+    ),
+    classification: join(
+      Q9_MANUAL_STATE,
+      "classification-recoveries/v1-0002-0009-284f685922e94c9eca6aef2dc7cb776f8ee4fc04601b32ecf959f840d264fc34-7bb7cb863c8c4855.json",
     ),
   }],
 ]);
@@ -1493,6 +1506,28 @@ function upgradeEntryToV3(
       confidence: 0.99,
     });
   }
+  if (manualSpec?.expectedDecision === "accept") {
+    Object.assign(classification.items[0], {
+      decision: "reject",
+      canonical_subject: null,
+      curriculum_course: null,
+      domain: null,
+      achievement_codes: [],
+      reason_codes: ["OUT_OF_SCOPE"],
+      transcription_status: "exact",
+      transcription_evidence: "the literal source transcription is exact and outside the selected scope",
+    });
+    const solutionPath = join(stateDir, "solution-chunks", "v3-0000.json");
+    const solutionCheckpoint = JSON.parse(readFileSync(solutionPath, "utf8"));
+    solutionCheckpoint.items[recoveryTargetNumber - 1] = {
+      ...solutionCheckpoint.items[recoveryTargetNumber - 1],
+      answer: "③ C",
+      explanation: "서울보다 여름이 덥지 않고 시차가 작은 C 뉴질랜드가 조건에 맞는다.",
+      page: 1,
+      complete: true,
+    };
+    writeJson(solutionPath, solutionCheckpoint);
+  }
   const mixedTerminal = options.mixedTerminal || options.staleTriggerBase;
   const repairNumbers = options.cropAdjudication || options.scopeAdjudication
     || options.repairScopeAdjudication || options.manualAdjudication
@@ -2530,6 +2565,7 @@ function upgradeEntryToV3(
         );
         const sourcePages = [...new Set(manualSpec.views.map((view) => view.sourcePage))]
           .sort((left, right) => left - right);
+        const manualDpi = manualSpec.dpi ?? 300;
         const evidenceBasis = {
           allowlistId: manualSpec.allowlistId,
           entryId: entry.id,
@@ -2537,7 +2573,7 @@ function upgradeEntryToV3(
           sourcePage: recoveryTargetPage,
           sourcePages,
           sourceHash: downloads.problem.sha256,
-          dpi: 300,
+          dpi: manualDpi,
           views: manualSpec.views,
           requiredTokens: manualSpec.requiredTokens,
         };
@@ -2546,8 +2582,10 @@ function upgradeEntryToV3(
           `${String(recoveryTargetNumber).padStart(4, "0")}-${evidenceDigest}`;
         const cropViews = manualSpec.views.map((view, index) => {
           const [left, top, right, bottom] = view.rect;
-          const pixelWidth = Math.ceil(right * 3508) - Math.floor(left * 3508);
-          const pixelHeight = Math.ceil(bottom * 4961) - Math.floor(top * 4961);
+          const pageWidth = Math.round(3508 * manualDpi / 300);
+          const pageHeight = Math.round(4961 * manualDpi / 300);
+          const pixelWidth = Math.ceil(right * pageWidth) - Math.floor(left * pageWidth);
+          const pixelHeight = Math.ceil(bottom * pageHeight) - Math.floor(top * pageHeight);
           const relativePath = `problem-manual-evidence/${evidenceStem}-view-` +
             `${String(index).padStart(2, "0")}.png`;
           const absolutePath = join(stateDir, relativePath);
@@ -2580,7 +2618,7 @@ function upgradeEntryToV3(
           basisDigest: evidenceDigest,
           basis: evidenceBasis,
           renderer: "pdftocairo-png+pdf-lib",
-          dpi: 300,
+          dpi: manualDpi,
           evidencePdf: pdfPointer,
           views: cropViews,
         });
@@ -2590,11 +2628,15 @@ function upgradeEntryToV3(
           allowlistId: manualSpec.allowlistId,
           parentKind: manualSpec.parentKind,
           views: manualSpec.views,
+          ...(manualSpec.dpi ? { dpi: manualSpec.dpi } : {}),
           requiredTokens: manualSpec.requiredTokens,
           replacements: manualSpec.replacements,
           figure: manualSpec.figure,
           figureDescription: manualSpec.figureDescription,
           ...(manualSpec.expectedDecision ? { expectedDecision: manualSpec.expectedDecision } : {}),
+          ...(manualSpec.expectedCanonicalSubject
+            ? { expectedCanonicalSubject: manualSpec.expectedCanonicalSubject }
+            : {}),
         });
         const commonBasis = {
           allowlistId: manualSpec.allowlistId,
@@ -2642,15 +2684,32 @@ function upgradeEntryToV3(
           effectiveQuestionHash: correctedQuestionHash,
         };
         const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+        const expectedAccept = manualSpec.expectedDecision === "accept";
         const finalClassification = {
           ...recoveredClassification,
           ...(options.manualInvalidDecision ? {
+            ...(expectedAccept ? {
+              decision: "reject",
+              canonical_subject: null,
+              curriculum_course: null,
+              domain: null,
+              achievement_codes: [],
+              reason_codes: ["OUT_OF_SCOPE"],
+            } : {
+              decision: "accept",
+              canonical_subject: "math_B",
+              curriculum_course: "2015 수학Ⅰ",
+              domain: "지수함수와 로그함수",
+              achievement_codes: ["12수학Ⅰ01-07"],
+              reason_codes: ["IN_SCOPE_LOGARITHMS"],
+            }),
+          } : expectedAccept ? {
             decision: "accept",
-            canonical_subject: "math_B",
-            curriculum_course: "2015 수학Ⅰ",
-            domain: "지수함수와 로그함수",
-            achievement_codes: ["12수학Ⅰ01-07"],
-            reason_codes: ["IN_SCOPE_LOGARITHMS"],
+            canonical_subject: manualSpec.expectedCanonicalSubject,
+            curriculum_course: recoveredClassification.curriculum_course,
+            domain: recoveredClassification.domain,
+            achievement_codes: recoveredClassification.achievement_codes,
+            reason_codes: recoveredClassification.reason_codes,
           } : {
             decision: "reject",
             canonical_subject: null,
@@ -3311,6 +3370,39 @@ function upgradeEntryToV3(
     inputHash: terminalInputHash,
   }];
 
+  const manualAcceptedSolution = manualSpec?.expectedDecision === "accept" ? (() => {
+    const key = `${recoveryTargetPage}:${recoveryTargetNumber}`;
+    const relativePath = "solution-chunks/v3-0000.json";
+    const absolutePath = join(stateDir, relativePath);
+    const checkpoint = JSON.parse(readFileSync(absolutePath, "utf8"));
+    const solution = checkpoint.items[recoveryTargetNumber - 1];
+    const baseSolutionCheckpoint = { path: relativePath, sha256: hash(readFileSync(absolutePath)) };
+    const input = {
+      key,
+      printedNumber: String(recoveryTargetNumber),
+      qtype: "mcq",
+      allowDerivedMarkerAnswer: false,
+      sourcePage: solution.page,
+      rawAnswer: solution.answer,
+      explanation: solution.explanation,
+      complete: true,
+      baseSolutionCheckpoint,
+      baseSolutionItemHash: canonicalEvidenceHash(solution),
+      baseContextFrom: checkpoint.from,
+      baseContextTo: checkpoint.to,
+      baseOwnedFrom: checkpoint.ownedFrom,
+      baseOwnedTo: checkpoint.ownedTo,
+    };
+    const decision = {
+      key,
+      sourcePage: solution.page,
+      answerStatus: "exact",
+      explanationStatus: "exact",
+      evidence: "the explicit answer and complete explanation match the official solution pixels",
+    };
+    return { key, solution, input, decision };
+  })() : null;
+
   const legacyAuditName = readdirSync(join(stateDir, "answer-audit"))
     .find((name) => name.startsWith("v2-"))!;
   const legacyAudit = JSON.parse(readFileSync(join(stateDir, "answer-audit", legacyAuditName), "utf8"));
@@ -3328,7 +3420,12 @@ function upgradeEntryToV3(
       child.effectiveProblemCorpusHash = effectiveCorpusHash;
       child.entryId = entry.id;
       child.sourceHash = downloads.solution.sha256;
-      if (officialSolutionContextTo !== undefined) {
+      if (manualAcceptedSolution !== null) {
+        child.inputs = [manualAcceptedSolution.input];
+        child.items = [manualAcceptedSolution.decision];
+        child.inputHash = canonicalEvidenceHash(child.inputs);
+        fidelityInputByKey.set(manualAcceptedSolution.key, manualAcceptedSolution.input);
+      } else if (officialSolutionContextTo !== undefined) {
         const baseSolutionPath = join(stateDir, "solution-chunks", "v3-0000.json");
         const baseSolutionPointer = {
           path: "solution-chunks/v3-0000.json",
@@ -3374,6 +3471,7 @@ function upgradeEntryToV3(
       const index = /^solution-fidelity\/v1-(\d{4})-/u.exec(String(pointer.path))![1];
       const relativePath = `solution-fidelity/v1-${index}-${effectiveCorpusHash}-${child.inputHash}.json`;
       const sha256 = writeEvidence(join(stateDir, relativePath), child);
+      if (manualAcceptedSolution !== null && childPath !== join(stateDir, relativePath)) rmSync(childPath);
       const current = {
         ...pointer,
         path: relativePath,
@@ -3390,7 +3488,8 @@ function upgradeEntryToV3(
       return current;
     },
   );
-  const solutionFidelityItems = legacyAudit.solutionFidelityItems.map((item: Record<string, unknown>) => {
+  const solutionFidelityItems = manualAcceptedSolution === null
+    ? legacyAudit.solutionFidelityItems.map((item: Record<string, unknown>) => {
     const input = fidelityInputByKey.get(String(item.key));
     return {
       ...item,
@@ -3411,7 +3510,27 @@ function upgradeEntryToV3(
       return { path: pointer.path, sha256: pointer.sha256 };
       })(),
     };
-  });
+    })
+    : [{
+      key: manualAcceptedSolution.key,
+      printedNumber: String(recoveryTargetNumber),
+      qtype: "mcq",
+      basePage: manualAcceptedSolution.solution.page,
+      effectivePage: manualAcceptedSolution.solution.page,
+      answerStatus: manualAcceptedSolution.decision.answerStatus,
+      explanationStatus: manualAcceptedSolution.decision.explanationStatus,
+      evidence: manualAcceptedSolution.decision.evidence,
+      fidelityArtifact: {
+        path: solutionFidelityCheckpoints[0].path,
+        sha256: solutionFidelityCheckpoints[0].sha256,
+      },
+      baseSolutionItemHash: manualAcceptedSolution.input.baseSolutionItemHash,
+      effectiveSolutionItemHash: manualAcceptedSolution.input.baseSolutionItemHash,
+      baseRawAnswerHash: hash(manualAcceptedSolution.solution.answer),
+      effectiveRawAnswerHash: hash(manualAcceptedSolution.solution.answer),
+      baseExplanationHash: hash(manualAcceptedSolution.solution.explanation),
+      effectiveExplanationHash: hash(manualAcceptedSolution.solution.explanation),
+    }];
   const currentSolutionItems = readdirSync(join(stateDir, "solution-chunks"))
     .filter((name) => /^v3-\d{4}\.json$/u.test(name))
     .sort()
@@ -3452,6 +3571,23 @@ function upgradeEntryToV3(
       effectiveSolutionCorpusHash,
     };
   })();
+  const acceptedSolutionKeys = solutionFidelityItems.map((item: { key: string }) => item.key)
+    .sort((left: string, right: string) => compareCorpusQuestionKeys(left, right));
+  const acceptedMcqKeys = manualAcceptedSolution === null
+    ? legacyAudit.acceptedMcqKeys
+    : [manualAcceptedSolution.key];
+  const auditItems = manualAcceptedSolution === null
+    ? legacyAudit.items
+    : [{
+      key: manualAcceptedSolution.key,
+      printedNumber: String(recoveryTargetNumber),
+      sourcePage: recoveryTargetPage,
+      officialRawAnswerHash: hash(manualAcceptedSolution.solution.answer),
+      storedAnswerHash: hash(manualAcceptedSolution.solution.answer),
+      mode: "choice-content",
+      choiceIndex: 3,
+      semantic: null,
+    }];
   const auditBasis = {
     entryId: entry.id,
     problemHash: downloads.problem.sha256,
@@ -3473,10 +3609,10 @@ function upgradeEntryToV3(
     rejectedQuestionCount: legacyAudit.rejectedQuestionCount,
     reviewQuestionCount: 0,
     targetQuestionCounts: legacyAudit.targetQuestionCounts,
-    acceptedSolutionKeys: legacyAudit.acceptedSolutionKeys,
+    acceptedSolutionKeys,
     solutionRepairKeys: [],
-    derivedAnswerKeys: legacyAudit.derivedAnswerKeys,
-    acceptedMcqKeys: legacyAudit.acceptedMcqKeys,
+    derivedAnswerKeys: manualAcceptedSolution === null ? legacyAudit.derivedAnswerKeys : [],
+    acceptedMcqKeys,
     effectiveCorpusHash,
     effectiveSolutionCorpusHash,
     solutionFidelityCheckpoints,
@@ -3486,7 +3622,7 @@ function upgradeEntryToV3(
     problemTerminalFidelityItems: terminalItems,
     semanticCheckpoint,
     repairs,
-    items: legacyAudit.items,
+    items: auditItems,
   };
   const auditDigest = canonicalEvidenceHash(auditBasis);
   const auditRelativePath = `answer-audit/v${answerAuditVersion}-${auditDigest}.json`;
@@ -3496,6 +3632,54 @@ function upgradeEntryToV3(
     ...auditBasis,
   });
   const receipt = JSON.parse(readFileSync(join(stateDir, "receipt.json"), "utf8"));
+  if (manualAcceptedSolution !== null) {
+    const target = receipt.targetBooks[0] as { problemR2Key: string; solutionR2Key: string };
+    const question = effectiveProblems[recoveryTargetNumber - 1];
+    const db = new Database(files.dbPath);
+    const problemFile = db.prepare("SELECT id, book_id FROM book_files WHERE r2_key = ?")
+      .get(target.problemR2Key) as { id: number; book_id: number };
+    const solutionFile = db.prepare("SELECT id FROM book_files WHERE r2_key = ?")
+      .get(target.solutionR2Key) as { id: number };
+    db.prepare(
+      "UPDATE questions SET qtype = ?, question = ?, choices = ?, answer = ?, explanation = ?, " +
+      "difficulty = ?, book_number = ?, printed_number = ?, src_file_id = ?, src_page = ? WHERE book_id = ?",
+    ).run(
+      question.qtype,
+      question.question,
+      JSON.stringify(question.choices),
+      manualAcceptedSolution.solution.answer,
+      manualAcceptedSolution.solution.explanation,
+      question.difficulty,
+      String(recoveryTargetNumber),
+      String(recoveryTargetNumber),
+      problemFile.id,
+      recoveryTargetPage,
+      problemFile.book_id,
+    );
+    db.prepare(
+      "UPDATE book_items SET file_id = ?, number = ?, answer = ?, content = ?, page = ? " +
+      "WHERE book_id = ? AND category = '문제'",
+    ).run(
+      problemFile.id,
+      String(recoveryTargetNumber),
+      manualAcceptedSolution.solution.answer,
+      question.question,
+      recoveryTargetPage,
+      problemFile.book_id,
+    );
+    db.prepare(
+      "UPDATE book_items SET file_id = ?, number = ?, answer = ?, content = ?, page = ? " +
+      "WHERE book_id = ? AND category = '해설'",
+    ).run(
+      solutionFile.id,
+      String(recoveryTargetNumber),
+      manualAcceptedSolution.solution.answer,
+      manualAcceptedSolution.solution.explanation,
+      manualAcceptedSolution.solution.page,
+      problemFile.book_id,
+    );
+    db.close();
+  }
   const attestationBasis = {
     entryId: entry.id,
     problemHash: downloads.problem.sha256,
@@ -7939,6 +8123,60 @@ describe("exam corpus verifier", () => {
       curriculum_course: null,
       domain: null,
       achievement_codes: [],
+      transcription_status: "exact",
+    });
+
+    const invalid = manualFixture(true);
+    expect(verifyExamCorpus(invalid.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+        && failure.message.includes("manual adjudication is stale or non-exact"))).toBe(true);
+  });
+
+  it.skipIf(
+    !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q9_MANUAL_SPEC.entryId)!.problem)
+      || !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q9_MANUAL_SPEC.entryId)!.classification)
+      || !existsSync(join(Q9_MANUAL_STATE, "problem.pdf")),
+  )("reconstructs the 600dpi Q9 map correction and requires an integrated-social acceptance", () => {
+    const manualFixture = (manualInvalidDecision = false) => {
+      const files = fixture();
+      prepareManualFixture(files, "social", Q9_MANUAL_SPEC, Q9_MANUAL_STATE);
+      const artifacts = upgradeEntryToV3(files, "social", {
+        manualAdjudication: true,
+        manualInvalidDecision,
+        terminalScope: "authorized-reject",
+        answerV5: true,
+      });
+      return { files, artifacts };
+    };
+
+    const { files, artifacts } = manualFixture();
+    const modifiedBefore = statSync(files.dbPath).mtimeMs;
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    expect(statSync(files.dbPath).mtimeMs).toBe(modifiedBefore);
+    const evidence = JSON.parse(readFileSync(artifacts.manualEvidenceArtifact!, "utf8"));
+    expect(evidence).toMatchObject({ dpi: 600, basis: { dpi: 600 } });
+    const corrected = JSON.parse(readFileSync(artifacts.problemManualAdjudicationArtifact!, "utf8")).item;
+    expect(corrected.question).toContain("국가를 지도의 A~E에서 고른 것은?");
+    expect(corrected.question).not.toContain("국가를 지도에서 A~E에서 고른 것은?");
+    expect(corrected.figure_description).toContain("A는 노르웨이");
+    expect(corrected.figure_description).toContain("B는 베트남");
+    expect(corrected.figure_description).toContain("C는 뉴질랜드");
+    expect(corrected.figure_description).toContain("D는 아르헨티나");
+    expect(corrected.figure_description).toContain("E는 베네수엘라");
+    expect(corrected.figure_description).not.toContain("A는 영국");
+    expect(corrected.figure_description).not.toContain("B는 필리핀");
+    expect(corrected.figure_description).not.toContain("파나마");
+    const classification = JSON.parse(readFileSync(
+      artifacts.classificationManualAdjudicationArtifact!,
+      "utf8",
+    )).items[0];
+    expect(classification).toMatchObject({
+      decision: "accept",
+      canonical_subject: "integrated_social",
+      curriculum_course: "통합사회1",
+      domain: "자연환경과 인간",
+      achievement_codes: ["10통사1-03-01"],
       transcription_status: "exact",
     });
 

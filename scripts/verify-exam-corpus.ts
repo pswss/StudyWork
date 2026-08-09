@@ -467,13 +467,15 @@ type ProblemManualReplacement = {
 
 type ProblemManualAdjudicationSpec = ProblemCropAdjudicationSpec & {
   parentKind: "recovery" | "crop";
+  dpi?: number;
   failedQuestionHash: string;
   failedClassificationHash: string;
   failedClassificationEvidenceHash: string;
   replacements: readonly ProblemManualReplacement[];
   figure?: boolean;
   figureDescription?: string;
-  expectedDecision?: "reject";
+  expectedDecision?: "accept" | "reject";
+  expectedCanonicalSubject?: CanonicalSubject;
 };
 
 const PROBLEM_SCOPE_ADJUDICATION_ALLOWLIST: readonly ProblemScopeAdjudicationSpec[] = [{
@@ -768,6 +770,48 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     figure: true,
     figureDescription: Q18_MANUAL_FIGURE_DESCRIPTION,
     expectedDecision: "reject",
+  },
+  {
+    allowlistId: "ebsi-5854871-q9-manual-v1",
+    entryId: "ebsi:5854871",
+    key: "2:9",
+    sourcePage: 2,
+    sourceHash: "c41b1ee2f3897cbde107c4ffcdec493583bacba4d14299c6c3a6a749b29a80d6",
+    parentKind: "recovery",
+    dpi: 600,
+    failedQuestionHash: "3356445be5f6d28b112a307219a83cba0fefc3a8f88c30e01e2d2319498c81c1",
+    failedClassificationHash: "05631d32ad85d81966ba0d935b7b5e98858d9aa5e861d6e50f1eb0d0df7bd149",
+    failedClassificationEvidenceHash: "ebd86a0ffac00b7eb2ca70f0579e27ac4cbd9bf13e409b12c0d8904d0dff4791",
+    views: [
+      { sourcePage: 2, label: "p2 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 2, label: "p2 Q9 stem and dialogue", rect: [0.49, 0.08, 0.95, 0.34] },
+      { sourcePage: 2, label: "p2 Q9 map", rect: [0.49, 0.28, 0.95, 0.57] },
+    ],
+    requiredTokens: [
+      "지도의 A~E에서", "여름 방학에 우리 어디로 여행 갈까?", "우리나라보다 덥지 않은 국가가 좋겠어.",
+      "우리나라와의 시차가 작을수록 적응하기 쉬울 것 같아.", "그럼 ㉠ 이/가 좋겠네.",
+      "A는 노르웨이", "B는 베트남", "C는 뉴질랜드", "D는 아르헨티나", "E는 베네수엘라",
+      "세로 경선 0°와 180°", "적도", "① A", "⑤ E",
+    ],
+    replacements: [
+      {
+        field: "question",
+        from: "국가를 지도에서 A~E에서 고른 것은?",
+        to: "국가를 지도의 A~E에서 고른 것은?",
+        count: 1,
+      },
+      { field: "figure_description", from: "A는 영국", to: "A는 노르웨이", count: 1 },
+      { field: "figure_description", from: "B는 필리핀", to: "B는 베트남", count: 1 },
+      {
+        field: "figure_description",
+        from: "E는 콜롬비아 서쪽의 좁은 지협에 있는 파나마",
+        to: "E는 베네수엘라",
+        count: 1,
+      },
+    ],
+    figure: true,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "integrated_social",
   },
 ] as const;
 
@@ -3253,11 +3297,15 @@ function problemManualCorrectionSpecHash(spec: ProblemManualAdjudicationSpec): s
     allowlistId: spec.allowlistId,
     parentKind: spec.parentKind,
     views: spec.views,
+    ...(spec.dpi ? { dpi: spec.dpi } : {}),
     requiredTokens: spec.requiredTokens,
     replacements: spec.replacements,
     figure: spec.figure,
     figureDescription: spec.figureDescription,
     ...(spec.expectedDecision ? { expectedDecision: spec.expectedDecision } : {}),
+    ...(spec.expectedCanonicalSubject
+      ? { expectedCanonicalSubject: spec.expectedCanonicalSubject }
+      : {}),
   });
 }
 
@@ -3267,9 +3315,15 @@ function matchesProblemManualExpectedDecision(
     "decision" | "canonical_subject" | "curriculum_course" | "domain" | "achievement_codes">,
 ): boolean {
   if (!spec.expectedDecision) return true;
-  return classification.decision === "reject" && classification.canonical_subject === null
-    && classification.curriculum_course === null && classification.domain === null
-    && classification.achievement_codes.length === 0;
+  if (spec.expectedDecision === "reject") {
+    return classification.decision === "reject" && classification.canonical_subject === null
+      && classification.curriculum_course === null && classification.domain === null
+      && classification.achievement_codes.length === 0;
+  }
+  return classification.decision === "accept"
+    && classification.canonical_subject === spec.expectedCanonicalSubject
+    && classification.curriculum_course !== null && classification.domain !== null
+    && classification.achievement_codes.length > 0;
 }
 
 function applyProblemManualCorrection(
@@ -3653,6 +3707,7 @@ function verifyProblemManualAdjudication(
     : object(parentRecovery.adjudication, `${key}.manual parent crop adjudication`);
   const parentRecoveryEvidenceHash = canonicalEvidenceHash(parentRecovery);
   const parentCropAdjudicationHash = parentCrop === null ? undefined : canonicalEvidenceHash(parentCrop);
+  const manualDpi = spec.dpi ?? PROBLEM_CROP_DPI;
   const sourcePages = [...new Set(spec.views.map((view) => view.sourcePage))].sort((left, right) => left - right);
   if (sourcePages.some((page) => page < 1 || page > problemEvidence.pageCount)
     || parentRecovery.manualAdjudication !== undefined || parentRecovery.scopeAdjudication !== undefined
@@ -3703,7 +3758,7 @@ function verifyProblemManualAdjudication(
       sourcePage: spec.sourcePage,
       sourcePages,
       sourceHash: problemEvidence.sha256,
-      dpi: PROBLEM_CROP_DPI,
+      dpi: manualDpi,
       views: spec.views,
       requiredTokens: spec.requiredTokens,
     };
@@ -3766,7 +3821,7 @@ function verifyProblemManualAdjudication(
       basisDigest: evidenceDigest,
       basis: evidenceBasis,
       renderer: "pdftocairo-png+pdf-lib",
-      dpi: PROBLEM_CROP_DPI,
+      dpi: manualDpi,
       evidencePdf: cropEvidencePdf,
       views: cropViews,
     };
