@@ -121,6 +121,65 @@ export const PROBLEM_TERMINAL_FIDELITY_VERSION = 2;
 export const SEMANTIC_CHOICE_CHECK_VERSION = 5;
 export const ANSWER_AUDIT_VERSION = 5;
 export const ANSWER_ATTESTATION_VERSION = 5;
+export const EXISTING_CORPUS_MIGRATION_VERSION = 1;
+
+type ExistingCorpusMigrationSpec = {
+  entryId: string;
+  entryToken: string;
+  oldReceiptSha256: string;
+  receiptCoreSha256: string;
+  beforeProjectionHash: string;
+  afterProjectionHash: string;
+  auditPath: string;
+  auditSha256: string;
+  effectiveCorpusHash: string;
+  effectiveSolutionCorpusHash: string;
+  problemHash: string;
+  solutionHash: string;
+  bookIds: number[];
+  fileIds: number[];
+  questionIds: number[];
+  bookItemIds: number[];
+  newKeys: string[];
+  newQuestions: Array<{
+    key: string;
+    targetSubject: TargetSubject;
+    qtype: QuizItemEx["qtype"];
+    difficulty: QuizItemEx["difficulty"];
+    question: string;
+    answer: string;
+    solutionPage: number;
+  }>;
+};
+
+export const EXISTING_CORPUS_MIGRATION_ALLOWLIST: readonly ExistingCorpusMigrationSpec[] = [{
+  entryId: "ebsi:5695028",
+  entryToken: "bc66d0c1b35ffd8e12edd536",
+  oldReceiptSha256: "5e1fbea9c346a0e89fb21938176c21e00c19527e6369f5251a1f53e6446711a1",
+  receiptCoreSha256: "0b4cad740ed82c70e15deac8568242c6fd89714672820d0526376886e4ca6efe",
+  beforeProjectionHash: "58512b2d03488e009d80064082d7b230fdd1acefeea12401ca2572b670e6c996",
+  afterProjectionHash: "1bedcd46e0c24a5138cd6213708680754caba6b1ae2ffed98cdd167d7a47e6f1",
+  auditPath: "answer-audit/v5-b624ac400f03d3afac4d1f0d1463d40a424a9ec0e86fbc48d6c6021febed2cc6.json",
+  auditSha256: "34fe8f3cd3fe79cc35cea5f33b0aa5edeaba73793130c56d404796eac8adb3fe",
+  effectiveCorpusHash: "b2e4ac74b0c4e60c24926054f19bde5cb3786f7c1e229926eb288f93544c9af0",
+  effectiveSolutionCorpusHash: "6f7a613784c4455377e3af3d72b5326336ff42a214a84dd959da1c3b2f982908",
+  problemHash: "6cf12186b20a757ec3c3b09fa3b27df8a2583cfbeec486b828e4f6ce03aba793",
+  solutionHash: "0d01dd60feabdf068b9cc81f781de4759ee426f5680e2c2fdbff64c2950de3d6",
+  bookIds: [100, 101],
+  fileIds: [148, 149, 150, 151],
+  questionIds: Array.from({ length: 13 }, (_, index) => 3214 + index),
+  bookItemIds: Array.from({ length: 26 }, (_, index) => 6958 + index),
+  newKeys: ["10:26"],
+  newQuestions: [{
+    key: "10:26",
+    targetSubject: "수학 - 수학Ⅱ·미적분Ⅰ",
+    qtype: "short",
+    difficulty: "중",
+    question: "곡선 $y=6x^2-12x$와 $x$축으로 둘러싸인 부분의 넓이를 구하시오. $[4점]$",
+    answer: "8",
+    solutionPage: 8,
+  }],
+}] as const;
 
 const execFileP = promisify(execFile);
 
@@ -10633,6 +10692,1513 @@ export async function commitCorpusEntry(
   }).immediate();
 }
 
+export function buildCorpusReceipt(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  solution: PdfEvidence,
+  classified: ClassifiedQuestion[],
+  imported: ImportedQuestion[]
+) {
+  return {
+    version: 2,
+    status: "committed",
+    entryId: entry.id,
+    examTitle: entry.examTitle,
+    rawTitle: entry.rawTitle,
+    bookTitle: examBookTitle(entry),
+    sourceRecordYear: entry.sourceRecordYear,
+    variant: entry.variant,
+    form: entry.form,
+    sourceSubject: entry.subject,
+    grade: entry.grade,
+    rulesDigest: CLASSIFIER_DIGEST,
+    sourceQuestionCount: classified.length,
+    acceptedQuestionCount: imported.length,
+    rejectedQuestionCount: classified.length - imported.length,
+    reviewQuestionCount: 0,
+    problemHash: problem.sha256,
+    solutionHash: solution.sha256,
+    problemChunking: {
+      pages: PROBLEM_SLICE_PAGES,
+      stride: PROBLEM_SLICE_STRIDE,
+      overlap: PROBLEM_SLICE_PAGES - PROBLEM_SLICE_STRIDE,
+    },
+    targetBooks: [...new Set(imported.map((question) => question.targetSubject))].sort().map((subject) => {
+      const keys = evidenceKeys(entry, subject);
+      return {
+        subject,
+        examTitle: entry.examTitle,
+        bookTitle: examBookTitle(entry),
+        expectedQuestionCount: imported.filter((question) => question.targetSubject === subject).length,
+        problemR2Key: keys.problem,
+        solutionR2Key: keys.solution,
+      };
+    }),
+  };
+}
+
+type MigrationRow = Record<string, unknown> & { id: number };
+type MigrationProjection = {
+  books: MigrationRow[];
+  files: MigrationRow[];
+  questions: MigrationRow[];
+  items: MigrationRow[];
+  guards: {
+    attempts: number;
+    materials: number;
+    bookExtractionChunks: number;
+    materialExtractionChunks: number;
+  };
+  sequences: { questions: number; bookItems: number };
+};
+type OwnedMigrationProjection = Omit<MigrationProjection, "sequences">;
+
+type MigrationOperations = {
+  questionUpdates: Array<{ id: number; before: MigrationRow; after: MigrationRow }>;
+  questionInserts: Array<{ after: MigrationRow }>;
+  itemUpdates: Array<{ id: number; before: MigrationRow; after: MigrationRow }>;
+  itemInserts: Array<{ after: MigrationRow }>;
+};
+
+type ExistingCorpusMigrationPlan = {
+  version: number;
+  basisDigest: string;
+  identity: {
+    entryId: string;
+    entryRaw: unknown;
+    entryRawHash: string;
+    oldReceipt: { path: "receipt.json"; sha256: string; value: unknown };
+    receiptCore: { sha256: string; value: unknown };
+    receiptHistory: { path: string; sha256: string };
+    answerAudit: {
+      path: string;
+      sha256: string;
+      effectiveCorpusHash: string;
+      effectiveSolutionCorpusHash: string;
+    };
+    problemHash: string;
+    solutionHash: string;
+    ownership: {
+      bookIds: number[];
+      fileIds: number[];
+      beforeQuestionIds: number[];
+      afterQuestionIds: number[];
+      beforeBookItemIds: number[];
+      afterBookItemIds: number[];
+    };
+    beforeProjectionHash: string;
+    afterProjectionHash: string;
+    stableAfterProjectionHash: string;
+    beforeSequences: { questions: number; bookItems: number };
+    afterSequences: { questions: number; bookItems: number };
+    beforeProjection: OwnedMigrationProjection;
+    afterProjection: OwnedMigrationProjection;
+    operations: MigrationOperations;
+    backup: { sha256: string; bytes: number };
+  };
+  finalReceipt: { path: "receipt.json"; sha256: string; value: unknown };
+  backup: { path: string; sha256: string; bytes: number };
+};
+type ExistingCorpusMigrationIdentity = ExistingCorpusMigrationPlan["identity"];
+type ExistingCorpusMigrationIdentityDraft = Omit<ExistingCorpusMigrationIdentity, "backup">;
+
+const MIGRATION_QUESTION_MUTABLE_COLUMNS = [
+  "subject_id", "source", "qtype", "difficulty", "question", "choices", "answer", "explanation",
+  "book_id", "book_number", "printed_number", "src_file_id", "src_page", "has_figure",
+  "figure_description", "figure_box",
+] as const;
+const MIGRATION_ITEM_MUTABLE_COLUMNS = [
+  "book_id", "file_id", "category", "number", "answer", "content", "page", "has_figure", "figure_box",
+] as const;
+
+function migrationSpec(entryId: string): ExistingCorpusMigrationSpec | null {
+  const matches = EXISTING_CORPUS_MIGRATION_ALLOWLIST.filter((candidate) => candidate.entryId === entryId);
+  if (matches.length > 1) throw new Error(`${entryId} existing migration pin이 중복입니다`);
+  return matches[0] ?? null;
+}
+
+function sortedNumeric(values: Iterable<number>): number[] {
+  return [...values].sort((left, right) => left - right);
+}
+
+function migrationProjectionHash(value: MigrationProjection): string {
+  return canonicalEvidenceHash(ownedMigrationProjection(value));
+}
+
+function ownedMigrationProjection(value: MigrationProjection): OwnedMigrationProjection {
+  const { sequences: _sequences, ...owned } = value;
+  return owned;
+}
+
+function ownedMigrationProjectionHash(value: OwnedMigrationProjection): string {
+  return canonicalEvidenceHash(value);
+}
+
+export function stableMigrationProjectionHash(value: MigrationProjection | OwnedMigrationProjection): string {
+  return canonicalEvidenceHash({
+    books: value.books,
+    files: value.files.map((row) => ({
+      id: row.id,
+      book_id: row.book_id,
+      name: row.name,
+      r2_key: row.r2_key,
+      mime: row.mime,
+      created_at: row.created_at,
+      content_hash: row.content_hash,
+      page_count: row.page_count,
+    })),
+    questions: value.questions.map((row) => ({
+      id: row.id,
+      created_at: row.created_at,
+      ...Object.fromEntries(MIGRATION_QUESTION_MUTABLE_COLUMNS.map((column) => [column, row[column]])),
+    })),
+    items: value.items,
+  });
+}
+
+function sqliteSequence(db: Database.Database, name: string): number {
+  const row = db.prepare("SELECT seq FROM sqlite_sequence WHERE name = ?").get(name) as { seq?: number } | undefined;
+  return Number(row?.seq ?? 0);
+}
+
+function readMigrationProjection(db: Database.Database, bookIds: number[]): MigrationProjection {
+  if (bookIds.length === 0 || new Set(bookIds).size !== bookIds.length) {
+    throw new Error("migration book ID 집합이 유효하지 않습니다");
+  }
+  const placeholders = bookIds.map(() => "?").join(",");
+  const books = db.prepare(
+    `SELECT b.*, s.name AS subject_name FROM books b JOIN subjects s ON s.id = b.subject_id ` +
+    `WHERE b.id IN (${placeholders}) ORDER BY b.id`
+  ).all(...bookIds) as MigrationRow[];
+  const files = db.prepare(
+    `SELECT * FROM book_files WHERE book_id IN (${placeholders}) ORDER BY id`
+  ).all(...bookIds) as MigrationRow[];
+  const questions = db.prepare(
+    `SELECT * FROM questions WHERE book_id IN (${placeholders}) ORDER BY id`
+  ).all(...bookIds) as MigrationRow[];
+  const items = db.prepare(
+    `SELECT * FROM book_items WHERE book_id IN (${placeholders}) ORDER BY id`
+  ).all(...bookIds) as MigrationRow[];
+  const questionIds = questions.map((row) => row.id);
+  const fileIds = files.map((row) => row.id);
+  const questionPlaceholders = questionIds.length > 0 ? questionIds.map(() => "?").join(",") : "NULL";
+  const filePlaceholders = fileIds.length > 0 ? fileIds.map(() => "?").join(",") : "NULL";
+  const count = (sql: string, values: unknown[]): number => Number(
+    (db.prepare(sql).get(...values) as { count: number }).count
+  );
+  const materials = count(
+    `SELECT COUNT(*) AS count FROM materials WHERE book_id IN (${placeholders})`,
+    bookIds
+  );
+  return {
+    books,
+    files,
+    questions,
+    items,
+    guards: {
+      attempts: count(
+        `SELECT COUNT(*) AS count FROM question_attempts WHERE question_id IN (${questionPlaceholders})`,
+        questionIds
+      ),
+      materials,
+      bookExtractionChunks: count(
+        `SELECT COUNT(*) AS count FROM book_extraction_chunks WHERE file_id IN (${filePlaceholders})`,
+        fileIds
+      ),
+      materialExtractionChunks: materials === 0 ? 0 : count(
+        `SELECT COUNT(*) AS count FROM material_extraction_chunks ` +
+        `WHERE material_id IN (SELECT id FROM materials WHERE book_id IN (${placeholders}))`,
+        bookIds
+      ),
+    },
+    sequences: {
+      questions: sqliteSequence(db, "questions"),
+      bookItems: sqliteSequence(db, "book_items"),
+    },
+  };
+}
+
+function ownedMigrationBookIds(
+  db: Database.Database,
+  entry: CorpusManifestEntry,
+  imported: ImportedQuestion[]
+): number[] {
+  const expectedSubjects = new Set(imported.map((question) => question.targetSubject));
+  const foundSubjects = new Set<TargetSubject>();
+  const ids: number[] = [];
+  for (const subject of TARGET_SUBJECTS) {
+    const subjectRows = db.prepare("SELECT id FROM subjects WHERE name = ? ORDER BY id").all(subject) as Array<{
+      id: number;
+    }>;
+    if (subjectRows.length !== 1) throw new Error(`migration 대상 과목이 유일하지 않습니다: ${subject}`);
+    const id = findBook(db, subjectRows[0].id, examBookTitle(entry), evidenceKeys(entry, subject));
+    if (id !== null) {
+      foundSubjects.add(subject);
+      ids.push(id);
+    }
+  }
+  if (
+    foundSubjects.size !== expectedSubjects.size ||
+    [...foundSubjects].some((subject) => !expectedSubjects.has(subject))
+  ) {
+    throw new Error("migration target book 추가/제거를 허용하지 않습니다");
+  }
+  return sortedNumeric(ids);
+}
+
+function migrationQuestionKey(row: MigrationRow): string {
+  const page = Number(row.src_page);
+  const number = Number(row.printed_number);
+  if (!Number.isInteger(page) || page < 1 || !Number.isInteger(number) || number < 1) {
+    throw new Error(`migration 기존 question ${row.id}의 source locator가 유효하지 않습니다`);
+  }
+  return `${page}:${number}`;
+}
+
+function parsedMigrationChoices(value: unknown, label: string): string[] | null {
+  if (value === null) return null;
+  if (typeof value !== "string") throw new Error(`${label} choices가 문자열 JSON이 아닙니다`);
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed) || !parsed.every((choice) => typeof choice === "string")) {
+    throw new Error(`${label} choices가 문자열 배열이 아닙니다`);
+  }
+  return parsed;
+}
+
+export function assertMigrationAnswerEquivalent(before: MigrationRow, after: ImportedQuestion): void {
+  if (before.qtype !== after.qtype || typeof before.answer !== "string") {
+    throw new Error(`${migrationQuestionKey(before)} migration qtype/answer가 바뀌었습니다`);
+  }
+  const beforeChoices = parsedMigrationChoices(before.choices, `${migrationQuestionKey(before)} old`);
+  if (after.qtype === "mcq") {
+    if (!beforeChoices || !after.choices) throw new Error(`${migrationQuestionKey(before)} 객관식 보기가 없습니다`);
+    const oldQuestion = { ...after, choices: beforeChoices };
+    const oldResolution = resolveOfficialAnswer(oldQuestion, before.answer);
+    const newResolution = resolveOfficialAnswer(after, after.officialAnswer);
+    const oldMatches = beforeChoices.filter((choice) =>
+      resolveOfficialAnswer(oldQuestion, choice).choiceIndex === oldResolution.choiceIndex
+    );
+    const newMatches = after.choices.filter((choice) =>
+      resolveOfficialAnswer(after, choice).choiceIndex === newResolution.choiceIndex
+    );
+    if (
+      oldResolution.choiceIndex === null || newResolution.choiceIndex === null ||
+      oldResolution.choiceIndex !== newResolution.choiceIndex || oldMatches.length !== 1 || newMatches.length !== 1
+    ) throw new Error(`${migrationQuestionKey(before)} 객관식 정답 의미가 바뀌었습니다`);
+    if (
+      normalizedChoiceContent(beforeChoices[oldResolution.choiceIndex]) !==
+      normalizedChoiceContent(after.choices[newResolution.choiceIndex])
+    ) throw new Error(`${migrationQuestionKey(before)} 객관식 정답 보기 내용이 바뀌었습니다`);
+    return;
+  }
+  if (normalizedAnswerText(before.answer) !== normalizedAnswerText(after.officialAnswer)) {
+    throw new Error(`${migrationQuestionKey(before)} 주관식/OX 정답 의미가 바뀌었습니다`);
+  }
+}
+
+type MigrationBookBinding = {
+  book: MigrationRow;
+  problemFile: MigrationRow;
+  solutionFile: MigrationRow;
+};
+
+function migrationBindings(
+  entry: CorpusManifestEntry,
+  projection: MigrationProjection,
+  imported: ImportedQuestion[],
+  problem: PdfEvidence,
+  solution: PdfEvidence
+): Map<TargetSubject, MigrationBookBinding> {
+  const result = new Map<TargetSubject, MigrationBookBinding>();
+  const targetSubjects = [...new Set(imported.map((question) => question.targetSubject))].sort();
+  for (const subject of targetSubjects) {
+    const books = projection.books.filter((book) => book.subject_name === subject);
+    if (books.length !== 1 || books[0].title !== examBookTitle(entry)) {
+      throw new Error(`migration 대상 책이 유일하지 않습니다: ${subject}`);
+    }
+    const keys = evidenceKeys(entry, subject);
+    const files = projection.files.filter((file) => file.book_id === books[0].id);
+    const problemFiles = files.filter((file) => file.r2_key === keys.problem);
+    const solutionFiles = files.filter((file) => file.r2_key === keys.solution);
+    if (
+      files.length !== 2 || problemFiles.length !== 1 || solutionFiles.length !== 1 ||
+      problemFiles[0].status !== "ready" || solutionFiles[0].status !== "ready" ||
+      problemFiles[0].content_hash !== problem.sha256 || solutionFiles[0].content_hash !== solution.sha256 ||
+      problemFiles[0].page_count !== problem.pageCount || solutionFiles[0].page_count !== solution.pageCount
+    ) {
+      throw new Error(`migration 대상 책의 원본 파일 2개가 유일하지 않습니다: ${subject}`);
+    }
+    result.set(subject, { book: books[0], problemFile: problemFiles[0], solutionFile: solutionFiles[0] });
+  }
+  if (result.size !== projection.books.length) throw new Error("migration target book 추가/제거를 허용하지 않습니다");
+  return result;
+}
+
+function questionMigrationFields(question: ImportedQuestion, binding: MigrationBookBinding): Record<string, unknown> {
+  return {
+    subject_id: binding.book.subject_id,
+    source: "uploaded",
+    qtype: question.qtype,
+    difficulty: question.difficulty,
+    question: question.question,
+    choices: question.choices ? JSON.stringify(question.choices) : null,
+    answer: question.officialAnswer,
+    explanation: question.officialExplanation,
+    book_id: binding.book.id,
+    book_number: question.printedNumber,
+    printed_number: question.printedNumber,
+    src_file_id: binding.problemFile.id,
+    src_page: question.page,
+    has_figure: question.figure ? 1 : 0,
+    figure_description: question.figure_description,
+    figure_box: question.box ? question.box.join(",") : null,
+  };
+}
+
+function itemMigrationFields(
+  question: ImportedQuestion,
+  binding: MigrationBookBinding,
+  category: "문제" | "해설"
+): Record<string, unknown> {
+  return category === "문제" ? {
+    book_id: binding.book.id,
+    file_id: binding.problemFile.id,
+    category,
+    number: question.printedNumber,
+    answer: question.officialAnswer,
+    content: question.question,
+    page: question.page,
+    has_figure: question.figure ? 1 : 0,
+    figure_box: question.box ? question.box.join(",") : null,
+  } : {
+    book_id: binding.book.id,
+    file_id: binding.solutionFile.id,
+    category,
+    number: question.printedNumber,
+    answer: question.officialAnswer,
+    content: question.officialExplanation,
+    page: question.solutionPage,
+    has_figure: 0,
+    figure_box: null,
+  };
+}
+
+const MIGRATION_QUESTION_COLUMNS = [
+  "id", "subject_id", "source", "qtype", "difficulty", "question", "choices", "answer", "explanation",
+  "correct_count", "wrong_count", "created_at", "from_wrong_note", "book_id", "book_number", "src_file_id",
+  "src_page", "has_figure", "figure_box", "figure_description", "printed_number", "mock_exam_job_id",
+  "mock_exam_title", "exam_order", "exam_points", "exam_section", "passage_group", "passage",
+] as const;
+const MIGRATION_ITEM_COLUMNS = [
+  "id", "book_id", "file_id", "category", "number", "answer", "content", "page", "created_at",
+  "has_figure", "figure_box",
+] as const;
+
+function assertMigrationRowColumns(
+  row: MigrationRow,
+  expected: readonly string[],
+  label: string
+): void {
+  const actual = Object.keys(row).sort();
+  const wanted = [...expected].sort();
+  if (canonicalEvidenceHash(actual) !== canonicalEvidenceHash(wanted)) {
+    throw new Error(`${label} DB column 집합이 migration v1과 다릅니다`);
+  }
+}
+
+function migrationImportedKey(question: ImportedQuestion): string {
+  const number = numericPrintedLocator(question.number);
+  const printed = numericPrintedLocator(question.printedNumber);
+  if (
+    !Number.isInteger(question.page) || question.page! < 1 || number === null || printed === null || number !== printed
+  ) throw new Error("migration current question locator가 유효하지 않습니다");
+  return `${question.page}:${printed}`;
+}
+
+function assertMigrationQuestionDefaults(row: MigrationRow): void {
+  assertMigrationRowColumns(row, MIGRATION_QUESTION_COLUMNS, `question ${row.id}`);
+  if (
+    row.source !== "uploaded" || row.correct_count !== 0 || row.wrong_count !== 0 || row.from_wrong_note !== 0 ||
+    row.mock_exam_job_id !== null || row.mock_exam_title !== null || row.exam_order !== null ||
+    row.exam_points !== null || row.exam_section !== null || row.passage_group !== null || row.passage !== null ||
+    typeof row.created_at !== "string" || !row.created_at
+  ) throw new Error(`migration question ${row.id}에 사용자 학습/시험 상태가 있습니다`);
+}
+
+function assertMigrationItemDefaults(row: MigrationRow): void {
+  assertMigrationRowColumns(row, MIGRATION_ITEM_COLUMNS, `book_item ${row.id}`);
+  if (typeof row.created_at !== "string" || !row.created_at) {
+    throw new Error(`migration book_item ${row.id} created_at이 유효하지 않습니다`);
+  }
+}
+
+function assertMigrationProjectionAuthority(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  solution: PdfEvidence,
+  projection: MigrationProjection,
+  imported: ImportedQuestion[],
+  spec: ExistingCorpusMigrationSpec | null
+): Map<TargetSubject, MigrationBookBinding> {
+  if (
+    projection.guards.attempts !== 0 || projection.guards.materials !== 0 ||
+    projection.guards.bookExtractionChunks !== 0 || projection.guards.materialExtractionChunks !== 0
+  ) throw new Error("migration 대상에 학습 이력 또는 extraction child가 있습니다");
+  if (
+    new Set(projection.books.map((row) => row.id)).size !== projection.books.length ||
+    new Set(projection.files.map((row) => row.id)).size !== projection.files.length ||
+    new Set(projection.questions.map((row) => row.id)).size !== projection.questions.length ||
+    new Set(projection.items.map((row) => row.id)).size !== projection.items.length
+  ) throw new Error("migration DB projection ID가 중복입니다");
+  for (const row of projection.questions) assertMigrationQuestionDefaults(row);
+  for (const row of projection.items) assertMigrationItemDefaults(row);
+  if (projection.items.length !== projection.questions.length * 2) {
+    throw new Error("migration question마다 book_item이 정확히 2개여야 합니다");
+  }
+  const bindings = migrationBindings(entry, projection, imported, problem, solution);
+  if (spec) {
+    const equalIds = (actual: number[], expected: number[]) =>
+      canonicalEvidenceHash(sortedNumeric(actual)) === canonicalEvidenceHash(sortedNumeric(expected));
+    if (
+      entryToken(entry) !== spec.entryToken || problem.sha256 !== spec.problemHash || solution.sha256 !== spec.solutionHash ||
+      !equalIds(projection.books.map((row) => row.id), spec.bookIds) ||
+      !equalIds(projection.files.map((row) => row.id), spec.fileIds) ||
+      !equalIds(projection.questions.map((row) => row.id), spec.questionIds) ||
+      !equalIds(projection.items.map((row) => row.id), spec.bookItemIds) ||
+      migrationProjectionHash(projection) !== spec.beforeProjectionHash
+    ) throw new Error(`${entry.id} migration 승인 DB projection이 다릅니다`);
+  }
+  return bindings;
+}
+
+function migrationItemsForQuestion(
+  projection: MigrationProjection,
+  question: MigrationRow,
+  binding: MigrationBookBinding
+): { problem: MigrationRow; solution: MigrationRow } {
+  const rows = projection.items.filter((row) =>
+    row.book_id === question.book_id && row.number === question.printed_number
+  );
+  const problems = rows.filter((row) => row.category === "문제");
+  const solutions = rows.filter((row) => row.category === "해설");
+  if (
+    rows.length !== 2 || problems.length !== 1 || solutions.length !== 1 ||
+    question.book_id !== binding.book.id || question.subject_id !== binding.book.subject_id ||
+    question.src_file_id !== binding.problemFile.id || question.book_number !== question.printed_number ||
+    problems[0].file_id !== binding.problemFile.id || solutions[0].file_id !== binding.solutionFile.id ||
+    problems[0].answer !== question.answer || solutions[0].answer !== question.answer ||
+    problems[0].content !== question.question || solutions[0].content !== question.explanation ||
+    problems[0].page !== question.src_page || problems[0].has_figure !== question.has_figure ||
+    problems[0].figure_box !== question.figure_box || solutions[0].has_figure !== 0 ||
+    solutions[0].figure_box !== null
+  ) throw new Error(`${migrationQuestionKey(question)} 기존 question/book_item authority가 다릅니다`);
+  return { problem: problems[0], solution: solutions[0] };
+}
+
+function newMigrationQuestionRow(
+  id: number,
+  question: ImportedQuestion,
+  binding: MigrationBookBinding
+): MigrationRow {
+  return {
+    id,
+    ...questionMigrationFields(question, binding),
+    correct_count: 0,
+    wrong_count: 0,
+    created_at: binding.book.created_at,
+    from_wrong_note: 0,
+    mock_exam_job_id: null,
+    mock_exam_title: null,
+    exam_order: null,
+    exam_points: null,
+    exam_section: null,
+    passage_group: null,
+    passage: null,
+  };
+}
+
+function newMigrationItemRow(
+  id: number,
+  question: ImportedQuestion,
+  binding: MigrationBookBinding,
+  category: "문제" | "해설"
+): MigrationRow {
+  return { id, ...itemMigrationFields(question, binding, category), created_at: binding.book.created_at };
+}
+
+function buildMigrationOperations(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  solution: PdfEvidence,
+  before: MigrationProjection,
+  imported: ImportedQuestion[],
+  spec: ExistingCorpusMigrationSpec | null
+): { operations: MigrationOperations; after: MigrationProjection } {
+  const bindings = assertMigrationProjectionAuthority(entry, problem, solution, before, imported, spec);
+  const currentByKey = new Map<string, ImportedQuestion>();
+  for (const question of imported) {
+    const key = migrationImportedKey(question);
+    if (currentByKey.has(key)) throw new Error(`migration current question key가 중복입니다: ${key}`);
+    currentByKey.set(key, question);
+  }
+  const beforeByKey = new Map<string, MigrationRow>();
+  for (const row of before.questions) {
+    const key = migrationQuestionKey(row);
+    if (beforeByKey.has(key)) throw new Error(`migration old question key가 중복입니다: ${key}`);
+    beforeByKey.set(key, row);
+  }
+  if ([...beforeByKey.keys()].some((key) => !currentByKey.has(key))) {
+    throw new Error("migration accepted key 축소를 허용하지 않습니다");
+  }
+  const newKeys = [...currentByKey.keys()].filter((key) => !beforeByKey.has(key)).sort(compareCorpusQuestionKeys);
+  if (spec && canonicalEvidenceHash(newKeys) !== canonicalEvidenceHash([...spec.newKeys].sort(compareCorpusQuestionKeys))) {
+    throw new Error(`${entry.id} migration 승인 new key가 다릅니다`);
+  }
+  const operations: MigrationOperations = {
+    questionUpdates: [], questionInserts: [], itemUpdates: [], itemInserts: [],
+  };
+  const afterQuestions: MigrationRow[] = [];
+  const afterItems: MigrationRow[] = [];
+  for (const [key, beforeQuestion] of [...beforeByKey].sort(([left], [right]) => compareCorpusQuestionKeys(left, right))) {
+    const question = currentByKey.get(key)!;
+    const binding = bindings.get(question.targetSubject)!;
+    assertMigrationAnswerEquivalent(beforeQuestion, question);
+    const items = migrationItemsForQuestion(before, beforeQuestion, binding);
+    const afterQuestion = { ...beforeQuestion, ...questionMigrationFields(question, binding) };
+    const afterProblem = { ...items.problem, ...itemMigrationFields(question, binding, "문제") };
+    const afterSolution = { ...items.solution, ...itemMigrationFields(question, binding, "해설") };
+    assertMigrationQuestionDefaults(afterQuestion);
+    assertMigrationItemDefaults(afterProblem);
+    assertMigrationItemDefaults(afterSolution);
+    operations.questionUpdates.push({ id: beforeQuestion.id, before: beforeQuestion, after: afterQuestion });
+    operations.itemUpdates.push(
+      { id: items.problem.id, before: items.problem, after: afterProblem },
+      { id: items.solution.id, before: items.solution, after: afterSolution },
+    );
+    afterQuestions.push(afterQuestion);
+    afterItems.push(afterProblem, afterSolution);
+  }
+  let nextQuestionId = Math.max(before.sequences.questions, ...before.questions.map((row) => row.id), 0) + 1;
+  let nextItemId = Math.max(before.sequences.bookItems, ...before.items.map((row) => row.id), 0) + 1;
+  for (const key of newKeys) {
+    const question = currentByKey.get(key)!;
+    const binding = bindings.get(question.targetSubject)!;
+    const questionRow = newMigrationQuestionRow(nextQuestionId++, question, binding);
+    const problemRow = newMigrationItemRow(nextItemId++, question, binding, "문제");
+    const solutionRow = newMigrationItemRow(nextItemId++, question, binding, "해설");
+    assertMigrationQuestionDefaults(questionRow);
+    assertMigrationItemDefaults(problemRow);
+    assertMigrationItemDefaults(solutionRow);
+    operations.questionInserts.push({ after: questionRow });
+    operations.itemInserts.push({ after: problemRow }, { after: solutionRow });
+    afterQuestions.push(questionRow);
+    afterItems.push(problemRow, solutionRow);
+  }
+  if (spec) {
+    const pinnedByKey = new Map(spec.newQuestions.map((question) => [question.key, question]));
+    if (
+      pinnedByKey.size !== spec.newQuestions.length ||
+      canonicalEvidenceHash([...pinnedByKey.keys()].sort(compareCorpusQuestionKeys)) !==
+        canonicalEvidenceHash([...spec.newKeys].sort(compareCorpusQuestionKeys))
+    ) throw new Error(`${entry.id} migration 승인 신규 문항 pin이 다릅니다`);
+    for (const key of newKeys) {
+      const question = currentByKey.get(key)!;
+      const pinned = pinnedByKey.get(key);
+      if (
+        !pinned || question.targetSubject !== pinned.targetSubject || question.qtype !== pinned.qtype ||
+        question.difficulty !== pinned.difficulty || question.question !== pinned.question ||
+        question.officialAnswer !== pinned.answer || question.solutionPage !== pinned.solutionPage
+      ) throw new Error(`${entry.id} migration 승인 신규 문항이 다릅니다`);
+    }
+  }
+  const after: MigrationProjection = {
+    books: before.books,
+    files: before.files,
+    questions: afterQuestions.sort((left, right) => left.id - right.id),
+    items: afterItems.sort((left, right) => left.id - right.id),
+    guards: before.guards,
+    sequences: {
+      questions: Math.max(before.sequences.questions, ...afterQuestions.map((row) => row.id)),
+      bookItems: Math.max(before.sequences.bookItems, ...afterItems.map((row) => row.id)),
+    },
+  };
+  return { operations, after };
+}
+
+function assertMigrationReceipt(
+  value: unknown,
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  solution: PdfEvidence,
+  label: string
+): Record<string, unknown> {
+  const receipt = object(value, label);
+  if (
+    receipt.version !== 2 || receipt.status !== "committed" || receipt.entryId !== entry.id ||
+    receipt.examTitle !== entry.examTitle || receipt.rawTitle !== entry.rawTitle ||
+    receipt.bookTitle !== examBookTitle(entry) || receipt.problemHash !== problem.sha256 ||
+    receipt.solutionHash !== solution.sha256 || receipt.rulesDigest !== CLASSIFIER_DIGEST ||
+    !Number.isInteger(receipt.sourceQuestionCount) || !Number.isInteger(receipt.acceptedQuestionCount) ||
+    !Number.isInteger(receipt.rejectedQuestionCount) || receipt.reviewQuestionCount !== 0 ||
+    Number(receipt.acceptedQuestionCount) + Number(receipt.rejectedQuestionCount) !== Number(receipt.sourceQuestionCount) ||
+    !Array.isArray(receipt.targetBooks)
+  ) throw new Error(`${label} metadata가 current entry와 다릅니다`);
+  return receipt;
+}
+
+function buildExistingCorpusMigrationIdentity(
+  db: Database.Database,
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  solution: PdfEvidence,
+  imported: ImportedQuestion[],
+  oldReceipt: unknown,
+  expectedOldReceiptSha256: string,
+  receiptCore: unknown,
+  receiptHistory: { path: string; sha256: string },
+  answerAudit: AnswerAuditResult
+): ExistingCorpusMigrationIdentityDraft {
+  const spec = migrationSpec(entry.id);
+  if (!spec) throw new Error(`${entry.id} existing migration allowlist가 없습니다`);
+  assertMigrationReceipt(oldReceipt, entry, problem, solution, "old receipt");
+  assertMigrationReceipt(receiptCore, entry, problem, solution, "receipt core");
+  const oldReceiptSha256 = canonicalEvidenceHash(oldReceipt);
+  const receiptCoreSha256 = canonicalEvidenceHash(receiptCore);
+  if (oldReceiptSha256 !== expectedOldReceiptSha256) throw new Error("migration expected old receipt hash가 다릅니다");
+  if (
+    !answerAudit.auditPath || !answerAudit.auditHash || !answerAudit.effectiveCorpusHash ||
+    !answerAudit.effectiveSolutionCorpusHash
+  ) throw new Error("migration current terminal audit이 없습니다");
+  if (spec && (
+    expectedOldReceiptSha256 !== spec.oldReceiptSha256 || receiptCoreSha256 !== spec.receiptCoreSha256 ||
+    answerAudit.auditPath !== spec.auditPath || answerAudit.auditHash !== spec.auditSha256 ||
+    answerAudit.effectiveCorpusHash !== spec.effectiveCorpusHash ||
+    answerAudit.effectiveSolutionCorpusHash !== spec.effectiveSolutionCorpusHash
+  )) throw new Error(`${entry.id} migration 승인 receipt/audit가 다릅니다`);
+
+  const bookIds = ownedMigrationBookIds(db, entry, imported);
+  const before = readMigrationProjection(db, bookIds);
+  const { operations, after } = buildMigrationOperations(entry, problem, solution, before, imported, spec);
+  const beforeProjectionHash = migrationProjectionHash(before);
+  const afterProjectionHash = migrationProjectionHash(after);
+  if (beforeProjectionHash === afterProjectionHash) {
+    throw new Error("migration DB projection 변경이 없습니다");
+  }
+  if (afterProjectionHash !== spec.afterProjectionHash) {
+    throw new Error(
+      `${entry.id} migration 승인 NEW DB projection이 다릅니다: ${afterProjectionHash}`
+    );
+  }
+  return {
+    entryId: entry.id,
+    entryRaw: entry.raw,
+    entryRawHash: canonicalEvidenceHash(entry.raw),
+    oldReceipt: { path: "receipt.json", sha256: oldReceiptSha256, value: oldReceipt },
+    receiptCore: { sha256: receiptCoreSha256, value: receiptCore },
+    receiptHistory,
+    answerAudit: {
+      path: answerAudit.auditPath,
+      sha256: answerAudit.auditHash,
+      effectiveCorpusHash: answerAudit.effectiveCorpusHash,
+      effectiveSolutionCorpusHash: answerAudit.effectiveSolutionCorpusHash,
+    },
+    problemHash: problem.sha256,
+    solutionHash: solution.sha256,
+    ownership: {
+      bookIds,
+      fileIds: sortedNumeric(before.files.map((row) => row.id)),
+      beforeQuestionIds: sortedNumeric(before.questions.map((row) => row.id)),
+      afterQuestionIds: sortedNumeric(after.questions.map((row) => row.id)),
+      beforeBookItemIds: sortedNumeric(before.items.map((row) => row.id)),
+      afterBookItemIds: sortedNumeric(after.items.map((row) => row.id)),
+    },
+    beforeProjectionHash,
+    afterProjectionHash,
+    stableAfterProjectionHash: stableMigrationProjectionHash(after),
+    beforeSequences: before.sequences,
+    afterSequences: after.sequences,
+    beforeProjection: ownedMigrationProjection(before),
+    afterProjection: ownedMigrationProjection(after),
+    operations,
+  };
+}
+
+function buildMigratedCorpusReceipt(
+  receiptCore: unknown,
+  identity: ExistingCorpusMigrationIdentity,
+  basisDigest: string
+): Record<string, unknown> {
+  const core = object(receiptCore, "migration receipt core");
+  if ("migration" in core || identity.receiptCore.sha256 !== canonicalEvidenceHash(core)) {
+    throw new Error("migration receipt core가 유효하지 않습니다");
+  }
+  return {
+    ...core,
+    migration: {
+      version: EXISTING_CORPUS_MIGRATION_VERSION,
+      previousReceipt: identity.receiptHistory,
+      plan: { path: `migration-plans/v1-${basisDigest}.json`, basisDigest },
+      oldProjectionHash: identity.beforeProjectionHash,
+      newProjectionHash: identity.afterProjectionHash,
+      receiptCoreSha256: identity.receiptCore.sha256,
+    },
+  };
+}
+
+function assertMigrationOperationColumns(
+  before: MigrationRow,
+  after: MigrationRow,
+  mutable: readonly string[],
+  label: string
+): void {
+  const allowed = new Set(mutable);
+  for (const key of Object.keys(before)) {
+    if (!allowed.has(key) && canonicalEvidenceHash(before[key]) !== canonicalEvidenceHash(after[key])) {
+      throw new Error(`${label} immutable column이 바뀌었습니다: ${key}`);
+    }
+  }
+}
+
+function assertMigrationKeys(value: unknown, expected: readonly string[], label: string): void {
+  const actual = Object.keys(object(value, label)).sort();
+  if (canonicalEvidenceHash(actual) !== canonicalEvidenceHash([...expected].sort())) {
+    throw new Error(`${label} key 집합이 다릅니다`);
+  }
+}
+
+function applyOperationsToOwnedProjection(
+  before: OwnedMigrationProjection,
+  operations: MigrationOperations
+): OwnedMigrationProjection {
+  const questions = new Map(before.questions.map((row) => [row.id, row]));
+  const items = new Map(before.items.map((row) => [row.id, row]));
+  for (const operation of operations.questionUpdates) {
+    const current = questions.get(operation.id);
+    if (!current || canonicalEvidenceHash(current) !== canonicalEvidenceHash(operation.before) ||
+        operation.after.id !== operation.id) {
+      throw new Error(`migration question update ${operation.id} parent가 다릅니다`);
+    }
+    assertMigrationOperationColumns(operation.before, operation.after, MIGRATION_QUESTION_MUTABLE_COLUMNS,
+      `migration question update ${operation.id}`);
+    questions.set(operation.id, operation.after);
+  }
+  for (const operation of operations.questionInserts) {
+    if (questions.has(operation.after.id)) throw new Error(`migration question insert ID가 중복입니다: ${operation.after.id}`);
+    assertMigrationQuestionDefaults(operation.after);
+    questions.set(operation.after.id, operation.after);
+  }
+  for (const operation of operations.itemUpdates) {
+    const current = items.get(operation.id);
+    if (!current || canonicalEvidenceHash(current) !== canonicalEvidenceHash(operation.before) ||
+        operation.after.id !== operation.id) {
+      throw new Error(`migration book_item update ${operation.id} parent가 다릅니다`);
+    }
+    assertMigrationOperationColumns(operation.before, operation.after, MIGRATION_ITEM_MUTABLE_COLUMNS,
+      `migration book_item update ${operation.id}`);
+    items.set(operation.id, operation.after);
+  }
+  for (const operation of operations.itemInserts) {
+    if (items.has(operation.after.id)) throw new Error(`migration book_item insert ID가 중복입니다: ${operation.after.id}`);
+    assertMigrationItemDefaults(operation.after);
+    items.set(operation.after.id, operation.after);
+  }
+  return {
+    books: before.books,
+    files: before.files,
+    questions: [...questions.values()].sort((left, right) => left.id - right.id),
+    items: [...items.values()].sort((left, right) => left.id - right.id),
+    guards: before.guards,
+  };
+}
+
+function assertExistingCorpusMigrationPlan(value: unknown): ExistingCorpusMigrationPlan {
+  const plan = object(value, "migration plan") as ExistingCorpusMigrationPlan;
+  const identity = plan.identity;
+  assertMigrationKeys(plan, ["version", "basisDigest", "identity", "finalReceipt", "backup"], "migration plan");
+  assertMigrationKeys(identity, [
+    "entryId", "entryRaw", "entryRawHash", "oldReceipt", "receiptCore", "receiptHistory", "answerAudit",
+    "problemHash", "solutionHash", "ownership", "beforeProjectionHash", "afterProjectionHash",
+    "stableAfterProjectionHash", "beforeSequences", "afterSequences", "beforeProjection", "afterProjection",
+    "operations", "backup",
+  ], "migration identity");
+  assertMigrationKeys(identity.oldReceipt, ["path", "sha256", "value"], "migration old receipt pointer");
+  assertMigrationKeys(identity.receiptCore, ["sha256", "value"], "migration receipt core pointer");
+  assertMigrationKeys(identity.receiptHistory, ["path", "sha256"], "migration history pointer");
+  assertMigrationKeys(identity.answerAudit,
+    ["path", "sha256", "effectiveCorpusHash", "effectiveSolutionCorpusHash"], "migration audit pointer");
+  assertMigrationKeys(identity.ownership, [
+    "bookIds", "fileIds", "beforeQuestionIds", "afterQuestionIds", "beforeBookItemIds", "afterBookItemIds",
+  ], "migration ownership");
+  assertMigrationKeys(identity.beforeSequences, ["questions", "bookItems"], "migration before sequences");
+  assertMigrationKeys(identity.afterSequences, ["questions", "bookItems"], "migration after sequences");
+  assertMigrationKeys(identity.operations,
+    ["questionUpdates", "questionInserts", "itemUpdates", "itemInserts"], "migration operations");
+  assertMigrationKeys(identity.beforeProjection,
+    ["books", "files", "questions", "items", "guards"], "migration before projection");
+  assertMigrationKeys(identity.afterProjection,
+    ["books", "files", "questions", "items", "guards"], "migration after projection");
+  assertMigrationKeys(identity.beforeProjection.guards,
+    ["attempts", "materials", "bookExtractionChunks", "materialExtractionChunks"], "migration before guards");
+  assertMigrationKeys(identity.afterProjection.guards,
+    ["attempts", "materials", "bookExtractionChunks", "materialExtractionChunks"], "migration after guards");
+  for (const operation of [...identity.operations.questionUpdates, ...identity.operations.itemUpdates]) {
+    assertMigrationKeys(operation, ["id", "before", "after"], "migration update operation");
+  }
+  for (const operation of [...identity.operations.questionInserts, ...identity.operations.itemInserts]) {
+    assertMigrationKeys(operation, ["after"], "migration insert operation");
+  }
+  assertMigrationKeys(identity.backup, ["sha256", "bytes"], "migration identity backup");
+  assertMigrationKeys(plan.finalReceipt, ["path", "sha256", "value"], "migration final receipt");
+  assertMigrationKeys(plan.backup, ["path", "sha256", "bytes"], "migration backup pointer");
+  const finalReceiptValue = object(plan.finalReceipt.value, "migration final receipt value");
+  const migration = object(finalReceiptValue.migration, "migration receipt envelope");
+  assertMigrationKeys(migration, [
+    "version", "previousReceipt", "plan", "oldProjectionHash", "newProjectionHash", "receiptCoreSha256",
+  ], "migration receipt envelope");
+  assertMigrationKeys(migration.previousReceipt, ["path", "sha256"], "migration receipt previous pointer");
+  assertMigrationKeys(migration.plan, ["path", "basisDigest"], "migration receipt plan pointer");
+  if (
+    plan.version !== EXISTING_CORPUS_MIGRATION_VERSION || !identity || !plan.finalReceipt || !plan.backup ||
+    !/^[a-f0-9]{64}$/u.test(plan.basisDigest) || canonicalEvidenceHash(identity) !== plan.basisDigest ||
+    identity.entryId !== object(identity.oldReceipt.value, "migration old receipt").entryId ||
+    identity.entryId !== object(identity.receiptCore.value, "migration receipt core").entryId ||
+    identity.entryRawHash !== canonicalEvidenceHash(identity.entryRaw) ||
+    identity.oldReceipt.path !== "receipt.json" ||
+    identity.oldReceipt.sha256 !== canonicalEvidenceHash(identity.oldReceipt.value) ||
+    identity.receiptCore.sha256 !== canonicalEvidenceHash(identity.receiptCore.value) ||
+    identity.receiptHistory.path !== `receipt-history/v1-${identity.oldReceipt.sha256}.json` ||
+    !/^[a-f0-9]{64}$/u.test(identity.receiptHistory.sha256) ||
+    identity.beforeProjectionHash !== ownedMigrationProjectionHash(identity.beforeProjection) ||
+    identity.afterProjectionHash !== ownedMigrationProjectionHash(identity.afterProjection) ||
+    identity.stableAfterProjectionHash !== stableMigrationProjectionHash(identity.afterProjection) ||
+    !Number.isSafeInteger(identity.beforeSequences.questions) || !Number.isSafeInteger(identity.beforeSequences.bookItems) ||
+    !Number.isSafeInteger(identity.afterSequences.questions) || !Number.isSafeInteger(identity.afterSequences.bookItems) ||
+    identity.afterSequences.questions < identity.beforeSequences.questions ||
+    identity.afterSequences.bookItems < identity.beforeSequences.bookItems ||
+    identity.backup.sha256 !== plan.backup.sha256 || identity.backup.bytes !== plan.backup.bytes ||
+    plan.finalReceipt.path !== "receipt.json" ||
+    plan.finalReceipt.sha256 !== canonicalEvidenceHash(plan.finalReceipt.value) ||
+    canonicalEvidenceHash(plan.finalReceipt.value) !==
+      canonicalEvidenceHash(buildMigratedCorpusReceipt(identity.receiptCore.value, identity, plan.basisDigest))
+  ) throw new Error("migration plan basis가 유효하지 않습니다");
+  const reconstructed = applyOperationsToOwnedProjection(identity.beforeProjection, identity.operations);
+  if (
+    ownedMigrationProjectionHash(reconstructed) !== identity.afterProjectionHash ||
+    canonicalEvidenceHash(reconstructed) !== canonicalEvidenceHash(identity.afterProjection) ||
+    canonicalEvidenceHash(identity.beforeProjection.books) !== canonicalEvidenceHash(identity.afterProjection.books) ||
+    canonicalEvidenceHash(identity.beforeProjection.files) !== canonicalEvidenceHash(identity.afterProjection.files) ||
+    canonicalEvidenceHash(identity.beforeProjection.guards) !== canonicalEvidenceHash(identity.afterProjection.guards) ||
+    canonicalEvidenceHash(sortedNumeric(identity.operations.questionUpdates.map((row) => row.id))) !==
+      canonicalEvidenceHash(sortedNumeric(identity.beforeProjection.questions.map((row) => row.id))) ||
+    canonicalEvidenceHash(sortedNumeric(identity.operations.itemUpdates.map((row) => row.id))) !==
+      canonicalEvidenceHash(sortedNumeric(identity.beforeProjection.items.map((row) => row.id))) ||
+    canonicalEvidenceHash(sortedNumeric(identity.operations.questionInserts.map((row) => row.after.id))) !==
+      canonicalEvidenceHash(sortedNumeric(identity.ownership.afterQuestionIds.filter((id) =>
+        !identity.ownership.beforeQuestionIds.includes(id)
+      ))) ||
+    canonicalEvidenceHash(sortedNumeric(identity.operations.itemInserts.map((row) => row.after.id))) !==
+      canonicalEvidenceHash(sortedNumeric(identity.ownership.afterBookItemIds.filter((id) =>
+        !identity.ownership.beforeBookItemIds.includes(id)
+      ))) ||
+    canonicalEvidenceHash(sortedNumeric(identity.beforeProjection.questions.map((row) => row.id))) !==
+      canonicalEvidenceHash(identity.ownership.beforeQuestionIds) ||
+    canonicalEvidenceHash(sortedNumeric(identity.afterProjection.questions.map((row) => row.id))) !==
+      canonicalEvidenceHash(identity.ownership.afterQuestionIds) ||
+    canonicalEvidenceHash(sortedNumeric(identity.beforeProjection.items.map((row) => row.id))) !==
+      canonicalEvidenceHash(identity.ownership.beforeBookItemIds) ||
+    canonicalEvidenceHash(sortedNumeric(identity.afterProjection.items.map((row) => row.id))) !==
+      canonicalEvidenceHash(identity.ownership.afterBookItemIds) ||
+    canonicalEvidenceHash(sortedNumeric(identity.beforeProjection.books.map((row) => row.id))) !==
+      canonicalEvidenceHash(identity.ownership.bookIds) ||
+    canonicalEvidenceHash(sortedNumeric(identity.beforeProjection.files.map((row) => row.id))) !==
+      canonicalEvidenceHash(identity.ownership.fileIds)
+  ) throw new Error("migration plan projection/operation binding이 다릅니다");
+  for (const row of [...identity.beforeProjection.questions, ...identity.afterProjection.questions]) {
+    assertMigrationQuestionDefaults(row);
+  }
+  for (const row of [...identity.beforeProjection.items, ...identity.afterProjection.items]) {
+    assertMigrationItemDefaults(row);
+  }
+  const spec = migrationSpec(identity.entryId);
+  if (!spec) throw new Error(`${identity.entryId} existing migration allowlist가 없습니다`);
+  const sameIds = (actual: number[], expected: number[]) =>
+    canonicalEvidenceHash(sortedNumeric(actual)) === canonicalEvidenceHash(sortedNumeric(expected));
+  const beforeQuestionIds = new Set(identity.beforeProjection.questions.map((row) => row.id));
+  const addedQuestions = identity.afterProjection.questions.filter((row) => !beforeQuestionIds.has(row.id));
+  const addedKeys = addedQuestions.map(migrationQuestionKey).sort(compareCorpusQuestionKeys);
+  const beforeItemIds = new Set(identity.beforeProjection.items.map((item) => item.id));
+  const addedItems = identity.afterProjection.items.filter((row) =>
+    !beforeItemIds.has(row.id)
+  );
+  const pinnedNew = new Map(spec.newQuestions.map((question) => [question.key, question]));
+  if (
+    entryToken({ id: identity.entryId } as CorpusManifestEntry) !== spec.entryToken ||
+    identity.oldReceipt.sha256 !== spec.oldReceiptSha256 ||
+    identity.receiptCore.sha256 !== spec.receiptCoreSha256 ||
+    identity.answerAudit.path !== spec.auditPath || identity.answerAudit.sha256 !== spec.auditSha256 ||
+    identity.answerAudit.effectiveCorpusHash !== spec.effectiveCorpusHash ||
+    identity.answerAudit.effectiveSolutionCorpusHash !== spec.effectiveSolutionCorpusHash ||
+    identity.problemHash !== spec.problemHash || identity.solutionHash !== spec.solutionHash ||
+    identity.beforeProjectionHash !== spec.beforeProjectionHash ||
+    identity.afterProjectionHash !== spec.afterProjectionHash ||
+    !sameIds(identity.ownership.bookIds, spec.bookIds) ||
+    !sameIds(identity.ownership.fileIds, spec.fileIds) ||
+    !sameIds(identity.ownership.beforeQuestionIds, spec.questionIds) ||
+    !sameIds(identity.ownership.beforeBookItemIds, spec.bookItemIds) ||
+    canonicalEvidenceHash(addedKeys) !== canonicalEvidenceHash([...spec.newKeys].sort(compareCorpusQuestionKeys)) ||
+    pinnedNew.size !== spec.newQuestions.length
+  ) throw new Error("migration plan이 exact allowlist authority와 다릅니다");
+  for (const row of addedQuestions) {
+    const key = migrationQuestionKey(row);
+    const pinned = pinnedNew.get(key);
+    const book = identity.afterProjection.books.find((candidate) => candidate.id === row.book_id);
+    const solutionItems = addedItems.filter((item) =>
+      item.book_id === row.book_id && item.number === row.printed_number && item.category === "해설"
+    );
+    if (
+      !pinned || !book || solutionItems.length !== 1 || book.subject_name !== pinned.targetSubject ||
+      row.qtype !== pinned.qtype || row.difficulty !== pinned.difficulty || row.question !== pinned.question ||
+      row.answer !== pinned.answer || solutionItems[0].page !== pinned.solutionPage
+    ) throw new Error(`${key} migration plan 신규 문항이 allowlist와 다릅니다`);
+  }
+  if (
+    typeof plan.backup.path !== "string" ||
+    plan.backup.path !== `backups/exam-corpus-migration-v1-${entryToken({ id: identity.entryId } as CorpusManifestEntry)}-${plan.basisDigest}.db` ||
+    !/^[a-f0-9]{64}$/u.test(plan.backup.sha256) || !Number.isSafeInteger(plan.backup.bytes) || plan.backup.bytes < 1
+  ) throw new Error("migration plan backup pointer가 유효하지 않습니다");
+  return plan;
+}
+
+function migrationCasUpdate(
+  db: Database.Database,
+  table: "questions" | "book_items",
+  mutableColumns: readonly string[],
+  operation: { id: number; before: MigrationRow; after: MigrationRow }
+): void {
+  const columns = Object.keys(operation.before);
+  const sql = `UPDATE ${table} SET ${mutableColumns.map((column) => `${column} = ?`).join(", ")} ` +
+    `WHERE ${columns.map((column) => `${column} IS ?`).join(" AND ")}`;
+  const result = db.prepare(sql).run(
+    ...mutableColumns.map((column) => operation.after[column]),
+    ...columns.map((column) => operation.before[column]),
+  );
+  if (result.changes !== 1) throw new Error(`${table} ${operation.id} migration CAS가 실패했습니다`);
+}
+
+function migrationInsert(db: Database.Database, table: "questions" | "book_items", row: MigrationRow): void {
+  const columns = Object.keys(row);
+  const existing = db.prepare(`SELECT id FROM ${table} WHERE id = ?`).get(row.id);
+  if (existing) throw new Error(`${table} migration insert ID가 이미 사용 중입니다: ${row.id}`);
+  const result = db.prepare(
+    `INSERT INTO ${table} (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`
+  ).run(...columns.map((column) => row[column]));
+  if (result.changes !== 1) throw new Error(`${table} ${row.id} migration insert가 실패했습니다`);
+}
+
+export function applyExistingCorpusMigrationPlan(
+  db: Database.Database,
+  rawPlan: unknown
+): "applied" | "already-applied" {
+  const plan = assertExistingCorpusMigrationPlan(rawPlan);
+  const identity = plan.identity;
+  const current = readMigrationProjection(db, identity.ownership.bookIds);
+  const currentHash = migrationProjectionHash(current);
+  if (currentHash === identity.afterProjectionHash) return "already-applied";
+  if (currentHash !== identity.beforeProjectionHash) {
+    throw new Error("migration DB가 OLD/NEW 어느 projection과도 일치하지 않습니다");
+  }
+  db.transaction(() => {
+    const locked = readMigrationProjection(db, identity.ownership.bookIds);
+    if (migrationProjectionHash(locked) !== identity.beforeProjectionHash) {
+      throw new Error("migration DB projection이 transaction 직전에 바뀌었습니다");
+    }
+    if (
+      sqliteSequence(db, "questions") !== identity.beforeSequences.questions ||
+      sqliteSequence(db, "book_items") !== identity.beforeSequences.bookItems
+    ) throw new Error("migration DB allocator sequence가 transaction 직전에 바뀌었습니다");
+    for (const operation of identity.operations.questionInserts) {
+      if (db.prepare("SELECT 1 FROM questions WHERE id = ?").get(operation.after.id)) {
+        throw new Error(`migration question insert ID가 충돌합니다: ${operation.after.id}`);
+      }
+    }
+    for (const operation of identity.operations.itemInserts) {
+      if (db.prepare("SELECT 1 FROM book_items WHERE id = ?").get(operation.after.id)) {
+        throw new Error(`migration book_item insert ID가 충돌합니다: ${operation.after.id}`);
+      }
+    }
+    for (const operation of identity.operations.questionUpdates) {
+      migrationCasUpdate(db, "questions", MIGRATION_QUESTION_MUTABLE_COLUMNS, operation);
+    }
+    for (const operation of identity.operations.itemUpdates) {
+      migrationCasUpdate(db, "book_items", MIGRATION_ITEM_MUTABLE_COLUMNS, operation);
+    }
+    for (const operation of identity.operations.questionInserts) migrationInsert(db, "questions", operation.after);
+    for (const operation of identity.operations.itemInserts) migrationInsert(db, "book_items", operation.after);
+    if (migrationProjectionHash(readMigrationProjection(db, identity.ownership.bookIds)) !== identity.afterProjectionHash) {
+      throw new Error("migration DB NEW projection 검증에 실패했습니다");
+    }
+    if (
+      sqliteSequence(db, "questions") !== identity.afterSequences.questions ||
+      sqliteSequence(db, "book_items") !== identity.afterSequences.bookItems
+    ) throw new Error("migration DB NEW allocator sequence가 다릅니다");
+  }).immediate();
+  return "applied";
+}
+
+function readCanonicalMigrationJson(path: string, label: string): { value: unknown; sha256: string } {
+  if (!existsSync(path) || lstatSync(path).isSymbolicLink() || !lstatSync(path).isFile()) {
+    throw new Error(`${label}이 regular file이 아닙니다`);
+  }
+  const bytes = readFileSync(path, "utf8");
+  const value: unknown = JSON.parse(bytes);
+  const canonical = canonicalJson(value);
+  if (bytes !== canonical) throw new Error(`${label}이 canonical JSON이 아닙니다`);
+  return { value, sha256: sha256Text(bytes) };
+}
+
+function migrationRelativeFile(root: string, relativePath: string, label: string): string {
+  if (
+    !relativePath || relativePath.includes("\0") || relativePath.startsWith("/") ||
+    relativePath.split("/").includes("..")
+  ) throw new Error(`${label} 상대 경로가 유효하지 않습니다`);
+  if (!existsSync(root) || lstatSync(root).isSymbolicLink() || !lstatSync(root).isDirectory()) {
+    throw new Error(`${label} root가 regular directory가 아닙니다`);
+  }
+  const path = resolve(root, relativePath);
+  const resolvedRoot = realpathSync(root);
+  if (!path.startsWith(`${resolve(root)}/`) || !existsSync(path)) {
+    throw new Error(`${label} 경로가 root 밖이거나 없습니다`);
+  }
+  if (!realpathSync(path).startsWith(`${resolvedRoot}/`)) throw new Error(`${label} realpath가 root 밖입니다`);
+  return path;
+}
+
+function migrationStateDirectory(
+  stateDir: string,
+  name: "receipt-history" | "migration-plans" | "migration-commits",
+  create: boolean
+): string | null {
+  const root = realpathSync(stateDir);
+  const directory = join(stateDir, name);
+  if (!existsSync(directory)) {
+    if (!create) return null;
+    mkdirSync(directory);
+  }
+  if (lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory()) {
+    throw new Error(`${name}가 regular directory가 아닙니다`);
+  }
+  if (!realpathSync(directory).startsWith(`${root}/`)) throw new Error(`${name}가 stateDir 밖입니다`);
+  return directory;
+}
+
+function migrationBackupDirectory(dataDir: string, create: boolean): string {
+  const root = realpathSync(dataDir);
+  const directory = join(dataDir, "backups");
+  if (!existsSync(directory)) {
+    if (!create) throw new Error("migration backups directory가 없습니다");
+    mkdirSync(directory);
+  }
+  if (lstatSync(directory).isSymbolicLink() || !lstatSync(directory).isDirectory()) {
+    throw new Error("migration backups directory가 regular directory가 아닙니다");
+  }
+  const real = realpathSync(directory);
+  if (!real.startsWith(`${root}/`)) throw new Error("migration backups directory가 dataDir 밖입니다");
+  return directory;
+}
+
+function migrationBackupFile(dataDir: string, relativePath: string, createDirectory: boolean): string {
+  if (!/^backups\/[^/]+\.db$/u.test(relativePath)) {
+    throw new Error("migration backup 상대 경로가 유효하지 않습니다");
+  }
+  const directory = migrationBackupDirectory(dataDir, createDirectory);
+  const path = join(directory, relativePath.slice("backups/".length));
+  if (existsSync(path) && !realpathSync(path).startsWith(`${realpathSync(directory)}/`)) {
+    throw new Error("migration backup file이 backups directory 밖입니다");
+  }
+  return path;
+}
+
+async function assertLinkedMigrationEvidence(
+  filesDir: string,
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  solution: PdfEvidence,
+  imported: ImportedQuestion[]
+): Promise<void> {
+  for (const subject of [...new Set(imported.map((question) => question.targetSubject))].sort()) {
+    const keys = evidenceKeys(entry, subject);
+    for (const [label, key, expectedHash] of [
+      ["problem", keys.problem, problem.sha256],
+      ["solution", keys.solution, solution.sha256],
+    ] as const) {
+      const path = migrationRelativeFile(filesDir, key, `migration linked ${label}`);
+      if (
+        !existsSync(path) || lstatSync(path).isSymbolicLink() || !lstatSync(path).isFile() ||
+        await sha256File(path) !== expectedHash
+      ) throw new Error(`migration linked ${label} evidence가 없거나 변조되었습니다: ${subject}`);
+    }
+  }
+}
+
+async function assertMigrationBackup(
+  dataDir: string,
+  plan: ExistingCorpusMigrationPlan
+): Promise<void> {
+  const path = migrationBackupFile(dataDir, plan.backup.path, false);
+  if (
+    !existsSync(path) || lstatSync(path).isSymbolicLink() || !lstatSync(path).isFile() ||
+    statSync(path).size !== plan.backup.bytes || await sha256File(path) !== plan.backup.sha256
+  ) throw new Error("migration backup artifact가 다릅니다");
+  const backup = new Database(path, { readonly: true, fileMustExist: true });
+  try {
+    const quick = backup.pragma("quick_check") as Array<{ quick_check: string }>;
+    if (
+      quick.length !== 1 || quick[0].quick_check !== "ok" ||
+      backup.pragma("journal_mode", { simple: true }) !== "delete"
+    ) throw new Error("quick_check");
+    assertImportSchema(backup);
+    const projection = readMigrationProjection(backup, plan.identity.ownership.bookIds);
+    if (migrationProjectionHash(projection) !== plan.identity.beforeProjectionHash) {
+      throw new Error("projection");
+    }
+  } catch {
+    throw new Error("migration backup DB 검증에 실패했습니다");
+  } finally {
+    backup.close();
+  }
+}
+
+async function prepareMigrationBackupSnapshot(
+  db: Database.Database,
+  dataDir: string,
+  beforeProjectionHash: string,
+  bookIds: number[]
+): Promise<{ tempPath: string; sha256: string; bytes: number }> {
+  const directory = migrationBackupDirectory(dataDir, true);
+  const tempPath = join(directory, `.exam-corpus-migration-v1-${process.pid}-${randomUUID()}.tmp`);
+  await db.backup(tempPath);
+  const backup = new Database(tempPath, { fileMustExist: true });
+  try {
+    if (backup.pragma("journal_mode = DELETE", { simple: true }) !== "delete") {
+      throw new Error("migration backup journal mode를 고정하지 못했습니다");
+    }
+    const quick = backup.pragma("quick_check") as Array<{ quick_check: string }>;
+    if (
+      quick.length !== 1 || quick[0].quick_check !== "ok" ||
+      migrationProjectionHash(readMigrationProjection(backup, bookIds)) !== beforeProjectionHash
+    ) throw new Error("migration backup snapshot이 다릅니다");
+  } finally {
+    backup.close();
+  }
+  return { tempPath, sha256: await sha256File(tempPath), bytes: statSync(tempPath).size };
+}
+
+async function publishMigrationBackup(
+  prepared: { tempPath: string; sha256: string; bytes: number },
+  dataDir: string,
+  entryId: string,
+  basisDigest: string
+): Promise<ExistingCorpusMigrationPlan["backup"]> {
+  const relativePath = `backups/exam-corpus-migration-v1-${sha256Text(entryId).slice(0, 24)}-${basisDigest}.db`;
+  const path = migrationBackupFile(dataDir, relativePath, true);
+  try {
+    if (existsSync(path)) {
+      if (
+        lstatSync(path).isSymbolicLink() || !lstatSync(path).isFile() || statSync(path).size !== prepared.bytes ||
+        await sha256File(path) !== prepared.sha256
+      ) throw new Error("기존 migration backup이 prepared snapshot과 다릅니다");
+    } else {
+      renameSync(prepared.tempPath, path);
+    }
+  } finally {
+    if (existsSync(prepared.tempPath)) unlinkSync(prepared.tempPath);
+    if (existsSync(`${prepared.tempPath}-wal`)) unlinkSync(`${prepared.tempPath}-wal`);
+    if (existsSync(`${prepared.tempPath}-shm`)) unlinkSync(`${prepared.tempPath}-shm`);
+  }
+  return { path: relativePath, sha256: prepared.sha256, bytes: prepared.bytes };
+}
+
+function migrationPlans(stateDir: string): ExistingCorpusMigrationPlan[] {
+  const directory = migrationStateDirectory(stateDir, "migration-plans", false);
+  if (!directory) return [];
+  const plans: ExistingCorpusMigrationPlan[] = [];
+  for (const name of readdirSync(directory).sort()) {
+    if (name.endsWith(".tmp") || name.includes(".tmp.")) {
+      const temp = join(directory, name);
+      if (lstatSync(temp).isSymbolicLink() || !lstatSync(temp).isFile()) {
+        throw new Error(`migration plan temp artifact가 regular file이 아닙니다: ${name}`);
+      }
+      continue;
+    }
+    const match = /^v1-([a-f0-9]{64})\.json$/u.exec(name);
+    if (!match) throw new Error(`알 수 없는 migration plan artifact입니다: ${name}`);
+    const path = join(directory, name);
+    const { value, sha256 } = readCanonicalMigrationJson(path, "migration plan");
+    const plan = assertExistingCorpusMigrationPlan(value);
+    if (plan.basisDigest !== match[1] || sha256 !== canonicalEvidenceHash(plan)) {
+      throw new Error("migration plan filename/hash가 다릅니다");
+    }
+    plans.push(plan);
+  }
+  return plans;
+}
+
+export function selectExistingMigrationPlan<T extends {
+  identity: { entryId: string; oldReceipt: { sha256: string } };
+}>(plans: T[], entryId: string, expectedOldReceiptSha256: string): T | null {
+  if (plans.length > 1) throw new Error("migration plan이 orphan/duplicate입니다");
+  if (plans.length === 0) return null;
+  const [plan] = plans;
+  if (
+    plan.identity.entryId !== entryId ||
+    plan.identity.oldReceipt.sha256 !== expectedOldReceiptSha256
+  ) throw new Error("migration plan이 current entry/old receipt와 충돌합니다");
+  return plan;
+}
+
+function migrationJsonArtifacts(
+  stateDir: string,
+  directoryName: "receipt-history" | "migration-commits",
+  pattern: RegExp
+): Array<{ name: string; value: unknown; sha256: string }> {
+  const directory = migrationStateDirectory(stateDir, directoryName, false);
+  if (!directory) return [];
+  return readdirSync(directory).sort().flatMap((name) => {
+    if (name.endsWith(".tmp") || name.includes(".tmp.")) {
+      const temp = join(directory, name);
+      if (lstatSync(temp).isSymbolicLink() || !lstatSync(temp).isFile()) {
+        throw new Error(`${directoryName} temp artifact가 regular file이 아닙니다: ${name}`);
+      }
+      return [];
+    }
+    if (!pattern.test(name)) throw new Error(`알 수 없는 ${directoryName} artifact입니다: ${name}`);
+    const artifact = readCanonicalMigrationJson(join(directory, name), directoryName);
+    return [{ name, ...artifact }];
+  });
+}
+
+function assertSingleMigrationBackup(dataDir: string, plan: ExistingCorpusMigrationPlan): void {
+  const directory = migrationBackupDirectory(dataDir, false);
+  const prefix = `exam-corpus-migration-v1-${sha256Text(plan.identity.entryId).slice(0, 24)}-`;
+  const candidates = readdirSync(directory).filter((name) => {
+    if (name.startsWith(".") && name.includes(".tmp")) return false;
+    return name.startsWith(prefix);
+  });
+  if (canonicalEvidenceHash(candidates.sort()) !== canonicalEvidenceHash([plan.backup.path.split("/").at(-1)!])) {
+    throw new Error("migration backup artifact가 없거나 orphan/duplicate입니다");
+  }
+}
+
+function assertMigrationPlanInvocation(
+  plan: ExistingCorpusMigrationPlan,
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  solution: PdfEvidence,
+  expectedOldReceiptSha256: string,
+  receiptCore: unknown,
+  answerAudit: AnswerAuditResult
+): void {
+  const spec = migrationSpec(entry.id);
+  if (!spec) throw new Error(`${entry.id} existing migration allowlist가 없습니다`);
+  const identity = plan.identity;
+  if (
+    identity.entryId !== entry.id || identity.entryRawHash !== canonicalEvidenceHash(entry.raw) ||
+    canonicalEvidenceHash(identity.entryRaw) !== canonicalEvidenceHash(entry.raw) ||
+    identity.oldReceipt.sha256 !== expectedOldReceiptSha256 ||
+    identity.receiptCore.sha256 !== canonicalEvidenceHash(receiptCore) ||
+    canonicalEvidenceHash(identity.receiptCore.value) !== canonicalEvidenceHash(receiptCore) ||
+    identity.problemHash !== problem.sha256 || identity.solutionHash !== solution.sha256 ||
+    identity.answerAudit.path !== answerAudit.auditPath || identity.answerAudit.sha256 !== answerAudit.auditHash ||
+    identity.answerAudit.effectiveCorpusHash !== answerAudit.effectiveCorpusHash ||
+    identity.answerAudit.effectiveSolutionCorpusHash !== answerAudit.effectiveSolutionCorpusHash ||
+    identity.beforeProjectionHash !== spec.beforeProjectionHash ||
+    identity.afterProjectionHash !== spec.afterProjectionHash ||
+    identity.oldReceipt.sha256 !== spec.oldReceiptSha256 ||
+    identity.receiptCore.sha256 !== spec.receiptCoreSha256 ||
+    identity.answerAudit.path !== spec.auditPath || identity.answerAudit.sha256 !== spec.auditSha256 ||
+    identity.answerAudit.effectiveCorpusHash !== spec.effectiveCorpusHash ||
+    identity.answerAudit.effectiveSolutionCorpusHash !== spec.effectiveSolutionCorpusHash
+  ) throw new Error("migration plan이 current invocation/allowlist와 다릅니다");
+}
+
+function replaceMigrationReceipt(
+  path: string,
+  oldSha256: string,
+  newSha256: string,
+  newReceipt: unknown
+): void {
+  const current = readCanonicalMigrationJson(path, "migration receipt");
+  if (current.sha256 === newSha256) return;
+  if (current.sha256 !== oldSha256) throw new Error("migration receipt CAS가 실패했습니다");
+  const next = canonicalJson(newReceipt);
+  if (sha256Text(next) !== newSha256) throw new Error("migration NEW receipt hash가 다릅니다");
+  const temp = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temp, next, { encoding: "utf8", flag: "wx" });
+    if (readCanonicalMigrationJson(path, "migration receipt").sha256 !== oldSha256) {
+      throw new Error("migration receipt가 교체 직전에 바뀌었습니다");
+    }
+    renameSync(temp, path);
+  } finally {
+    if (existsSync(temp)) unlinkSync(temp);
+  }
+}
+
+async function migrateExistingCorpusEntry(
+  db: Database.Database,
+  dataDir: string,
+  stateDir: string,
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  solution: PdfEvidence,
+  imported: ImportedQuestion[],
+  receiptCore: unknown,
+  answerAudit: AnswerAuditResult,
+  expectedOldReceiptSha256: string
+): Promise<void> {
+  if (!answerAudit.auditPath || !answerAudit.auditHash) throw new Error("migration current audit pointer가 없습니다");
+  const currentAuditPath = confinedStateFile(stateDir, answerAudit.auditPath, "migration current answer audit");
+  if (await sha256File(currentAuditPath) !== answerAudit.auditHash) {
+    throw new Error("migration current answer audit hash가 다릅니다");
+  }
+  await assertLinkedMigrationEvidence(join(dataDir, "files"), entry, problem, solution, imported);
+  const receiptPath = join(stateDir, "receipt.json");
+  migrationStateDirectory(stateDir, "receipt-history", false);
+  const existingPlans = migrationPlans(stateDir);
+  const existingCommits = migrationJsonArtifacts(
+    stateDir, "migration-commits", /^v1-[a-f0-9]{64}\.json$/u
+  );
+  if (
+    existingCommits.length > 1 ||
+    (existingPlans.length === 0 && existingCommits.length > 0) ||
+    (existingPlans.length === 1 && existingCommits.length === 1 &&
+      existingCommits[0].name !== `v1-${existingPlans[0].basisDigest}.json`)
+  ) throw new Error("migration commit이 orphan/duplicate입니다");
+  let plan = selectExistingMigrationPlan(existingPlans, entry.id, expectedOldReceiptSha256);
+  if (!plan) {
+    const currentReceipt = readCanonicalMigrationJson(receiptPath, "migration old receipt");
+    if (currentReceipt.sha256 !== expectedOldReceiptSha256) {
+      throw new Error("migration 시작 receipt가 --expect-receipt-sha256과 다릅니다");
+    }
+    const historyRelativePath = `receipt-history/v1-${expectedOldReceiptSha256}.json`;
+    const historyValue = {
+      version: EXISTING_CORPUS_MIGRATION_VERSION,
+      entryId: entry.id,
+      receipt: { path: "receipt.json", sha256: currentReceipt.sha256, value: currentReceipt.value },
+    };
+    const historySha256 = canonicalEvidenceHash(historyValue);
+    const identityDraft = buildExistingCorpusMigrationIdentity(
+      db, entry, problem, solution, imported, currentReceipt.value, expectedOldReceiptSha256,
+      receiptCore, { path: historyRelativePath, sha256: historySha256 }, answerAudit
+    );
+    migrationBackupDirectory(dataDir, true);
+    const historyDirectory = migrationStateDirectory(stateDir, "receipt-history", true)!;
+    if (await writeImmutableEvidence(join(historyDirectory, historyRelativePath.split("/").at(-1)!), historyValue) !== historySha256) {
+      throw new Error("migration receipt history hash가 다릅니다");
+    }
+    const preparedBackup = await prepareMigrationBackupSnapshot(
+      db, dataDir, identityDraft.beforeProjectionHash, identityDraft.ownership.bookIds
+    );
+    const identity: ExistingCorpusMigrationIdentity = {
+      ...identityDraft,
+      backup: { sha256: preparedBackup.sha256, bytes: preparedBackup.bytes },
+    };
+    const basisDigest = canonicalEvidenceHash(identity);
+    const finalReceiptValue = buildMigratedCorpusReceipt(receiptCore, identity, basisDigest);
+    const finalReceipt = {
+      path: "receipt.json" as const,
+      sha256: canonicalEvidenceHash(finalReceiptValue),
+      value: finalReceiptValue,
+    };
+    const planDirectory = migrationStateDirectory(stateDir, "migration-plans", true)!;
+    const backup = await publishMigrationBackup(preparedBackup, dataDir, entry.id, basisDigest);
+    plan = { version: EXISTING_CORPUS_MIGRATION_VERSION, basisDigest, identity, finalReceipt, backup };
+    assertExistingCorpusMigrationPlan(plan);
+    await writeImmutableEvidence(join(planDirectory, `v1-${basisDigest}.json`), plan);
+  }
+  assertMigrationPlanInvocation(
+    plan, entry, problem, solution, expectedOldReceiptSha256, receiptCore, answerAudit
+  );
+  assertSingleMigrationBackup(dataDir, plan);
+  await assertMigrationBackup(dataDir, plan);
+  const historyRelativePath = plan.identity.receiptHistory.path;
+  const historyPath = confinedStateFile(stateDir, historyRelativePath, "migration receipt history");
+  const history = readCanonicalMigrationJson(historyPath, "migration receipt history");
+  const historyArtifacts = migrationJsonArtifacts(
+    stateDir, "receipt-history", /^v1-[a-f0-9]{64}\.json$/u
+  );
+  if (
+    historyArtifacts.length !== 1 || historyArtifacts[0].name !== historyRelativePath.split("/").at(-1) ||
+    historyArtifacts[0].sha256 !== plan.identity.receiptHistory.sha256
+  ) throw new Error("migration receipt history가 orphan/duplicate입니다");
+  assertMigrationKeys(history.value, ["version", "entryId", "receipt"], "migration receipt history");
+  assertMigrationKeys(object(history.value, "migration receipt history").receipt,
+    ["path", "sha256", "value"], "migration receipt history pointer");
+  if (canonicalEvidenceHash(history.value) !== history.sha256 || canonicalEvidenceHash(history.value) !== canonicalEvidenceHash({
+    version: EXISTING_CORPUS_MIGRATION_VERSION,
+    entryId: entry.id,
+    receipt: plan.identity.oldReceipt,
+  })) throw new Error("migration receipt history가 다릅니다");
+  const commitDirectory = migrationStateDirectory(stateDir, "migration-commits", true)!;
+
+  const currentProjection = readMigrationProjection(db, plan.identity.ownership.bookIds);
+  const currentProjectionHash = migrationProjectionHash(currentProjection);
+  const currentReceipt = readCanonicalMigrationJson(receiptPath, "migration receipt");
+  if (existingCommits.length === 1 && currentReceipt.sha256 !== plan.finalReceipt.sha256) {
+    throw new Error("migration commit이 있지만 final receipt가 없습니다");
+  }
+  if (currentReceipt.sha256 === plan.finalReceipt.sha256) {
+    if (
+      stableMigrationProjectionHash(currentProjection) !==
+      stableMigrationProjectionHash(plan.identity.afterProjection)
+    ) throw new Error("migration 완료 DB stable projection이 다릅니다");
+  } else if (currentReceipt.sha256 === plan.identity.oldReceipt.sha256) {
+    if (currentProjectionHash === plan.identity.beforeProjectionHash) {
+      applyExistingCorpusMigrationPlan(db, plan);
+    } else if (
+      stableMigrationProjectionHash(currentProjection) !== plan.identity.stableAfterProjectionHash
+    ) {
+      throw new Error("migration DB가 partial/mixed 상태입니다");
+    }
+  } else {
+    if (currentProjectionHash === plan.identity.beforeProjectionHash) {
+      throw new Error("migration DB OLD + receipt NEW/unknown 상태입니다");
+    }
+    throw new Error("migration DB NEW + receipt unknown 상태입니다");
+  }
+  replaceMigrationReceipt(
+    receiptPath, plan.identity.oldReceipt.sha256, plan.finalReceipt.sha256, plan.finalReceipt.value
+  );
+  const attestation = await writeAnswerAttestation(
+    stateDir, entry.id, problem.sha256, solution.sha256, plan.finalReceipt.value, answerAudit
+  );
+  const planRelativePath = `migration-plans/v1-${plan.basisDigest}.json`;
+  const planHash = await sha256File(confinedStateFile(stateDir, planRelativePath, "migration plan"));
+  const commitBasis = {
+    entryId: entry.id,
+    basisDigest: plan.basisDigest,
+    plan: { path: planRelativePath, sha256: planHash },
+    receiptHistory: { path: historyRelativePath, sha256: history.sha256 },
+    backup: plan.backup,
+    dbProjectionHash: plan.identity.afterProjectionHash,
+    stableDbProjectionHash: stableMigrationProjectionHash(plan.identity.afterProjection),
+    receipt: plan.finalReceipt,
+    answerAttestation: attestation,
+  };
+  const commit = {
+    version: EXISTING_CORPUS_MIGRATION_VERSION,
+    commitDigest: canonicalEvidenceHash(commitBasis),
+    ...commitBasis,
+  };
+  const commitRelativePath = `migration-commits/v1-${plan.basisDigest}.json`;
+  await writeImmutableEvidence(join(commitDirectory, commitRelativePath.split("/").at(-1)!), commit);
+  const commits = migrationJsonArtifacts(stateDir, "migration-commits", /^v1-[a-f0-9]{64}\.json$/u);
+  if (
+    commits.length !== 1 || commits[0].name !== commitRelativePath.split("/").at(-1) ||
+    canonicalEvidenceHash(commits[0].value) !== canonicalEvidenceHash(commit)
+  ) throw new Error("migration commit이 orphan/duplicate입니다");
+}
+
 type EntryResult = {
   id: string;
   status: "imported" | "existing" | "filtered" | "review" | "skipped" | "error";
@@ -10689,7 +12255,8 @@ export function assertNoReceiptResultConflict(stateDir: string): void {
 async function processEntry(
   db: Database.Database,
   dataDir: string,
-  entry: CorpusManifestEntry
+  entry: CorpusManifestEntry,
+  migrationExpectedReceiptSha256: string | null = null
 ): Promise<EntryResult> {
   if (!SUPPORTED_SOURCES.has(entry.subject)) return { id: entry.id, status: "skipped", accepted: 0 };
   const stateDir = join(dataDir, "import-exam-corpus", entryToken(entry));
@@ -10863,42 +12430,26 @@ async function processEntry(
     throw new Error("accepted corpus의 terminal answer audit이 없습니다");
   }
   const imported = matchOfficialSolutions(entry, classified, answerAudit.solutions, baseDifficultyByKey);
-  const receipt = {
-    version: 2,
-    status: "committed",
-    entryId: entry.id,
-    examTitle: entry.examTitle,
-    rawTitle: entry.rawTitle,
-    bookTitle: examBookTitle(entry),
-    sourceRecordYear: entry.sourceRecordYear,
-    variant: entry.variant,
-    form: entry.form,
-    sourceSubject: entry.subject,
-    grade: entry.grade,
-    rulesDigest: CLASSIFIER_DIGEST,
-    sourceQuestionCount: classified.length,
-    acceptedQuestionCount: imported.length,
-    rejectedQuestionCount: classified.length - imported.length,
-    reviewQuestionCount: 0,
-    problemHash: problem.sha256,
-    solutionHash: solution.sha256,
-    problemChunking: {
-      pages: PROBLEM_SLICE_PAGES,
-      stride: PROBLEM_SLICE_STRIDE,
-      overlap: PROBLEM_SLICE_PAGES - PROBLEM_SLICE_STRIDE,
-    },
-    targetBooks: [...new Set(imported.map((question) => question.targetSubject))].sort().map((subject) => {
-      const keys = evidenceKeys(entry, subject);
-      return {
-        subject,
-        examTitle: entry.examTitle,
-        bookTitle: examBookTitle(entry),
-        expectedQuestionCount: imported.filter((question) => question.targetSubject === subject).length,
-        problemR2Key: keys.problem,
-        solutionR2Key: keys.solution,
-      };
-    }),
-  };
+  const receipt = buildCorpusReceipt(entry, problem, solution, classified, imported);
+  if (migrationExpectedReceiptSha256) {
+    await migrateExistingCorpusEntry(
+      db, dataDir, stateDir, entry, problem, solution, imported, receipt, answerAudit,
+      migrationExpectedReceiptSha256
+    );
+    return { id: entry.id, status: "existing", accepted: imported.length };
+  }
+  if (existsSync(receiptPath)) {
+    const existingReceipt = readCanonicalMigrationJson(receiptPath, "existing corpus receipt");
+    if ("migration" in object(existingReceipt.value, "existing corpus receipt")) {
+      const plans = migrationPlans(stateDir).filter((plan) => plan.finalReceipt.sha256 === existingReceipt.sha256);
+      if (plans.length !== 1) throw new Error("migration receipt의 plan이 유일하지 않습니다");
+      await migrateExistingCorpusEntry(
+        db, dataDir, stateDir, entry, problem, solution, imported, receipt, answerAudit,
+        plans[0].identity.oldReceipt.sha256
+      );
+      return { id: entry.id, status: "existing", accepted: imported.length };
+    }
+  }
   if (existsSync(receiptPath)) writeImmutableJson(receiptPath, receipt);
   const commit = await commitCorpusEntry(db, join(dataDir, "files"), entry, problem, solution, imported, existsSync(receiptPath));
   writeImmutableJson(receiptPath, receipt);
@@ -10958,18 +12509,29 @@ function acquireRunLock(stateRoot: string): () => void {
 }
 
 function usage(): string {
-  return "npx tsx scripts/import-exam-corpus.ts --manifest data/ebsi-exam-manifest.json [--data-dir ./data] [--commit]";
+  return "npx tsx scripts/import-exam-corpus.ts --manifest data/ebsi-exam-manifest.json [--data-dir ./data] " +
+    "[--commit [--migrate-existing <entryId> --expect-receipt-sha256 <64hex>]]";
 }
 
-function cliOptions(argv: string[]): { manifest: string; dataDir: string; commit: boolean } {
+export function cliOptions(argv: string[]): {
+  manifest: string;
+  dataDir: string;
+  commit: boolean;
+  migrateExisting: string | null;
+  expectedReceiptSha256: string | null;
+} {
   let manifest = "";
   let dataDir = process.env.DATA_DIR || "./data";
   let commit = false;
+  let migrateExisting: string | null = null;
+  let expectedReceiptSha256: string | null = null;
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === "--manifest") manifest = argv[++index] ?? "";
     else if (arg === "--data-dir") dataDir = argv[++index] ?? "";
     else if (arg === "--commit") commit = true;
+    else if (arg === "--migrate-existing") migrateExisting = argv[++index] ?? "";
+    else if (arg === "--expect-receipt-sha256") expectedReceiptSha256 = argv[++index] ?? "";
     else if (arg === "--help" || arg === "-h") {
       console.log(usage());
       process.exit(0);
@@ -10977,7 +12539,16 @@ function cliOptions(argv: string[]): { manifest: string; dataDir: string; commit
   }
   if (!manifest) throw new Error(`--manifest가 필요합니다\n${usage()}`);
   if (!dataDir) throw new Error("--data-dir가 비어 있습니다");
-  return { manifest: resolve(manifest), dataDir: resolve(dataDir), commit };
+  if ((migrateExisting === null) !== (expectedReceiptSha256 === null)) {
+    throw new Error("--migrate-existing와 --expect-receipt-sha256를 함께 지정해야 합니다");
+  }
+  if (migrateExisting !== null && (
+    !commit || !migrateExisting || !expectedReceiptSha256 || !/^[a-f0-9]{64}$/u.test(expectedReceiptSha256)
+  )) throw new Error("existing migration은 --commit과 exact entry/receipt SHA가 필요합니다");
+  return {
+    manifest: resolve(manifest), dataDir: resolve(dataDir), commit,
+    migrateExisting, expectedReceiptSha256,
+  };
 }
 
 async function main(): Promise<void> {
@@ -10985,6 +12556,18 @@ async function main(): Promise<void> {
   const options = cliOptions(process.argv.slice(2));
   const manifest = parseCorpusManifest(JSON.parse(readFileSync(options.manifest, "utf8")));
   const supported = manifest.entries.filter((entry) => SUPPORTED_SOURCES.has(entry.subject));
+  const migrationEntry = options.migrateExisting === null
+    ? null
+    : manifest.entries.filter((entry) => entry.id === options.migrateExisting);
+  if (migrationEntry && migrationEntry.length !== 1) {
+    throw new Error(`migration manifest entry가 유일하지 않습니다: ${options.migrateExisting}`);
+  }
+  if (migrationEntry) {
+    const spec = migrationSpec(migrationEntry[0].id);
+    if (!spec || spec.oldReceiptSha256 !== options.expectedReceiptSha256) {
+      throw new Error(`${migrationEntry[0].id} existing migration allowlist/old receipt SHA가 다릅니다`);
+    }
+  }
   console.log(`manifest ${manifest.entries.length}개, 대상 ${supported.length}개, 제외 ${manifest.entries.length - supported.length}개`);
   console.log(
     `AI ${IMPORT_MODEL} / ${IMPORT_REASONING_EFFORT}, 동시 작업 ${IMPORT_CONCURRENCY}개` +
@@ -11006,10 +12589,10 @@ async function main(): Promise<void> {
     db.pragma("foreign_keys = ON");
     db.pragma("busy_timeout = 5000");
     assertImportSchema(db);
-    ensureCanonicalSubjects(db);
-    const results = await mapPool(manifest.entries, IMPORT_CONCURRENCY, async (entry) => {
+    if (!migrationEntry) ensureCanonicalSubjects(db);
+    const runEntry = async (entry: CorpusManifestEntry): Promise<EntryResult> => {
       try {
-        const result = await processEntry(db, options.dataDir, entry);
+        const result = await processEntry(db, options.dataDir, entry, options.expectedReceiptSha256);
         console.log(`${result.status.padEnd(8)} ${entry.id} ${result.accepted}`);
         return result;
       } catch (error) {
@@ -11017,7 +12600,10 @@ async function main(): Promise<void> {
         console.error(`error    ${entry.id} ${message}`);
         return { id: entry.id, status: "error", accepted: 0, message } satisfies EntryResult;
       }
-    });
+    };
+    const results = migrationEntry
+      ? [await runEntry(migrationEntry[0])]
+      : await mapPool(manifest.entries, IMPORT_CONCURRENCY, runEntry);
     const failed = results.filter((result) => result.status === "error" || result.status === "review");
     const accepted = results.reduce((sum, result) => sum + result.accepted, 0);
     console.log(`완료: ${accepted}문항, 보류/오류 ${failed.length}시험`);
