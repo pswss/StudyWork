@@ -98,6 +98,7 @@ export const CLASSIFICATION_TERMINAL_RECOVERY_VERSION = 2;
 export const PROBLEM_CROP_ADJUDICATION_VERSION = 1;
 export const CLASSIFICATION_CROP_ADJUDICATION_VERSION = 1;
 export const PROBLEM_SCOPE_ADJUDICATION_VERSION = 1;
+export const PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION = 1;
 export const PROBLEM_MANUAL_ADJUDICATION_VERSION = 1;
 export const CLASSIFICATION_MANUAL_ADJUDICATION_VERSION = 1;
 export const SOLUTION_FIDELITY_VERSION = 1;
@@ -566,6 +567,7 @@ export type ProblemRepairEvidence = {
   baseSolutionItemHash: string;
   officialRawAnswerHash: string;
   revision?: ProblemRevisionEvidence;
+  scopeAdjudication?: ProblemScopeAdjudicationEvidence;
 };
 
 export type ProblemRevisionEvidence = {
@@ -688,7 +690,8 @@ export type ProblemScopeAdjudicationEvidence = {
   solutionContextTo: number;
   baseSolutionCheckpoint: EvidencePointer;
   baseSolutionItemHash: string;
-  parentRecoveryEvidenceHash: string;
+  parentRecoveryEvidenceHash?: string;
+  parentRepairEvidenceHash?: string;
   trigger: {
     terminalCheckpoint: ProblemTerminalFidelityCheckpoint;
     terminalItemHash: string;
@@ -1200,6 +1203,10 @@ export const PROBLEM_SCOPE_ADJUDICATION_PROMPT_DIGEST = sha256Text(
   `${PROBLEM_SCOPE_ADJUDICATION_VERSION}\n${PROBLEM_SCOPE_ADJUDICATION_RULES}\n` +
   `${TRANSCRIPTION_GATE_VERSION}\n${TRANSCRIPTION_GATE_RULES}\n${CURRICULUM_RULES}`
 );
+export const PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST = sha256Text(
+  `${PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION}\n${PROBLEM_SCOPE_ADJUDICATION_RULES}\n` +
+  `${TRANSCRIPTION_GATE_VERSION}\n${TRANSCRIPTION_GATE_RULES}\n${CURRICULUM_RULES}`
+);
 
 type ProblemScopeAdjudicationSpec = {
   allowlistId: string;
@@ -1217,6 +1224,15 @@ export const PROBLEM_SCOPE_ADJUDICATION_ALLOWLIST: readonly ProblemScopeAdjudica
   sourcePage: 4,
   sourceHash: "b4381bc3b831323375b2c4a25319d308185c930be5d2e3b07dfc28e7646a5fde",
   solutionSourceHash: "1753328f4b4360a9d81312d0d1610c7a11063bbefeeb1e1fd286d54c601ec5fa",
+}] as const;
+
+export const PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST: readonly ProblemScopeAdjudicationSpec[] = [{
+  allowlistId: "ebsi-5643101-q26-repair-scope-v1",
+  entryId: "ebsi:5643101",
+  key: "10:26",
+  sourcePage: 10,
+  sourceHash: "1e15589c2682dbabcbddea62b48fb218658fb15d000de1daf96be52e7d92386d",
+  solutionSourceHash: "d7e8497ec003f0eca0d1023c5179ecd8d621ca519c513baab6481a3c3e06e5d0",
 }] as const;
 
 type ProblemCropAdjudicationSpec = {
@@ -6048,6 +6064,24 @@ function problemScopeAdjudicationSpec(
   return match ?? null;
 }
 
+function problemRepairScopeAdjudicationSpec(
+  entry: CorpusManifestEntry,
+  key: string,
+  sourcePage: number,
+  sourceHash: string,
+  solutionSourceHash: string
+): ProblemScopeAdjudicationSpec | null {
+  const matches = PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST.filter((spec) =>
+    spec.entryId === entry.id && spec.key === key && spec.sourcePage === sourcePage
+  );
+  if (matches.length > 1) throw new Error(`${entry.id} ${key} repair scope adjudication allowlist가 중복입니다`);
+  const match = matches[0];
+  if (match && (match.sourceHash !== sourceHash || match.solutionSourceHash !== solutionSourceHash)) {
+    throw new Error(`${entry.id} ${key} repair scope adjudication source hash가 allowlist와 다릅니다`);
+  }
+  return match ?? null;
+}
+
 async function withCombinedPdfContexts<T>(
   paths: string[],
   run: (path: string) => Promise<T>
@@ -6078,6 +6112,8 @@ type ProblemScopeAdjudicationInput = {
   terminalItem: ProblemTerminalFidelityItem;
   preAdjudicationEffectiveCorpusHash: string;
 };
+
+type ProblemRepairScopeAdjudicationInput = Omit<ProblemScopeAdjudicationInput, "recovery">;
 
 async function adjudicateProblemScope(
   entry: CorpusManifestEntry,
@@ -6344,6 +6380,278 @@ async function adjudicateProblemScope(
   return { classified: { question: input.current.question, classification }, evidence };
 }
 
+async function adjudicateProblemRepairScope(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  solutionEvidence: PdfEvidence,
+  stateDir: string,
+  input: ProblemRepairScopeAdjudicationInput
+): Promise<{ classified: ClassifiedQuestion; evidence: ProblemScopeAdjudicationEvidence }> {
+  const key = questionKey(input.current.question);
+  const sourcePage = input.current.question.page!;
+  const spec = problemRepairScopeAdjudicationSpec(
+    entry, key, sourcePage, problem.sha256, solutionEvidence.sha256
+  );
+  if (!spec) throw new Error(`${key} repair scope adjudication allowlist에 없습니다`);
+  if (
+    await sha256File(problem.path) !== problem.sha256 ||
+    await sha256File(solutionEvidence.path) !== solutionEvidence.sha256
+  ) throw new Error(`${key} repair scope adjudication 공식 source bytes hash가 다릅니다`);
+  if (
+    input.repair.scopeAdjudication || input.repair.revision || input.repair.key !== key ||
+    input.repair.sourcePage !== sourcePage ||
+    canonicalEvidenceHash(input.current.question) !== input.repair.effectiveQuestionHash ||
+    canonicalEvidenceHash(input.current.classification) !== input.repair.effectiveClassificationHash ||
+    input.current.classification.transcription_status !== "exact" ||
+    input.current.classification.decision !== "accept" || input.terminalItem.key !== key ||
+    input.terminalItem.status !== "exact" || input.terminalItem.scopeDecision !== "reject" ||
+    input.terminalItem.scopeConfidence < 0.9
+  ) throw new Error(`${key} repair scope adjudication 입력이 exact accept/reject conflict가 아닙니다`);
+
+  for (const [label, pointer] of [
+    ["base problem checkpoint", input.repair.baseProblemCheckpoint],
+    ["base classification checkpoint", input.repair.baseClassificationCheckpoint],
+    ["base solution checkpoint", input.repair.baseSolutionCheckpoint],
+    ["problem repair", input.repair.problemArtifact],
+    ["classification repair", input.repair.classificationArtifact],
+  ] as const) {
+    const path = confinedStateFile(stateDir, pointer.path, `repair scope adjudication ${label}`);
+    if (await sha256File(path) !== pointer.sha256) {
+      throw new Error(`${key} repair scope adjudication ${label} hash가 다릅니다`);
+    }
+  }
+
+  const terminalPath = confinedStateFile(
+    stateDir,
+    input.terminalCheckpoint.path,
+    "repair scope adjudication terminal fidelity"
+  );
+  if (await sha256File(terminalPath) !== input.terminalCheckpoint.sha256) {
+    throw new Error(`${key} repair scope adjudication terminal fidelity hash가 다릅니다`);
+  }
+  const terminalCheckpoint = object(
+    JSON.parse(readFileSync(terminalPath, "utf8")),
+    "repair scope adjudication terminal fidelity"
+  );
+  if (canonicalEvidenceHash(input.preAdjudicationClassified) !== input.preAdjudicationEffectiveCorpusHash) {
+    throw new Error(`${key} repair scope adjudication pre-terminal corpus hash가 다릅니다`);
+  }
+  const terminalQuestions = input.preAdjudicationClassified.filter(({ question }) =>
+    question.page! >= input.terminalCheckpoint.ownedFrom && question.page! <= input.terminalCheckpoint.ownedTo
+  );
+  const terminalInputs = terminalQuestions.map(({ question }) => ({
+    key: questionKey(question),
+    printed_number: String(numericPrintedLocator(question.number)),
+    source_page: question.page,
+    qtype: question.qtype,
+    question: question.question,
+    choices: question.choices,
+    figure: question.figure,
+    figure_description: question.figure_description,
+    box: question.box,
+  }));
+  const terminalItems = parseProblemTerminalFidelity(terminalCheckpoint.items, terminalQuestions);
+  const terminalMatches = terminalItems.filter((item) => item.key === key);
+  const terminalItemHash = canonicalEvidenceHash(input.terminalItem);
+  const expectedTerminalPath = `problem-terminal-fidelity/v${PROBLEM_TERMINAL_FIDELITY_VERSION}-0000-` +
+    `${input.preAdjudicationEffectiveCorpusHash}-${input.terminalCheckpoint.inputHash}.json`;
+  if (
+    input.terminalCheckpoint.path !== expectedTerminalPath || terminalMatches.length !== 1 ||
+    problem.pageCount > PROBLEM_SLICE_PAGES || input.terminalCheckpoint.from !== 1 ||
+    input.terminalCheckpoint.to !== problem.pageCount || input.terminalCheckpoint.ownedFrom !== 1 ||
+    input.terminalCheckpoint.ownedTo !== problem.pageCount || input.repair.contextFrom !== 1 ||
+    input.repair.contextTo !== problem.pageCount ||
+    canonicalEvidenceHash(terminalMatches[0]) !== terminalItemHash ||
+    input.terminalCheckpoint.sha256 !== canonicalEvidenceHash(terminalCheckpoint) ||
+    terminalCheckpoint.version !== PROBLEM_TERMINAL_FIDELITY_VERSION || terminalCheckpoint.entryId !== entry.id ||
+    terminalCheckpoint.sourceHash !== problem.sha256 || terminalCheckpoint.from !== input.terminalCheckpoint.from ||
+    terminalCheckpoint.to !== input.terminalCheckpoint.to ||
+    terminalCheckpoint.ownedFrom !== input.terminalCheckpoint.ownedFrom ||
+    terminalCheckpoint.ownedTo !== input.terminalCheckpoint.ownedTo ||
+    terminalCheckpoint.inputHash !== input.terminalCheckpoint.inputHash ||
+    terminalCheckpoint.inputHash !== canonicalEvidenceHash(terminalInputs) ||
+    canonicalEvidenceHash(terminalCheckpoint.inputs) !== canonicalEvidenceHash(terminalInputs) ||
+    terminalCheckpoint.effectiveCorpusHash !== input.preAdjudicationEffectiveCorpusHash ||
+    terminalCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+    terminalCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+    terminalCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+    terminalCheckpoint.scopePromptDigest !== PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST ||
+    terminalCheckpoint.model !== IMPORT_MODEL || terminalCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+  ) throw new Error(`${key} repair scope adjudication terminal fidelity evidence가 다릅니다`);
+
+  const solutionBase = await baseSolutionEvidence(solutionEvidence, stateDir, input.solution);
+  if (
+    canonicalEvidenceHash(solutionBase.checkpoint) !== canonicalEvidenceHash(input.repair.baseSolutionCheckpoint) ||
+    solutionBase.itemHash !== input.repair.baseSolutionItemHash
+  ) throw new Error(`${key} repair scope adjudication owning solution evidence가 repair와 다릅니다`);
+  const parentRepairEvidenceHash = canonicalEvidenceHash(input.repair);
+  const trigger = {
+    terminalCheckpoint: input.terminalCheckpoint,
+    terminalItemHash,
+    terminalItem: input.terminalItem,
+    evidenceHash: sha256Text(input.terminalItem.evidence),
+    scopeEvidenceHash: sha256Text(input.terminalItem.scopeEvidence),
+    preAdjudicationEffectiveCorpusHash: input.preAdjudicationEffectiveCorpusHash,
+  };
+  const basis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key,
+    printedNumber: input.repair.printedNumber,
+    sourcePage,
+    sourceHash: problem.sha256,
+    solutionSourceHash: solutionEvidence.sha256,
+    problemContextFrom: input.repair.contextFrom,
+    problemContextTo: input.repair.contextTo,
+    solutionContextFrom: solutionBase.contextFrom,
+    solutionContextTo: solutionBase.contextTo,
+    baseSolutionCheckpoint: solutionBase.checkpoint,
+    baseSolutionItemHash: solutionBase.itemHash,
+    parentRepair: input.repair,
+    parentRepairEvidenceHash,
+    trigger,
+    baseQuestionHash: canonicalEvidenceHash(input.current.question),
+    baseClassificationHash: canonicalEvidenceHash(input.current.classification),
+  };
+  const basisDigest = canonicalEvidenceHash(basis);
+  const relativePath = `classification-repair-scope-adjudications/` +
+    `v${PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION}-${String(sourcePage).padStart(4, "0")}-` +
+    `${input.repair.printedNumber.padStart(4, "0")}-${basisDigest}-${CLASSIFIER_DIGEST}.json`;
+  const path = join(stateDir, relativePath);
+  let checkpoint: Record<string, unknown>;
+  let classification: ClassificationDecision;
+  if (existsSync(path)) {
+    const safePath = confinedStateFile(stateDir, relativePath, "problem repair scope adjudication");
+    checkpoint = object(JSON.parse(readFileSync(safePath, "utf8")), relativePath);
+    if (
+      checkpoint.version !== PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION || checkpoint.entryId !== entry.id ||
+      checkpoint.basisDigest !== basisDigest || canonicalEvidenceHash(checkpoint.basis) !== canonicalEvidenceHash(basis) ||
+      checkpoint.classifierVersion !== CLASSIFIER_VERSION || checkpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+      checkpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+      checkpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+      checkpoint.adjudicationPromptVersion !== PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION ||
+      checkpoint.adjudicationPromptDigest !== PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST ||
+      checkpoint.model !== IMPORT_MODEL || checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+    ) throw new Error(`기존 problem repair scope adjudication 메타데이터가 다릅니다: ${path}`);
+    classification = parseDecisions(checkpoint.items, [input.current.question], entry)[0];
+  } else {
+    const allowedCodes = ALLOWED_CANONICAL[entry.subject]
+      .flatMap((canonical) => [...ACHIEVEMENT_CODES[canonical]])
+      .sort();
+    const question = {
+      key,
+      printed_number: input.repair.printedNumber,
+      source_page: sourcePage,
+      qtype: input.current.question.qtype,
+      question: input.current.question.question,
+      choices: input.current.question.choices,
+      figure: input.current.question.figure,
+      figure_description: input.current.question.figure_description,
+      box: input.current.question.box,
+    };
+    classification = await withImporterPdfForAnalysis(problem, (analysisProblem) =>
+      withProblemContextSlice(
+        analysisProblem.path,
+        input.repair.contextFrom,
+        input.repair.contextTo,
+        (problemContextPath) => withImporterPdfForAnalysis(solutionEvidence, (analysisSolution) =>
+          withSolutionContextSlice(
+            analysisSolution.path,
+            solutionBase.contextFrom,
+            solutionBase.contextTo,
+            (solutionContextPath) => withCombinedPdfContexts(
+              [problemContextPath, solutionContextPath],
+              async (evidencePath) => {
+                const problemPages = input.repair.contextTo - input.repair.contextFrom + 1;
+                const prompt =
+                  `Attached evidence PDF pages 1-${problemPages} are official problem pages ` +
+                  `${input.repair.contextFrom}-${input.repair.contextTo}; pages ${problemPages + 1}-` +
+                  `${problemPages + solutionBase.contextTo - solutionBase.contextFrom + 1} are official solution pages ` +
+                  `${solutionBase.contextFrom}-${solutionBase.contextTo}. Exam source subject is ${entry.subject}; ` +
+                  `source school grade is ${entry.grade ?? "unknown"}. Inspect printed problem ${input.repair.printedNumber} ` +
+                  `and its owning official solution. No prior classifier or audit decision is supplied.\n\n` +
+                  `${PROBLEM_SCOPE_ADJUDICATION_RULES}\n\n${TRANSCRIPTION_GATE_RULES}\n\n${CURRICULUM_RULES}\n\n` +
+                  `Allowed exact achievement codes for this source: ${allowedCodes.join(", ")}\n\n` +
+                  `Final question:\n${JSON.stringify(question)}`;
+                const result = await withTargetedAi(() => getCodexProvider({
+                  model: IMPORT_MODEL,
+                  reasoningEffort: IMPORT_REASONING_EFFORT,
+                }).complete({
+                  operation: "problem-extract",
+                  prompt,
+                  file: { path: evidencePath, kind: "pdf" },
+                  schema: PROBLEM_SCOPE_ADJUDICATION_SCHEMA,
+                  model: IMPORT_MODEL,
+                  reasoningEffort: IMPORT_REASONING_EFFORT,
+                  lane: "bulk",
+                }));
+                return parseDecisions(JSON.parse(result.text), [input.current.question], entry)[0];
+              }
+            )
+          )
+        )
+      )
+    );
+    checkpoint = {
+      version: PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION,
+      entryId: entry.id,
+      basisDigest,
+      basis,
+      classifierVersion: CLASSIFIER_VERSION,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      adjudicationPromptVersion: PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION,
+      adjudicationPromptDigest: PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      items: [classification],
+    };
+    await writeImmutableEvidence(path, checkpoint);
+  }
+  const sha256 = await sha256File(path);
+  if (sha256 !== canonicalEvidenceHash(checkpoint)) {
+    throw new Error(`${key} problem repair scope adjudication hash가 다릅니다`);
+  }
+  if (
+    classification.decision !== "reject" || classification.canonical_subject !== null ||
+    classification.curriculum_course !== null || classification.domain !== null ||
+    classification.achievement_codes.length !== 0 || classification.confidence < 0.9 ||
+    classification.transcription_status !== "exact"
+  ) throw new Error(`${key} problem repair scope adjudication이 reject/null exact에 합의하지 않았습니다`);
+  const evidence: ProblemScopeAdjudicationEvidence = {
+    allowlistId: spec.allowlistId,
+    key,
+    printedNumber: input.repair.printedNumber,
+    sourcePage,
+    sourceHash: problem.sha256,
+    solutionSourceHash: solutionEvidence.sha256,
+    problemContextFrom: input.repair.contextFrom,
+    problemContextTo: input.repair.contextTo,
+    solutionContextFrom: solutionBase.contextFrom,
+    solutionContextTo: solutionBase.contextTo,
+    baseSolutionCheckpoint: solutionBase.checkpoint,
+    baseSolutionItemHash: solutionBase.itemHash,
+    parentRepairEvidenceHash,
+    trigger,
+    classificationArtifact: {
+      path: relativePath,
+      sha256,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      adjudicationPromptVersion: PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION,
+      adjudicationPromptDigest: PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST,
+    },
+    classificationArtifactItemHash: canonicalEvidenceHash(classification),
+    baseQuestionHash: canonicalEvidenceHash(input.current.question),
+    effectiveQuestionHash: canonicalEvidenceHash(input.current.question),
+    baseClassificationHash: canonicalEvidenceHash(input.current.classification),
+    effectiveClassificationHash: canonicalEvidenceHash(classification),
+  };
+  return { classified: { question: input.current.question, classification }, evidence };
+}
+
 async function assertProblemScopeAdjudicationAuthority(
   stateDir: string,
   repairs: Iterable<ProblemRepairEvidence>
@@ -6379,6 +6687,124 @@ async function assertProblemScopeAdjudicationAuthority(
   if (extras.length > 0 || missing.length > 0) {
     throw new Error(
       `problem scope adjudication orphan/conflict: extra=${extras.join(",") || "-"}, ` +
+      `missing=${missing.join(",") || "-"}`
+    );
+  }
+}
+
+async function assertProblemRepairScopeAdjudicationAuthority(
+  stateDir: string,
+  repairs: Iterable<ProblemRepairEvidence>
+): Promise<void> {
+  const declared = new Map<string, string>();
+  for (const repair of repairs) {
+    const adjudication = repair.scopeAdjudication;
+    if (!adjudication) continue;
+    const { scopeAdjudication: _scopeAdjudication, ...parentRepair } = repair;
+    const matches = PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST.filter((spec) =>
+      spec.allowlistId === adjudication.allowlistId && spec.key === adjudication.key &&
+      spec.sourcePage === adjudication.sourcePage && spec.sourceHash === adjudication.sourceHash &&
+      spec.solutionSourceHash === adjudication.solutionSourceHash
+    );
+    if (
+      matches.length !== 1 || repair.key !== adjudication.key || repair.sourcePage !== adjudication.sourcePage ||
+      repair.revision || adjudication.parentRecoveryEvidenceHash !== undefined ||
+      canonicalEvidenceHash(parentRepair) !== adjudication.parentRepairEvidenceHash ||
+      adjudication.printedNumber !== parentRepair.printedNumber ||
+      adjudication.problemContextFrom !== parentRepair.contextFrom ||
+      adjudication.problemContextTo !== parentRepair.contextTo ||
+      canonicalEvidenceHash(adjudication.baseSolutionCheckpoint) !==
+        canonicalEvidenceHash(parentRepair.baseSolutionCheckpoint) ||
+      adjudication.baseSolutionItemHash !== parentRepair.baseSolutionItemHash ||
+      adjudication.baseQuestionHash !== parentRepair.effectiveQuestionHash ||
+      adjudication.effectiveQuestionHash !== parentRepair.effectiveQuestionHash ||
+      adjudication.baseClassificationHash !== parentRepair.effectiveClassificationHash ||
+      adjudication.effectiveClassificationHash !== adjudication.classificationArtifactItemHash ||
+      adjudication.trigger.terminalItem.key !== repair.key ||
+      adjudication.trigger.terminalItem.status !== "exact" ||
+      adjudication.trigger.terminalItem.scopeDecision !== "reject" ||
+      adjudication.trigger.terminalItem.scopeConfidence < 0.9 ||
+      canonicalEvidenceHash(adjudication.trigger.terminalItem) !== adjudication.trigger.terminalItemHash ||
+      sha256Text(adjudication.trigger.terminalItem.evidence) !== adjudication.trigger.evidenceHash ||
+      sha256Text(adjudication.trigger.terminalItem.scopeEvidence) !== adjudication.trigger.scopeEvidenceHash ||
+      adjudication.classificationArtifact.rulesDigest !== CLASSIFIER_DIGEST ||
+      adjudication.classificationArtifact.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+      adjudication.classificationArtifact.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST
+    ) throw new Error(`${repair.key} problem repair scope adjudication evidence가 parent/allowlist와 다릅니다`);
+
+    for (const [label, pointer] of [
+      ["repair scope terminal fidelity", adjudication.trigger.terminalCheckpoint],
+      ["problem repair scope adjudication", adjudication.classificationArtifact],
+    ] as const) {
+      const path = confinedStateFile(stateDir, pointer.path, label);
+      if (await sha256File(path) !== pointer.sha256) throw new Error(`${label} hash가 다릅니다: ${pointer.path}`);
+    }
+    const basis = {
+      allowlistId: adjudication.allowlistId,
+      entryId: matches[0].entryId,
+      key: repair.key,
+      printedNumber: parentRepair.printedNumber,
+      sourcePage: adjudication.sourcePage,
+      sourceHash: adjudication.sourceHash,
+      solutionSourceHash: adjudication.solutionSourceHash,
+      problemContextFrom: parentRepair.contextFrom,
+      problemContextTo: parentRepair.contextTo,
+      solutionContextFrom: adjudication.solutionContextFrom,
+      solutionContextTo: adjudication.solutionContextTo,
+      baseSolutionCheckpoint: adjudication.baseSolutionCheckpoint,
+      baseSolutionItemHash: adjudication.baseSolutionItemHash,
+      parentRepair,
+      parentRepairEvidenceHash: adjudication.parentRepairEvidenceHash,
+      trigger: adjudication.trigger,
+      baseQuestionHash: adjudication.baseQuestionHash,
+      baseClassificationHash: adjudication.baseClassificationHash,
+    };
+    const basisDigest = canonicalEvidenceHash(basis);
+    const expectedPath = `classification-repair-scope-adjudications/` +
+      `v${PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION}-${String(adjudication.sourcePage).padStart(4, "0")}-` +
+      `${parentRepair.printedNumber.padStart(4, "0")}-${basisDigest}-${CLASSIFIER_DIGEST}.json`;
+    const checkpoint = object(
+      JSON.parse(readFileSync(confinedStateFile(stateDir, expectedPath, "problem repair scope adjudication"), "utf8")),
+      expectedPath
+    );
+    if (
+      adjudication.classificationArtifact.path !== expectedPath ||
+      adjudication.classificationArtifact.adjudicationPromptVersion !==
+        PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION ||
+      adjudication.classificationArtifact.adjudicationPromptDigest !==
+        PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST ||
+      checkpoint.version !== PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION || checkpoint.entryId !== matches[0].entryId ||
+      checkpoint.basisDigest !== basisDigest || canonicalEvidenceHash(checkpoint.basis) !== canonicalEvidenceHash(basis) ||
+      checkpoint.classifierVersion !== CLASSIFIER_VERSION || checkpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+      checkpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+      checkpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+      checkpoint.adjudicationPromptVersion !== PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION ||
+      checkpoint.adjudicationPromptDigest !== PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST ||
+      checkpoint.model !== IMPORT_MODEL || checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+      !Array.isArray(checkpoint.items) || checkpoint.items.length !== 1 ||
+      canonicalEvidenceHash(checkpoint.items[0]) !== adjudication.classificationArtifactItemHash
+    ) throw new Error(`${repair.key} problem repair scope adjudication checkpoint가 다릅니다`);
+    if (declared.has(expectedPath)) {
+      throw new Error(`problem repair scope adjudication artifact가 중복 선언됐습니다: ${expectedPath}`);
+    }
+    declared.set(expectedPath, adjudication.classificationArtifact.sha256);
+  }
+  const directory = join(stateDir, "classification-repair-scope-adjudications");
+  const actual = new Set<string>();
+  if (existsSync(directory)) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
+      if (!entry.isFile() || entry.isSymbolicLink()) {
+        throw new Error(`problem repair scope adjudication directory에 regular file이 아닌 항목이 있습니다: ${entry.name}`);
+      }
+      actual.add(`classification-repair-scope-adjudications/${entry.name}`);
+    }
+  }
+  const extras = [...actual].filter((path) => !declared.has(path));
+  const missing = [...declared.keys()].filter((path) => !actual.has(path));
+  if (extras.length > 0 || missing.length > 0) {
+    throw new Error(
+      `problem repair scope adjudication orphan/conflict: extra=${extras.join(",") || "-"}, ` +
       `missing=${missing.join(",") || "-"}`
     );
   }
@@ -7468,6 +7894,9 @@ export async function repairAndAuditOfficialAnswers(
       const existing = repairs.get(key);
       if (existing) {
         if (!revisionKind) continue;
+        if (existing.scopeAdjudication) {
+          throw new Error(`${key} problem repair scope adjudication 뒤에는 추가 revision을 허용하지 않습니다`);
+        }
         const current = effective[index];
         const trigger: ProblemRevisionTrigger | undefined = revisionKind === "terminal"
           ? terminalTriggers?.get(key)
@@ -7621,6 +8050,58 @@ export async function repairAndAuditOfficialAnswers(
     }
     const preAdjudicationClassified = [...effective];
     const preAdjudicationEffectiveCorpusHash = canonicalEvidenceHash(preAdjudicationClassified);
+    const repairScopeConflicts = finalProblemFidelity.items.filter((item) => {
+      const current = effective.find((candidate) => questionKey(candidate.question) === item.key);
+      if (
+        !current || current.classification.decision !== "accept" ||
+        current.classification.transcription_status !== "exact" || item.status !== "exact" ||
+        item.scopeDecision !== "reject" || item.scopeConfidence < 0.9
+      ) return false;
+      return problemRepairScopeAdjudicationSpec(
+        entry, item.key, current.question.page!, problem.sha256, solutionEvidence.sha256
+      ) !== null;
+    });
+    if (repairScopeConflicts.length > 0) {
+      for (const item of repairScopeConflicts) {
+        const index = effective.findIndex((candidate) => questionKey(candidate.question) === item.key);
+        const current = effective[index];
+        const repair = repairs.get(item.key);
+        if (index < 0 || !repair || repair.revision || repair.scopeAdjudication) {
+          throw new Error(`${item.key} problem repair scope adjudication은 first repair 뒤 한 번만 허용됩니다`);
+        }
+        const checkpoints = finalProblemFidelity.checkpoints.filter((checkpoint) =>
+          current.question.page! >= checkpoint.ownedFrom && current.question.page! <= checkpoint.ownedTo
+        );
+        if (checkpoints.length !== 1) {
+          throw new Error(`${item.key} problem repair scope adjudication terminal checkpoint가 유일하지 않습니다`);
+        }
+        const number = numericPrintedLocator(current.question.number);
+        const solution = number === null ? undefined : baseSolutionsByNumber.get(number);
+        if (!solution) throw new Error(`${item.key} problem repair scope adjudication 공식 해설이 없습니다`);
+        const adjudicated = await adjudicateProblemRepairScope(
+          entry,
+          problem,
+          solutionEvidence,
+          stateDir,
+          {
+            current,
+            preAdjudicationClassified,
+            repair,
+            solution,
+            terminalCheckpoint: checkpoints[0],
+            terminalItem: item,
+            preAdjudicationEffectiveCorpusHash,
+          }
+        );
+        effective[index] = adjudicated.classified;
+        repairs.set(item.key, { ...repair, scopeAdjudication: adjudicated.evidence });
+      }
+      invalidateSemanticSolutionRevisionTriggers(solutionRevisionTriggers, true);
+      finalSemantic = null;
+      finalSolutionAudit = null;
+      finalProblemFidelity = null;
+      continue;
+    }
     const scopeConflicts = finalProblemFidelity.items.filter((item) => {
       const current = effective.find((candidate) => questionKey(candidate.question) === item.key);
       if (
@@ -7682,7 +8163,8 @@ export async function repairAndAuditOfficialAnswers(
       continue;
     }
     const scopeAdjudicatedKeys = new Set([...repairs.values()].flatMap((repair) =>
-      repair.revision?.recovery?.scopeAdjudication || repair.revision?.recovery?.manualAdjudication
+      repair.scopeAdjudication || repair.revision?.recovery?.scopeAdjudication ||
+        repair.revision?.recovery?.manualAdjudication
         ? [repair.key]
         : []
     ));
@@ -7690,6 +8172,7 @@ export async function repairAndAuditOfficialAnswers(
     await assertProblemCropAdjudicationAuthority(stateDir, repairs.values());
     await assertProblemManualAdjudicationAuthority(stateDir, repairs.values());
     await assertProblemScopeAdjudicationAuthority(stateDir, repairs.values());
+    await assertProblemRepairScopeAdjudicationAuthority(stateDir, repairs.values());
     if (effective.some(({ classification }) => classification.decision === "review")) {
       return {
         classified: effective,
@@ -7845,7 +8328,8 @@ export async function repairAndAuditOfficialAnswers(
   const finalTerminalByKey = new Map(finalProblemFidelity.items.map((item) => [item.key, item]));
   const finalRepairedKeys = new Set(repairs.keys());
   const finalScopeAdjudicatedKeys = new Set([...repairs.values()].flatMap((repair) =>
-    repair.revision?.recovery?.scopeAdjudication || repair.revision?.recovery?.manualAdjudication
+    repair.scopeAdjudication || repair.revision?.recovery?.scopeAdjudication ||
+      repair.revision?.recovery?.manualAdjudication
       ? [repair.key]
       : []
   ));
@@ -8087,13 +8571,15 @@ export async function writeAnswerAttestation(
     answerAudit.problemTerminalFidelityItems,
     new Set(answerAudit.repairs.map((repair) => repair.key)),
     new Set(answerAudit.repairs.flatMap((repair) =>
-      repair.revision?.recovery?.scopeAdjudication || repair.revision?.recovery?.manualAdjudication
+      repair.scopeAdjudication || repair.revision?.recovery?.scopeAdjudication ||
+        repair.revision?.recovery?.manualAdjudication
         ? [repair.key]
         : []
     ))
   );
   await assertProblemManualAdjudicationAuthority(stateDir, answerAudit.repairs);
   await assertProblemScopeAdjudicationAuthority(stateDir, answerAudit.repairs);
+  await assertProblemRepairScopeAdjudicationAuthority(stateDir, answerAudit.repairs);
   if (
     audit.entryId !== entryId || audit.problemHash !== problemHash || audit.solutionHash !== solutionHash ||
     audit.classifierVersion !== CLASSIFIER_VERSION || audit.rulesDigest !== CLASSIFIER_DIGEST ||
