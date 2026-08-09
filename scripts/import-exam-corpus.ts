@@ -98,6 +98,8 @@ export const CLASSIFICATION_TERMINAL_RECOVERY_VERSION = 2;
 export const PROBLEM_CROP_ADJUDICATION_VERSION = 1;
 export const CLASSIFICATION_CROP_ADJUDICATION_VERSION = 1;
 export const PROBLEM_SCOPE_ADJUDICATION_VERSION = 1;
+export const PROBLEM_MANUAL_ADJUDICATION_VERSION = 1;
+export const CLASSIFICATION_MANUAL_ADJUDICATION_VERSION = 1;
 export const SOLUTION_FIDELITY_VERSION = 1;
 export const SOLUTION_FIDELITY_SLICE_PAGES = 22;
 export const SOLUTION_FIDELITY_SLICE_STRIDE = 18;
@@ -635,6 +637,42 @@ export type ProblemRecoveryEvidence = {
   effectiveClassificationHash: string;
   adjudication?: ProblemCropAdjudicationEvidence;
   scopeAdjudication?: ProblemScopeAdjudicationEvidence;
+  manualAdjudication?: ProblemManualAdjudicationEvidence;
+};
+
+export type ProblemManualAdjudicationEvidence = {
+  allowlistId: string;
+  key: string;
+  printedNumber: string;
+  sourcePage: number;
+  sourcePages: number[];
+  sourceHash: string;
+  parentRecoveryEvidenceHash: string;
+  parentCropAdjudicationHash?: string;
+  failedQuestionHash: string;
+  failedClassificationHash: string;
+  failedClassificationEvidenceHash: string;
+  correctionSpecHash: string;
+  cropEvidenceArtifact: EvidencePointer;
+  cropEvidencePdf: EvidencePointer;
+  cropViews: ProblemCropAdjudicationEvidence["cropViews"];
+  problemArtifact: EvidencePointer & {
+    correctionVersion: number;
+    correctionDigest: string;
+  };
+  problemArtifactItemHash: string;
+  classificationArtifact: EvidencePointer & {
+    rulesDigest: string;
+    transcriptionGateVersion: number;
+    transcriptionPromptDigest: string;
+    adjudicationVersion: number;
+    adjudicationPromptDigest: string;
+  };
+  classificationArtifactItemHash: string;
+  baseQuestionHash: string;
+  effectiveQuestionHash: string;
+  baseClassificationHash: string;
+  effectiveClassificationHash: string;
 };
 
 export type ProblemScopeAdjudicationEvidence = {
@@ -1243,6 +1281,190 @@ export const PROBLEM_CROP_ADJUDICATION_ALLOWLIST: readonly ProblemCropAdjudicati
     ],
   },
 ] as const;
+
+export const PROBLEM_MANUAL_ADJUDICATION_RULES = `
+The attached PDF is immutable source-pixel evidence for one exact allowlisted problem. The supplied transcription was
+produced by deterministic, count-checked literal replacements or a narrowly bounded accessibility surrogate for a
+non-text diagram. Independently compare the complete corrected item with every relevant evidence view. Visible Korean,
+labels, formulas, punctuation, choices, and shared passages remain literal. A diagram surrogate is exact only when it
+preserves every glyph's identity, order, orientation, count, premise/conclusion role, open/filled state, and coordinates.
+Previous classification and mismatch labels are intentionally hidden. Classify curriculum scope from source pixels and
+return transcription_status exact only when the corrected item is fully faithful.
+`.trim();
+export const PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST = sha256Text(
+  `${PROBLEM_MANUAL_ADJUDICATION_VERSION}\n${PROBLEM_MANUAL_ADJUDICATION_RULES}\n` +
+  `${TRANSCRIPTION_GATE_VERSION}\n${TRANSCRIPTION_GATE_RULES}\n${CURRICULUM_RULES}`
+);
+export const PROBLEM_MANUAL_CORRECTION_DIGEST = sha256Text(
+  `${PROBLEM_MANUAL_ADJUDICATION_VERSION}\ncount-checked-literal-replacements+bounded-glyph-surrogate`
+);
+
+type ProblemManualReplacement = {
+  field: "question" | "figure_description";
+  from: string;
+  to: string;
+  count: number;
+};
+
+type ProblemManualAdjudicationSpec = ProblemCropAdjudicationSpec & {
+  parentKind: "recovery" | "crop";
+  failedQuestionHash: string;
+  failedClassificationHash: string;
+  failedClassificationEvidenceHash: string;
+  replacements: ProblemManualReplacement[];
+  figure?: boolean;
+  figureDescription?: string;
+};
+
+const Q30_FIGURE_DESCRIPTION =
+  "공식 11쪽 오른쪽의 (4)와 (4′) 논증 도식이 좌우로 배치되어 있다. 왼쪽 (4)는 첫째 전제 " +
+  "‘만약 p이면 q이다.’와 둘째 전제 ‘p이다.’ 아래에 수평 가로선 하나가 있고, 그 아래 결론 " +
+  "‘그러므로 q이다.’가 놓인다. 오른쪽 (4′)는 첫째 전제 ‘p → q’와 둘째 전제 ‘p’ 아래에 수평 " +
+  "가로선 하나가 있고, 그 아래 결론 ‘q’가 놓인다. 두 도식 사이에는 왼쪽에서 오른쪽을 가리키는 " +
+  "‘⇒’가 하나 있다. 가로선은 총 2개이며 각각 두 전제와 한 결론을 구분한다.";
+
+const Q34_FIGURE_DESCRIPTION =
+  "공식 12쪽의 (가)에는 왼쪽 세로 묶음 괄호가 3개 있다. 각 괄호는 세로선 하나와 오른쪽을 향한 " +
+  "위·아래 가로 캡 2개로 이루어져 가로 캡은 모두 6개이다. 첫째 [A] 괄호는 ‘마님, 나으리께서 " +
+  "드십니다.’부터 ‘치수는 어머니의 흩어진 모습을 본 일이 없었다.’까지를 묶는다. 둘째 ㉮ 괄호는 " +
+  "‘앞으로 혼자 있을 수 없는 일이며’부터 ‘신랑감이 필요할 뿐이지요.’까지의 혼사 대화를 묶는다. " +
+  "셋째 [B] 괄호는 ‘이듬해 이월달 꽃바람이’부터 ‘불렀을 때 어머니의 눈은 불꽃이 튀는 듯 " +
+  "험악했다.’까지의 회상 장면을 묶는다. [A], ㉮, [B] 표지는 각 괄호의 왼쪽에 놓인다.";
+
+const Q8_FIGURE_DESCRIPTION =
+  "좌표평면에 함수 $y=f(x)$의 그래프가 그려져 있다. $x$축은 오른쪽, $y$축은 위쪽을 향하는 " +
+  "화살표이며 원점 $O=(0,0)$에는 뚫린 점이 표시되어 있다. 왼쪽 위에서 뚫린 원점 $O$까지 " +
+  "내려오는 직선 조각과, 뚫린 원점 $O$에서 $(1,2)$의 뚫린 점까지 올라가는 직선 조각이 있다. " +
+  "$(1,3)$에는 채운 점이 있다. $y=3$, $y=2$, $y=-3$에서 각각 $y$축과 $x=1$ 사이에 수평 " +
+  "점선이 그어져 있고, $x=1$에는 $y=-3$부터 $y=3$까지 수직 점선이 그어져 있다. $x$축에는 " +
+  "$1$과 $3$, $y$축에는 $3$, $2$, $-2$, $-3$이 표시되어 있다. $(0,-2)$에는 채운 점이 있고, " +
+  "$(1,-3)$에는 뚫린 점이 있다. $(1,-3)$에서 오른쪽 위로 올라가는 직선 조각은 $x$축의 " +
+  "$x=3$을 지나며, 그 옆에 $y=f(x)$가 표시되어 있다.";
+
+export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationSpec[] = [
+  {
+    allowlistId: "ebsi-5594499-q34-manual-v1",
+    entryId: "ebsi:5594499",
+    key: "13:34",
+    sourcePage: 13,
+    sourceHash: "0ddccee92ce4e4ba3da53ed253e780cd7b41b5962f7e9761a920079619f81c31",
+    parentKind: "crop",
+    failedQuestionHash: "050900567ea5583ed78cf4fbeafc6cc0e014cb3eb480222bcf2cae22ed70ec7b",
+    failedClassificationHash: "8fcdb502ffaf611d5fd93f57f583974bbaf453d1ee8fb82ace1e0bab7a3d6737",
+    failedClassificationEvidenceHash: "c715e00259263307b62cda0f784b13df3e38bc3c2e088c465de18884d905d8e3",
+    views: [...PROBLEM_CROP_ADJUDICATION_ALLOWLIST[1].views],
+    requiredTokens: [
+      ...PROBLEM_CROP_ADJUDICATION_ALLOWLIST[1].requiredTokens.filter((token) => token !== "갑월"),
+      "삼월이", "흩어진 모습", "뚜드려 만든 쇠붙이 같으다", "쌍방이 혼신의 힘으로 겨루는",
+      "쾌적해지는", "너 생각", "어머님", "당치 않는 혹", "회피였었고", "할머니는 당혹했다",
+      "아씬 절로 가시야겄십니다", "[B]", "O.L*", "왼쪽 세로 묶음 괄호가 3개", "가로 캡은 모두 6개",
+    ],
+    replacements: [
+      { field: "question", from: "나오리께서", to: "나으리께서", count: 2 },
+      { field: "question", from: "갑월이", to: "삼월이", count: 1 },
+      { field: "question", from: "흐트러진 모습을", to: "흩어진 모습을", count: 1 },
+      {
+        field: "question",
+        from: "‘여전하시다! 언제나 저 모습, 저 눈빛, 대장간에서 수천 번을 두드려 만든 쇠붙이 같다.’",
+        to: "‘여전하시다! 언제나 저 모습, 저 눈빛, 대장간에서 수천 번을 뚜드려 만든 쇠붙이 같으다.’",
+        count: 1,
+      },
+      { field: "question", from: "적과 적이 칼이", to: "적과 적의 칼이", count: 1 },
+      { field: "question", from: "쌩쌩이 혼신의", to: "쌍방이 혼신의", count: 1 },
+      { field: "question", from: "쾌척해지는", to: "쾌적해지는", count: 1 },
+      { field: "question", from: "“네 생각이 그렇다면", to: "“너 생각이 그렇다면", count: 1 },
+      { field: "question", from: "않으십니까, 어머니.’", to: "않으십니까, 어머님.’", count: 1 },
+      {
+        field: "question",
+        from: "“그럴 리 있겠습니까. 서희에게 당치 않은 흠이 하나 생길 뿐이지요. 서희에게는 유순하고 글이나 읽으며 소일할 신랑감이 필요할 뿐이지요.”",
+        to: "‘그럴 리 있겠습니까. 서희에게 당치 않는 혹이 하나 생길 뿐이지요. 서희에게는 유순하고 글이나 읽으며 소일할 신랑감이 필요할 뿐이지요.’",
+        count: 1,
+      },
+      { field: "question", from: "자연스러운 회피였고", to: "자연스러운 회피였었고", count: 1 },
+      { field: "question", from: "할머니는 당황했다.", to: "할머니는 당혹했다.", count: 1 },
+      {
+        field: "question",
+        from: "“야싯 절로 가시야겠십니다.”",
+        to: "“아씬 절로 가시야겄십니다.”",
+        count: 1,
+      },
+      { field: "question", from: "“어머니!”", to: "“어머님!”", count: 2 },
+      { field: "question", from: "\n[B]\n이듬해", to: "\n이듬해", count: 1 },
+      {
+        field: "question",
+        from: "가마가 내려지고 어머니가 뜰에 나섰을 때,",
+        to: "가마가 내려지고 어머니가 뜰에 나섰\n[B]\n을 때,",
+        count: 1,
+      },
+      { field: "question", from: "치수의 두 눈에서 O.L*.", to: "치수의 두 눈에서 O.L*", count: 1 },
+      { field: "question", from: "- 박경리, 「토지」 -", to: "― 박경리, 「토지」 ―", count: 1 },
+      {
+        field: "question",
+        from: "- 박경리 원작, 이형우 각색, 「토지」 -",
+        to: "― 박경리 원작, 이형우 각색, 「토지」 ―",
+        count: 1,
+      },
+    ],
+    figure: true,
+    figureDescription: Q34_FIGURE_DESCRIPTION,
+  },
+  {
+    allowlistId: "ebsi-5578421-q30-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "12:30",
+    sourcePage: 12,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    failedQuestionHash: "0bf9903e40726584efe854ea1e91984a7d8f99c4b43ff9529ed75a2903802dfc",
+    failedClassificationHash: "f0155898f6972fefa7ce4d18025fbe08a785fdb98d875681173d4d7b6bdd2c32",
+    failedClassificationEvidenceHash: "e5ae78fca62817761efa9cefcccb2aabf5a3065c54657878f684f8f14775f1d6",
+    views: [
+      { sourcePage: 11, label: "p11 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 11, label: "p11 right passage", rect: [0.49, 0.08, 0.94, 0.90] },
+      { sourcePage: 11, label: "p11 (4) and (4-prime) diagram", rect: [0.50, 0.42, 0.92, 0.60] },
+      { sourcePage: 12, label: "p12 Q30", rect: [0.08, 0.04, 0.53, 0.27] },
+    ],
+    requiredTokens: [
+      "[29~34]", "(4)", "(4′)", "⇒", "────────", "㉢ 명제 논리학",
+      "30. 윗글의 내용과 일치하지 않는 것은?",
+      "③ 주어와 술어로 구성된 모든 문장은 정언 문장이다.",
+    ],
+    replacements: [
+      { field: "question", from: "ⓒ 명제 논리학", to: "㉢ 명제 논리학", count: 1 },
+      {
+        field: "question",
+        from: "(4) 만약 $p$이면 $q$이다.      (4′) $p \\to q$\n$p$이다.                          $p$\n그러므로 $q$이다.                 $q$",
+        to: "(4) 만약 $p$이면 $q$이다.      (4′) $p \\to q$\n$p$이다.                  ⇒       $p$\n────────                         ────────\n그러므로 $q$이다.                 $q$",
+        count: 1,
+      },
+    ],
+    figure: true,
+    figureDescription: Q30_FIGURE_DESCRIPTION,
+  },
+  {
+    allowlistId: "ebsi-5525984-q8-manual-v1",
+    entryId: "ebsi:5525984",
+    key: "3:8",
+    sourcePage: 3,
+    sourceHash: "1621eca42821e5feccbb56604249cbcedd8adf6bae6109960f6c790a61c14ec1",
+    parentKind: "recovery",
+    failedQuestionHash: "9e4b37f842ef38b07710ff9ce1e358d847abadb1f57387c8a3b7174205027a78",
+    failedClassificationHash: "7c2ee3c8fc9424599b974e9e0e7f0060099a6d64f94626b976662e5f8e59ef3a",
+    failedClassificationEvidenceHash: "ac058745cf4b353b1c20b7faa9ee1f1f1a22221d85d2bf89769aa1eec4f2558e",
+    views: [
+      { sourcePage: 3, label: "p3 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 3, label: "p3 Q8", rect: [0.07, 0.08, 0.51, 0.44] },
+      { sourcePage: 3, label: "p3 Q8 graph", rect: [0.18, 0.12, 0.43, 0.32] },
+    ],
+    requiredTokens: [
+      "원점 $O=(0,0)$에는 뚫린 점", "$(0,-2)$에는 채운 점", "$(1,2)$의 뚫린 점",
+      "$(1,3)$에는 채운 점", "$(1,-3)$에는 뚫린 점", "\\lim_{x\\to 0^-}", "\\lim_{x\\to 1^+}",
+    ],
+    replacements: [],
+    figure: true,
+    figureDescription: Q8_FIGURE_DESCRIPTION,
+  },
+] as const;
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(
   `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`
 );
@@ -1452,8 +1674,11 @@ async function prepareProblemCropEvidence(
   entry: CorpusManifestEntry,
   problem: PdfEvidence,
   stateDir: string,
-  spec: ProblemCropAdjudicationSpec
+  spec: ProblemCropAdjudicationSpec,
+  options: { namespace?: string; version?: number } = {}
 ): Promise<PreparedProblemCropEvidence> {
+  const namespace = options.namespace ?? "problem-crop-evidence";
+  const version = options.version ?? PROBLEM_CROP_ADJUDICATION_VERSION;
   if (problem.sha256 !== spec.sourceHash || await sha256File(problem.path) !== problem.sha256) {
     throw new Error(`${spec.key} crop adjudication official source hash가 allowlist와 다릅니다`);
   }
@@ -1470,10 +1695,10 @@ async function prepareProblemCropEvidence(
     requiredTokens: spec.requiredTokens,
   };
   const basisDigest = canonicalEvidenceHash(basis);
-  const stem = `v${PROBLEM_CROP_ADJUDICATION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+  const stem = `v${version}-${String(spec.sourcePage).padStart(4, "0")}-` +
     `${spec.key.split(":")[1]!.padStart(4, "0")}-${basisDigest}`;
-  const relativePath = `problem-crop-evidence/${stem}.json`;
-  const pdfRelativePath = `problem-crop-evidence/${stem}.pdf`;
+  const relativePath = `${namespace}/${stem}.json`;
+  const pdfRelativePath = `${namespace}/${stem}.pdf`;
   const checkpointPath = join(stateDir, relativePath);
   const pdfPath = join(stateDir, pdfRelativePath);
   let checkpoint: Record<string, unknown>;
@@ -1481,7 +1706,7 @@ async function prepareProblemCropEvidence(
     const safeCheckpointPath = confinedStateFile(stateDir, relativePath, "crop evidence checkpoint");
     checkpoint = object(JSON.parse(readFileSync(safeCheckpointPath, "utf8")), relativePath);
     if (
-      checkpoint.version !== PROBLEM_CROP_ADJUDICATION_VERSION || checkpoint.entryId !== entry.id ||
+      checkpoint.version !== version || checkpoint.entryId !== entry.id ||
       checkpoint.basisDigest !== basisDigest || canonicalEvidenceHash(checkpoint.basis) !== canonicalEvidenceHash(basis) ||
       checkpoint.renderer !== "pdftocairo-png+pdf-lib" || checkpoint.dpi !== PROBLEM_CROP_DPI ||
       canonicalEvidenceHash(checkpoint.evidencePdf) !== canonicalEvidenceHash({
@@ -1544,14 +1769,14 @@ async function prepareProblemCropEvidence(
         }
         const persistedViews: ProblemCropAdjudicationEvidence["cropViews"] = [];
         for (const [index, { path, ...view }] of rendered.entries()) {
-          const viewRelativePath = `problem-crop-evidence/${stem}-view-${String(index).padStart(2, "0")}.png`;
+          const viewRelativePath = `${namespace}/${stem}-view-${String(index).padStart(2, "0")}.png`;
           const viewSha = await copyImmutableBinary(path, join(stateDir, viewRelativePath));
           if (viewSha !== view.pixelSha256) throw new Error(`${spec.key} crop evidence view hash가 다릅니다`);
           persistedViews.push({ ...view, artifact: { path: viewRelativePath, sha256: viewSha } });
         }
         const evidencePdfSha = await copyImmutableBinary(tempPdf, pdfPath);
         checkpoint = {
-          version: PROBLEM_CROP_ADJUDICATION_VERSION,
+          version,
           entryId: entry.id,
           basisDigest,
           basis,
@@ -1580,7 +1805,7 @@ async function prepareProblemCropEvidence(
     const expected = spec.views[index];
     const rect = row.rect;
     const artifact = object(row.artifact, `crop evidence view ${index + 1} artifact`);
-    const expectedPath = `problem-crop-evidence/${stem}-view-${String(index).padStart(2, "0")}.png`;
+    const expectedPath = `${namespace}/${stem}-view-${String(index).padStart(2, "0")}.png`;
     const artifactPath = exactString(artifact.path, `crop evidence view ${index + 1} path`, 500);
     const artifactSha = exactHash(artifact.sha256, `crop evidence view ${index + 1} artifact hash`);
     const pixelSha256 = exactHash(row.pixelSha256, `crop evidence view ${index + 1} hash`);
@@ -5003,6 +5228,82 @@ export function assertProblemCropAdjudicationTokens(item: QuizItemEx, requiredTo
   }
 }
 
+function problemManualAdjudicationSpec(
+  entryId: string,
+  key: string,
+  sourcePage: number,
+  sourceHash: string
+): ProblemManualAdjudicationSpec | null {
+  const matches = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
+    spec.entryId === entryId && spec.key === key && spec.sourcePage === sourcePage
+  );
+  if (matches.length > 1) throw new Error(`${entryId} ${key} manual adjudication allowlist가 중복입니다`);
+  const match = matches[0];
+  if (match && match.sourceHash !== sourceHash) {
+    throw new Error(`${entryId} ${key} manual adjudication source hash가 allowlist와 다릅니다`);
+  }
+  return match ?? null;
+}
+
+function exactOccurrenceCount(source: string, target: string): number {
+  if (!target) throw new Error("manual adjudication replacement target이 비어 있습니다");
+  let count = 0;
+  let offset = 0;
+  for (;;) {
+    const index = source.indexOf(target, offset);
+    if (index < 0) return count;
+    count++;
+    offset = index + target.length;
+  }
+}
+
+function problemManualCorrectionSpecHash(spec: ProblemManualAdjudicationSpec): string {
+  return canonicalEvidenceHash({
+    allowlistId: spec.allowlistId,
+    parentKind: spec.parentKind,
+    views: spec.views,
+    requiredTokens: spec.requiredTokens,
+    replacements: spec.replacements,
+    figure: spec.figure,
+    figureDescription: spec.figureDescription,
+  });
+}
+
+export function applyAllowlistedProblemManualCorrection(
+  entryId: string,
+  sourceHash: string,
+  item: QuizItemEx
+): QuizItemEx {
+  const key = questionKey(item);
+  const spec = problemManualAdjudicationSpec(entryId, key, item.page!, sourceHash);
+  if (!spec) throw new Error(`${entryId} ${key} manual adjudication allowlist에 없습니다`);
+  if (canonicalEvidenceHash(item) !== spec.failedQuestionHash) {
+    throw new Error(`${entryId} ${key} manual adjudication failed question hash가 다릅니다`);
+  }
+  const corrected = structuredClone(item);
+  for (const replacement of spec.replacements) {
+    const current = replacement.field === "question"
+      ? corrected.question
+      : corrected.figure_description ?? "";
+    if (exactOccurrenceCount(current, replacement.from) !== replacement.count) {
+      throw new Error(`${key} manual adjudication replacement occurrence가 다릅니다: ${replacement.from}`);
+    }
+    const next = current.split(replacement.from).join(replacement.to);
+    if (replacement.field === "question") corrected.question = next;
+    else corrected.figure_description = next;
+  }
+  if (spec.figure !== undefined) corrected.figure = spec.figure;
+  if (spec.figureDescription !== undefined) corrected.figure_description = spec.figureDescription;
+  if (questionKey(corrected) !== key || corrected.page !== spec.sourcePage) {
+    throw new Error(`${key} manual adjudication이 원본 key/page를 바꿨습니다`);
+  }
+  assertProblemCropAdjudicationTokens(corrected, spec.requiredTokens);
+  if (canonicalEvidenceHash(corrected) === spec.failedQuestionHash) {
+    throw new Error(`${key} manual adjudication이 문제를 바꾸지 않았습니다`);
+  }
+  return corrected;
+}
+
 async function adjudicateCropClassifiedQuestion(
   entry: CorpusManifestEntry,
   problem: PdfEvidence,
@@ -5176,9 +5477,6 @@ async function adjudicateCropClassifiedQuestion(
   if (classificationSha !== canonicalEvidenceHash(classificationCheckpoint)) {
     throw new Error(`${key} classification crop adjudication hash가 다릅니다`);
   }
-  if (classification.transcription_status !== "exact") {
-    throw new Error(`${key} allowlisted crop adjudication도 exact가 아닙니다`);
-  }
   return {
     classified: { question: adjudicated, classification },
     evidence: {
@@ -5213,6 +5511,259 @@ async function adjudicateCropClassifiedQuestion(
       baseQuestionHash: canonicalEvidenceHash(failed.question),
       effectiveQuestionHash: problemItemHash,
       baseClassificationHash: canonicalEvidenceHash(failed.classification),
+      effectiveClassificationHash: canonicalEvidenceHash(classification),
+    },
+  };
+}
+
+async function adjudicateProblemManual(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  stateDir: string,
+  failed: ClassifiedQuestion,
+  parentRecovery: ProblemRecoveryEvidence
+): Promise<{ classified: ClassifiedQuestion; evidence: ProblemManualAdjudicationEvidence }> {
+  const key = questionKey(failed.question);
+  const sourcePage = failed.question.page!;
+  const spec = problemManualAdjudicationSpec(entry.id, key, sourcePage, problem.sha256);
+  if (!spec) throw new Error(`${key} manual adjudication allowlist에 없습니다`);
+  if (problem.sha256 !== spec.sourceHash || await sha256File(problem.path) !== problem.sha256) {
+    throw new Error(`${key} manual adjudication 공식 source bytes hash가 다릅니다`);
+  }
+  const parentQuestionHash = spec.parentKind === "crop"
+    ? parentRecovery.adjudication?.effectiveQuestionHash
+    : parentRecovery.effectiveQuestionHash;
+  const parentClassificationHash = spec.parentKind === "crop"
+    ? parentRecovery.adjudication?.effectiveClassificationHash
+    : parentRecovery.effectiveClassificationHash;
+  if (
+    parentRecovery.manualAdjudication || parentRecovery.scopeAdjudication || parentRecovery.key !== key ||
+    parentRecovery.sourcePage !== sourcePage || parentRecovery.sourceHash !== problem.sha256 ||
+    (spec.parentKind === "crop") !== Boolean(parentRecovery.adjudication) ||
+    canonicalEvidenceHash(failed.question) !== parentQuestionHash ||
+    canonicalEvidenceHash(failed.classification) !== parentClassificationHash ||
+    canonicalEvidenceHash(failed.question) !== spec.failedQuestionHash ||
+    canonicalEvidenceHash(failed.classification) !== spec.failedClassificationHash ||
+    sha256Text(failed.classification.transcription_evidence) !== spec.failedClassificationEvidenceHash ||
+    failed.classification.transcription_status === "exact"
+  ) throw new Error(`${key} manual adjudication 입력이 exhausted recovery와 다릅니다`);
+
+  const pointers: Array<readonly [string, EvidencePointer]> = [
+    ["base problem repair", parentRecovery.baseProblemRepairArtifact],
+    ["base classification repair", parentRecovery.baseClassificationRepairArtifact],
+    ["base problem revision", parentRecovery.baseProblemRevisionArtifact],
+    ["base classification revision", parentRecovery.baseClassificationRevisionArtifact],
+    ["problem recovery", parentRecovery.problemArtifact],
+    ["classification recovery", parentRecovery.classificationArtifact],
+  ];
+  if (parentRecovery.adjudication) {
+    pointers.push(
+      ["crop evidence", parentRecovery.adjudication.cropEvidenceArtifact],
+      ["crop evidence PDF", parentRecovery.adjudication.cropEvidencePdf],
+      ...parentRecovery.adjudication.cropViews.map((view, index) =>
+        [`crop view ${index + 1}`, view.artifact] as const
+      ),
+      ["problem crop adjudication", parentRecovery.adjudication.problemArtifact],
+      ["classification crop adjudication", parentRecovery.adjudication.classificationArtifact],
+    );
+  }
+  for (const [label, pointer] of pointers) {
+    const path = confinedStateFile(stateDir, pointer.path, `manual adjudication ${label}`);
+    if (await sha256File(path) !== pointer.sha256) throw new Error(`${key} manual adjudication ${label} hash가 다릅니다`);
+  }
+
+  const prepared: PreparedProblemCropEvidence = parentRecovery.adjudication
+    ? {
+        artifact: parentRecovery.adjudication.cropEvidenceArtifact,
+        pdf: {
+          ...parentRecovery.adjudication.cropEvidencePdf,
+          absolutePath: confinedStateFile(
+            stateDir,
+            parentRecovery.adjudication.cropEvidencePdf.path,
+            "manual adjudication crop evidence PDF"
+          ),
+        },
+        views: parentRecovery.adjudication.cropViews,
+      }
+    : await prepareProblemCropEvidence(entry, problem, stateDir, spec, {
+        namespace: "problem-manual-evidence",
+        version: PROBLEM_MANUAL_ADJUDICATION_VERSION,
+      });
+  if (
+    canonicalEvidenceHash(prepared.views.map(({ sourcePage: page, label, rect }) => ({ sourcePage: page, label, rect }))) !==
+      canonicalEvidenceHash(spec.views) ||
+    await sha256File(prepared.pdf.absolutePath) !== prepared.pdf.sha256
+  ) throw new Error(`${key} manual adjudication crop evidence가 allowlist와 다릅니다`);
+
+  const parentRecoveryEvidenceHash = canonicalEvidenceHash(parentRecovery);
+  const parentCropAdjudicationHash = parentRecovery.adjudication
+    ? canonicalEvidenceHash(parentRecovery.adjudication)
+    : undefined;
+  const correctionSpecHash = problemManualCorrectionSpecHash(spec);
+  const sourcePages = [...new Set(spec.views.map((view) => view.sourcePage))].sort((a, b) => a - b);
+  const commonBasis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key,
+    printedNumber: parentRecovery.printedNumber,
+    sourcePage,
+    sourcePages,
+    sourceHash: problem.sha256,
+    parentRecovery,
+    parentRecoveryEvidenceHash,
+    ...(parentCropAdjudicationHash ? { parentCropAdjudicationHash } : {}),
+    failedQuestionHash: spec.failedQuestionHash,
+    failedClassificationHash: spec.failedClassificationHash,
+    failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
+    correctionSpecHash,
+    cropEvidenceArtifact: prepared.artifact,
+    cropEvidencePdf: { path: prepared.pdf.path, sha256: prepared.pdf.sha256 },
+    cropViews: prepared.views,
+  };
+  const basisDigest = canonicalEvidenceHash(commonBasis);
+  const stem = `v${PROBLEM_MANUAL_ADJUDICATION_VERSION}-${String(sourcePage).padStart(4, "0")}-` +
+    `${parentRecovery.printedNumber.padStart(4, "0")}-${basisDigest}`;
+  const problemRelativePath = `problem-manual-adjudications/${stem}.json`;
+  const problemPath = join(stateDir, problemRelativePath);
+  let problemCheckpoint: Record<string, unknown>;
+  let corrected: QuizItemEx;
+  if (existsSync(problemPath)) {
+    const safePath = confinedStateFile(stateDir, problemRelativePath, "problem manual adjudication");
+    problemCheckpoint = object(JSON.parse(readFileSync(safePath, "utf8")), problemRelativePath);
+    if (
+      problemCheckpoint.version !== PROBLEM_MANUAL_ADJUDICATION_VERSION ||
+      problemCheckpoint.entryId !== entry.id || problemCheckpoint.basisDigest !== basisDigest ||
+      canonicalEvidenceHash(problemCheckpoint.basis) !== canonicalEvidenceHash(commonBasis) ||
+      problemCheckpoint.correctionVersion !== PROBLEM_MANUAL_ADJUDICATION_VERSION ||
+      problemCheckpoint.correctionDigest !== PROBLEM_MANUAL_CORRECTION_DIGEST
+    ) throw new Error(`기존 problem manual adjudication 메타데이터가 다릅니다: ${problemPath}`);
+    corrected = restoredQuizItems([problemCheckpoint.item])[0];
+  } else {
+    corrected = applyAllowlistedProblemManualCorrection(entry.id, problem.sha256, failed.question);
+    problemCheckpoint = {
+      version: PROBLEM_MANUAL_ADJUDICATION_VERSION,
+      entryId: entry.id,
+      basisDigest,
+      basis: commonBasis,
+      correctionVersion: PROBLEM_MANUAL_ADJUDICATION_VERSION,
+      correctionDigest: PROBLEM_MANUAL_CORRECTION_DIGEST,
+      item: corrected,
+    };
+    await writeImmutableEvidence(problemPath, problemCheckpoint);
+  }
+  const expectedCorrected = applyAllowlistedProblemManualCorrection(entry.id, problem.sha256, failed.question);
+  if (
+    canonicalEvidenceHash(corrected) !== canonicalEvidenceHash(expectedCorrected) ||
+    questionKey(corrected) !== key || corrected.page !== sourcePage ||
+    numericPrintedLocator(corrected.number) !== Number(parentRecovery.printedNumber)
+  ) throw new Error(`${key} manual adjudication corrected item이 allowlist와 다릅니다`);
+  const problemSha = await sha256File(problemPath);
+  if (problemSha !== canonicalEvidenceHash(problemCheckpoint)) throw new Error(`${key} manual adjudication hash가 다릅니다`);
+  const problemItemHash = canonicalEvidenceHash(corrected);
+  const classificationBasis = {
+    ...commonBasis,
+    problemArtifact: { path: problemRelativePath, sha256: problemSha },
+    problemArtifactItemHash: problemItemHash,
+    effectiveQuestionHash: problemItemHash,
+  };
+  const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+  const classificationRelativePath = `classification-manual-adjudications/` +
+    `v${CLASSIFICATION_MANUAL_ADJUDICATION_VERSION}-${String(sourcePage).padStart(4, "0")}-` +
+    `${parentRecovery.printedNumber.padStart(4, "0")}-${classificationBasisDigest}-${CLASSIFIER_DIGEST}.json`;
+  const classificationPath = join(stateDir, classificationRelativePath);
+  const mappingNote = `${PROBLEM_MANUAL_ADJUDICATION_RULES} Evidence mapping: ` +
+    spec.views.map((view, index) => `view ${index + 1}=${view.label}, original page ${view.sourcePage}`).join("; ") +
+    `. Required source anchors: ${spec.requiredTokens.join(" | ")}.`;
+  let classificationCheckpoint: Record<string, unknown>;
+  let classification: ClassificationDecision;
+  if (existsSync(classificationPath)) {
+    const safePath = confinedStateFile(stateDir, classificationRelativePath, "classification manual adjudication");
+    classificationCheckpoint = object(JSON.parse(readFileSync(safePath, "utf8")), classificationRelativePath);
+    if (
+      classificationCheckpoint.version !== CLASSIFICATION_MANUAL_ADJUDICATION_VERSION ||
+      classificationCheckpoint.entryId !== entry.id || classificationCheckpoint.basisDigest !== classificationBasisDigest ||
+      canonicalEvidenceHash(classificationCheckpoint.basis) !== canonicalEvidenceHash(classificationBasis) ||
+      classificationCheckpoint.classifierVersion !== CLASSIFIER_VERSION ||
+      classificationCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+      classificationCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+      classificationCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+      classificationCheckpoint.adjudicationVersion !== PROBLEM_MANUAL_ADJUDICATION_VERSION ||
+      classificationCheckpoint.adjudicationPromptDigest !== PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST ||
+      classificationCheckpoint.model !== IMPORT_MODEL ||
+      classificationCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+    ) throw new Error(`기존 classification manual adjudication 메타데이터가 다릅니다: ${classificationPath}`);
+    classification = parseDecisions(classificationCheckpoint.items, [corrected], entry)[0];
+  } else {
+    classification = (await classifyQuestions(
+      entry,
+      prepared.pdf.absolutePath,
+      sourcePages[0],
+      sourcePages[sourcePages.length - 1],
+      [corrected],
+      { targeted: true, sourceEvidenceNote: mappingNote }
+    ))[0];
+    classificationCheckpoint = {
+      version: CLASSIFICATION_MANUAL_ADJUDICATION_VERSION,
+      entryId: entry.id,
+      basisDigest: classificationBasisDigest,
+      basis: classificationBasis,
+      classifierVersion: CLASSIFIER_VERSION,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      adjudicationVersion: PROBLEM_MANUAL_ADJUDICATION_VERSION,
+      adjudicationPromptDigest: PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      items: [classification],
+    };
+    await writeImmutableEvidence(classificationPath, classificationCheckpoint);
+  }
+  const classificationSha = await sha256File(classificationPath);
+  if (classificationSha !== canonicalEvidenceHash(classificationCheckpoint)) {
+    throw new Error(`${key} classification manual adjudication hash가 다릅니다`);
+  }
+  if (classification.transcription_status !== "exact") {
+    throw new Error(`${key} allowlisted manual adjudication도 exact가 아닙니다`);
+  }
+  return {
+    classified: { question: corrected, classification },
+    evidence: {
+      allowlistId: spec.allowlistId,
+      key,
+      printedNumber: parentRecovery.printedNumber,
+      sourcePage,
+      sourcePages,
+      sourceHash: problem.sha256,
+      parentRecoveryEvidenceHash,
+      ...(parentCropAdjudicationHash ? { parentCropAdjudicationHash } : {}),
+      failedQuestionHash: spec.failedQuestionHash,
+      failedClassificationHash: spec.failedClassificationHash,
+      failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
+      correctionSpecHash,
+      cropEvidenceArtifact: prepared.artifact,
+      cropEvidencePdf: { path: prepared.pdf.path, sha256: prepared.pdf.sha256 },
+      cropViews: prepared.views,
+      problemArtifact: {
+        path: problemRelativePath,
+        sha256: problemSha,
+        correctionVersion: PROBLEM_MANUAL_ADJUDICATION_VERSION,
+        correctionDigest: PROBLEM_MANUAL_CORRECTION_DIGEST,
+      },
+      problemArtifactItemHash: problemItemHash,
+      classificationArtifact: {
+        path: classificationRelativePath,
+        sha256: classificationSha,
+        rulesDigest: CLASSIFIER_DIGEST,
+        transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+        transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+        adjudicationVersion: PROBLEM_MANUAL_ADJUDICATION_VERSION,
+        adjudicationPromptDigest: PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST,
+      },
+      classificationArtifactItemHash: canonicalEvidenceHash(classification),
+      baseQuestionHash: spec.failedQuestionHash,
+      effectiveQuestionHash: problemItemHash,
+      baseClassificationHash: spec.failedClassificationHash,
       effectiveClassificationHash: canonicalEvidenceHash(classification),
     },
   };
@@ -5257,6 +5808,225 @@ async function assertProblemCropAdjudicationAuthority(
   const missing = [...declared.keys()].filter((path) => !actual.has(path));
   if (extras.length > 0 || missing.length > 0) {
     throw new Error(`crop adjudication orphan/conflict: extra=${extras.join(",") || "-"}, missing=${missing.join(",") || "-"}`);
+  }
+}
+
+async function assertProblemManualAdjudicationAuthority(
+  stateDir: string,
+  repairs: Iterable<ProblemRepairEvidence>
+): Promise<void> {
+  const declared = new Map<string, string>();
+  const declare = async (label: string, pointer: EvidencePointer, manualDirectory = true): Promise<void> => {
+    const path = confinedStateFile(stateDir, pointer.path, label);
+    if (await sha256File(path) !== pointer.sha256) throw new Error(`${label} hash가 다릅니다: ${pointer.path}`);
+    if (!manualDirectory) return;
+    if (declared.has(pointer.path)) throw new Error(`manual adjudication artifact가 중복 선언됐습니다: ${pointer.path}`);
+    declared.set(pointer.path, pointer.sha256);
+  };
+  for (const repair of repairs) {
+    const recovery = repair.revision?.recovery;
+    const manual = recovery?.manualAdjudication;
+    if (!recovery || !manual) continue;
+    const { manualAdjudication: _manualAdjudication, ...parentRecovery } = recovery;
+    const matches = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((candidate) =>
+      candidate.allowlistId === manual.allowlistId && candidate.key === manual.key &&
+      candidate.sourcePage === manual.sourcePage && candidate.sourceHash === manual.sourceHash
+    );
+    if (matches.length !== 1) throw new Error(`${repair.key} manual adjudication allowlist authority가 없습니다`);
+    const spec = matches[0];
+    const parentCrop = parentRecovery.adjudication;
+    const expectedParentQuestionHash = spec.parentKind === "crop"
+      ? parentCrop?.effectiveQuestionHash
+      : parentRecovery.effectiveQuestionHash;
+    const expectedParentClassificationHash = spec.parentKind === "crop"
+      ? parentCrop?.effectiveClassificationHash
+      : parentRecovery.effectiveClassificationHash;
+    if (
+      repair.key !== manual.key || manual.printedNumber !== parentRecovery.printedNumber || recovery.scopeAdjudication ||
+      canonicalEvidenceHash(parentRecovery) !== manual.parentRecoveryEvidenceHash ||
+      (spec.parentKind === "crop") !== Boolean(parentCrop) ||
+      (parentCrop ? canonicalEvidenceHash(parentCrop) : undefined) !== manual.parentCropAdjudicationHash ||
+      manual.failedQuestionHash !== spec.failedQuestionHash ||
+      manual.failedQuestionHash !== expectedParentQuestionHash ||
+      manual.failedClassificationHash !== spec.failedClassificationHash ||
+      manual.failedClassificationHash !== expectedParentClassificationHash ||
+      manual.failedClassificationEvidenceHash !== spec.failedClassificationEvidenceHash ||
+      manual.correctionSpecHash !== problemManualCorrectionSpecHash(spec) ||
+      manual.baseQuestionHash !== spec.failedQuestionHash ||
+      manual.baseClassificationHash !== spec.failedClassificationHash ||
+      manual.effectiveQuestionHash !== manual.problemArtifactItemHash ||
+      manual.effectiveClassificationHash !== manual.classificationArtifactItemHash ||
+      canonicalEvidenceHash(manual.sourcePages) !== canonicalEvidenceHash(
+        [...new Set(spec.views.map((view) => view.sourcePage))].sort((a, b) => a - b)
+      ) ||
+      canonicalEvidenceHash(manual.cropViews.map(({ sourcePage, label, rect }) => ({ sourcePage, label, rect }))) !==
+        canonicalEvidenceHash(spec.views)
+    ) throw new Error(`${repair.key} manual adjudication evidence가 allowlist/parent와 다릅니다`);
+
+    const isManualEvidence = spec.parentKind === "recovery";
+    await declare("manual crop evidence", manual.cropEvidenceArtifact, isManualEvidence);
+    await declare("manual crop evidence PDF", manual.cropEvidencePdf, isManualEvidence);
+    for (const [index, view] of manual.cropViews.entries()) {
+      if (view.pixelSha256 !== view.artifact.sha256) {
+        throw new Error(`${repair.key} manual crop view ${index + 1} pixel/artifact hash가 다릅니다`);
+      }
+      await declare(`manual crop view ${index + 1}`, view.artifact, isManualEvidence);
+      const dimensions = pngDimensions(confinedStateFile(stateDir, view.artifact.path, `manual crop view ${index + 1}`));
+      if (dimensions.width !== view.pixelWidth || dimensions.height !== view.pixelHeight) {
+        throw new Error(`${repair.key} manual crop view ${index + 1} 크기가 다릅니다`);
+      }
+    }
+    await declare("problem manual adjudication", manual.problemArtifact);
+    await declare("classification manual adjudication", manual.classificationArtifact);
+
+    if (isManualEvidence) {
+      const evidenceBasis = {
+        allowlistId: spec.allowlistId,
+        entryId: spec.entryId,
+        key: spec.key,
+        sourcePage: spec.sourcePage,
+        sourcePages: manual.sourcePages,
+        sourceHash: spec.sourceHash,
+        dpi: PROBLEM_CROP_DPI,
+        views: spec.views,
+        requiredTokens: spec.requiredTokens,
+      };
+      const evidenceDigest = canonicalEvidenceHash(evidenceBasis);
+      const evidenceStem = `v${PROBLEM_MANUAL_ADJUDICATION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+        `${spec.key.split(":")[1]!.padStart(4, "0")}-${evidenceDigest}`;
+      const expectedArtifactPath = `problem-manual-evidence/${evidenceStem}.json`;
+      const expectedPdfPath = `problem-manual-evidence/${evidenceStem}.pdf`;
+      const checkpoint = object(
+        JSON.parse(readFileSync(confinedStateFile(stateDir, expectedArtifactPath, "manual evidence checkpoint"), "utf8")),
+        expectedArtifactPath
+      );
+      if (
+        manual.cropEvidenceArtifact.path !== expectedArtifactPath || manual.cropEvidencePdf.path !== expectedPdfPath ||
+        checkpoint.version !== PROBLEM_MANUAL_ADJUDICATION_VERSION || checkpoint.entryId !== spec.entryId ||
+        checkpoint.basisDigest !== evidenceDigest ||
+        canonicalEvidenceHash(checkpoint.basis) !== canonicalEvidenceHash(evidenceBasis) ||
+        checkpoint.renderer !== "pdftocairo-png+pdf-lib" || checkpoint.dpi !== PROBLEM_CROP_DPI ||
+        canonicalEvidenceHash(checkpoint.evidencePdf) !== canonicalEvidenceHash(manual.cropEvidencePdf) ||
+        canonicalEvidenceHash(checkpoint.views) !== canonicalEvidenceHash(manual.cropViews) ||
+        manual.cropViews.some((view, index) => view.artifact.path !==
+          `problem-manual-evidence/${evidenceStem}-view-${String(index).padStart(2, "0")}.png`)
+      ) throw new Error(`${repair.key} manual crop evidence checkpoint가 다릅니다`);
+    } else if (
+      !parentCrop ||
+      canonicalEvidenceHash(manual.cropEvidenceArtifact) !== canonicalEvidenceHash(parentCrop.cropEvidenceArtifact) ||
+      canonicalEvidenceHash(manual.cropEvidencePdf) !== canonicalEvidenceHash(parentCrop.cropEvidencePdf) ||
+      canonicalEvidenceHash(manual.cropViews) !== canonicalEvidenceHash(parentCrop.cropViews)
+    ) throw new Error(`${repair.key} manual adjudication이 parent crop evidence를 바꿨습니다`);
+
+    const commonBasis = {
+      allowlistId: spec.allowlistId,
+      entryId: spec.entryId,
+      key: spec.key,
+      printedNumber: manual.printedNumber,
+      sourcePage: spec.sourcePage,
+      sourcePages: manual.sourcePages,
+      sourceHash: spec.sourceHash,
+      parentRecovery,
+      parentRecoveryEvidenceHash: manual.parentRecoveryEvidenceHash,
+      ...(manual.parentCropAdjudicationHash
+        ? { parentCropAdjudicationHash: manual.parentCropAdjudicationHash }
+        : {}),
+      failedQuestionHash: manual.failedQuestionHash,
+      failedClassificationHash: manual.failedClassificationHash,
+      failedClassificationEvidenceHash: manual.failedClassificationEvidenceHash,
+      correctionSpecHash: manual.correctionSpecHash,
+      cropEvidenceArtifact: manual.cropEvidenceArtifact,
+      cropEvidencePdf: manual.cropEvidencePdf,
+      cropViews: manual.cropViews,
+    };
+    const basisDigest = canonicalEvidenceHash(commonBasis);
+    const stem = `v${PROBLEM_MANUAL_ADJUDICATION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+      `${manual.printedNumber.padStart(4, "0")}-${basisDigest}`;
+    const expectedProblemPath = `problem-manual-adjudications/${stem}.json`;
+    const problemCheckpoint = object(
+      JSON.parse(readFileSync(confinedStateFile(stateDir, expectedProblemPath, "problem manual adjudication"), "utf8")),
+      expectedProblemPath
+    );
+    const failedArtifact = spec.parentKind === "crop" ? parentCrop!.problemArtifact : parentRecovery.problemArtifact;
+    const failedCheckpoint = object(
+      JSON.parse(readFileSync(confinedStateFile(stateDir, failedArtifact.path, "manual parent problem"), "utf8")),
+      failedArtifact.path
+    );
+    const failedItem = restoredQuizItems([failedCheckpoint.item])[0];
+    const expectedItem = applyAllowlistedProblemManualCorrection(spec.entryId, spec.sourceHash, failedItem);
+    if (
+      manual.problemArtifact.path !== expectedProblemPath ||
+      problemCheckpoint.version !== PROBLEM_MANUAL_ADJUDICATION_VERSION ||
+      problemCheckpoint.entryId !== spec.entryId || problemCheckpoint.basisDigest !== basisDigest ||
+      canonicalEvidenceHash(problemCheckpoint.basis) !== canonicalEvidenceHash(commonBasis) ||
+      problemCheckpoint.correctionVersion !== PROBLEM_MANUAL_ADJUDICATION_VERSION ||
+      problemCheckpoint.correctionDigest !== PROBLEM_MANUAL_CORRECTION_DIGEST ||
+      manual.problemArtifact.correctionVersion !== PROBLEM_MANUAL_ADJUDICATION_VERSION ||
+      manual.problemArtifact.correctionDigest !== PROBLEM_MANUAL_CORRECTION_DIGEST ||
+      numericPrintedLocator(expectedItem.number) !== Number(manual.printedNumber) ||
+      canonicalEvidenceHash(problemCheckpoint.item) !== canonicalEvidenceHash(expectedItem) ||
+      canonicalEvidenceHash(expectedItem) !== manual.problemArtifactItemHash
+    ) throw new Error(`${repair.key} problem manual adjudication checkpoint가 다릅니다`);
+
+    const classificationBasis = {
+      ...commonBasis,
+      problemArtifact: { path: expectedProblemPath, sha256: manual.problemArtifact.sha256 },
+      problemArtifactItemHash: manual.problemArtifactItemHash,
+      effectiveQuestionHash: manual.effectiveQuestionHash,
+    };
+    const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+    const expectedClassificationPath = `classification-manual-adjudications/` +
+      `v${CLASSIFICATION_MANUAL_ADJUDICATION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+      `${manual.printedNumber.padStart(4, "0")}-${classificationBasisDigest}-${CLASSIFIER_DIGEST}.json`;
+    const classificationCheckpoint = object(
+      JSON.parse(readFileSync(confinedStateFile(
+        stateDir,
+        expectedClassificationPath,
+        "classification manual adjudication"
+      ), "utf8")),
+      expectedClassificationPath
+    );
+    if (
+      manual.classificationArtifact.path !== expectedClassificationPath ||
+      classificationCheckpoint.version !== CLASSIFICATION_MANUAL_ADJUDICATION_VERSION ||
+      classificationCheckpoint.entryId !== spec.entryId ||
+      classificationCheckpoint.basisDigest !== classificationBasisDigest ||
+      canonicalEvidenceHash(classificationCheckpoint.basis) !== canonicalEvidenceHash(classificationBasis) ||
+      classificationCheckpoint.classifierVersion !== CLASSIFIER_VERSION ||
+      classificationCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+      classificationCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+      classificationCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+      classificationCheckpoint.adjudicationVersion !== PROBLEM_MANUAL_ADJUDICATION_VERSION ||
+      classificationCheckpoint.adjudicationPromptDigest !== PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST ||
+      classificationCheckpoint.model !== IMPORT_MODEL ||
+      classificationCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+      !Array.isArray(classificationCheckpoint.items) || classificationCheckpoint.items.length !== 1 ||
+      canonicalEvidenceHash(classificationCheckpoint.items[0]) !== manual.classificationArtifactItemHash
+    ) throw new Error(`${repair.key} classification manual adjudication checkpoint가 다릅니다`);
+  }
+
+  const actual = new Set<string>();
+  for (const directory of [
+    "problem-manual-evidence",
+    "problem-manual-adjudications",
+    "classification-manual-adjudications",
+  ]) {
+    const path = join(stateDir, directory);
+    if (!existsSync(path)) continue;
+    for (const entry of readdirSync(path, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
+      if (!entry.isFile() || entry.isSymbolicLink()) {
+        throw new Error(`manual adjudication directory에 regular file이 아닌 항목이 있습니다: ${directory}/${entry.name}`);
+      }
+      actual.add(`${directory}/${entry.name}`);
+    }
+  }
+  const extras = [...actual].filter((path) => !declared.has(path));
+  const missing = [...declared.keys()].filter((path) => !actual.has(path));
+  if (extras.length > 0 || missing.length > 0) {
+    throw new Error(
+      `manual adjudication orphan/conflict: extra=${extras.join(",") || "-"}, missing=${missing.join(",") || "-"}`
+    );
   }
 }
 
@@ -5859,19 +6629,27 @@ async function recoverClassifiedQuestion(
       effectiveClassificationHash: canonicalEvidenceHash(classification),
   };
   if (classification.transcription_status !== "exact") {
-    const spec = problemCropAdjudicationSpec(entry, input.key, input.sourcePage, problem.sha256);
-    if (!spec) throw new Error(`${input.key} final source-grounded recovery도 exact가 아닙니다`);
-    const adjudicated = await adjudicateCropClassifiedQuestion(
-      entry,
-      problem,
-      stateDir,
-      { question: recovered, classification },
-      recoveryEvidence
-    );
-    return {
-      classified: adjudicated.classified,
-      evidence: { ...recoveryEvidence, adjudication: adjudicated.evidence },
-    };
+    let failed: ClassifiedQuestion = { question: recovered, classification };
+    let parentRecovery = recoveryEvidence;
+    let usedCropAdjudication = false;
+    if (problemCropAdjudicationSpec(entry, input.key, input.sourcePage, problem.sha256)) {
+      const adjudicated = await adjudicateCropClassifiedQuestion(entry, problem, stateDir, failed, parentRecovery);
+      usedCropAdjudication = true;
+      failed = adjudicated.classified;
+      parentRecovery = { ...parentRecovery, adjudication: adjudicated.evidence };
+      if (failed.classification.transcription_status === "exact") {
+        return { classified: failed, evidence: parentRecovery };
+      }
+    }
+    if (problemManualAdjudicationSpec(entry.id, input.key, input.sourcePage, problem.sha256)) {
+      const adjudicated = await adjudicateProblemManual(entry, problem, stateDir, failed, parentRecovery);
+      return {
+        classified: adjudicated.classified,
+        evidence: { ...parentRecovery, manualAdjudication: adjudicated.evidence },
+      };
+    }
+    if (usedCropAdjudication) throw new Error(`${input.key} allowlisted crop adjudication도 exact가 아닙니다`);
+    throw new Error(`${input.key} final source-grounded recovery도 exact가 아닙니다`);
   }
   return {
     classified: { question: recovered, classification },
@@ -6904,10 +7682,13 @@ export async function repairAndAuditOfficialAnswers(
       continue;
     }
     const scopeAdjudicatedKeys = new Set([...repairs.values()].flatMap((repair) =>
-      repair.revision?.recovery?.scopeAdjudication ? [repair.key] : []
+      repair.revision?.recovery?.scopeAdjudication || repair.revision?.recovery?.manualAdjudication
+        ? [repair.key]
+        : []
     ));
     assertTerminalProblemPolicy(effective, finalProblemFidelity.items, repairedKeys, scopeAdjudicatedKeys);
     await assertProblemCropAdjudicationAuthority(stateDir, repairs.values());
+    await assertProblemManualAdjudicationAuthority(stateDir, repairs.values());
     await assertProblemScopeAdjudicationAuthority(stateDir, repairs.values());
     if (effective.some(({ classification }) => classification.decision === "review")) {
       return {
@@ -7064,7 +7845,9 @@ export async function repairAndAuditOfficialAnswers(
   const finalTerminalByKey = new Map(finalProblemFidelity.items.map((item) => [item.key, item]));
   const finalRepairedKeys = new Set(repairs.keys());
   const finalScopeAdjudicatedKeys = new Set([...repairs.values()].flatMap((repair) =>
-    repair.revision?.recovery?.scopeAdjudication ? [repair.key] : []
+    repair.revision?.recovery?.scopeAdjudication || repair.revision?.recovery?.manualAdjudication
+      ? [repair.key]
+      : []
   ));
   const remainingTranscriptionIssues = transcriptionRepairKeys(effective).filter((key) => {
     const current = effective.find((item) => questionKey(item.question) === key);
@@ -7304,9 +8087,12 @@ export async function writeAnswerAttestation(
     answerAudit.problemTerminalFidelityItems,
     new Set(answerAudit.repairs.map((repair) => repair.key)),
     new Set(answerAudit.repairs.flatMap((repair) =>
-      repair.revision?.recovery?.scopeAdjudication ? [repair.key] : []
+      repair.revision?.recovery?.scopeAdjudication || repair.revision?.recovery?.manualAdjudication
+        ? [repair.key]
+        : []
     ))
   );
+  await assertProblemManualAdjudicationAuthority(stateDir, answerAudit.repairs);
   await assertProblemScopeAdjudicationAuthority(stateDir, answerAudit.repairs);
   if (
     audit.entryId !== entryId || audit.problemHash !== problemHash || audit.solutionHash !== solutionHash ||

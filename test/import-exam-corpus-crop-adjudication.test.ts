@@ -63,6 +63,16 @@ const OFFICIAL_PROBLEM_PATHS = {
   "ebsi:5578421": join(process.cwd(), "data/import-exam-corpus/f914a5cf8d2237d6c9319e23/problem.pdf"),
   "ebsi:5594499": join(process.cwd(), "data/import-exam-corpus/4142baa37330a6d3d470294a/problem.pdf"),
 } as const;
+const Q34_EXHAUSTED_CROP_PATH = join(
+  process.cwd(),
+  "data/import-exam-corpus/4142baa37330a6d3d470294a/" +
+    "problem-crop-adjudications/v1-0013-0034-3ee24c800c83bb2f3b7c235749076619e564edc51120a003f59e0d57e7b511fb.json"
+);
+const Q34_EXHAUSTED_CLASSIFICATION_PATH = join(
+  process.cwd(),
+  "data/import-exam-corpus/4142baa37330a6d3d470294a/" +
+    "classification-crop-adjudications/v1-0013-0034-d4fe3ad65b7763cafe6353ae8ed25ae4eb2d32940719f1fac85783ba3b3edbbe-7bb7cb863c8c4855.json"
+);
 
 const SOURCE_GROUNDED_OUTPUTS = {
   "ebsi:5578421": {
@@ -117,6 +127,12 @@ async function runCase(testCase: AllowlistedCase) {
 
   const spec = PROBLEM_CROP_ADJUDICATION_ALLOWLIST.find((item) => item.entryId === testCase.entryId)!;
   const grounded = SOURCE_GROUNDED_OUTPUTS[testCase.entryId];
+  const exhaustedQ34 = testCase.entryId === "ebsi:5594499"
+    ? JSON.parse(readFileSync(Q34_EXHAUSTED_CROP_PATH, "utf8")).item as QuizItemEx
+    : null;
+  const exhaustedQ34Classification = testCase.entryId === "ebsi:5594499"
+    ? JSON.parse(readFileSync(Q34_EXHAUSTED_CLASSIFICATION_PATH, "utf8")).items[0] as ClassificationDecision
+    : null;
   const rawTitle = testCase.entryId === "ebsi:5578421" ? "고2 3월 학평(서울) 국어" : "고3 4월 학평(경기) 국어";
   const entry: CorpusManifestEntry = parseCorpusManifest({
     schemaVersion: 2,
@@ -214,18 +230,23 @@ async function runCase(testCase: AllowlistedCase) {
           .toContain(token.replace(/\s+/gu, ""));
       }
       return { text: JSON.stringify([{
-        ...questions[testCase.number - 1],
-        question: crop ? grounded.question : "여전히 축약된 공통 지문과 대상 문제",
-        choices,
+        ...(crop && exhaustedQ34 ? exhaustedQ34 : questions[testCase.number - 1]),
+        question: crop ? exhaustedQ34?.question ?? grounded.question : "여전히 축약된 공통 지문과 대상 문제",
+        choices: crop && exhaustedQ34 ? exhaustedQ34.choices : choices,
         choiceCount: 5,
       }]) };
     }
     if (request.schema?.name === "studywork_exam_corpus_classification") {
       calls.classification++;
       const inputs = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{ question: string }>;
+      if (exhaustedQ34Classification && inputs[0].question === exhaustedQ34?.question) {
+        return { text: JSON.stringify([exhaustedQ34Classification]) };
+      }
       return { text: JSON.stringify([decision(
         { ...questions[testCase.number - 1], question: inputs[0].question },
-        inputs[0].question.includes("CROP_FINAL") ? "exact" : "mismatch"
+        inputs[0].question.includes("CROP_FINAL") || inputs[0].question.includes("문밖에서 삼월이 아뢰었다")
+          ? "exact"
+          : "mismatch"
       )]) };
     }
     if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
@@ -235,7 +256,10 @@ async function runCase(testCase: AllowlistedCase) {
       }>;
       return { text: JSON.stringify(inputs.map((input) => ({
         key: input.key,
-        status: input.key === testCase.key && !input.question.includes("CROP_FINAL") ? "mismatch" : "exact",
+        status: input.key === testCase.key &&
+          !input.question.includes("CROP_FINAL") && !input.question.includes("문밖에서 삼월이 아뢰었다")
+          ? "mismatch"
+          : "exact",
         evidence: "공식 source pixels와 독립 비교했다.",
         scopeDecision: input.key === testCase.key ? "accept" : "reject",
         scopeConfidence: 0.99,
@@ -276,9 +300,20 @@ async function runCase(testCase: AllowlistedCase) {
     expect(view.pixelSha256).toBe(view.artifact.sha256);
   }
   expect(result.classified.find((item) => item.classification.key === testCase.key)).toMatchObject({
-    question: { question: expect.stringContaining("CROP_FINAL") },
+    question: { question: expect.stringContaining(testCase.entryId === "ebsi:5594499" ? "삼월이" : "CROP_FINAL") },
     classification: { decision: "accept", transcription_status: "exact" },
   });
+  const manual = repair.revision!.recovery!.manualAdjudication;
+  if (testCase.entryId === "ebsi:5594499") {
+    expect(manual).toMatchObject({
+      allowlistId: "ebsi-5594499-q34-manual-v1",
+      parentCropAdjudicationHash: canonicalEvidenceHash(adjudication),
+      problemArtifact: { path: expect.stringMatching(/^problem-manual-adjudications\/v1-/u) },
+      classificationArtifact: { path: expect.stringMatching(/^classification-manual-adjudications\/v1-/u) },
+    });
+  } else {
+    expect(manual).toBeUndefined();
+  }
   expect(result.problemTerminalFidelityItems.find((item) => item.key === testCase.key)).toMatchObject({
     status: "exact", scopeDecision: "accept",
   });
@@ -316,9 +351,24 @@ async function runCase(testCase: AllowlistedCase) {
   writeCanonicalJson(classificationPath, failedClassification);
   const beforeFailedReplay = { ...calls };
   await expect(repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions))
-    .rejects.toThrow("allowlisted crop adjudication도 exact가 아닙니다");
+    .rejects.toThrow(testCase.entryId === "ebsi:5594499"
+      ? "manual adjudication 입력이 exhausted recovery와 다릅니다"
+      : "allowlisted crop adjudication도 exact가 아닙니다");
   expect(calls).toEqual(beforeFailedReplay);
   writeFileSync(classificationPath, originalClassification);
+
+  if (manual) {
+    const manualProblemPath = join(root, manual.problemArtifact.path);
+    const originalManualProblem = readFileSync(manualProblemPath);
+    writeFileSync(manualProblemPath, Buffer.concat([originalManualProblem, Buffer.from("tampered")]));
+    await expect(repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions))
+      .rejects.toThrow(/Unexpected non-whitespace|manual adjudication/u);
+    writeFileSync(manualProblemPath, originalManualProblem);
+    writeFileSync(join(root, "problem-manual-adjudications", "orphan.json"), "{}\n");
+    await expect(repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions))
+      .rejects.toThrow("manual adjudication orphan/conflict");
+    unlinkSync(join(root, "problem-manual-adjudications", "orphan.json"));
+  }
 
   writeFileSync(join(root, "problem-crop-adjudications", "orphan.json"), "{}\n");
   await expect(repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions))
@@ -350,7 +400,10 @@ describe("allowlisted problem crop adjudication", () => {
     await runCase({ entryId: "ebsi:5578421", key: "11:29", page: 11, number: 29, answerIndex: 0 });
   }, 60_000);
 
-  it.skipIf(!existsSync(OFFICIAL_PROBLEM_PATHS["ebsi:5594499"]))(
+  it.skipIf(
+    !existsSync(OFFICIAL_PROBLEM_PATHS["ebsi:5594499"]) || !existsSync(Q34_EXHAUSTED_CROP_PATH) ||
+    !existsSync(Q34_EXHAUSTED_CLASSIFICATION_PATH)
+  )(
   "recovers only ebsi:5594499 Q34 from bound p12-p13 crop pixels", async () => {
     await runCase({ entryId: "ebsi:5594499", key: "13:34", page: 13, number: 34, answerIndex: 1 });
   }, 60_000);
