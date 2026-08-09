@@ -43,6 +43,7 @@ import {
   officialAnswerForDb,
   repairScopeAdjudicationAllowlistFingerprint,
   runCli,
+  solutionPromptUpgradeAllowlistFingerprint,
   TARGET_SUBJECTS,
   verifyExamCorpus,
 } from "../scripts/verify-exam-corpus";
@@ -53,6 +54,10 @@ import {
   PROBLEM_MANUAL_CORRECTION_DIGEST,
   PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST,
   PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST,
+  SOLUTION_PROMPT_UPGRADE_ALLOWLIST,
+  SOLUTION_PROMPT_UPGRADE_FIDELITY_VERSION,
+  SOLUTION_PROMPT_UPGRADE_VERSION,
+  LEGACY_TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
 } from "../scripts/import-exam-corpus";
 
 type Target = (typeof TARGET_SUBJECTS)[number];
@@ -65,7 +70,7 @@ type AnswerCase = {
   storedAnswer: string;
 };
 
-const DIGEST = "1234567890abcdef";
+const DIGEST = "7bb7cb863c8c4855";
 const SEMANTIC_RULES =
   `For each item, use only its official detailed explanation and answer-choice contents to identify the one ` +
   `choice semantically supported by the reasoning. The official answer marker and the problem extractor's answer ` +
@@ -177,6 +182,11 @@ const REPAIR_SCOPE_STATES = new Map([
   [Q26_REPAIR_SCOPE_SPEC.entryId, join(process.cwd(), "data/import-exam-corpus/5a72e90edfe68c75f79ce8ef")],
   [Q30_REPAIR_SCOPE_SPEC.entryId, join(process.cwd(), "data/import-exam-corpus/8166de955e4bb324c5a7b92b")],
 ]);
+const SOLUTION_PROMPT_UPGRADE_SPEC = SOLUTION_PROMPT_UPGRADE_ALLOWLIST[0];
+const SOLUTION_PROMPT_UPGRADE_STATE = join(
+  process.cwd(),
+  "data/import-exam-corpus/887df3e562b3dab6874de994",
+);
 const TARGETED_PROMPT_DIGEST = hash(
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
@@ -1031,6 +1041,124 @@ function prepareRepairScopeFixture(
   writeJson(receiptPath, receipt);
 }
 
+function prepareSolutionPromptUpgradeFixture(files: ReturnType<typeof fixture>): void {
+  const oldStateDir = files.stateDirs.math;
+  const entryState = JSON.parse(readFileSync(join(oldStateDir, "entry.json"), "utf8"));
+  const oldEntryId = entryState.entry.id;
+  const officialEntry = JSON.parse(readFileSync(
+    join(SOLUTION_PROMPT_UPGRADE_STATE, "entry.json"),
+    "utf8",
+  )).entry;
+  const officialDownloads = JSON.parse(readFileSync(
+    join(SOLUTION_PROMPT_UPGRADE_STATE, "downloads.json"),
+    "utf8",
+  ));
+  Object.assign(entryState.entry, {
+    id: SOLUTION_PROMPT_UPGRADE_SPEC.entryId,
+    paperId: officialEntry.paperId,
+    sourcePageUrl: officialEntry.sourcePageUrl,
+    problemPdfUrl: officialDownloads.problem.requestedUrl,
+    solutionPdfUrl: officialDownloads.solution.requestedUrl,
+  });
+  const stateDir = join(
+    files.dataDir,
+    "import-exam-corpus",
+    token(SOLUTION_PROMPT_UPGRADE_SPEC.entryId, 24),
+  );
+  renameSync(oldStateDir, stateDir);
+  files.stateDirs.math = stateDir;
+  writeJson(join(stateDir, "entry.json"), entryState);
+  const manifest = JSON.parse(readFileSync(files.manifestPath, "utf8"));
+  Object.assign(manifest.entries.find((entry: { id: string }) => entry.id === oldEntryId), entryState.entry);
+  writeJson(files.manifestPath, manifest);
+
+  const problemBytes = readFileSync(join(SOLUTION_PROMPT_UPGRADE_STATE, "problem.pdf"));
+  const solutionBytes = readFileSync(join(SOLUTION_PROMPT_UPGRADE_STATE, "solution.pdf"));
+  expect(hash(solutionBytes)).toBe(SOLUTION_PROMPT_UPGRADE_SPEC.sourceHash);
+  writeFileSync(join(stateDir, "problem.pdf"), problemBytes);
+  writeFileSync(join(stateDir, "solution.pdf"), solutionBytes);
+  writeJson(join(stateDir, "downloads.json"), {
+    version: 2,
+    problem: { ...officialDownloads.problem, path: "problem.pdf" },
+    solution: { ...officialDownloads.solution, path: "solution.pdf" },
+  });
+
+  const officialProblem = JSON.parse(readFileSync(
+    join(SOLUTION_PROMPT_UPGRADE_STATE, "problem-chunks", "v2-0000.json"),
+    "utf8",
+  ));
+  const problemPath = join(stateDir, "problem-chunks", "v2-0000.json");
+  const problemCheckpoint = JSON.parse(readFileSync(problemPath, "utf8"));
+  Object.assign(problemCheckpoint, {
+    sourceHash: officialDownloads.problem.sha256,
+    from: 1,
+    to: 12,
+    ownedFrom: 1,
+    ownedTo: 12,
+  });
+  problemCheckpoint.items[0] = officialProblem.items[0];
+  problemCheckpoint.items[1] = officialProblem.items[1];
+  writeJson(problemPath, problemCheckpoint);
+
+  const officialSolution = JSON.parse(readFileSync(
+    join(SOLUTION_PROMPT_UPGRADE_STATE, "solution-chunks", "v3-0000.json"),
+    "utf8",
+  ));
+  const solutionDir = join(stateDir, "solution-chunks");
+  const solutionPath = join(solutionDir, "v3-0000.json");
+  writeJson(solutionPath, officialSolution);
+  for (const name of readdirSync(solutionDir)) {
+    if (/^v3-(?!0000)\d{4}\.json$/u.test(name)) rmSync(join(solutionDir, name));
+  }
+
+  const receiptPath = join(stateDir, "receipt.json");
+  const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+  receipt.entryId = SOLUTION_PROMPT_UPGRADE_SPEC.entryId;
+  receipt.problemHash = officialDownloads.problem.sha256;
+  receipt.solutionHash = officialDownloads.solution.sha256;
+  const db = new Database(files.dbPath);
+  for (const target of receipt.targetBooks as Array<{
+    subject: Target;
+    problemR2Key: string;
+    solutionR2Key: string;
+  }>) {
+    const prefix = `corpus/${token(SOLUTION_PROMPT_UPGRADE_SPEC.entryId, 24)}/${token(target.subject, 16)}`;
+    const problemR2Key = `${prefix}/problem.pdf`;
+    const solutionR2Key = `${prefix}/solution.pdf`;
+    mkdirSync(join(files.dataDir, "files", prefix), { recursive: true });
+    writeFileSync(join(files.dataDir, "files", problemR2Key), problemBytes);
+    writeFileSync(join(files.dataDir, "files", solutionR2Key), solutionBytes);
+    db.prepare("UPDATE book_files SET r2_key = ?, content_hash = ?, page_count = 12 WHERE r2_key = ?")
+      .run(problemR2Key, officialDownloads.problem.sha256, target.problemR2Key);
+    db.prepare("UPDATE book_files SET r2_key = ?, content_hash = ?, page_count = 4 WHERE r2_key = ?")
+      .run(solutionR2Key, officialDownloads.solution.sha256, target.solutionR2Key);
+    target.problemR2Key = problemR2Key;
+    target.solutionR2Key = solutionR2Key;
+  }
+  for (const [index, rawAnswer] of ["②", "⑤"].entries()) {
+    const problem = officialProblem.items[index];
+    const printedNumber = String(index + 1);
+    db.prepare(
+      "UPDATE questions SET qtype = ?, difficulty = ?, question = ?, choices = ?, answer = ? " +
+      "WHERE printed_number = ? AND book_id IN (SELECT id FROM books WHERE title = ?)",
+    ).run(
+      problem.qtype,
+      problem.difficulty,
+      problem.question,
+      JSON.stringify(problem.choices),
+      rawAnswer,
+      printedNumber,
+      "2025년 · 2025 수능 수학 미적분",
+    );
+    db.prepare(
+      "UPDATE book_items SET answer = ?, content = ? WHERE category = '문제' AND number = ? " +
+      "AND book_id IN (SELECT id FROM books WHERE title = ?)",
+    ).run(rawAnswer, problem.question, printedNumber, "2025년 · 2025 수능 수학 미적분");
+  }
+  db.close();
+  writeJson(receiptPath, receipt);
+}
+
 function prepareQ30ManualFixture(files: ReturnType<typeof fixture>): void {
   const oldStateDir = files.stateDirs.korean;
   const entryState = JSON.parse(readFileSync(join(oldStateDir, "entry.json"), "utf8"));
@@ -1103,6 +1231,7 @@ function upgradeEntryToV3(
     repairScopeAdjudication?: boolean;
     manualAdjudication?: boolean;
     difficultyRepair?: boolean;
+    promptUpgrade?: boolean;
     terminalRecovery?: boolean;
     mixedTerminalRecovery?: boolean;
     answerV5?: boolean;
@@ -1180,23 +1309,24 @@ function upgradeEntryToV3(
   const recoveryTargetPage = repairScopeSpec?.sourcePage ?? (options.manualAdjudication ? 12
     : options.cropAdjudication ? 11 : options.scopeAdjudication ? 4 : 1);
   const contextTo = options.manualAdjudication ? 16
-    : options.cropAdjudication ? 16 : options.scopeAdjudication || options.repairScopeAdjudication ? 12
+    : options.cropAdjudication ? 16
+      : options.scopeAdjudication || options.repairScopeAdjudication || options.promptUpgrade ? 12
     : options.crossPageBatchRepair ? 2 : 1;
   if (options.crossPageBatchRepair || options.cropAdjudication || options.scopeAdjudication
-    || options.repairScopeAdjudication || options.manualAdjudication) {
+    || options.repairScopeAdjudication || options.manualAdjudication || options.promptUpgrade) {
     downloads.problem.pageCount = contextTo;
     writeJson(join(stateDir, "downloads.json"), downloads);
     problemCheckpoint.to = contextTo;
     problemCheckpoint.ownedTo = contextTo;
     if (options.cropAdjudication || options.scopeAdjudication || options.repairScopeAdjudication
-      || options.manualAdjudication) {
+      || options.manualAdjudication || options.promptUpgrade) {
       problemCheckpoint.sourceHash = downloads.problem.sha256;
     }
     if (options.crossPageBatchRepair) {
       for (const item of problemCheckpoint.items.slice(9)) item.page = 2;
     }
     if (options.cropAdjudication || options.scopeAdjudication || options.repairScopeAdjudication
-      || options.manualAdjudication) {
+      || options.manualAdjudication || options.promptUpgrade) {
       problemCheckpoint.items[recoveryTargetNumber - 1].page = recoveryTargetPage;
     }
     writeJson(problemCheckpointPath, problemCheckpoint);
@@ -1211,7 +1341,7 @@ function upgradeEntryToV3(
   classification.to = contextTo;
   classification.ownedTo = contextTo;
   if (options.cropAdjudication || options.scopeAdjudication || options.repairScopeAdjudication
-    || options.manualAdjudication) {
+    || options.manualAdjudication || options.promptUpgrade) {
     classification.sourceHash = downloads.problem.sha256;
   }
   if (options.crossPageBatchRepair) {
@@ -1220,7 +1350,7 @@ function upgradeEntryToV3(
     }
   }
   if (options.cropAdjudication || options.scopeAdjudication || options.repairScopeAdjudication
-    || options.manualAdjudication) {
+    || options.manualAdjudication || options.promptUpgrade) {
     classification.items[recoveryTargetNumber - 1].key = `${recoveryTargetPage}:${recoveryTargetNumber}`;
   }
   if (options.scopeAdjudication) {
@@ -3048,7 +3178,7 @@ function upgradeEntryToV3(
   const fidelityPointerByLegacyPath = new Map<string, Record<string, unknown>>();
   const fidelityInputByKey = new Map<string, Record<string, unknown>>();
   const officialSolutionContextTo = options.scopeAdjudication ? 5
-    : options.repairScopeAdjudication ? 4 : undefined;
+    : options.repairScopeAdjudication || options.promptUpgrade ? 4 : undefined;
   const solutionFidelityCheckpoints = legacyAudit.solutionFidelityCheckpoints.map(
     (pointer: Record<string, unknown>) => {
       const childPath = join(stateDir, String(pointer.path));
@@ -3076,6 +3206,10 @@ function upgradeEntryToV3(
             );
             return {
               ...input,
+              ...(options.promptUpgrade ? {
+                qtype: effectiveProblems[Number(input.printedNumber) - 1].qtype,
+                allowDerivedMarkerAnswer: /^[①-⑩]$/u.test(solution.answer),
+              } : {}),
               sourcePage: solution.page,
               rawAnswer: solution.answer,
               explanation: solution.explanation,
@@ -5895,6 +6029,582 @@ function rewriteSolutionAuditAuthority(
   });
 }
 
+function installSolutionPromptUpgrade(files: ReturnType<typeof fixture>): {
+  upgradeArtifact: string;
+  upgradeFidelityArtifact: string;
+  currentRevisionArtifact: string;
+  legacyRevisionArtifact: string;
+} {
+  prepareSolutionPromptUpgradeFixture(files);
+  const stateDir = files.stateDirs.math;
+  upgradeEntryToV3(files, "math", {
+    promptUpgrade: true,
+    terminalScope: "authorized-reject",
+    answerV5: true,
+  });
+  const copyAuthority = (relativePath: string): string => {
+    const target = join(stateDir, relativePath);
+    mkdirSync(join(target, ".."), { recursive: true });
+    writeFileSync(target, readFileSync(join(SOLUTION_PROMPT_UPGRADE_STATE, relativePath)));
+    return target;
+  };
+  const legacyRevisionName = readdirSync(join(SOLUTION_PROMPT_UPGRADE_STATE, "solution-revisions"))
+    .find((name) => hash(readFileSync(join(
+      SOLUTION_PROMPT_UPGRADE_STATE,
+      "solution-revisions",
+      name,
+    ))) === SOLUTION_PROMPT_UPGRADE_SPEC.legacyRevisionArtifactHash)!;
+  const legacyRevisionPath = `solution-revisions/${legacyRevisionName}`;
+  const legacyRevision = JSON.parse(readFileSync(
+    join(SOLUTION_PROMPT_UPGRADE_STATE, legacyRevisionPath),
+    "utf8",
+  ));
+  const legacyRepairPath = legacyRevision.baseRepairArtifact.path;
+  const legacyRepair = JSON.parse(readFileSync(
+    join(SOLUTION_PROMPT_UPGRADE_STATE, legacyRepairPath),
+    "utf8",
+  ));
+  const legacyRepairFidelityPath = readdirSync(
+    join(SOLUTION_PROMPT_UPGRADE_STATE, "solution-fidelity-repairs"),
+  ).map((name) => `solution-fidelity-repairs/${name}`).find((relativePath) =>
+    JSON.parse(readFileSync(join(SOLUTION_PROMPT_UPGRADE_STATE, relativePath), "utf8"))
+      .repairArtifact.path === legacyRepairPath)!;
+  const legacyRevisionFidelityPath = readdirSync(
+    join(SOLUTION_PROMPT_UPGRADE_STATE, "solution-fidelity-revisions"),
+  ).map((name) => `solution-fidelity-revisions/${name}`).find((relativePath) =>
+    hash(readFileSync(join(SOLUTION_PROMPT_UPGRADE_STATE, relativePath))) ===
+      SOLUTION_PROMPT_UPGRADE_SPEC.legacyRevisionFidelityArtifactHash)!;
+  const legacyBaseFidelityPath = legacyRepair.baseFidelityCheckpoint.path;
+  const legacySemanticPath = legacyRevision.trigger.semanticCheckpoint.path;
+  for (const relativePath of [
+    legacyBaseFidelityPath,
+    legacyRepairPath,
+    legacyRepairFidelityPath,
+    legacyRevisionPath,
+    legacyRevisionFidelityPath,
+    legacySemanticPath,
+  ]) copyAuthority(relativePath);
+
+  const legacyBaseFidelity = JSON.parse(readFileSync(join(stateDir, legacyBaseFidelityPath), "utf8"));
+  const legacyRepairFidelity = JSON.parse(readFileSync(join(stateDir, legacyRepairFidelityPath), "utf8"));
+  const legacyRevisionFidelity = JSON.parse(readFileSync(join(stateDir, legacyRevisionFidelityPath), "utf8"));
+  const legacyInput = legacyBaseFidelity.inputs.find((input: { key: string }) => input.key === "1:1");
+  const legacyFirstDecision = legacyRepairFidelity.item;
+  const legacyRepaired = legacyRepair.item;
+  const legacyRepairedHash = canonicalEvidenceHash(legacyRepaired);
+  const generationId = canonicalEvidenceHash({
+    key: "1:1",
+    effectiveProblemCorpusHash: legacyRepair.effectiveProblemCorpusHash,
+    baseFidelityCheckpointSha256: legacyRepair.baseFidelityCheckpoint.sha256,
+  });
+  const predecessor = {
+    allowlistId: SOLUTION_PROMPT_UPGRADE_SPEC.allowlistId,
+    generationId,
+    key: "1:1",
+    effectiveProblemCorpusHash: legacyRepair.effectiveProblemCorpusHash,
+    repairArtifact: { path: legacyRepairPath, sha256: hash(readFileSync(join(stateDir, legacyRepairPath))) },
+    repairFidelityArtifact: {
+      path: legacyRepairFidelityPath,
+      sha256: hash(readFileSync(join(stateDir, legacyRepairFidelityPath))),
+    },
+    revisionArtifact: {
+      path: legacyRevisionPath,
+      sha256: SOLUTION_PROMPT_UPGRADE_SPEC.legacyRevisionArtifactHash,
+      promptVersion: 1,
+      promptDigest: LEGACY_TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+    },
+    revisionFidelityArtifact: {
+      path: legacyRevisionFidelityPath,
+      sha256: SOLUTION_PROMPT_UPGRADE_SPEC.legacyRevisionFidelityArtifactHash,
+    },
+    revisionSolutionItemHash: canonicalEvidenceHash(legacyRevision.item),
+    failedDecisionHash: canonicalEvidenceHash(legacyRevisionFidelity.item),
+    failedEvidenceHash: hash(legacyRevisionFidelity.item.evidence),
+    failedEvidence: legacyRevisionFidelity.item.evidence,
+  };
+  const upgradeTrigger = {
+    kind: "prompt-upgrade",
+    fidelityDecisionHash: canonicalEvidenceHash(legacyFirstDecision),
+    promptUpgradeVersion: SOLUTION_PROMPT_UPGRADE_VERSION,
+    legacyPredecessor: predecessor,
+  };
+  const finalSolution = {
+    number: "1",
+    answer: "②",
+    explanation: "[출제의도] 지수 계산하기\n\n" +
+      "\\(\\left(3^{\\frac{1}{2}}\\right)^2=3^{\\frac{1}{2}\\times 2}=3^1=3\\)이다.",
+    page: 1,
+    complete: true,
+  };
+  const baseRepairFidelityArtifact = {
+    path: legacyRepairFidelityPath,
+    sha256: predecessor.repairFidelityArtifact.sha256,
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+  };
+  const upgradeBasisHash = canonicalEvidenceHash({
+    key: "1:1",
+    sourceHash: SOLUTION_PROMPT_UPGRADE_SPEC.sourceHash,
+    basePage: legacyInput.sourcePage,
+    contextFrom: legacyInput.baseContextFrom,
+    contextTo: legacyInput.baseContextTo,
+    baseSolutionCheckpoint: legacyInput.baseSolutionCheckpoint,
+    baseSolutionItemHash: legacyInput.baseSolutionItemHash,
+    baseRepairArtifact: predecessor.repairArtifact,
+    baseRepairFidelityArtifact,
+    baseRepairSolutionItemHash: legacyRepairedHash,
+    trigger: upgradeTrigger,
+    revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+  });
+  const upgradeRelativePath = `solution-revision-upgrades/v1-0001-0001-${upgradeBasisHash}.json`;
+  const upgradeCheckpoint = {
+    version: 1,
+    entryId: SOLUTION_PROMPT_UPGRADE_SPEC.entryId,
+    key: "1:1",
+    printedNumber: "1",
+    sourceHash: SOLUTION_PROMPT_UPGRADE_SPEC.sourceHash,
+    basePage: legacyInput.sourcePage,
+    contextFrom: legacyInput.baseContextFrom,
+    contextTo: legacyInput.baseContextTo,
+    baseOwnedFrom: legacyInput.baseOwnedFrom,
+    baseOwnedTo: legacyInput.baseOwnedTo,
+    effectiveProblemCorpusHash: legacyRepair.effectiveProblemCorpusHash,
+    baseSolutionCheckpoint: legacyInput.baseSolutionCheckpoint,
+    baseSolutionItemHash: legacyInput.baseSolutionItemHash,
+    baseRepairArtifact: predecessor.repairArtifact,
+    baseRepairFidelityArtifact,
+    baseRepairPage: legacyRepaired.page,
+    baseRepairSolutionItemHash: legacyRepairedHash,
+    trigger: upgradeTrigger,
+    diagnosticDecision: legacyFirstDecision,
+    diagnosticDecisionHash: canonicalEvidenceHash(legacyFirstDecision),
+    promptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+    promptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    effectivePage: 1,
+    item: finalSolution,
+  };
+  const upgradeHash = writeEvidence(join(stateDir, upgradeRelativePath), upgradeCheckpoint);
+  const finalSolutionHash = canonicalEvidenceHash(finalSolution);
+  const upgradeInput = {
+    ...legacyInput,
+    sourcePage: 1,
+    rawAnswer: finalSolution.answer,
+    explanation: finalSolution.explanation,
+  };
+  const upgradeDecision = {
+    key: "1:1",
+    sourcePage: 1,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: "정답표 1번 ②와 전체 지수 계산 해설이 공식 픽셀과 일치한다.",
+  };
+  const upgradeFidelityRelativePath =
+    `solution-fidelity-revision-upgrades/v1-0001-0001-${upgradeHash}-${finalSolutionHash}.json`;
+  const upgradeFidelityCheckpoint = {
+    version: 1,
+    entryId: SOLUTION_PROMPT_UPGRADE_SPEC.entryId,
+    key: "1:1",
+    sourceHash: SOLUTION_PROMPT_UPGRADE_SPEC.sourceHash,
+    from: legacyInput.baseContextFrom,
+    to: legacyInput.baseContextTo,
+    basePage: legacyInput.sourcePage,
+    baseRepairPage: legacyRepaired.page,
+    effectivePage: 1,
+    baseOwnedFrom: legacyInput.baseOwnedFrom,
+    baseOwnedTo: legacyInput.baseOwnedTo,
+    effectiveProblemCorpusHash: legacyRepair.effectiveProblemCorpusHash,
+    baseSolutionCheckpoint: legacyInput.baseSolutionCheckpoint,
+    baseSolutionItemHash: legacyInput.baseSolutionItemHash,
+    baseRepairArtifact: predecessor.repairArtifact,
+    baseRepairFidelityArtifact,
+    baseRepairSolutionItemHash: legacyRepairedHash,
+    diagnosticDecisionHash: canonicalEvidenceHash(legacyFirstDecision),
+    trigger: upgradeTrigger,
+    revisionArtifact: { path: upgradeRelativePath, sha256: upgradeHash },
+    effectiveSolutionItemHash: finalSolutionHash,
+    inputHash: canonicalEvidenceHash(upgradeInput),
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    input: upgradeInput,
+    item: upgradeDecision,
+  };
+  const upgradeFidelityHash = writeEvidence(
+    join(stateDir, upgradeFidelityRelativePath),
+    upgradeFidelityCheckpoint,
+  );
+  const historicalAuthority = {
+    generationId,
+    key: "1:1",
+    repairArtifact: predecessor.repairArtifact,
+    repairFidelityArtifact: predecessor.repairFidelityArtifact,
+    revisionArtifact: { path: upgradeRelativePath, sha256: upgradeHash },
+    revisionFidelityArtifact: { path: upgradeFidelityRelativePath, sha256: upgradeFidelityHash },
+    finalSolutionItemHash: finalSolutionHash,
+    diagnosticDecisionHash: canonicalEvidenceHash(legacyFirstDecision),
+    diagnosticEvidence: predecessor.failedEvidence,
+  };
+
+  const attestationName = readdirSync(join(stateDir, "answer-attestation"))
+    .find((name) => /^v5-/u.test(name))!;
+  const attestation = JSON.parse(readFileSync(join(stateDir, "answer-attestation", attestationName), "utf8"));
+  const audit = JSON.parse(readFileSync(join(stateDir, attestation.answerAudit.path), "utf8"));
+  const currentBasePointer = audit.solutionFidelityCheckpoints.find((pointer: Record<string, unknown>) => {
+    const checkpoint = JSON.parse(readFileSync(join(stateDir, String(pointer.path)), "utf8"));
+    return checkpoint.inputs.some((input: { key: string }) => input.key === "1:1");
+  });
+  const currentBase = JSON.parse(readFileSync(join(stateDir, currentBasePointer.path), "utf8"));
+  const currentInput = currentBase.inputs.find((input: { key: string }) => input.key === "1:1");
+  const currentEffectiveProblemCorpusHash = audit.effectiveCorpusHash;
+  const currentGenerationId = canonicalEvidenceHash({
+    key: "1:1",
+    effectiveProblemCorpusHash: currentEffectiveProblemCorpusHash,
+    baseFidelityCheckpointSha256: currentBasePointer.sha256,
+  });
+  const persistedSeed = {
+    version: 1,
+    generationId,
+    effectiveProblemCorpusHash: legacyRepair.effectiveProblemCorpusHash,
+    baseFidelityCheckpoint: legacyRepair.baseFidelityCheckpoint,
+    repairArtifact: predecessor.repairArtifact,
+    repairFidelityArtifact: predecessor.repairFidelityArtifact,
+    repairedItemHash: legacyRepairedHash,
+  };
+  const currentRepairRelativePath = `solution-repairs/v1-0001-0001-${currentBasePointer.sha256}.json`;
+  const currentRepairCheckpoint = {
+    version: 1,
+    entryId: SOLUTION_PROMPT_UPGRADE_SPEC.entryId,
+    key: "1:1",
+    printedNumber: "1",
+    basePage: 1,
+    contextFrom: 1,
+    contextTo: 4,
+    baseOwnedFrom: 1,
+    baseOwnedTo: 4,
+    sourceHash: SOLUTION_PROMPT_UPGRADE_SPEC.sourceHash,
+    effectiveProblemCorpusHash: currentEffectiveProblemCorpusHash,
+    baseSolutionCheckpoint: currentInput.baseSolutionCheckpoint,
+    baseFidelityCheckpoint: { path: currentBasePointer.path, sha256: currentBasePointer.sha256 },
+    baseSolutionItemHash: currentInput.baseSolutionItemHash,
+    baseRawAnswerHash: hash(currentInput.rawAnswer),
+    baseExplanationHash: hash(currentInput.explanation),
+    promptVersion: TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
+    promptDigest: TARGETED_SOLUTION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    persistedSeed,
+    effectivePage: legacyRepaired.page,
+    item: legacyRepaired,
+  };
+  const currentRepairHash = writeEvidence(join(stateDir, currentRepairRelativePath), currentRepairCheckpoint);
+  const currentRepairPointer = { path: currentRepairRelativePath, sha256: currentRepairHash };
+  const currentRepairedInput = {
+    ...currentInput,
+    sourcePage: legacyRepaired.page,
+    rawAnswer: legacyRepaired.answer,
+    explanation: legacyRepaired.explanation,
+  };
+  const currentFirstDecision = {
+    key: "1:1",
+    sourcePage: legacyRepaired.page,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: "현재 첫 수리는 기존 공식 정답표와 해설을 정확히 보존한다.",
+  };
+  const currentRepairFidelityRelativePath = `solution-fidelity-repairs/v1-0001-0001-` +
+    `${currentBasePointer.sha256}-${legacyRepairedHash}.json`;
+  const currentRepairFidelityCheckpoint = {
+    version: 1,
+    entryId: SOLUTION_PROMPT_UPGRADE_SPEC.entryId,
+    key: "1:1",
+    sourceHash: SOLUTION_PROMPT_UPGRADE_SPEC.sourceHash,
+    from: 1,
+    to: 4,
+    basePage: 1,
+    effectivePage: legacyRepaired.page,
+    baseOwnedFrom: 1,
+    baseOwnedTo: 4,
+    effectiveProblemCorpusHash: currentEffectiveProblemCorpusHash,
+    baseSolutionCheckpoint: currentInput.baseSolutionCheckpoint,
+    baseFidelityCheckpoint: { path: currentBasePointer.path, sha256: currentBasePointer.sha256 },
+    repairArtifact: currentRepairPointer,
+    effectiveSolutionItemHash: legacyRepairedHash,
+    inputHash: canonicalEvidenceHash(currentRepairedInput),
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    input: currentRepairedInput,
+    item: currentFirstDecision,
+  };
+  const currentRepairFidelityHash = writeEvidence(
+    join(stateDir, currentRepairFidelityRelativePath),
+    currentRepairFidelityCheckpoint,
+  );
+  const currentRepairFidelityPointer = {
+    path: currentRepairFidelityRelativePath,
+    sha256: currentRepairFidelityHash,
+  };
+  const persistedTrigger = {
+    kind: "persisted",
+    fidelityDecisionHash: canonicalEvidenceHash(currentFirstDecision),
+    persistedTriggerVersion: 1,
+    predecessor: historicalAuthority,
+  };
+  const currentBaseRepairFidelityArtifact = {
+    ...currentRepairFidelityPointer,
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+  };
+  const currentRevisionBasisHash = canonicalEvidenceHash({
+    key: "1:1",
+    sourceHash: SOLUTION_PROMPT_UPGRADE_SPEC.sourceHash,
+    basePage: 1,
+    contextFrom: 1,
+    contextTo: 4,
+    baseSolutionCheckpoint: currentInput.baseSolutionCheckpoint,
+    baseSolutionItemHash: currentInput.baseSolutionItemHash,
+    baseRepairArtifact: currentRepairPointer,
+    baseRepairFidelityArtifact: currentBaseRepairFidelityArtifact,
+    baseRepairSolutionItemHash: legacyRepairedHash,
+    trigger: persistedTrigger,
+    revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+  });
+  const currentRevisionRelativePath = `solution-revisions/v1-0001-0001-${currentRevisionBasisHash}.json`;
+  const currentRevisionCheckpoint = {
+    version: 1,
+    entryId: SOLUTION_PROMPT_UPGRADE_SPEC.entryId,
+    key: "1:1",
+    printedNumber: "1",
+    sourceHash: SOLUTION_PROMPT_UPGRADE_SPEC.sourceHash,
+    basePage: 1,
+    contextFrom: 1,
+    contextTo: 4,
+    baseOwnedFrom: 1,
+    baseOwnedTo: 4,
+    effectiveProblemCorpusHash: currentEffectiveProblemCorpusHash,
+    baseSolutionCheckpoint: currentInput.baseSolutionCheckpoint,
+    baseSolutionItemHash: currentInput.baseSolutionItemHash,
+    baseRepairArtifact: currentRepairPointer,
+    baseRepairFidelityArtifact: currentBaseRepairFidelityArtifact,
+    baseRepairPage: 1,
+    baseRepairSolutionItemHash: legacyRepairedHash,
+    trigger: persistedTrigger,
+    diagnosticDecision: currentFirstDecision,
+    diagnosticDecisionHash: canonicalEvidenceHash(currentFirstDecision),
+    promptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+    promptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    effectivePage: 1,
+    item: finalSolution,
+  };
+  const currentRevisionHash = writeEvidence(
+    join(stateDir, currentRevisionRelativePath),
+    currentRevisionCheckpoint,
+  );
+  const currentRevisionPointer = { path: currentRevisionRelativePath, sha256: currentRevisionHash };
+  const currentFinalInput = {
+    ...currentInput,
+    sourcePage: 1,
+    rawAnswer: finalSolution.answer,
+    explanation: finalSolution.explanation,
+  };
+  const currentFinalDecision = {
+    key: "1:1",
+    sourcePage: 1,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: "현재 세대도 정답표 ②와 완전한 지수 해설에 일치한다.",
+  };
+  const currentRevisionFidelityRelativePath = `solution-fidelity-revisions/v1-0001-0001-` +
+    `${currentRevisionHash}-${finalSolutionHash}.json`;
+  const currentRevisionFidelityCheckpoint = {
+    version: 1,
+    entryId: SOLUTION_PROMPT_UPGRADE_SPEC.entryId,
+    key: "1:1",
+    sourceHash: SOLUTION_PROMPT_UPGRADE_SPEC.sourceHash,
+    from: 1,
+    to: 4,
+    basePage: 1,
+    baseRepairPage: 1,
+    effectivePage: 1,
+    baseOwnedFrom: 1,
+    baseOwnedTo: 4,
+    effectiveProblemCorpusHash: currentEffectiveProblemCorpusHash,
+    baseSolutionCheckpoint: currentInput.baseSolutionCheckpoint,
+    baseSolutionItemHash: currentInput.baseSolutionItemHash,
+    baseRepairArtifact: currentRepairPointer,
+    baseRepairFidelityArtifact: currentBaseRepairFidelityArtifact,
+    baseRepairSolutionItemHash: legacyRepairedHash,
+    diagnosticDecisionHash: canonicalEvidenceHash(currentFirstDecision),
+    trigger: persistedTrigger,
+    revisionArtifact: currentRevisionPointer,
+    effectiveSolutionItemHash: finalSolutionHash,
+    inputHash: canonicalEvidenceHash(currentFinalInput),
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    input: currentFinalInput,
+    item: currentFinalDecision,
+  };
+  const currentRevisionFidelityHash = writeEvidence(
+    join(stateDir, currentRevisionFidelityRelativePath),
+    currentRevisionFidelityCheckpoint,
+  );
+  const currentRevisionFidelityPointer = {
+    path: currentRevisionFidelityRelativePath,
+    sha256: currentRevisionFidelityHash,
+  };
+  const currentRepairEvidence = {
+    key: "1:1",
+    printedNumber: "1",
+    basePage: 1,
+    effectivePage: 1,
+    contextFrom: 1,
+    contextTo: 4,
+    baseOwnedFrom: 1,
+    baseOwnedTo: 4,
+    baseSolutionCheckpoint: currentInput.baseSolutionCheckpoint,
+    baseFidelityCheckpoint: { path: currentBasePointer.path, sha256: currentBasePointer.sha256 },
+    repairArtifact: currentRepairPointer,
+    fidelityArtifact: {
+      ...currentRepairFidelityPointer,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    },
+    baseSolutionItemHash: currentInput.baseSolutionItemHash,
+    effectiveSolutionItemHash: legacyRepairedHash,
+    baseRawAnswerHash: hash(currentInput.rawAnswer),
+    effectiveRawAnswerHash: hash(legacyRepaired.answer),
+    baseExplanationHash: hash(currentInput.explanation),
+    effectiveExplanationHash: hash(legacyRepaired.explanation),
+    revision: {
+      trigger: persistedTrigger,
+      baseRepairPage: 1,
+      effectivePage: 1,
+      baseRepairArtifact: currentRepairPointer,
+      baseRepairFidelityArtifact: currentBaseRepairFidelityArtifact,
+      solutionArtifact: {
+        ...currentRevisionPointer,
+        revisionPromptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+        revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+      },
+      fidelityArtifact: {
+        ...currentRevisionFidelityPointer,
+        promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      },
+      diagnosticDecisionHash: canonicalEvidenceHash(currentFirstDecision),
+      baseSolutionItemHash: currentInput.baseSolutionItemHash,
+      baseRepairSolutionItemHash: legacyRepairedHash,
+      effectiveSolutionItemHash: finalSolutionHash,
+      baseRepairRawAnswerHash: hash(legacyRepaired.answer),
+      effectiveRawAnswerHash: hash(finalSolution.answer),
+      baseRepairExplanationHash: hash(legacyRepaired.explanation),
+      effectiveExplanationHash: hash(finalSolution.explanation),
+    },
+  };
+
+  const solutionCheckpoint = JSON.parse(readFileSync(join(stateDir, "solution-chunks", "v3-0000.json"), "utf8"));
+  const q2Solution = solutionCheckpoint.items.find((item: { number: string }) => item.number === "2");
+  const effectiveSolutionCorpusHash = canonicalEvidenceHash([{
+    key: "1:1",
+    solution: finalSolution,
+  }, {
+    key: "1:2",
+    solution: q2Solution,
+  }].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key)));
+  const problemCheckpoint = JSON.parse(readFileSync(join(stateDir, "problem-chunks", "v2-0000.json"), "utf8"));
+  const semanticInputs = [0, 1].map((index) => ({
+    key: `1:${index + 1}`,
+    choices: problemCheckpoint.items[index].choices,
+    detailedExplanation: redactedExplanation(index === 0 ? finalSolution.explanation : q2Solution.explanation),
+  }));
+  const semanticDecisions = [2, 5].map((choiceIndex, index) => ({
+    key: `1:${index + 1}`,
+    status: "resolved",
+    choiceIndex,
+    evidence: `공식 해설의 결론은 선택지 ${choiceIndex}와 유일하게 일치한다.`,
+  }));
+  const semanticInputHash = canonicalEvidenceHash(semanticInputs);
+  const semanticRelativePath = `semantic-choice-checks/v5-${currentEffectiveProblemCorpusHash}-` +
+    `${effectiveSolutionCorpusHash}-${semanticInputHash}.json`;
+  const semanticHash = writeEvidence(join(stateDir, semanticRelativePath), {
+    version: 5,
+    entryId: SOLUTION_PROMPT_UPGRADE_SPEC.entryId,
+    problemHash: JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8")).problem.sha256,
+    solutionHash: SOLUTION_PROMPT_UPGRADE_SPEC.sourceHash,
+    classifierVersion: 5,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 2,
+    transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+    effectiveCorpusHash: currentEffectiveProblemCorpusHash,
+    effectiveSolutionCorpusHash,
+    inputHash: semanticInputHash,
+    promptDigest: V5_SEMANTIC_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    inputs: semanticInputs,
+    items: semanticDecisions,
+  });
+  rewriteSolutionAuditAuthority(files, (currentAudit) => {
+    const q1Item = currentAudit.solutionFidelityItems.find((item: { key: string }) => item.key === "1:1");
+    Object.assign(q1Item, {
+      effectivePage: 1,
+      answerStatus: currentFinalDecision.answerStatus,
+      explanationStatus: currentFinalDecision.explanationStatus,
+      evidence: currentFinalDecision.evidence,
+      fidelityArtifact: currentRevisionFidelityPointer,
+      effectiveSolutionItemHash: finalSolutionHash,
+      effectiveRawAnswerHash: hash(finalSolution.answer),
+      effectiveExplanationHash: hash(finalSolution.explanation),
+    });
+    currentAudit.solutionRepairs = [currentRepairEvidence];
+    currentAudit.solutionRepairKeys = ["1:1"];
+    currentAudit.effectiveSolutionCorpusHash = effectiveSolutionCorpusHash;
+    currentAudit.semanticCheckpoint = {
+      path: semanticRelativePath,
+      sha256: semanticHash,
+      inputHash: semanticInputHash,
+      effectiveCorpusHash: currentEffectiveProblemCorpusHash,
+      effectiveSolutionCorpusHash,
+    };
+    currentAudit.items = ["②", "⑤"].map((rawAnswer, index) => ({
+      key: `1:${index + 1}`,
+      printedNumber: String(index + 1),
+      sourcePage: 1,
+      officialRawAnswerHash: hash(rawAnswer),
+      storedAnswerHash: hash(rawAnswer),
+      mode: "choice-marker",
+      choiceIndex: semanticDecisions[index].choiceIndex,
+      semantic: {
+        status: semanticDecisions[index].status,
+        choiceIndex: semanticDecisions[index].choiceIndex,
+        evidence: semanticDecisions[index].evidence,
+      },
+    }));
+  });
+  const db = new Database(files.dbPath);
+  for (const [number, answer, explanation] of [
+    ["1", "②", finalSolution.explanation],
+    ["2", "⑤", q2Solution.explanation],
+  ]) {
+    db.prepare(
+      "UPDATE questions SET answer = ?, explanation = ? WHERE printed_number = ? " +
+      "AND book_id IN (SELECT id FROM books WHERE title = ?)",
+    ).run(answer, explanation, number, "2025년 · 2025 수능 수학 미적분");
+    db.prepare(
+      "UPDATE book_items SET answer = ?, content = ?, page = 1 WHERE category = '해설' AND number = ? " +
+      "AND book_id IN (SELECT id FROM books WHERE title = ?)",
+    ).run(answer, explanation, number, "2025년 · 2025 수능 수학 미적분");
+  }
+  db.close();
+  return {
+    upgradeArtifact: join(stateDir, upgradeRelativePath),
+    upgradeFidelityArtifact: join(stateDir, upgradeFidelityRelativePath),
+    currentRevisionArtifact: join(stateDir, currentRevisionRelativePath),
+    legacyRevisionArtifact: join(stateDir, legacyRevisionPath),
+  };
+}
+
 function rewriteSolutionRepairAuthority(
   files: ReturnType<typeof fixture>,
   mutateRepair: (repair: Record<string, any>) => void,
@@ -7250,6 +7960,94 @@ describe("exam corpus verifier", () => {
     expect(verifyExamCorpus(orphanFiles).failures.some((failure) =>
       failure.code === "ANSWER_AUDIT_INVALID"
       && failure.message.includes("orphan persisted solution repair fidelity"))).toBe(true);
+  });
+
+  it("keeps the legacy solution prompt-upgrade allowlist byte-aligned with the importer", () => {
+    expect(solutionPromptUpgradeAllowlistFingerprint())
+      .toBe(canonicalEvidenceHash(SOLUTION_PROMPT_UPGRADE_ALLOWLIST));
+    expect([SOLUTION_PROMPT_UPGRADE_VERSION, SOLUTION_PROMPT_UPGRADE_FIDELITY_VERSION])
+      .toEqual([1, 1]);
+  });
+
+  it.skipIf(!existsSync(join(SOLUTION_PROMPT_UPGRADE_STATE, "problem.pdf"))
+    || !existsSync(join(SOLUTION_PROMPT_UPGRADE_STATE, "solution.pdf")))(
+  "replays the pinned legacy prompt failure through one exact upgrade and rejects partial or extra chains",
+  () => {
+    const upgradedFixture = () => {
+      const files = fixture();
+      const artifacts = installSolutionPromptUpgrade(files);
+      return { files, artifacts };
+    };
+    const { files, artifacts } = upgradedFixture();
+    const modifiedBefore = statSync(files.dbPath).mtimeMs;
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    expect(statSync(files.dbPath).mtimeMs).toBe(modifiedBefore);
+    expect(artifacts.upgradeArtifact).toContain("solution-revision-upgrades/v1-0001-0001-");
+    expect(artifacts.upgradeFidelityArtifact)
+      .toContain("solution-fidelity-revision-upgrades/v1-0001-0001-");
+    expect(existsSync(artifacts.legacyRevisionArtifact)).toBe(true);
+    const db = new Database(files.dbPath, { readonly: true, fileMustExist: true });
+    const row = db.prepare("SELECT answer, explanation FROM questions WHERE printed_number = '1'")
+      .get() as { answer: string; explanation: string };
+    db.close();
+    expect(row.answer).toBe("②");
+    expect(row.explanation).toContain("=3^1=3");
+    const attestationName = readdirSync(join(files.stateDirs.math, "answer-attestation"))
+      .find((name) => /^v5-/u.test(name))!;
+    const attestation = JSON.parse(readFileSync(
+      join(files.stateDirs.math, "answer-attestation", attestationName),
+      "utf8",
+    ));
+    const audit = JSON.parse(readFileSync(
+      join(files.stateDirs.math, attestation.answerAudit.path),
+      "utf8",
+    ));
+    const semantic = JSON.parse(readFileSync(
+      join(files.stateDirs.math, audit.semanticCheckpoint.path),
+      "utf8",
+    ));
+    expect(audit.semanticCheckpoint.path).toBe(
+      `semantic-choice-checks/v5-${audit.effectiveCorpusHash}-` +
+      `${audit.effectiveSolutionCorpusHash}-${audit.semanticCheckpoint.inputHash}.json`,
+    );
+    expect(semantic.inputs.find((input: { key: string }) => input.key === "1:1"))
+      .toMatchObject({ detailedExplanation: redactedExplanation(row.explanation) });
+    expect(semantic.effectiveSolutionCorpusHash).toBe(audit.effectiveSolutionCorpusHash);
+
+    const partial = upgradedFixture();
+    rmSync(partial.artifacts.upgradeFidelityArtifact);
+    expect(verifyExamCorpus(partial.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("child coverage"))).toBe(true);
+
+    const tampered = upgradedFixture();
+    const tamperedCheckpoint = JSON.parse(readFileSync(tampered.artifacts.upgradeArtifact, "utf8"));
+    tamperedCheckpoint.item.answer = "3";
+    writeJson(tampered.artifacts.upgradeArtifact, tamperedCheckpoint);
+    expect(verifyExamCorpus(tampered.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const stale = upgradedFixture();
+    const staleCheckpoint = JSON.parse(readFileSync(stale.artifacts.upgradeArtifact, "utf8"));
+    staleCheckpoint.trigger.legacyPredecessor.failedEvidenceHash = "0".repeat(64);
+    writeJson(stale.artifacts.upgradeArtifact, staleCheckpoint);
+    expect(verifyExamCorpus(stale.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const orphan = upgradedFixture();
+    writeFileSync(
+      join(orphan.files.stateDirs.math, "solution-revision-upgrades", `v1-0001-0001-${"f".repeat(64)}.json`),
+      readFileSync(orphan.artifacts.upgradeArtifact),
+    );
+    expect(verifyExamCorpus(orphan.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const missing = upgradedFixture();
+    rmSync(missing.artifacts.upgradeArtifact);
+    rmSync(missing.artifacts.upgradeFidelityArtifact);
+    expect(verifyExamCorpus(missing.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("prompt upgrade is missing"))).toBe(true);
   });
 
   it("reconstructs one Q28 solution revision and rejects broken or repeated chains", () => {
