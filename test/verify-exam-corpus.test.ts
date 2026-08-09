@@ -3547,6 +3547,965 @@ function installQ28SolutionRevision(files: ReturnType<typeof fixture>, firstTerm
   };
 }
 
+function migratePersistedSolutionGeneration(
+  files: ReturnType<typeof fixture>,
+  targetNumber: 27 | 28,
+  q1SemanticPending = false,
+): {
+  repairArtifact: string;
+  repairFidelityArtifact: string;
+  revisionArtifact?: string;
+  revisionFidelityArtifact?: string;
+  historicalRepairArtifact: string;
+  historicalRevisionArtifact?: string;
+} {
+  if (targetNumber === 27) installQ27SolutionRepair(files, 27);
+  else installQ28SolutionRevision(files);
+  const stateDir = files.stateDirs.math;
+  const entry = JSON.parse(readFileSync(join(stateDir, "entry.json"), "utf8")).entry;
+  const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
+  const attestationName = readdirSync(join(stateDir, "answer-attestation"))
+    .find((name) => /^v2-/u.test(name))!;
+  const attestation = JSON.parse(
+    readFileSync(join(stateDir, "answer-attestation", attestationName), "utf8"),
+  );
+  const historicalAudit = JSON.parse(readFileSync(join(stateDir, attestation.answerAudit.path), "utf8"));
+  const historicalClassificationPath = join(stateDir, "classification-chunks", `v4-0000-${DIGEST}.json`);
+  const historicalClassification = JSON.parse(readFileSync(historicalClassificationPath, "utf8"));
+  const oldRepair = structuredClone(historicalAudit.solutionRepairs[0]);
+  const oldRepairCheckpoint = JSON.parse(
+    readFileSync(join(stateDir, oldRepair.repairArtifact.path), "utf8"),
+  );
+  const oldBaseFidelity = JSON.parse(
+    readFileSync(join(stateDir, oldRepair.baseFidelityCheckpoint.path), "utf8"),
+  );
+  const oldEffectiveCorpusHash = historicalAudit.effectiveCorpusHash;
+  const oldGenerationId = canonicalEvidenceHash({
+    key: oldRepair.key,
+    effectiveProblemCorpusHash: oldEffectiveCorpusHash,
+    baseFidelityCheckpointSha256: oldRepair.baseFidelityCheckpoint.sha256,
+  });
+
+  const key = `1:${targetNumber}`;
+  const historicalTargetInput = oldBaseFidelity.inputs.find((input: { key: string }) => input.key === key);
+  const historicalTargetDecision = oldBaseFidelity.items.find((item: { key: string }) => item.key === key);
+  const baseSolutionCheckpoint = JSON.parse(
+    readFileSync(join(stateDir, "solution-chunks", "v3-0000.json"), "utf8"),
+  );
+  const historicalBaseSolution = baseSolutionCheckpoint.items.find(
+    (item: { number: string }) => item.number === String(targetNumber),
+  );
+  const baselineAudit = structuredClone(historicalAudit);
+  const baselineTargetItem = baselineAudit.solutionFidelityItems.find(
+    (item: { key: string }) => item.key === key,
+  );
+  Object.assign(baselineTargetItem, {
+    effectivePage: historicalBaseSolution.page,
+    answerStatus: historicalTargetDecision.answerStatus,
+    explanationStatus: historicalTargetDecision.explanationStatus,
+    evidence: historicalTargetDecision.evidence,
+    fidelityArtifact: oldRepair.baseFidelityCheckpoint,
+    effectiveSolutionItemHash: historicalTargetInput.baseSolutionItemHash,
+    effectiveRawAnswerHash: hash(historicalBaseSolution.answer),
+    effectiveExplanationHash: hash(historicalBaseSolution.explanation),
+  });
+  baselineAudit.solutionRepairs = [];
+  baselineAudit.solutionRepairKeys = [];
+  const historicalCompanion = baseSolutionCheckpoint.items.find(
+    (item: { number: string }) => item.number === "1",
+  );
+  baselineAudit.effectiveSolutionCorpusHash = canonicalEvidenceHash([{
+    key: "1:1",
+    solution: historicalCompanion,
+  }, {
+    key,
+    solution: historicalBaseSolution,
+  }].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key)));
+  rewriteSolutionAuditAuthority(files, (currentAudit) => Object.assign(currentAudit, baselineAudit));
+  upgradeEntryToV3(files, "math", {
+    terminalScope: "authorized-reject",
+    answerV5: true,
+  });
+  const currentAttestationName = readdirSync(join(stateDir, "answer-attestation"))
+    .find((name) => /^v5-/u.test(name))!;
+  const currentAttestation = JSON.parse(
+    readFileSync(join(stateDir, "answer-attestation", currentAttestationName), "utf8"),
+  );
+  const audit = JSON.parse(readFileSync(join(stateDir, currentAttestation.answerAudit.path), "utf8"));
+  const effectiveCorpusHash = audit.effectiveCorpusHash;
+  const currentBaseEvidence = audit.solutionFidelityCheckpoints[0];
+  const currentBaseFidelity = JSON.parse(
+    readFileSync(join(stateDir, currentBaseEvidence.path), "utf8"),
+  );
+  const targetInput = currentBaseFidelity.inputs.find((input: { key: string }) => input.key === key);
+  const targetBaseDecision = currentBaseFidelity.items.find((item: { key: string }) => item.key === key);
+  Object.assign(targetBaseDecision, {
+    sourcePage: targetInput.sourcePage,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: "fresh stochastic fidelity incorrectly treats the historical omission as exact",
+  });
+  if (q1SemanticPending) {
+    Object.assign(
+      currentBaseFidelity.items.find((item: { key: string }) => item.key === "1:1"),
+      {
+        answerStatus: "exact",
+        explanationStatus: "mismatch",
+        evidence: "Q1 base explanation remains semantically corrupted and requires repair",
+      },
+    );
+  }
+  const baseFidelityRelativePath = `solution-fidelity/v1-0000-${effectiveCorpusHash}-` +
+    `${currentBaseFidelity.inputHash}.json`;
+  const baseFidelityHash = writeEvidence(
+    join(stateDir, baseFidelityRelativePath),
+    currentBaseFidelity,
+  );
+  const baseFidelityPointer = { path: baseFidelityRelativePath, sha256: baseFidelityHash };
+  const baseFidelityEvidence = {
+    ...baseFidelityPointer,
+    from: currentBaseFidelity.from,
+    to: currentBaseFidelity.to,
+    ownedFrom: currentBaseFidelity.ownedFrom,
+    ownedTo: currentBaseFidelity.ownedTo,
+    inputHash: currentBaseFidelity.inputHash,
+  };
+  const repairedSolution = oldRepairCheckpoint.item;
+  const repairedItemHash = canonicalEvidenceHash(repairedSolution);
+  const persistedSeed = {
+    version: 1,
+    generationId: oldGenerationId,
+    effectiveProblemCorpusHash: oldEffectiveCorpusHash,
+    baseFidelityCheckpoint: oldRepair.baseFidelityCheckpoint,
+    repairArtifact: oldRepair.repairArtifact,
+    repairFidelityArtifact: {
+      path: oldRepair.fidelityArtifact.path,
+      sha256: oldRepair.fidelityArtifact.sha256,
+    },
+    repairedItemHash,
+  };
+  const repairRelativePath = `solution-repairs/v1-${String(oldRepair.basePage).padStart(4, "0")}-` +
+    `${String(targetNumber).padStart(4, "0")}-${baseFidelityHash}.json`;
+  const repairCheckpoint = {
+    ...oldRepairCheckpoint,
+    effectiveProblemCorpusHash: effectiveCorpusHash,
+    baseFidelityCheckpoint: baseFidelityPointer,
+    persistedSeed,
+  };
+  const repairHash = writeEvidence(join(stateDir, repairRelativePath), repairCheckpoint);
+  const repairPointer = { path: repairRelativePath, sha256: repairHash };
+  const repairedInput = {
+    ...targetInput,
+    sourcePage: repairedSolution.page,
+    rawAnswer: repairedSolution.answer,
+    explanation: repairedSolution.explanation,
+  };
+  const currentFirstDecision = {
+    key,
+    sourcePage: repairedSolution.page,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: "current repaired solution appears exact but remains bound to persisted authority",
+  };
+  const repairFidelityRelativePath = `solution-fidelity-repairs/v1-` +
+    `${String(oldRepair.basePage).padStart(4, "0")}-${String(targetNumber).padStart(4, "0")}-` +
+    `${baseFidelityHash}-${repairedItemHash}.json`;
+  const repairFidelityCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    key,
+    sourceHash: downloads.solution.sha256,
+    from: oldRepair.contextFrom,
+    to: oldRepair.contextTo,
+    basePage: oldRepair.basePage,
+    effectivePage: repairedSolution.page,
+    baseOwnedFrom: oldRepair.baseOwnedFrom,
+    baseOwnedTo: oldRepair.baseOwnedTo,
+    effectiveProblemCorpusHash: effectiveCorpusHash,
+    baseSolutionCheckpoint: oldRepair.baseSolutionCheckpoint,
+    baseFidelityCheckpoint: baseFidelityPointer,
+    repairArtifact: repairPointer,
+    effectiveSolutionItemHash: repairedItemHash,
+    inputHash: canonicalEvidenceHash(repairedInput),
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    input: repairedInput,
+    item: currentFirstDecision,
+  };
+  const repairFidelityHash = writeEvidence(
+    join(stateDir, repairFidelityRelativePath),
+    repairFidelityCheckpoint,
+  );
+  const repairFidelityPointer = {
+    path: repairFidelityRelativePath,
+    sha256: repairFidelityHash,
+  };
+  const currentRepair: Record<string, any> = {
+    ...oldRepair,
+    baseFidelityCheckpoint: baseFidelityPointer,
+    repairArtifact: repairPointer,
+    fidelityArtifact: {
+      ...repairFidelityPointer,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    },
+  };
+  delete currentRepair.revision;
+
+  let revisionRelativePath: string | undefined;
+  let revisionFidelityRelativePath: string | undefined;
+  if (oldRepair.revision) {
+    const oldRevisionCheckpoint = JSON.parse(
+      readFileSync(join(stateDir, oldRepair.revision.solutionArtifact.path), "utf8"),
+    );
+    const oldFinalSolution = oldRevisionCheckpoint.item;
+    const predecessor = {
+      generationId: oldGenerationId,
+      key,
+      repairArtifact: oldRepair.repairArtifact,
+      repairFidelityArtifact: {
+        path: oldRepair.fidelityArtifact.path,
+        sha256: oldRepair.fidelityArtifact.sha256,
+      },
+      revisionArtifact: {
+        path: oldRepair.revision.solutionArtifact.path,
+        sha256: oldRepair.revision.solutionArtifact.sha256,
+      },
+      revisionFidelityArtifact: {
+        path: oldRepair.revision.fidelityArtifact.path,
+        sha256: oldRepair.revision.fidelityArtifact.sha256,
+      },
+      finalSolutionItemHash: oldRepair.revision.effectiveSolutionItemHash,
+      diagnosticDecisionHash: oldRepair.revision.diagnosticDecisionHash,
+      diagnosticEvidence: oldRevisionCheckpoint.diagnosticDecision.evidence,
+    };
+    const trigger = {
+      kind: "persisted",
+      fidelityDecisionHash: canonicalEvidenceHash(currentFirstDecision),
+      persistedTriggerVersion: 1,
+      predecessor,
+    };
+    const baseRepairFidelityArtifact = {
+      ...repairFidelityPointer,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    };
+    const revisionBasisHash = canonicalEvidenceHash({
+      key,
+      sourceHash: downloads.solution.sha256,
+      basePage: oldRepair.basePage,
+      contextFrom: oldRepair.contextFrom,
+      contextTo: oldRepair.contextTo,
+      baseSolutionCheckpoint: oldRepair.baseSolutionCheckpoint,
+      baseSolutionItemHash: oldRepair.baseSolutionItemHash,
+      baseRepairArtifact: repairPointer,
+      baseRepairFidelityArtifact,
+      baseRepairSolutionItemHash: repairedItemHash,
+      trigger,
+      revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+    });
+    revisionRelativePath = `solution-revisions/v1-${String(repairedSolution.page).padStart(4, "0")}-` +
+      `${String(targetNumber).padStart(4, "0")}-${revisionBasisHash}.json`;
+    const revisionCheckpoint = {
+      version: 1,
+      entryId: entry.id,
+      key,
+      printedNumber: String(targetNumber),
+      sourceHash: downloads.solution.sha256,
+      basePage: oldRepair.basePage,
+      contextFrom: oldRepair.contextFrom,
+      contextTo: oldRepair.contextTo,
+      baseOwnedFrom: oldRepair.baseOwnedFrom,
+      baseOwnedTo: oldRepair.baseOwnedTo,
+      effectiveProblemCorpusHash: effectiveCorpusHash,
+      baseSolutionCheckpoint: oldRepair.baseSolutionCheckpoint,
+      baseSolutionItemHash: oldRepair.baseSolutionItemHash,
+      baseRepairArtifact: repairPointer,
+      baseRepairFidelityArtifact,
+      baseRepairPage: repairedSolution.page,
+      baseRepairSolutionItemHash: repairedItemHash,
+      trigger,
+      diagnosticDecision: currentFirstDecision,
+      diagnosticDecisionHash: trigger.fidelityDecisionHash,
+      promptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+      promptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      effectivePage: oldFinalSolution.page,
+      item: oldFinalSolution,
+    };
+    const revisionHash = writeEvidence(join(stateDir, revisionRelativePath), revisionCheckpoint);
+    const revisionPointer = { path: revisionRelativePath, sha256: revisionHash };
+    const finalItemHash = canonicalEvidenceHash(oldFinalSolution);
+    const finalInput = {
+      ...targetInput,
+      sourcePage: oldFinalSolution.page,
+      rawAnswer: oldFinalSolution.answer,
+      explanation: oldFinalSolution.explanation,
+    };
+    const oldFinalFidelity = JSON.parse(
+      readFileSync(join(stateDir, oldRepair.revision.fidelityArtifact.path), "utf8"),
+    );
+    revisionFidelityRelativePath = `solution-fidelity-revisions/v1-` +
+      `${String(repairedSolution.page).padStart(4, "0")}-${String(targetNumber).padStart(4, "0")}-` +
+      `${revisionHash}-${finalItemHash}.json`;
+    const revisionFidelityCheckpoint = {
+      version: 1,
+      entryId: entry.id,
+      key,
+      sourceHash: downloads.solution.sha256,
+      from: oldRepair.contextFrom,
+      to: oldRepair.contextTo,
+      basePage: oldRepair.basePage,
+      baseRepairPage: repairedSolution.page,
+      effectivePage: oldFinalSolution.page,
+      baseOwnedFrom: oldRepair.baseOwnedFrom,
+      baseOwnedTo: oldRepair.baseOwnedTo,
+      effectiveProblemCorpusHash: effectiveCorpusHash,
+      baseSolutionCheckpoint: oldRepair.baseSolutionCheckpoint,
+      baseSolutionItemHash: oldRepair.baseSolutionItemHash,
+      baseRepairArtifact: repairPointer,
+      baseRepairFidelityArtifact,
+      baseRepairSolutionItemHash: repairedItemHash,
+      diagnosticDecisionHash: trigger.fidelityDecisionHash,
+      trigger,
+      revisionArtifact: revisionPointer,
+      effectiveSolutionItemHash: finalItemHash,
+      inputHash: canonicalEvidenceHash(finalInput),
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      input: finalInput,
+      item: oldFinalFidelity.item,
+    };
+    const revisionFidelityHash = writeEvidence(
+      join(stateDir, revisionFidelityRelativePath),
+      revisionFidelityCheckpoint,
+    );
+    const revisionFidelityPointer = {
+      path: revisionFidelityRelativePath,
+      sha256: revisionFidelityHash,
+    };
+    currentRepair.revision = {
+      trigger,
+      baseRepairPage: repairedSolution.page,
+      effectivePage: oldFinalSolution.page,
+      baseRepairArtifact: repairPointer,
+      baseRepairFidelityArtifact,
+      solutionArtifact: {
+        ...revisionPointer,
+        revisionPromptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+        revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+      },
+      fidelityArtifact: {
+        ...revisionFidelityPointer,
+        promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      },
+      diagnosticDecisionHash: trigger.fidelityDecisionHash,
+      baseSolutionItemHash: oldRepair.baseSolutionItemHash,
+      baseRepairSolutionItemHash: repairedItemHash,
+      effectiveSolutionItemHash: finalItemHash,
+      baseRepairRawAnswerHash: hash(repairedSolution.answer),
+      effectiveRawAnswerHash: hash(oldFinalSolution.answer),
+      baseRepairExplanationHash: hash(repairedSolution.explanation),
+      effectiveExplanationHash: hash(oldFinalSolution.explanation),
+    };
+  }
+
+  audit.effectiveCorpusHash = effectiveCorpusHash;
+  audit.effectiveSolutionCorpusHash = historicalAudit.effectiveSolutionCorpusHash;
+  audit.acceptedSolutionKeys = historicalAudit.acceptedSolutionKeys;
+  audit.solutionRepairKeys = historicalAudit.solutionRepairKeys;
+  audit.derivedAnswerKeys = historicalAudit.derivedAnswerKeys;
+  audit.acceptedMcqKeys = historicalAudit.acceptedMcqKeys;
+  audit.items = historicalAudit.items;
+  audit.solutionFidelityCheckpoints = [baseFidelityEvidence];
+  audit.solutionRepairs = [currentRepair];
+  const historicalTargetTerminal = structuredClone(
+    historicalAudit.solutionFidelityItems.find((item: { key: string }) => item.key === key),
+  );
+  for (const [index, item] of audit.solutionFidelityItems.entries()) {
+    if (item.key === key) {
+      historicalTargetTerminal.fidelityArtifact = currentRepair.revision
+        ? {
+            path: currentRepair.revision.fidelityArtifact.path,
+            sha256: currentRepair.revision.fidelityArtifact.sha256,
+          }
+        : repairFidelityPointer;
+      if (!currentRepair.revision) historicalTargetTerminal.evidence = currentFirstDecision.evidence;
+      audit.solutionFidelityItems[index] = historicalTargetTerminal;
+    } else {
+      item.fidelityArtifact = baseFidelityPointer;
+    }
+  }
+  rewriteSolutionAuditAuthority(files, (currentAudit) => Object.assign(currentAudit, audit));
+  writeJson(historicalClassificationPath, historicalClassification);
+  writeEvidence(join(stateDir, attestation.answerAudit.path), historicalAudit);
+  writeEvidence(join(stateDir, "answer-attestation", attestationName), attestation);
+  return {
+    repairArtifact: join(stateDir, repairRelativePath),
+    repairFidelityArtifact: join(stateDir, repairFidelityRelativePath),
+    ...(revisionRelativePath ? { revisionArtifact: join(stateDir, revisionRelativePath) } : {}),
+    ...(revisionFidelityRelativePath
+      ? { revisionFidelityArtifact: join(stateDir, revisionFidelityRelativePath) }
+      : {}),
+    historicalRepairArtifact: join(stateDir, oldRepair.repairArtifact.path),
+    ...(oldRepair.revision
+      ? { historicalRevisionArtifact: join(stateDir, oldRepair.revision.solutionArtifact.path) }
+      : {}),
+  };
+}
+
+function cloneHistoricalFirstSolutionGeneration(
+  files: ReturnType<typeof fixture>,
+  sourceRepairArtifact: string,
+  label: string,
+): { repairArtifact: string; fidelityArtifact: string } {
+  const stateDir = files.stateDirs.math;
+  const repair = JSON.parse(readFileSync(sourceRepairArtifact, "utf8"));
+  const sourceRepairRelativePath = sourceRepairArtifact.split(`${stateDir}/`)[1];
+  const sourceFidelityName = readdirSync(join(stateDir, "solution-fidelity-repairs")).find((name) => {
+    const checkpoint = JSON.parse(
+      readFileSync(join(stateDir, "solution-fidelity-repairs", name), "utf8"),
+    );
+    return checkpoint.repairArtifact.path === sourceRepairRelativePath;
+  })!;
+  const sourceFidelity = JSON.parse(
+    readFileSync(join(stateDir, "solution-fidelity-repairs", sourceFidelityName), "utf8"),
+  );
+  const baseFidelity = JSON.parse(
+    readFileSync(join(stateDir, repair.baseFidelityCheckpoint.path), "utf8"),
+  );
+  const effectiveProblemCorpusHash = hash(`historical solution generation ${label}`);
+  baseFidelity.effectiveProblemCorpusHash = effectiveProblemCorpusHash;
+  const baseFidelityPath = `solution-fidelity/v1-0000-${effectiveProblemCorpusHash}-` +
+    `${baseFidelity.inputHash}.json`;
+  const baseFidelityHash = writeEvidence(join(stateDir, baseFidelityPath), baseFidelity);
+  const baseFidelityPointer = { path: baseFidelityPath, sha256: baseFidelityHash };
+  repair.effectiveProblemCorpusHash = effectiveProblemCorpusHash;
+  repair.baseFidelityCheckpoint = baseFidelityPointer;
+  repair.item.explanation += ` [${label}]`;
+  const itemHash = canonicalEvidenceHash(repair.item);
+  const repairPath = `solution-repairs/v1-${String(repair.basePage).padStart(4, "0")}-` +
+    `${String(repair.printedNumber).padStart(4, "0")}-${baseFidelityHash}.json`;
+  const repairHash = writeEvidence(join(stateDir, repairPath), repair);
+  const repairPointer = { path: repairPath, sha256: repairHash };
+  sourceFidelity.effectiveProblemCorpusHash = effectiveProblemCorpusHash;
+  sourceFidelity.baseFidelityCheckpoint = baseFidelityPointer;
+  sourceFidelity.repairArtifact = repairPointer;
+  sourceFidelity.effectiveSolutionItemHash = itemHash;
+  sourceFidelity.input.explanation = repair.item.explanation;
+  sourceFidelity.inputHash = canonicalEvidenceHash(sourceFidelity.input);
+  const fidelityPath = `solution-fidelity-repairs/v1-${String(repair.basePage).padStart(4, "0")}-` +
+    `${String(repair.printedNumber).padStart(4, "0")}-${baseFidelityHash}-${itemHash}.json`;
+  writeEvidence(join(stateDir, fidelityPath), sourceFidelity);
+  return {
+    repairArtifact: join(stateDir, repairPath),
+    fidelityArtifact: join(stateDir, fidelityPath),
+  };
+}
+
+function installCurrentQ1SemanticSibling(files: ReturnType<typeof fixture>): void {
+  const stateDir = files.stateDirs.math;
+  const entry = JSON.parse(readFileSync(join(stateDir, "entry.json"), "utf8")).entry;
+  const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
+  const attestationName = readdirSync(join(stateDir, "answer-attestation"))
+    .find((name) => /^v5-/u.test(name))!;
+  const attestation = JSON.parse(
+    readFileSync(join(stateDir, "answer-attestation", attestationName), "utf8"),
+  );
+  const audit = JSON.parse(readFileSync(join(stateDir, attestation.answerAudit.path), "utf8"));
+  const baseFidelityEvidence = audit.solutionFidelityCheckpoints[0];
+  const baseFidelity = JSON.parse(
+    readFileSync(join(stateDir, baseFidelityEvidence.path), "utf8"),
+  );
+  const baseInput = baseFidelity.inputs.find((input: { key: string }) => input.key === "1:1");
+  const problemCheckpoint = JSON.parse(
+    readFileSync(join(stateDir, "problem-chunks", "v2-0000.json"), "utf8"),
+  );
+  const problem = problemCheckpoint.items[0];
+  const firstSolution = {
+    number: "1",
+    answer: "②",
+    explanation: "$1/81$이므로 선택지를 확정할 수 없다.",
+    page: 2,
+    complete: true,
+  };
+  const firstItemHash = canonicalEvidenceHash(firstSolution);
+  const repairPath = `solution-repairs/v1-${String(baseInput.sourcePage).padStart(4, "0")}-` +
+    `0001-${baseFidelityEvidence.sha256}.json`;
+  const repairCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    key: "1:1",
+    printedNumber: "1",
+    basePage: baseInput.sourcePage,
+    contextFrom: baseInput.baseContextFrom,
+    contextTo: baseInput.baseContextTo,
+    baseOwnedFrom: baseInput.baseOwnedFrom,
+    baseOwnedTo: baseInput.baseOwnedTo,
+    sourceHash: downloads.solution.sha256,
+    effectiveProblemCorpusHash: audit.effectiveCorpusHash,
+    baseSolutionCheckpoint: baseInput.baseSolutionCheckpoint,
+    baseFidelityCheckpoint: {
+      path: baseFidelityEvidence.path,
+      sha256: baseFidelityEvidence.sha256,
+    },
+    baseSolutionItemHash: baseInput.baseSolutionItemHash,
+    baseRawAnswerHash: hash(baseInput.rawAnswer),
+    baseExplanationHash: hash(baseInput.explanation),
+    promptVersion: TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
+    promptDigest: TARGETED_SOLUTION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    effectivePage: firstSolution.page,
+    item: firstSolution,
+  };
+  const repairHash = writeEvidence(join(stateDir, repairPath), repairCheckpoint);
+  const repairPointer = { path: repairPath, sha256: repairHash };
+  const firstInput = {
+    ...baseInput,
+    sourcePage: firstSolution.page,
+    rawAnswer: firstSolution.answer,
+    explanation: firstSolution.explanation,
+  };
+  const firstDecision = {
+    key: "1:1",
+    sourcePage: firstSolution.page,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: "first repaired answer and explanation exactly match the bounded pixels",
+  };
+  const firstFidelityPath = `solution-fidelity-repairs/v1-` +
+    `${String(baseInput.sourcePage).padStart(4, "0")}-0001-` +
+    `${baseFidelityEvidence.sha256}-${firstItemHash}.json`;
+  const firstFidelityCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    key: "1:1",
+    sourceHash: downloads.solution.sha256,
+    from: baseInput.baseContextFrom,
+    to: baseInput.baseContextTo,
+    basePage: baseInput.sourcePage,
+    effectivePage: firstSolution.page,
+    baseOwnedFrom: baseInput.baseOwnedFrom,
+    baseOwnedTo: baseInput.baseOwnedTo,
+    effectiveProblemCorpusHash: audit.effectiveCorpusHash,
+    baseSolutionCheckpoint: baseInput.baseSolutionCheckpoint,
+    baseFidelityCheckpoint: {
+      path: baseFidelityEvidence.path,
+      sha256: baseFidelityEvidence.sha256,
+    },
+    repairArtifact: repairPointer,
+    effectiveSolutionItemHash: firstItemHash,
+    inputHash: canonicalEvidenceHash(firstInput),
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    input: firstInput,
+    item: firstDecision,
+  };
+  const firstFidelityHash = writeEvidence(join(stateDir, firstFidelityPath), firstFidelityCheckpoint);
+  const firstFidelityPointer = { path: firstFidelityPath, sha256: firstFidelityHash };
+
+  const persistedRepair = audit.solutionRepairs.find((repair: { key: string }) => repair.key === "1:28");
+  const persistedFinal = JSON.parse(
+    readFileSync(join(stateDir, persistedRepair.revision.solutionArtifact.path), "utf8"),
+  ).item;
+  const preliminarySolutionHash = canonicalEvidenceHash([{
+    key: "1:1",
+    solution: firstSolution,
+  }, {
+    key: "1:28",
+    solution: persistedFinal,
+  }].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key)));
+  const preliminaryInputs = [{
+    key: "1:1",
+    choices: problem.choices,
+    detailedExplanation: redactedExplanation(firstSolution.explanation),
+  }];
+  const preliminaryInputHash = canonicalEvidenceHash(preliminaryInputs);
+  const preliminarySemanticPath = `semantic-choice-checks/v5-${audit.effectiveCorpusHash}-` +
+    `${preliminarySolutionHash}-${preliminaryInputHash}.json`;
+  const preliminaryDecision = {
+    key: "1:1",
+    status: "ambiguous",
+    choiceIndex: null,
+    evidence: "the repaired explanation does not identify one listed value",
+  };
+  const preliminarySemanticCheckpoint = {
+    version: 5,
+    entryId: entry.id,
+    problemHash: downloads.problem.sha256,
+    solutionHash: downloads.solution.sha256,
+    classifierVersion: 5,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 2,
+    transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+    effectiveCorpusHash: audit.effectiveCorpusHash,
+    effectiveSolutionCorpusHash: preliminarySolutionHash,
+    inputHash: preliminaryInputHash,
+    promptDigest: V5_SEMANTIC_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    inputs: preliminaryInputs,
+    items: [preliminaryDecision],
+  };
+  const preliminarySemanticHash = writeEvidence(
+    join(stateDir, preliminarySemanticPath),
+    preliminarySemanticCheckpoint,
+  );
+  const preliminarySemanticPointer = {
+    path: preliminarySemanticPath,
+    sha256: preliminarySemanticHash,
+    inputHash: preliminaryInputHash,
+    effectiveCorpusHash: audit.effectiveCorpusHash,
+    effectiveSolutionCorpusHash: preliminarySolutionHash,
+  };
+  const trigger = {
+    kind: "semantic",
+    fidelityDecisionHash: canonicalEvidenceHash(firstDecision),
+    semanticCheckpoint: preliminarySemanticPointer,
+    semanticDecisionHash: canonicalEvidenceHash(preliminaryDecision),
+  };
+  const firstFidelityEnvelope = {
+    ...firstFidelityPointer,
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+  };
+  const revisionBasisHash = canonicalEvidenceHash({
+    key: "1:1",
+    sourceHash: downloads.solution.sha256,
+    basePage: baseInput.sourcePage,
+    contextFrom: baseInput.baseContextFrom,
+    contextTo: baseInput.baseContextTo,
+    baseSolutionCheckpoint: baseInput.baseSolutionCheckpoint,
+    baseSolutionItemHash: baseInput.baseSolutionItemHash,
+    baseRepairArtifact: repairPointer,
+    baseRepairFidelityArtifact: firstFidelityEnvelope,
+    baseRepairSolutionItemHash: firstItemHash,
+    trigger,
+    revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+  });
+  const revisionPath = `solution-revisions/v1-${String(firstSolution.page).padStart(4, "0")}-` +
+    `0001-${revisionBasisHash}.json`;
+  const finalSolution = {
+    number: "1",
+    answer: "②",
+    explanation: "공식 계산 결과가 두 번째 선택지와 일치하므로 답은 ②이다.",
+    page: 2,
+    complete: true,
+  };
+  const finalItemHash = canonicalEvidenceHash(finalSolution);
+  const revisionCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    key: "1:1",
+    printedNumber: "1",
+    sourceHash: downloads.solution.sha256,
+    basePage: baseInput.sourcePage,
+    contextFrom: baseInput.baseContextFrom,
+    contextTo: baseInput.baseContextTo,
+    baseOwnedFrom: baseInput.baseOwnedFrom,
+    baseOwnedTo: baseInput.baseOwnedTo,
+    effectiveProblemCorpusHash: audit.effectiveCorpusHash,
+    baseSolutionCheckpoint: baseInput.baseSolutionCheckpoint,
+    baseSolutionItemHash: baseInput.baseSolutionItemHash,
+    baseRepairArtifact: repairPointer,
+    baseRepairFidelityArtifact: firstFidelityEnvelope,
+    baseRepairPage: firstSolution.page,
+    baseRepairSolutionItemHash: firstItemHash,
+    trigger,
+    diagnosticDecision: firstDecision,
+    diagnosticDecisionHash: trigger.fidelityDecisionHash,
+    semanticDecision: preliminaryDecision,
+    promptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+    promptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    effectivePage: finalSolution.page,
+    item: finalSolution,
+  };
+  const revisionHash = writeEvidence(join(stateDir, revisionPath), revisionCheckpoint);
+  const revisionPointer = { path: revisionPath, sha256: revisionHash };
+  const finalInput = {
+    ...baseInput,
+    sourcePage: finalSolution.page,
+    rawAnswer: finalSolution.answer,
+    explanation: finalSolution.explanation,
+  };
+  const finalFidelityPath = `solution-fidelity-revisions/v1-` +
+    `${String(firstSolution.page).padStart(4, "0")}-0001-${revisionHash}-${finalItemHash}.json`;
+  const finalDecision = {
+    key: "1:1",
+    sourcePage: finalSolution.page,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: "the revised marker and complete explanation exactly match official pixels",
+  };
+  const finalFidelityCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    key: "1:1",
+    sourceHash: downloads.solution.sha256,
+    from: baseInput.baseContextFrom,
+    to: baseInput.baseContextTo,
+    basePage: baseInput.sourcePage,
+    baseRepairPage: firstSolution.page,
+    effectivePage: finalSolution.page,
+    baseOwnedFrom: baseInput.baseOwnedFrom,
+    baseOwnedTo: baseInput.baseOwnedTo,
+    effectiveProblemCorpusHash: audit.effectiveCorpusHash,
+    baseSolutionCheckpoint: baseInput.baseSolutionCheckpoint,
+    baseSolutionItemHash: baseInput.baseSolutionItemHash,
+    baseRepairArtifact: repairPointer,
+    baseRepairFidelityArtifact: firstFidelityEnvelope,
+    baseRepairSolutionItemHash: firstItemHash,
+    diagnosticDecisionHash: trigger.fidelityDecisionHash,
+    trigger,
+    revisionArtifact: revisionPointer,
+    effectiveSolutionItemHash: finalItemHash,
+    inputHash: canonicalEvidenceHash(finalInput),
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    input: finalInput,
+    item: finalDecision,
+  };
+  const finalFidelityHash = writeEvidence(join(stateDir, finalFidelityPath), finalFidelityCheckpoint);
+  const finalFidelityPointer = { path: finalFidelityPath, sha256: finalFidelityHash };
+  const solutionRepair = {
+    key: "1:1",
+    printedNumber: "1",
+    basePage: baseInput.sourcePage,
+    effectivePage: firstSolution.page,
+    contextFrom: baseInput.baseContextFrom,
+    contextTo: baseInput.baseContextTo,
+    baseOwnedFrom: baseInput.baseOwnedFrom,
+    baseOwnedTo: baseInput.baseOwnedTo,
+    baseSolutionCheckpoint: baseInput.baseSolutionCheckpoint,
+    baseFidelityCheckpoint: {
+      path: baseFidelityEvidence.path,
+      sha256: baseFidelityEvidence.sha256,
+    },
+    repairArtifact: repairPointer,
+    fidelityArtifact: firstFidelityEnvelope,
+    baseSolutionItemHash: baseInput.baseSolutionItemHash,
+    effectiveSolutionItemHash: firstItemHash,
+    baseRawAnswerHash: hash(baseInput.rawAnswer),
+    effectiveRawAnswerHash: hash(firstSolution.answer),
+    baseExplanationHash: hash(baseInput.explanation),
+    effectiveExplanationHash: hash(firstSolution.explanation),
+    revision: {
+      trigger,
+      baseRepairPage: firstSolution.page,
+      effectivePage: finalSolution.page,
+      baseRepairArtifact: repairPointer,
+      baseRepairFidelityArtifact: firstFidelityEnvelope,
+      solutionArtifact: {
+        ...revisionPointer,
+        revisionPromptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+        revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+      },
+      fidelityArtifact: {
+        ...finalFidelityPointer,
+        promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      },
+      diagnosticDecisionHash: trigger.fidelityDecisionHash,
+      baseSolutionItemHash: baseInput.baseSolutionItemHash,
+      baseRepairSolutionItemHash: firstItemHash,
+      effectiveSolutionItemHash: finalItemHash,
+      baseRepairRawAnswerHash: hash(firstSolution.answer),
+      effectiveRawAnswerHash: hash(finalSolution.answer),
+      baseRepairExplanationHash: hash(firstSolution.explanation),
+      effectiveExplanationHash: hash(finalSolution.explanation),
+    },
+  };
+  audit.solutionRepairs.push(solutionRepair);
+  audit.solutionRepairs.sort((left: { key: string }, right: { key: string }) =>
+    compareCorpusQuestionKeys(left.key, right.key));
+  audit.solutionRepairKeys = audit.solutionRepairs.map((repair: { key: string }) => repair.key);
+  const q1Terminal = audit.solutionFidelityItems.find((item: { key: string }) => item.key === "1:1");
+  Object.assign(q1Terminal, {
+    effectivePage: finalSolution.page,
+    answerStatus: finalDecision.answerStatus,
+    explanationStatus: finalDecision.explanationStatus,
+    evidence: finalDecision.evidence,
+    fidelityArtifact: finalFidelityPointer,
+    effectiveSolutionItemHash: finalItemHash,
+    effectiveRawAnswerHash: hash(finalSolution.answer),
+    effectiveExplanationHash: hash(finalSolution.explanation),
+  });
+  const finalSolutionHash = canonicalEvidenceHash([{
+    key: "1:1",
+    solution: finalSolution,
+  }, {
+    key: "1:28",
+    solution: persistedFinal,
+  }].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key)));
+  audit.effectiveSolutionCorpusHash = finalSolutionHash;
+  const finalSemanticInputs = [{
+    key: "1:1",
+    choices: problem.choices,
+    detailedExplanation: redactedExplanation(finalSolution.explanation),
+  }];
+  const finalSemanticInputHash = canonicalEvidenceHash(finalSemanticInputs);
+  const finalSemanticPath = `semantic-choice-checks/v5-${audit.effectiveCorpusHash}-` +
+    `${finalSolutionHash}-${finalSemanticInputHash}.json`;
+  const finalSemanticDecision = {
+    key: "1:1",
+    status: "resolved",
+    choiceIndex: 2,
+    evidence: "the official explanation resolves the second choice",
+  };
+  const finalSemanticCheckpoint = {
+    ...preliminarySemanticCheckpoint,
+    effectiveSolutionCorpusHash: finalSolutionHash,
+    inputHash: finalSemanticInputHash,
+    inputs: finalSemanticInputs,
+    items: [finalSemanticDecision],
+  };
+  const finalSemanticHash = writeEvidence(join(stateDir, finalSemanticPath), finalSemanticCheckpoint);
+  audit.semanticCheckpoint = {
+    path: finalSemanticPath,
+    sha256: finalSemanticHash,
+    inputHash: finalSemanticInputHash,
+    effectiveCorpusHash: audit.effectiveCorpusHash,
+    effectiveSolutionCorpusHash: finalSolutionHash,
+  };
+  const auditItem = audit.items.find((item: { key: string }) => item.key === "1:1");
+  Object.assign(auditItem, {
+    officialRawAnswerHash: hash(finalSolution.answer),
+    storedAnswerHash: hash("②"),
+    mode: "choice-marker",
+    choiceIndex: 2,
+    semantic: {
+      status: finalSemanticDecision.status,
+      choiceIndex: finalSemanticDecision.choiceIndex,
+      evidence: finalSemanticDecision.evidence,
+    },
+  });
+  const db = new Database(files.dbPath);
+  db.prepare(`
+    UPDATE questions SET answer = '②', explanation = ?
+    WHERE printed_number = '1' AND book_id = (
+      SELECT books.id FROM books JOIN subjects ON subjects.id = books.subject_id
+      WHERE subjects.name = '수학 - 수학Ⅱ·미적분Ⅰ'
+    )
+  `)
+    .run(finalSolution.explanation);
+  db.prepare(`
+    UPDATE book_items SET answer = '②', content = ?, page = 2
+    WHERE category = '해설' AND number = '1' AND book_id = (
+      SELECT books.id FROM books JOIN subjects ON subjects.id = books.subject_id
+      WHERE subjects.name = '수학 - 수학Ⅱ·미적분Ⅰ'
+    )
+  `)
+    .run(finalSolution.explanation);
+  db.prepare(`
+    UPDATE book_items SET answer = '②'
+    WHERE category = '문제' AND number = '1' AND book_id = (
+      SELECT books.id FROM books JOIN subjects ON subjects.id = books.subject_id
+      WHERE subjects.name = '수학 - 수학Ⅱ·미적분Ⅰ'
+    )
+  `).run();
+  db.close();
+  rewriteSolutionAuditAuthority(files, (currentAudit) => Object.assign(currentAudit, audit));
+}
+
+function makeQ27HistoricalAuthorityDormant(files: ReturnType<typeof fixture>): void {
+  installQ27SolutionRepair(files, 27);
+  const stateDir = files.stateDirs.math;
+  const attestationName = readdirSync(join(stateDir, "answer-attestation"))
+    .find((name) => /^v2-/u.test(name))!;
+  const attestation = JSON.parse(
+    readFileSync(join(stateDir, "answer-attestation", attestationName), "utf8"),
+  );
+  const audit = JSON.parse(readFileSync(join(stateDir, attestation.answerAudit.path), "utf8"));
+  const problemCheckpoint = JSON.parse(
+    readFileSync(join(stateDir, "problem-chunks", "v2-0000.json"), "utf8"),
+  );
+  const classificationPath = join(stateDir, "classification-chunks", `v4-0000-${DIGEST}.json`);
+  const classificationCheckpoint = JSON.parse(readFileSync(classificationPath, "utf8"));
+  Object.assign(classificationCheckpoint.items[26], {
+    decision: "reject",
+    canonical_subject: null,
+    curriculum_course: null,
+    domain: null,
+    achievement_codes: [],
+    reason_codes: ["OUT_OF_SCOPE"],
+  });
+  writeJson(classificationPath, classificationCheckpoint);
+  const effectiveCorpusHash = canonicalEvidenceHash(problemCheckpoint.items.map(
+    (question: Record<string, unknown>, index: number) => ({
+      question,
+      classification: classificationCheckpoint.items[index],
+    }),
+  ));
+  const historicalBase = JSON.parse(
+    readFileSync(join(stateDir, audit.solutionFidelityCheckpoints[0].path), "utf8"),
+  );
+  const inputs = historicalBase.inputs.filter((input: { key: string }) => input.key === "1:1");
+  const items = historicalBase.items.filter((item: { key: string }) => item.key === "1:1");
+  const inputHash = canonicalEvidenceHash(inputs);
+  const currentBase = {
+    ...historicalBase,
+    effectiveProblemCorpusHash: effectiveCorpusHash,
+    inputHash,
+    inputs,
+    items,
+  };
+  const basePath = `solution-fidelity/v1-0000-${effectiveCorpusHash}-${inputHash}.json`;
+  const baseHash = writeEvidence(join(stateDir, basePath), currentBase);
+  const basePointer = { path: basePath, sha256: baseHash };
+  audit.effectiveCorpusHash = effectiveCorpusHash;
+  audit.acceptedQuestionCount = 1;
+  audit.rejectedQuestionCount = 29;
+  audit.targetQuestionCounts = { "수학 - 수학Ⅱ·미적분Ⅰ": 1 };
+  audit.acceptedSolutionKeys = ["1:1"];
+  audit.solutionRepairKeys = [];
+  audit.acceptedMcqKeys = ["1:1"];
+  audit.solutionFidelityCheckpoints = [{
+    ...basePointer,
+    from: currentBase.from,
+    to: currentBase.to,
+    ownedFrom: currentBase.ownedFrom,
+    ownedTo: currentBase.ownedTo,
+    inputHash,
+  }];
+  const q1Terminal = audit.solutionFidelityItems.find((item: { key: string }) => item.key === "1:1");
+  q1Terminal.fidelityArtifact = basePointer;
+  audit.solutionFidelityItems = [q1Terminal];
+  audit.solutionRepairs = [];
+  const solutionCheckpoint = JSON.parse(
+    readFileSync(join(stateDir, "solution-chunks", "v3-0000.json"), "utf8"),
+  );
+  const q1Solution = solutionCheckpoint.items.find((item: { number: string }) => item.number === "1");
+  audit.effectiveSolutionCorpusHash = canonicalEvidenceHash([{ key: "1:1", solution: q1Solution }]);
+  audit.items = audit.items.filter((item: { key: string }) => item.key === "1:1");
+
+  const receiptPath = join(stateDir, "receipt.json");
+  const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+  receipt.acceptedQuestionCount = 1;
+  receipt.rejectedQuestionCount = 29;
+  receipt.targetBooks = receipt.targetBooks.filter(
+    (target: { subject: string }) => target.subject === "수학 - 수학Ⅱ·미적분Ⅰ",
+  );
+  writeJson(receiptPath, receipt);
+  const db = new Database(files.dbPath);
+  const dormantBook = db.prepare(`
+    SELECT books.id
+    FROM books JOIN subjects ON subjects.id = books.subject_id
+    WHERE subjects.name = '수학 - 수학Ⅰ·대수'
+  `).get() as { id: number } | undefined;
+  if (dormantBook) {
+    db.prepare("DELETE FROM book_items WHERE book_id = ?").run(dormantBook.id);
+    db.prepare("DELETE FROM questions WHERE book_id = ?").run(dormantBook.id);
+    db.prepare("DELETE FROM book_files WHERE book_id = ?").run(dormantBook.id);
+    db.prepare("DELETE FROM books WHERE id = ?").run(dormantBook.id);
+  }
+  db.close();
+  rewriteSolutionAuditAuthority(files, (currentAudit) => Object.assign(currentAudit, audit));
+}
+
 function installQ1SemanticSolutionRevision(files: ReturnType<typeof fixture>): {
   preliminarySemanticArtifact: string;
   finalSemanticArtifact: string;
@@ -3866,36 +4825,52 @@ function installQ1SemanticSolutionRevision(files: ReturnType<typeof fixture>): {
   };
 }
 
-function rewriteSolutionRepairAuthority(
+function rewriteSolutionAuditAuthority(
   files: ReturnType<typeof fixture>,
-  mutateRepair: (repair: Record<string, any>) => void,
+  mutateAudit: (audit: Record<string, any>) => void,
 ): void {
   const stateDir = files.stateDirs.math;
   const attestationDir = join(stateDir, "answer-attestation");
-  const attestationName = readdirSync(attestationDir).find((name) => /^v2-/u.test(name))!;
+  const attestationName = readdirSync(attestationDir)
+    .sort((left, right) => right.localeCompare(left, "en"))
+    .find((name) => /^v[2-5]-/u.test(name))!;
   const attestation = JSON.parse(readFileSync(join(attestationDir, attestationName), "utf8"));
   const audit = JSON.parse(readFileSync(join(stateDir, attestation.answerAudit.path), "utf8"));
-  mutateRepair(audit.solutionRepairs[0]);
+  const version = Number(attestation.version);
+  mutateAudit(audit);
   const { version: _auditVersion, auditDigest: _oldAuditDigest, ...auditBasis } = audit;
   const auditDigest = canonicalEvidenceHash(auditBasis);
-  const auditPath = `answer-audit/v2-${auditDigest}.json`;
+  const auditPath = `answer-audit/v${version}-${auditDigest}.json`;
   for (const name of readdirSync(join(stateDir, "answer-audit"))) rmSync(join(stateDir, "answer-audit", name));
-  const auditHash = writeEvidence(join(stateDir, auditPath), { version: 2, auditDigest, ...auditBasis });
+  const auditHash = writeEvidence(join(stateDir, auditPath), { version, auditDigest, ...auditBasis });
   const { version: _attestationVersion, attestationDigest: _oldAttestationDigest, ...attestationBasis } = attestation;
+  attestationBasis.receipt = {
+    path: "receipt.json",
+    sha256: canonicalEvidenceHash(JSON.parse(readFileSync(join(stateDir, "receipt.json"), "utf8"))),
+  };
   attestationBasis.answerAudit = {
     path: auditPath,
     sha256: auditHash,
     effectiveCorpusHash: audit.effectiveCorpusHash,
     effectiveSolutionCorpusHash: audit.effectiveSolutionCorpusHash,
   };
+  attestationBasis.solutionFidelityCheckpoints = audit.solutionFidelityCheckpoints;
+  attestationBasis.solutionFidelityItems = audit.solutionFidelityItems;
   attestationBasis.solutionRepairs = audit.solutionRepairs;
   const attestationDigest = canonicalEvidenceHash(attestationBasis);
   for (const name of readdirSync(attestationDir)) rmSync(join(attestationDir, name));
-  writeEvidence(join(attestationDir, `v2-${attestationDigest}.json`), {
-    version: 2,
+  writeEvidence(join(attestationDir, `v${version}-${attestationDigest}.json`), {
+    version,
     attestationDigest,
     ...attestationBasis,
   });
+}
+
+function rewriteSolutionRepairAuthority(
+  files: ReturnType<typeof fixture>,
+  mutateRepair: (repair: Record<string, any>) => void,
+): void {
+  rewriteSolutionAuditAuthority(files, (audit) => mutateRepair(audit.solutionRepairs[0]));
 }
 
 function rewriteBaselineFidelityAuthority(
@@ -4506,6 +5481,21 @@ describe("exam corpus verifier", () => {
     expect(missingReport.failures.some((failure) =>
       failure.message.includes("no terminal v3 answer audit"))).toBe(true);
 
+    const missingAuditHistoryFiles = fixture();
+    const missingAuditHistoryResultPath = convertMathToFilteredV3(missingAuditHistoryFiles);
+    const missingAuditHistoryResult = JSON.parse(readFileSync(missingAuditHistoryResultPath, "utf8"));
+    delete missingAuditHistoryResult.answerAudit;
+    writeJson(missingAuditHistoryResultPath, missingAuditHistoryResult);
+    writeJson(join(
+      missingAuditHistoryFiles.stateDirs.math,
+      "solution-repairs",
+      `v1-0001-0027-${"3".repeat(64)}.json`,
+    ), {});
+    const missingAuditHistory = verifyExamCorpus(missingAuditHistoryFiles);
+    expect(missingAuditHistory.ok).toBe(false);
+    expect(missingAuditHistory.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
     const currentFiles = fixture();
     const currentResultPath = convertMathToFilteredV3(currentFiles, true, true);
     const current = verifyExamCorpus(currentFiles);
@@ -4521,6 +5511,84 @@ describe("exam corpus verifier", () => {
     const currentV5 = verifyExamCorpus(currentV5Files);
     expect(currentV5, JSON.stringify(currentV5.failures)).toMatchObject({ ok: true });
     expect(JSON.parse(readFileSync(currentV5ResultPath, "utf8")).version).toBe(5);
+
+    const filteredWithDormantHistory = () => {
+      const donor = fixture();
+      installQ27SolutionRepair(donor, 27);
+      const files = fixture();
+      for (const directory of ["problem-chunks", "solution-chunks"]) {
+        for (const name of readdirSync(join(donor.stateDirs.math, directory))) {
+          writeFileSync(
+            join(files.stateDirs.math, directory, name),
+            readFileSync(join(donor.stateDirs.math, directory, name)),
+          );
+        }
+      }
+      convertMathToFilteredV3(files, true, false, true);
+      for (const directory of [
+        "solution-fidelity",
+        "solution-repairs",
+        "solution-fidelity-repairs",
+        "solution-revisions",
+        "solution-fidelity-revisions",
+      ]) {
+        const source = join(donor.stateDirs.math, directory);
+        if (!existsSync(source)) continue;
+        const target = join(files.stateDirs.math, directory);
+        mkdirSync(target, { recursive: true });
+        for (const name of readdirSync(source)) {
+          writeFileSync(join(target, name), readFileSync(join(source, name)));
+        }
+      }
+      const repairName = readdirSync(join(files.stateDirs.math, "solution-repairs"))[0];
+      const fidelityName = readdirSync(join(files.stateDirs.math, "solution-fidelity-repairs"))[0];
+      return {
+        files,
+        repairArtifact: join(files.stateDirs.math, "solution-repairs", repairName),
+        fidelityArtifact: join(files.stateDirs.math, "solution-fidelity-repairs", fidelityName),
+      };
+    };
+
+    const dormantFixture = filteredWithDormantHistory();
+    const dormantFiles = dormantFixture.files;
+    const dormant = verifyExamCorpus(dormantFiles);
+    expect(dormant, JSON.stringify(dormant.failures)).toMatchObject({ ok: true });
+
+    const partialDormant = filteredWithDormantHistory();
+    const partialDormantFiles = partialDormant.files;
+    rmSync(partialDormant.fidelityArtifact);
+    expect(verifyExamCorpus(partialDormantFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("child coverage"))).toBe(true);
+
+    const tamperedDormant = filteredWithDormantHistory();
+    const tamperedDormantFiles = tamperedDormant.files;
+    const tamperedDormantCheckpoint = JSON.parse(readFileSync(tamperedDormant.repairArtifact, "utf8"));
+    tamperedDormantCheckpoint.item.explanation = "tampered dormant explanation";
+    writeJson(tamperedDormant.repairArtifact, tamperedDormantCheckpoint);
+    expect(verifyExamCorpus(tamperedDormantFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const malformedDormant = filteredWithDormantHistory();
+    const malformedDormantFiles = malformedDormant.files;
+    writeJson(join(
+      malformedDormantFiles.stateDirs.math,
+      "solution-repairs",
+      `v1-0001-0027-${"1".repeat(64)}.json`,
+    ), {});
+    expect(verifyExamCorpus(malformedDormantFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const orphanDormant = filteredWithDormantHistory();
+    const orphanDormantFiles = orphanDormant.files;
+    const orphanName = `v1-0001-0027-${"1".repeat(64)}-${"2".repeat(64)}.json`;
+    writeFileSync(
+      join(orphanDormantFiles.stateDirs.math, "solution-fidelity-repairs", orphanName),
+      readFileSync(orphanDormant.fidelityArtifact),
+    );
+    expect(verifyExamCorpus(orphanDormantFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("child coverage"))).toBe(true);
 
     const mixedVersionFiles = fixture();
     convertMathToFilteredV3(mixedVersionFiles, true, true);
@@ -4651,6 +5719,122 @@ describe("exam corpus verifier", () => {
     expect(report.failures.some((failure) => failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
   });
 
+  it("keeps a complete Q27 repair sticky across problem-corpus generations", () => {
+    const files = fixture();
+    const artifacts = migratePersistedSolutionGeneration(files, 27);
+    cloneHistoricalFirstSolutionGeneration(files, artifacts.historicalRepairArtifact, "historical generation two");
+    cloneHistoricalFirstSolutionGeneration(files, artifacts.historicalRepairArtifact, "historical generation three");
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    const currentRepair = JSON.parse(readFileSync(artifacts.repairArtifact, "utf8"));
+    expect(currentRepair.persistedSeed).toMatchObject({
+      version: 1,
+      repairArtifact: {
+        path: artifacts.historicalRepairArtifact.split(`${files.stateDirs.math}/`)[1],
+      },
+      repairedItemHash: canonicalEvidenceHash(currentRepair.item),
+    });
+
+    const dormantFiles = fixture();
+    makeQ27HistoricalAuthorityDormant(dormantFiles);
+    const dormant = verifyExamCorpus(dormantFiles);
+    expect(dormant, JSON.stringify(dormant.failures)).toMatchObject({ ok: true });
+
+    const staleFallbackFiles = fixture();
+    migratePersistedSolutionGeneration(staleFallbackFiles, 27);
+    const staleState = staleFallbackFiles.stateDirs.math;
+    for (const name of readdirSync(join(staleState, "answer-audit"))) {
+      if (name.startsWith("v5-")) rmSync(join(staleState, "answer-audit", name));
+    }
+    for (const name of readdirSync(join(staleState, "answer-attestation"))) {
+      if (name.startsWith("v5-")) rmSync(join(staleState, "answer-attestation", name));
+    }
+    for (const name of readdirSync(join(staleState, "classification-chunks"))) {
+      if (name.startsWith("v5-")) rmSync(join(staleState, "classification-chunks", name));
+    }
+    for (const name of readdirSync(join(staleState, "problem-terminal-fidelity"))) {
+      if (name.startsWith("v2-")) rmSync(join(staleState, "problem-terminal-fidelity", name));
+    }
+    const staleSemanticDir = join(staleState, "semantic-choice-checks");
+    if (existsSync(staleSemanticDir)) {
+      for (const name of readdirSync(staleSemanticDir)) {
+        if (name.startsWith("v5-")) rmSync(join(staleSemanticDir, name));
+      }
+    }
+    if (existsSync(join(staleState, "result.json"))) rmSync(join(staleState, "result.json"));
+    expect(readdirSync(join(staleState, "answer-audit")).some((name) => name.startsWith("v5-"))).toBe(false);
+    expect(readdirSync(join(staleState, "answer-attestation")).some((name) => name.startsWith("v5-"))).toBe(false);
+    expect(readdirSync(join(staleState, "classification-chunks")).some((name) => name.startsWith("v5-"))).toBe(false);
+    expect(readdirSync(join(staleState, "problem-terminal-fidelity")).some((name) => name.startsWith("v2-"))).toBe(false);
+    expect(existsSync(staleSemanticDir)
+      && readdirSync(staleSemanticDir).some((name) => name.startsWith("v5-"))).toBe(false);
+    const staleFallback = verifyExamCorpus(staleFallbackFiles);
+    expect(staleFallback.ok).toBe(false);
+    expect(staleFallback.failures.some((failure) =>
+      failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
+
+    const omittedFiles = fixture();
+    migratePersistedSolutionGeneration(omittedFiles, 27);
+    rewriteSolutionAuditAuthority(omittedFiles, (audit) => {
+      audit.solutionRepairs = [];
+      audit.solutionRepairKeys = [];
+    });
+    expect(verifyExamCorpus(omittedFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("declared solution repair keys"))).toBe(true);
+
+    const partialFiles = fixture();
+    const partial = migratePersistedSolutionGeneration(partialFiles, 27);
+    rmSync(partial.repairFidelityArtifact);
+    expect(verifyExamCorpus(partialFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("child coverage"))).toBe(true);
+
+    const historicalPartialFiles = fixture();
+    const historicalPartial = migratePersistedSolutionGeneration(historicalPartialFiles, 27);
+    const extraHistorical = cloneHistoricalFirstSolutionGeneration(
+      historicalPartialFiles,
+      historicalPartial.historicalRepairArtifact,
+      "historical child removal",
+    );
+    rmSync(extraHistorical.fidelityArtifact);
+    expect(verifyExamCorpus(historicalPartialFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("child coverage"))).toBe(true);
+
+    const seedTamperFiles = fixture();
+    const seedTamper = migratePersistedSolutionGeneration(seedTamperFiles, 27);
+    const tamperedSeed = JSON.parse(readFileSync(seedTamper.repairArtifact, "utf8"));
+    tamperedSeed.persistedSeed.repairedItemHash = "0".repeat(64);
+    writeJson(seedTamper.repairArtifact, tamperedSeed);
+    expect(verifyExamCorpus(seedTamperFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("persisted seed"))).toBe(true);
+
+    const malformedFiles = fixture();
+    migratePersistedSolutionGeneration(malformedFiles, 27);
+    writeJson(join(malformedFiles.stateDirs.math, "solution-repairs", "malformed.json"), {});
+    expect(verifyExamCorpus(malformedFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("malformed persisted solution authority"))).toBe(true);
+
+    const orphanFiles = fixture();
+    const orphan = migratePersistedSolutionGeneration(orphanFiles, 27);
+    const orphanCheckpoint = JSON.parse(readFileSync(orphan.repairFidelityArtifact, "utf8"));
+    orphanCheckpoint.repairArtifact = {
+      path: `solution-repairs/v1-0001-0027-${"f".repeat(64)}.json`,
+      sha256: "e".repeat(64),
+    };
+    writeEvidence(join(
+      orphanFiles.stateDirs.math,
+      "solution-fidelity-repairs",
+      `v1-9999-9999-${"d".repeat(64)}-${"c".repeat(64)}.json`,
+    ), orphanCheckpoint);
+    expect(verifyExamCorpus(orphanFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("orphan persisted solution repair fidelity"))).toBe(true);
+  });
+
   it("reconstructs one Q28 solution revision and rejects broken or repeated chains", () => {
     const files = fixture();
     const artifacts = installQ28SolutionRevision(files);
@@ -4680,7 +5864,8 @@ describe("exam corpus verifier", () => {
     installQ28SolutionRevision(orphanFiles);
     rewriteSolutionRepairAuthority(orphanFiles, (repair) => delete repair.revision);
     expect(verifyExamCorpus(orphanFiles).failures.some((failure) =>
-      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("no attested revision"))).toBe(true);
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("sticky solution revision authority"))).toBe(true);
 
     const staleFiles = fixture();
     installQ28SolutionRevision(staleFiles);
@@ -4701,8 +5886,64 @@ describe("exam corpus verifier", () => {
     const exactFirstFiles = fixture();
     installQ28SolutionRevision(exactFirstFiles, true);
     expect(verifyExamCorpus(exactFirstFiles).failures.some((failure) =>
-      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("must not declare"))).toBe(true);
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("terminal first repair"))).toBe(true);
     expect(artifacts.firstFidelityArtifact).toContain("solution-fidelity-repairs/v1-");
+  });
+
+  it("replays one persisted Q28 revision and rejects predecessor or partial-chain corruption", () => {
+    const files = fixture();
+    const artifacts = migratePersistedSolutionGeneration(files, 28);
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    const currentRevision = JSON.parse(readFileSync(artifacts.revisionArtifact!, "utf8"));
+    expect(currentRevision.trigger).toMatchObject({
+      kind: "persisted",
+      persistedTriggerVersion: 1,
+      predecessor: {
+        revisionArtifact: {
+          path: artifacts.historicalRevisionArtifact!.split(`${files.stateDirs.math}/`)[1],
+        },
+      },
+    });
+
+    const predecessorTamperFiles = fixture();
+    const predecessorTamper = migratePersistedSolutionGeneration(predecessorTamperFiles, 28);
+    const tampered = JSON.parse(readFileSync(predecessorTamper.revisionArtifact!, "utf8"));
+    tampered.trigger.predecessor.diagnosticEvidence = "unbound predecessor evidence";
+    writeJson(predecessorTamper.revisionArtifact!, tampered);
+    expect(verifyExamCorpus(predecessorTamperFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const partialFiles = fixture();
+    const partial = migratePersistedSolutionGeneration(partialFiles, 28);
+    rmSync(partial.revisionFidelityArtifact!);
+    expect(verifyExamCorpus(partialFiles).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("child coverage"))).toBe(true);
+  });
+
+  it("stages a persisted Q28 revision before a sibling Q1 semantic revision", () => {
+    const files = fixture();
+    migratePersistedSolutionGeneration(files, 28, true);
+    installCurrentQ1SemanticSibling(files);
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+  });
+
+  it("rejects a resolved current semantic decision with a null choice index", () => {
+    const files = fixture();
+    const artifacts = installQ1SemanticSolutionRevision(files);
+    const semantic = JSON.parse(readFileSync(artifacts.finalSemanticArtifact, "utf8"));
+    semantic.items[0].choiceIndex = null;
+    const semanticHash = writeEvidence(artifacts.finalSemanticArtifact, semantic);
+    rewriteSolutionAuditAuthority(files, (audit) => {
+      audit.semanticCheckpoint.sha256 = semanticHash;
+      audit.items.find((item: { key: string }) => item.key === "1:1").semantic.choiceIndex = null;
+    });
+    expect(verifyExamCorpus(files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+      && failure.message.includes("invalid semantic choice index"))).toBe(true);
   });
 
   it("reconstructs Q1 semantic-conflict revision with fresh marker authority", () => {
