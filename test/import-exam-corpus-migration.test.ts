@@ -71,6 +71,70 @@ async function runNormalReplay(dataDir: string): Promise<{ stdout: string; stder
   ], { cwd: repository, timeout: 30_000 });
 }
 
+type SameKeyMigrationCase = {
+  entryId: string;
+  entryToken: string;
+  oldReceiptSha256: string;
+  beforeProjectionHash: string;
+  afterProjectionHash: string;
+  stableAfterProjectionHash: string;
+  accepted: number;
+};
+
+async function prepareSameKeySnapshot(root: string, migration: SameKeyMigrationCase): Promise<string> {
+  const sourceState = join(sourceData, "import-exam-corpus", migration.entryToken);
+  const stateDir = join(root, "import-exam-corpus", migration.entryToken);
+  mkdirSync(join(root, "import-exam-corpus"), { recursive: true });
+  cpSync(sourceState, stateDir, { recursive: true });
+  mkdirSync(join(root, "files", "corpus"), { recursive: true });
+  cpSync(
+    join(sourceData, "files", "corpus", migration.entryToken),
+    join(root, "files", "corpus", migration.entryToken),
+    { recursive: true }
+  );
+  const planDirectory = join(stateDir, "migration-plans");
+  const planName = existsSync(planDirectory)
+    ? readdirSync(planDirectory).find((name) => /^v1-[a-f0-9]{64}\.json$/u.test(name))
+    : undefined;
+  if (planName) {
+    const plan = JSON.parse(readFileSync(join(planDirectory, planName), "utf8"));
+    cpSync(join(sourceData, plan.backup.path), join(root, "studywork.db"));
+    const history = JSON.parse(readFileSync(
+      join(stateDir, "receipt-history", `v1-${migration.oldReceiptSha256}.json`),
+      "utf8"
+    ));
+    writeCanonical(join(stateDir, "receipt.json"), history.receipt.value);
+    for (const path of [
+      "migration-plans", "receipt-history", "migration-commits", "answer-attestation",
+    ]) rmSync(join(stateDir, path), { recursive: true, force: true });
+    rmSync(join(root, "backups"), { recursive: true, force: true });
+  } else {
+    const source = new Database(join(sourceData, "studywork.db"), { readonly: true, fileMustExist: true });
+    try {
+      await source.backup(join(root, "studywork.db"));
+    } finally {
+      source.close();
+    }
+  }
+  expect(sha256(join(stateDir, "receipt.json"))).toBe(migration.oldReceiptSha256);
+  return stateDir;
+}
+
+async function runSameKeyMigration(dataDir: string, migration: SameKeyMigrationCase) {
+  return execFileP(process.execPath, [
+    "--import", "tsx", "scripts/import-exam-corpus.ts",
+    "--manifest", "data/ebsi-exam-manifest.json",
+    "--data-dir", dataDir,
+    "--commit",
+    "--migrate-existing", migration.entryId,
+    "--expect-receipt-sha256", migration.oldReceiptSha256,
+  ], {
+    cwd: repository,
+    timeout: 30_000,
+    env: { ...process.env, STUDYWORK_CODEX_BIN: "/usr/bin/false" },
+  });
+}
+
 async function prepareOldSnapshot(root: string): Promise<{ stateDir: string; receiptPath: string }> {
   const sourceState = join(sourceData, "import-exam-corpus", token);
   const stateDir = join(root, "import-exam-corpus", token);
@@ -136,10 +200,68 @@ describe("existing corpus migration v1", () => {
       afterProjectionHash: "1bedcd46e0c24a5138cd6213708680754caba6b1ae2ffed98cdd167d7a47e6f1",
       newKeys: ["10:26"],
     });
+    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.map((spec) => spec.entryId)).toEqual([
+      "ebsi:5695028",
+      "ebsi:5734412",
+      "ebsi:5696440",
+      "ebsi:5854175",
+    ]);
+    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.slice(1).every((spec) =>
+      spec.newKeys.length === 0 && spec.newQuestions.length === 0
+    )).toBe(true);
+    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((spec) => spec.entryId === "ebsi:5656592"))
+      .toBeUndefined();
     expect(() => selectExistingMigrationPlan([{
       identity: { entryId: "ebsi:stale", oldReceipt: { sha256: oldReceiptSha } },
     }], "ebsi:5695028", oldReceiptSha)).toThrow("충돌");
   });
+
+  it.each([
+    {
+      entryId: "ebsi:5734412",
+      entryToken: "514652aa98da96737758368d",
+      oldReceiptSha256: "d8c827753975f333c387db90d17e70b9b5e7cb363730d2e602bb2c4f3176cfc0",
+      beforeProjectionHash: "fb8e8647745924db4fc46cbb3bd4dd61c0bb61bf557e7c195f83d7b406f0da4a",
+      afterProjectionHash: "74648286834d0b62394055b9c5b15b850aa11282428b3b0d4534e75fea664c46",
+      stableAfterProjectionHash: "c051b070db01d451b4b03c923febc9873fd2c5cc782676fbebcdaa641546baeb",
+      accepted: 1,
+    },
+    {
+      entryId: "ebsi:5854175",
+      entryToken: "231f0e1a573a042551a8df8e",
+      oldReceiptSha256: "cbfd646f22cecc50485180b15432bdc8c0f062094d1f351180506f8707795af9",
+      beforeProjectionHash: "a12af7f2fc6f49314dc30532b7421ce34b1f430436964b763cc67bb3547d6338",
+      afterProjectionHash: "21e9dd2731d0ffbd97b595333e5367224e59f5ae108ead4914c83e76ea1507a7",
+      stableAfterProjectionHash: "489d4d6831de6abc37cc052e3ef5db730821a4a3a270a955441bfd004fca243f",
+      accepted: 7,
+    },
+  ] satisfies SameKeyMigrationCase[])(
+    "migrates $entryId from persisted authority without AI",
+    async (migration) => {
+      const root = mkdtempSync(join(tmpdir(), "studywork-same-key-migration-"));
+      try {
+        const stateDir = await prepareSameKeySnapshot(root, migration);
+        const first = await runSameKeyMigration(root, migration);
+        expect(first.stdout).toContain(`existing ${migration.entryId} ${migration.accepted}`);
+        const planName = readdirSync(join(stateDir, "migration-plans"))
+          .find((name) => /^v1-[a-f0-9]{64}\.json$/u.test(name))!;
+        const plan = JSON.parse(readFileSync(join(stateDir, "migration-plans", planName), "utf8"));
+        expect(plan.identity).toMatchObject({
+          beforeProjectionHash: migration.beforeProjectionHash,
+          afterProjectionHash: migration.afterProjectionHash,
+          stableAfterProjectionHash: migration.stableAfterProjectionHash,
+        });
+        expect(plan.identity.operations.questionInserts).toHaveLength(0);
+        expect(plan.identity.operations.itemInserts).toHaveLength(0);
+        expect(plan.identity.operations.questionUpdates).toHaveLength(migration.accepted);
+        expect(plan.identity.operations.itemUpdates).toHaveLength(migration.accepted * 2);
+        const replay = await runSameKeyMigration(root, migration);
+        expect(replay.stdout).toContain(`existing ${migration.entryId} ${migration.accepted}`);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  );
 
   it("requires the same MCQ ordinal and normalized selected choice", () => {
     const old = {

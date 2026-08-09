@@ -8560,9 +8560,24 @@ function rewriteProblemRepairAuthority(
 }
 
 describe("exam corpus verifier", () => {
-  it("verifies one complete migration chain while tolerating post-import study state", async () => {
+  it("keeps the exact existing-corpus migration allowlist aligned with the importer", () => {
+    expect(existingCorpusMigrationAllowlistFingerprint())
+      .toBe("0abbd09ef538608e0fab27420f07281d7d29a8c88fff6a7148ce28222561a98f");
     expect(existingCorpusMigrationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(EXISTING_CORPUS_MIGRATION_ALLOWLIST));
+    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.map((spec) => spec.entryId)).toEqual([
+      "ebsi:5695028",
+      "ebsi:5734412",
+      "ebsi:5696440",
+      "ebsi:5854175",
+    ]);
+    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.slice(1).every((spec) =>
+      spec.newKeys.length === 0 && spec.newQuestions.length === 0)).toBe(true);
+    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.some((spec) => spec.entryId === "ebsi:5656592"))
+      .toBe(false);
+  });
+
+  it("verifies one complete migration chain while tolerating post-import study state", async () => {
     const files = await migratedVerifierFixture();
     const verify = () => verifyExamCorpus({
       manifestPath: files.manifestPath,
