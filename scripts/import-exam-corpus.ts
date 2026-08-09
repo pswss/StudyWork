@@ -102,8 +102,10 @@ export const SOLUTION_FIDELITY_SLICE_PAGES = 22;
 export const SOLUTION_FIDELITY_SLICE_STRIDE = 18;
 export const SOLUTION_REPAIR_VERSION = 1;
 export const SOLUTION_REPAIR_FIDELITY_VERSION = 1;
+export const PERSISTED_SOLUTION_REPAIR_SEED_VERSION = 1;
 export const SOLUTION_REVISION_VERSION = 1;
 export const SOLUTION_REVISION_FIDELITY_VERSION = 1;
+export const PERSISTED_SOLUTION_REVISION_TRIGGER_VERSION = 1;
 export const PROBLEM_TERMINAL_FIDELITY_VERSION = 2;
 export const SEMANTIC_CHOICE_CHECK_VERSION = 5;
 export const ANSWER_AUDIT_VERSION = 5;
@@ -723,7 +725,7 @@ export type SolutionRepairEvidence = {
 
 export type SolutionRevisionEvidence = {
   trigger: {
-    kind: "fidelity" | "semantic";
+    kind: "fidelity" | "semantic" | "persisted";
     fidelityDecisionHash: string;
     semanticCheckpoint?: EvidencePointer & {
       inputHash: string;
@@ -731,6 +733,8 @@ export type SolutionRevisionEvidence = {
       effectiveSolutionCorpusHash: string;
     };
     semanticDecisionHash?: string;
+    persistedTriggerVersion?: number;
+    predecessor?: PersistedSolutionRevisionAuthority;
   };
   baseRepairPage: number;
   effectivePage: number;
@@ -749,6 +753,33 @@ export type SolutionRevisionEvidence = {
   effectiveRawAnswerHash: string;
   baseRepairExplanationHash: string;
   effectiveExplanationHash: string;
+};
+
+export type PersistedSolutionRevisionAuthority = {
+  generationId: string;
+  key: string;
+  repairArtifact: EvidencePointer;
+  repairFidelityArtifact: EvidencePointer;
+  revisionArtifact: EvidencePointer;
+  revisionFidelityArtifact: EvidencePointer;
+  finalSolutionItemHash: string;
+  diagnosticDecisionHash: string;
+  diagnosticEvidence: string;
+};
+
+type PersistedSolutionFirstAuthority = {
+  generationId: string;
+  key: string;
+  effectiveProblemCorpusHash: string;
+  baseFidelityCheckpoint: EvidencePointer;
+  repairArtifact: EvidencePointer;
+  repairFidelityArtifact: EvidencePointer;
+  repairedItem: SolutionItem;
+  repairedItemHash: string;
+  seededFromGenerationId?: string;
+  persistedSeed?: Record<string, unknown>;
+  revision?: PersistedSolutionRevisionAuthority;
+  revisionTrigger?: SolutionRevisionTrigger;
 };
 
 export type SolutionFidelityTerminalItem = {
@@ -786,7 +817,8 @@ type SolutionRevisionTrigger =
         effectiveSolutionCorpusHash: string;
       };
       semanticDecision: SemanticChoiceDecision;
-    };
+    }
+  | { kind: "persisted"; authority: PersistedSolutionRevisionAuthority };
 
 type AnswerAuditResult = {
   classified: ClassifiedQuestion[];
@@ -2613,6 +2645,860 @@ async function withSolutionContextSlice<T>(
   }
 }
 
+type CanonicalSolutionArtifact = {
+  relativePath: string;
+  sha256: string;
+  checkpoint: Record<string, unknown>;
+};
+
+type PersistedSolutionHistory = {
+  stickyFirst: Map<string, PersistedSolutionFirstAuthority>;
+  revisionTriggers: Map<string, Exclude<SolutionRevisionTrigger, { kind: "fidelity" }>>;
+  requiredRevisionKeys: Set<string>;
+  currentPartialKeys: Set<string>;
+};
+
+function persistedEvidencePointer(value: unknown, label: string): EvidencePointer {
+  const row = object(value, label);
+  const pointer = {
+    path: exactString(row.path, `${label}.path`, 500),
+    sha256: exactHash(row.sha256, `${label}.sha256`),
+  };
+  if (canonicalEvidenceHash(row) !== canonicalEvidenceHash(pointer)) {
+    throw new Error(`${label}에 예상하지 않은 필드가 있습니다`);
+  }
+  return pointer;
+}
+
+function persistedRevisionAuthority(value: unknown, label: string): PersistedSolutionRevisionAuthority {
+  const row = object(value, label);
+  const authority: PersistedSolutionRevisionAuthority = {
+    generationId: exactHash(row.generationId, `${label}.generationId`),
+    key: exactString(row.key, `${label}.key`, 100),
+    repairArtifact: persistedEvidencePointer(row.repairArtifact, `${label}.repairArtifact`),
+    repairFidelityArtifact: persistedEvidencePointer(
+      row.repairFidelityArtifact,
+      `${label}.repairFidelityArtifact`
+    ),
+    revisionArtifact: persistedEvidencePointer(row.revisionArtifact, `${label}.revisionArtifact`),
+    revisionFidelityArtifact: persistedEvidencePointer(
+      row.revisionFidelityArtifact,
+      `${label}.revisionFidelityArtifact`
+    ),
+    finalSolutionItemHash: exactHash(row.finalSolutionItemHash, `${label}.finalSolutionItemHash`),
+    diagnosticDecisionHash: exactHash(row.diagnosticDecisionHash, `${label}.diagnosticDecisionHash`),
+    diagnosticEvidence: exactString(row.diagnosticEvidence, `${label}.diagnosticEvidence`, 2000),
+  };
+  if (canonicalEvidenceHash(row) !== canonicalEvidenceHash(authority)) {
+    throw new Error(`${label}에 예상하지 않은 필드가 있습니다`);
+  }
+  return authority;
+}
+
+function terminalSolutionFidelity(
+  input: SolutionFidelityInput,
+  solution: SolutionItem,
+  decision: SolutionFidelityDecision
+): boolean {
+  const terminalAnswer = decision.answerStatus === "exact" ||
+    decision.answerStatus === "not_visible" && input.allowDerivedMarkerAnswer;
+  return decision.sourcePage === solution.page && decision.explanationStatus === "exact" && terminalAnswer;
+}
+
+async function readCanonicalSolutionArtifacts(
+  stateDir: string,
+  directory: string,
+  fileName: RegExp
+): Promise<CanonicalSolutionArtifact[]> {
+  const absoluteDirectory = join(stateDir, directory);
+  if (!existsSync(absoluteDirectory)) return [];
+  const artifacts: CanonicalSolutionArtifact[] = [];
+  for (const entry of readdirSync(absoluteDirectory, { withFileTypes: true }).sort((a, b) =>
+    a.name.localeCompare(b.name))) {
+    if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
+    if (!entry.isFile() || entry.isSymbolicLink() || !fileName.test(entry.name)) {
+      throw new Error(`${directory}에 malformed solution authority가 있습니다: ${entry.name}`);
+    }
+    const relativePath = `${directory}/${entry.name}`;
+    const absolutePath = confinedStateFile(stateDir, relativePath, directory);
+    const checkpoint = object(JSON.parse(readFileSync(absolutePath, "utf8")), relativePath);
+    const sha256 = await sha256File(absolutePath);
+    if (sha256 !== canonicalEvidenceHash(checkpoint)) {
+      throw new Error(`${relativePath} canonical hash가 다릅니다`);
+    }
+    artifacts.push({ relativePath, sha256, checkpoint });
+  }
+  return artifacts;
+}
+
+function historicalTranscriptionBinding(checkpoint: Record<string, unknown>): boolean {
+  if (checkpoint.rulesDigest !== CLASSIFIER_DIGEST) return false;
+  if (
+    checkpoint.transcriptionGateVersion === TRANSCRIPTION_GATE_VERSION &&
+    checkpoint.transcriptionPromptDigest === TRANSCRIPTION_PROMPT_DIGEST &&
+    checkpoint.classifierVersion === CLASSIFIER_VERSION
+  ) return true;
+  return checkpoint.transcriptionGateVersion === 1 && checkpoint.classifierVersion === 4 &&
+    checkpoint.transcriptionPromptDigest ===
+      "d5c9f2a9cdf24a7249fe99d32b940775b72c95a1cab9016a60641672dc6a344a";
+}
+
+async function persistedSemanticRevisionTrigger(
+  entry: CorpusManifestEntry,
+  problemEvidence: PdfEvidence,
+  solutionEvidence: PdfEvidence,
+  stateDir: string,
+  effectiveProblemCorpusHash: string,
+  key: string,
+  fidelityDecisionHash: string,
+  rawTrigger: Record<string, unknown>,
+  rawDecision: unknown
+): Promise<{
+  evidence: SolutionRevisionEvidence["trigger"];
+  runtime: Extract<SolutionRevisionTrigger, { kind: "semantic" }>;
+  diagnosticEvidence: string;
+}> {
+  const pointerRow = object(rawTrigger.semanticCheckpoint, "persisted semantic checkpoint pointer");
+  const pointer = {
+    path: exactString(pointerRow.path, "persisted semantic checkpoint pointer.path", 500),
+    sha256: exactHash(pointerRow.sha256, "persisted semantic checkpoint pointer.sha256"),
+    inputHash: exactHash(pointerRow.inputHash, "persisted semantic input hash"),
+    effectiveCorpusHash: exactHash(pointerRow.effectiveCorpusHash, "persisted semantic problem corpus hash"),
+    effectiveSolutionCorpusHash: exactHash(
+      pointerRow.effectiveSolutionCorpusHash,
+      "persisted semantic solution corpus hash"
+    ),
+  };
+  if (canonicalEvidenceHash(pointerRow) !== canonicalEvidenceHash(pointer)) {
+    throw new Error(`${key} persisted semantic pointer envelope가 다릅니다`);
+  }
+  const path = confinedStateFile(stateDir, pointer.path, "persisted semantic checkpoint");
+  if (await sha256File(path) !== pointer.sha256) throw new Error(`${key} semantic checkpoint hash가 다릅니다`);
+  const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), pointer.path);
+  const version = Number(checkpoint.version);
+  if (![3, 4, 5].includes(version) || !Array.isArray(checkpoint.inputs) || !Array.isArray(checkpoint.items)) {
+    throw new Error(`${key} persisted semantic checkpoint version/schema가 유효하지 않습니다`);
+  }
+  const inputs = checkpoint.inputs.map((value, index) => {
+    const row = object(value, `${pointer.path}.inputs[${index}]`);
+    const input = {
+      key: exactString(row.key, `${pointer.path}.inputs[${index}].key`, 100),
+      choices: Array.isArray(row.choices)
+        ? row.choices.map((choice, choiceIndex) => exactString(
+            choice,
+            `${pointer.path}.inputs[${index}].choices[${choiceIndex}]`,
+            20_000
+          ))
+        : [],
+      detailedExplanation: exactString(
+        row.detailedExplanation,
+        `${pointer.path}.inputs[${index}].detailedExplanation`,
+        100_000
+      ),
+    };
+    if (input.choices.length === 0 || canonicalEvidenceHash(row) !== canonicalEvidenceHash(input)) {
+      throw new Error(`${pointer.path}.inputs[${index}]가 유효하지 않습니다`);
+    }
+    return input;
+  });
+  const inputHash = canonicalEvidenceHash(inputs);
+  const effectiveSolutionCorpusHash = exactHash(
+    checkpoint.effectiveSolutionCorpusHash,
+    "persisted semantic checkpoint solution corpus hash"
+  );
+  const simplePath = `semantic-choice-checks/v${version}-${inputHash}.json`;
+  const boundPath = `semantic-choice-checks/v${version}-${effectiveProblemCorpusHash}-` +
+    `${effectiveSolutionCorpusHash}-${inputHash}.json`;
+  if (pointer.path !== boundPath && (version === 5 || pointer.path !== simplePath)) {
+    throw new Error(`${key} persisted semantic checkpoint path가 canonical하지 않습니다`);
+  }
+  const decisions = parseSemanticChoiceDecisions(checkpoint.items, inputs);
+  const decision = decisions.find((candidate) => candidate.key === key);
+  if (!decision || decisions.filter((candidate) => candidate.key === key).length !== 1) {
+    throw new Error(`${key} persisted semantic decision이 유일하지 않습니다`);
+  }
+  const semanticDecision = object(rawDecision, "persisted semantic decision");
+  const semanticDecisionHash = canonicalEvidenceHash(decision);
+  const expectedCheckpoint = {
+    version,
+    entryId: entry.id,
+    problemHash: problemEvidence.sha256,
+    solutionHash: solutionEvidence.sha256,
+    classifierVersion: checkpoint.classifierVersion,
+    rulesDigest: CLASSIFIER_DIGEST,
+    transcriptionGateVersion: checkpoint.transcriptionGateVersion,
+    transcriptionPromptDigest: checkpoint.transcriptionPromptDigest,
+    effectiveCorpusHash: effectiveProblemCorpusHash,
+    effectiveSolutionCorpusHash,
+    inputHash,
+    promptDigest: sha256Text(`${version}\n${SEMANTIC_CHOICE_RULES}`),
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    inputs,
+    items: decisions,
+  };
+  const evidence = {
+    kind: "semantic" as const,
+    fidelityDecisionHash,
+    semanticCheckpoint: pointer,
+    semanticDecisionHash,
+  };
+  if (
+    pointer.inputHash !== inputHash || pointer.effectiveCorpusHash !== effectiveProblemCorpusHash ||
+    pointer.effectiveSolutionCorpusHash !== effectiveSolutionCorpusHash ||
+    !historicalTranscriptionBinding(checkpoint) ||
+    canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(expectedCheckpoint) ||
+    canonicalEvidenceHash(semanticDecision) !== semanticDecisionHash ||
+    rawTrigger.semanticDecisionHash !== semanticDecisionHash ||
+    canonicalEvidenceHash(rawTrigger) !== canonicalEvidenceHash(evidence)
+  ) throw new Error(`${key} persisted semantic checkpoint/decision envelope가 다릅니다`);
+  return {
+    evidence,
+    runtime: { kind: "semantic", semanticCheckpoint: pointer, semanticDecision: decision },
+    diagnosticEvidence: decision.evidence,
+  };
+}
+
+async function scanPersistedSolutionHistory(
+  entry: CorpusManifestEntry,
+  problemEvidence: PdfEvidence,
+  evidence: PdfEvidence,
+  stateDir: string,
+  classified: ClassifiedQuestion[],
+  baseSolutions: SolutionItem[],
+  currentEffectiveProblemCorpusHash: string,
+  allowCurrentPartial: boolean
+): Promise<PersistedSolutionHistory> {
+  const repairFiles = await readCanonicalSolutionArtifacts(
+    stateDir,
+    "solution-repairs",
+    /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u
+  );
+  const repairFidelityFiles = await readCanonicalSolutionArtifacts(
+    stateDir,
+    "solution-fidelity-repairs",
+    /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u
+  );
+  const revisionFiles = await readCanonicalSolutionArtifacts(
+    stateDir,
+    "solution-revisions",
+    /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u
+  );
+  const revisionFidelityFiles = await readCanonicalSolutionArtifacts(
+    stateDir,
+    "solution-fidelity-revisions",
+    /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u
+  );
+  if (
+    repairFiles.length + repairFidelityFiles.length + revisionFiles.length + revisionFidelityFiles.length === 0
+  ) return {
+    stickyFirst: new Map(),
+    revisionTriggers: new Map(),
+    requiredRevisionKeys: new Set(),
+    currentPartialKeys: new Set(),
+  };
+
+  const classifiedByNumber = new Map<number, ClassifiedQuestion>();
+  for (const current of classified) {
+    const number = numericPrintedLocator(current.question.number)!;
+    if (classifiedByNumber.has(number)) throw new Error(`${number}번 current problem이 중복입니다`);
+    classifiedByNumber.set(number, current);
+  }
+  const solutionsByNumber = new Map(baseSolutions.map((solution) => [numericPrintedLocator(solution.number)!, solution]));
+  if (solutionsByNumber.size !== baseSolutions.length) throw new Error("base solution 번호가 중복입니다");
+  const baseEvidenceByNumber = new Map<number, BaseSolutionEvidence>();
+  const assignedRepairFidelity = new Set<string>();
+  const assignedRevision = new Set<string>();
+  const assignedRevisionFidelity = new Set<string>();
+  const generations = new Map<string, PersistedSolutionFirstAuthority>();
+  const partialCurrentKeys = new Set<string>();
+  const partialRevisionTriggers = new Map<
+    string,
+    Exclude<SolutionRevisionTrigger, { kind: "fidelity" }>
+  >();
+
+  for (const repairFile of repairFiles) {
+    const repair = repairFile.checkpoint;
+    const match = /^solution-repairs\/v1-(\d{4})-(\d{4})-([a-f0-9]{64})\.json$/u.exec(
+      repairFile.relativePath
+    )!;
+    const basePage = Number(match[1]);
+    const printedNumber = Number(match[2]);
+    const baseFidelitySha = match[3];
+    const current = classifiedByNumber.get(printedNumber);
+    const baseSolution = solutionsByNumber.get(printedNumber);
+    if (!current || !baseSolution || questionKey(current.question) !== repair.key) {
+      throw new Error(`${repairFile.relativePath}이 unknown/renumbered solution key를 가리킵니다`);
+    }
+    let baseEvidence = baseEvidenceByNumber.get(printedNumber);
+    if (!baseEvidence) {
+      baseEvidence = await baseSolutionEvidence(evidence, stateDir, baseSolution);
+      baseEvidenceByNumber.set(printedNumber, baseEvidence);
+    }
+    const baseFidelityPointer = object(repair.baseFidelityCheckpoint, "persisted base fidelity pointer");
+    const baseFidelityPath = exactString(baseFidelityPointer.path, "persisted base fidelity path", 500);
+    const baseFidelityPointerSha = exactHash(baseFidelityPointer.sha256, "persisted base fidelity hash");
+    if (baseFidelityPointerSha !== baseFidelitySha) {
+      throw new Error(`${repairFile.relativePath} filename base fidelity hash가 다릅니다`);
+    }
+    const baseFidelityAbsolute = confinedStateFile(stateDir, baseFidelityPath, "persisted base fidelity");
+    if (await sha256File(baseFidelityAbsolute) !== baseFidelityPointerSha) {
+      throw new Error(`${repairFile.relativePath} base fidelity pointer hash가 다릅니다`);
+    }
+    const baseFidelity = object(JSON.parse(readFileSync(baseFidelityAbsolute, "utf8")), baseFidelityPath);
+    const effectiveProblemCorpusHash = exactHash(
+      repair.effectiveProblemCorpusHash,
+      "persisted effective problem corpus hash"
+    );
+    const baseFidelityName = /^solution-fidelity\/v1-(\d{4})-([a-f0-9]{64})-([a-f0-9]{64})\.json$/u.exec(
+      baseFidelityPath
+    );
+    const sliceIndex = baseFidelityName ? Number(baseFidelityName[1]) : -1;
+    const expectedFrom = 1 + sliceIndex * SOLUTION_FIDELITY_SLICE_STRIDE;
+    const expectedTo = Math.min(evidence.pageCount, expectedFrom + SOLUTION_FIDELITY_SLICE_PAGES - 1);
+    const expectedOwnedTo = expectedTo === evidence.pageCount
+      ? expectedTo
+      : expectedFrom + SOLUTION_FIDELITY_SLICE_STRIDE - 1;
+    const expectedBaseFidelityPath = baseFidelityName
+      ? `solution-fidelity/v${SOLUTION_FIDELITY_VERSION}-${String(sliceIndex).padStart(4, "0")}-` +
+        `${effectiveProblemCorpusHash}-${baseFidelity.inputHash}.json`
+      : "";
+    if (
+      !baseFidelityName || baseFidelityPath !== expectedBaseFidelityPath ||
+      baseFidelityName[2] !== effectiveProblemCorpusHash ||
+      baseFidelityName[3] !== baseFidelity.inputHash ||
+      baseFidelityPointerSha !== canonicalEvidenceHash(baseFidelity) ||
+      baseFidelity.version !== SOLUTION_FIDELITY_VERSION || baseFidelity.entryId !== entry.id ||
+      baseFidelity.sourceHash !== evidence.sha256 ||
+      baseFidelity.from !== expectedFrom || baseFidelity.to !== expectedTo ||
+      baseFidelity.ownedFrom !== expectedFrom || baseFidelity.ownedTo !== expectedOwnedTo ||
+      baseFidelity.effectiveProblemCorpusHash !== effectiveProblemCorpusHash ||
+      baseFidelity.promptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST ||
+      baseFidelity.model !== IMPORT_MODEL || baseFidelity.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+      !historicalTranscriptionBinding(baseFidelity) || !Array.isArray(baseFidelity.inputs) ||
+      baseFidelity.inputHash !== canonicalEvidenceHash(baseFidelity.inputs) ||
+      !Array.isArray(baseFidelity.items)
+    ) throw new Error(`${baseFidelityPath} persisted base fidelity 메타데이터가 다릅니다`);
+    const baseInputs = baseFidelity.inputs as SolutionFidelityInput[];
+    const input = baseInputs.find((candidate) => candidate.key === repair.key);
+    if (!input || baseInputs.filter((candidate) => candidate.key === repair.key).length !== 1) {
+      throw new Error(`${baseFidelityPath} persisted input key가 유일하지 않습니다`);
+    }
+    let allowDerivedMarkerAnswer = false;
+    if (current.question.qtype === "mcq") {
+      try {
+        allowDerivedMarkerAnswer = resolveOfficialAnswer(current.question, baseSolution.answer).mode === "choice-marker";
+      } catch (error) {
+        if (!(error instanceof OfficialAnswerChoiceMismatchError)) throw error;
+      }
+    }
+    const expectedBaseInput = {
+      key: repair.key,
+      printedNumber: String(printedNumber),
+      qtype: current.question.qtype,
+      allowDerivedMarkerAnswer,
+      sourcePage: baseSolution.page,
+      rawAnswer: baseSolution.answer,
+      explanation: baseSolution.explanation,
+      complete: true,
+      baseSolutionCheckpoint: baseEvidence.checkpoint,
+      baseSolutionItemHash: baseEvidence.itemHash,
+      baseContextFrom: baseEvidence.contextFrom,
+      baseContextTo: baseEvidence.contextTo,
+      baseOwnedFrom: baseEvidence.ownedFrom,
+      baseOwnedTo: baseEvidence.ownedTo,
+    } satisfies SolutionFidelityInput;
+    const decisions = parseSolutionFidelityDecisions(baseFidelity.items, baseInputs);
+    const baseDecision = decisions.find((decision) => decision.key === repair.key)!;
+    const from = Number(baseFidelity.from);
+    const to = Number(baseFidelity.to);
+    const ownedFrom = Number(baseFidelity.ownedFrom);
+    const ownedTo = Number(baseFidelity.ownedTo);
+    const expectedBaseFidelity = {
+      version: SOLUTION_FIDELITY_VERSION,
+      entryId: entry.id,
+      sourceHash: evidence.sha256,
+      from: expectedFrom,
+      to: expectedTo,
+      ownedFrom: expectedFrom,
+      ownedTo: expectedOwnedTo,
+      classifierVersion: baseFidelity.classifierVersion,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: baseFidelity.transcriptionGateVersion,
+      transcriptionPromptDigest: baseFidelity.transcriptionPromptDigest,
+      effectiveProblemCorpusHash,
+      inputHash: canonicalEvidenceHash(baseInputs),
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      inputs: baseInputs,
+      items: decisions,
+    };
+    if (
+      canonicalEvidenceHash(baseFidelity) !== canonicalEvidenceHash(expectedBaseFidelity) ||
+      canonicalEvidenceHash(input) !== canonicalEvidenceHash(expectedBaseInput) ||
+      !Number.isInteger(from) || !Number.isInteger(to) || !Number.isInteger(ownedFrom) || !Number.isInteger(ownedTo) ||
+      from < 1 || to < from || ownedFrom < from || ownedTo > to || input.sourcePage < ownedFrom ||
+      input.sourcePage > ownedTo || terminalSolutionFidelity(input, baseSolution, baseDecision) &&
+        input.baseContextTo <= to && repair.persistedSeed === undefined
+    ) throw new Error(`${baseFidelityPath}은 genuine nonterminal base fidelity가 아닙니다`);
+    if (
+      repair.version !== SOLUTION_REPAIR_VERSION || repair.entryId !== entry.id || repair.key !== input.key ||
+      repair.printedNumber !== input.printedNumber || repair.basePage !== basePage || basePage !== input.sourcePage ||
+      repair.sourceHash !== evidence.sha256 || repair.contextFrom !== input.baseContextFrom ||
+      repair.contextTo !== input.baseContextTo || repair.baseOwnedFrom !== input.baseOwnedFrom ||
+      repair.baseOwnedTo !== input.baseOwnedTo ||
+      canonicalEvidenceHash(repair.baseSolutionCheckpoint) !== canonicalEvidenceHash(baseEvidence.checkpoint) ||
+      repair.baseSolutionItemHash !== baseEvidence.itemHash || repair.baseRawAnswerHash !== sha256Text(baseSolution.answer) ||
+      repair.baseExplanationHash !== sha256Text(baseSolution.explanation) ||
+      repair.promptVersion !== TARGETED_SOLUTION_TRANSCRIPTION_VERSION ||
+      repair.promptDigest !== TARGETED_SOLUTION_PROMPT_DIGEST || repair.model !== IMPORT_MODEL ||
+      repair.reasoningEffort !== IMPORT_REASONING_EFFORT
+    ) throw new Error(`${repairFile.relativePath} persisted repair 메타데이터가 다릅니다`);
+    const repairedItem = parseSolutionItems(JSON.stringify([repair.item]))[0];
+    const repairedItemHash = canonicalEvidenceHash(repairedItem);
+    if (
+      numericPrintedLocator(repairedItem.number) !== printedNumber || repairedItem.page !== repair.effectivePage ||
+      repairedItem.page < input.baseContextFrom || repairedItem.page > input.baseContextTo || repairedItem.complete !== true ||
+      !repairedItem.answer.trim() || !repairedItem.explanation.trim()
+    ) throw new Error(`${repairFile.relativePath} persisted repair item이 유효하지 않습니다`);
+    const generationId = canonicalEvidenceHash({
+      key: input.key,
+      effectiveProblemCorpusHash,
+      baseFidelityCheckpointSha256: baseFidelityPointerSha,
+    });
+    if (generations.has(generationId)) throw new Error(`${input.key} persisted solution generation이 중복입니다`);
+    let seededFromGenerationId: string | undefined;
+    let persistedSeed: Record<string, unknown> | undefined;
+    if (repair.persistedSeed !== undefined) {
+      const seed = object(repair.persistedSeed, "persisted repair seed");
+      persistedSeed = seed;
+      seededFromGenerationId = exactHash(seed.generationId, "persisted repair seed generation");
+      if (
+        seed.version !== PERSISTED_SOLUTION_REPAIR_SEED_VERSION ||
+        exactHash(seed.effectiveProblemCorpusHash, "persisted repair seed corpus hash") === effectiveProblemCorpusHash ||
+        seed.repairedItemHash !== repairedItemHash
+      ) throw new Error(`${repairFile.relativePath} persisted repair seed 메타데이터가 다릅니다`);
+      for (const [label, rawPointer] of [
+        ["persisted seed base fidelity", seed.baseFidelityCheckpoint],
+        ["persisted seed repair", seed.repairArtifact],
+        ["persisted seed repair fidelity", seed.repairFidelityArtifact],
+      ] as const) {
+        const pointer = object(rawPointer, label);
+        const path = confinedStateFile(stateDir, exactString(pointer.path, `${label} path`, 500), label);
+        if (await sha256File(path) !== exactHash(pointer.sha256, `${label} hash`)) {
+          throw new Error(`${repairFile.relativePath} ${label} hash가 다릅니다`);
+        }
+      }
+    }
+    const expectedRepair = {
+      version: SOLUTION_REPAIR_VERSION,
+      entryId: entry.id,
+      key: input.key,
+      printedNumber: input.printedNumber,
+      basePage,
+      contextFrom: input.baseContextFrom,
+      contextTo: input.baseContextTo,
+      baseOwnedFrom: input.baseOwnedFrom,
+      baseOwnedTo: input.baseOwnedTo,
+      sourceHash: evidence.sha256,
+      effectiveProblemCorpusHash,
+      baseSolutionCheckpoint: baseEvidence.checkpoint,
+      baseFidelityCheckpoint: { path: baseFidelityPath, sha256: baseFidelityPointerSha },
+      baseSolutionItemHash: baseEvidence.itemHash,
+      baseRawAnswerHash: sha256Text(baseSolution.answer),
+      baseExplanationHash: sha256Text(baseSolution.explanation),
+      promptVersion: TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
+      promptDigest: TARGETED_SOLUTION_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      ...(persistedSeed ? { persistedSeed } : {}),
+      effectivePage: repairedItem.page,
+      item: repairedItem,
+    };
+    if (canonicalEvidenceHash(repair) !== canonicalEvidenceHash(expectedRepair)) {
+      throw new Error(`${repairFile.relativePath} persisted repair envelope가 다릅니다`);
+    }
+    const fidelityChildren = repairFidelityFiles.filter((candidate) =>
+      object(candidate.checkpoint.repairArtifact, "persisted repair fidelity parent").path === repairFile.relativePath
+    );
+    if (fidelityChildren.length === 0) {
+      if (!allowCurrentPartial || effectiveProblemCorpusHash !== currentEffectiveProblemCorpusHash) {
+        throw new Error(`${repairFile.relativePath} persisted repair fidelity child가 없습니다`);
+      }
+      partialCurrentKeys.add(input.key);
+      continue;
+    }
+    if (fidelityChildren.length !== 1) throw new Error(`${repairFile.relativePath} repair fidelity child가 중복입니다`);
+    const fidelityFile = fidelityChildren[0];
+    assignedRepairFidelity.add(fidelityFile.relativePath);
+    const fidelity = fidelityFile.checkpoint;
+    const repairedInput: SolutionFidelityInput = {
+      ...input,
+      sourcePage: repairedItem.page,
+      rawAnswer: repairedItem.answer,
+      explanation: repairedItem.explanation,
+    };
+    const repairedInputHash = canonicalEvidenceHash(repairedInput);
+    const expectedFidelityPath = `solution-fidelity-repairs/v${SOLUTION_REPAIR_FIDELITY_VERSION}-` +
+      `${String(basePage).padStart(4, "0")}-${String(printedNumber).padStart(4, "0")}-` +
+      `${baseFidelityPointerSha}-${repairedItemHash}.json`;
+    if (
+      fidelityFile.relativePath !== expectedFidelityPath || fidelity.version !== SOLUTION_REPAIR_FIDELITY_VERSION ||
+      fidelity.entryId !== entry.id || fidelity.key !== input.key || fidelity.sourceHash !== evidence.sha256 ||
+      fidelity.from !== input.baseContextFrom || fidelity.to !== input.baseContextTo || fidelity.basePage !== basePage ||
+      fidelity.effectivePage !== repairedItem.page || fidelity.baseOwnedFrom !== input.baseOwnedFrom ||
+      fidelity.baseOwnedTo !== input.baseOwnedTo ||
+      fidelity.effectiveProblemCorpusHash !== effectiveProblemCorpusHash ||
+      canonicalEvidenceHash(fidelity.baseSolutionCheckpoint) !== canonicalEvidenceHash(baseEvidence.checkpoint) ||
+      canonicalEvidenceHash(fidelity.baseFidelityCheckpoint) !== canonicalEvidenceHash({
+        path: baseFidelityPath,
+        sha256: baseFidelityPointerSha,
+      }) || canonicalEvidenceHash(fidelity.repairArtifact) !== canonicalEvidenceHash({
+        path: repairFile.relativePath,
+        sha256: repairFile.sha256,
+      }) || fidelity.effectiveSolutionItemHash !== repairedItemHash || fidelity.inputHash !== repairedInputHash ||
+      fidelity.promptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST || fidelity.model !== IMPORT_MODEL ||
+      fidelity.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+      canonicalEvidenceHash(fidelity.input) !== canonicalEvidenceHash(repairedInput)
+    ) throw new Error(`기존 repair 해설 fidelity 메타데이터가 다릅니다: ${fidelityFile.relativePath}`);
+    const firstDecision = parseSolutionFidelityDecisions([fidelity.item], [repairedInput])[0];
+    const expectedFidelity = {
+      version: SOLUTION_REPAIR_FIDELITY_VERSION,
+      entryId: entry.id,
+      key: input.key,
+      sourceHash: evidence.sha256,
+      from: input.baseContextFrom,
+      to: input.baseContextTo,
+      basePage,
+      effectivePage: repairedItem.page,
+      baseOwnedFrom: input.baseOwnedFrom,
+      baseOwnedTo: input.baseOwnedTo,
+      effectiveProblemCorpusHash,
+      baseSolutionCheckpoint: baseEvidence.checkpoint,
+      baseFidelityCheckpoint: { path: baseFidelityPath, sha256: baseFidelityPointerSha },
+      repairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
+      effectiveSolutionItemHash: repairedItemHash,
+      inputHash: repairedInputHash,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      input: repairedInput,
+      item: firstDecision,
+    };
+    if (canonicalEvidenceHash(fidelity) !== canonicalEvidenceHash(expectedFidelity)) {
+      throw new Error(`${fidelityFile.relativePath} persisted repair fidelity envelope가 다릅니다`);
+    }
+    const firstTerminal = terminalSolutionFidelity(repairedInput, repairedItem, firstDecision);
+    const revisionChildren = revisionFiles.filter((candidate) =>
+      object(candidate.checkpoint.baseRepairArtifact, "persisted revision parent").path === repairFile.relativePath
+    );
+    if (revisionChildren.length > 1) throw new Error(`${repairFile.relativePath} persisted revision child가 중복입니다`);
+    if (!firstTerminal && revisionChildren.length !== 1) {
+      if (!allowCurrentPartial || effectiveProblemCorpusHash !== currentEffectiveProblemCorpusHash) {
+        throw new Error(`${repairFile.relativePath} nonterminal repair에 revision이 없습니다`);
+      }
+      partialCurrentKeys.add(input.key);
+      continue;
+    }
+    let revisionAuthority: PersistedSolutionRevisionAuthority | undefined;
+    let revisionTrigger: SolutionRevisionTrigger | undefined;
+    if (revisionChildren.length === 1) {
+      const revisionFile = revisionChildren[0];
+      assignedRevision.add(revisionFile.relativePath);
+      const revision = revisionFile.checkpoint;
+      const trigger = object(revision.trigger, "persisted revision trigger");
+      const diagnosticDecisionHash = canonicalEvidenceHash(firstDecision);
+      let triggerEvidence: SolutionRevisionEvidence["trigger"];
+      let diagnosticEvidence: string;
+      if (trigger.kind === "fidelity") {
+        if (firstTerminal) throw new Error(`${revisionFile.relativePath} terminal repair가 fidelity revision을 가리킵니다`);
+        triggerEvidence = { kind: "fidelity", fidelityDecisionHash: diagnosticDecisionHash };
+        revisionTrigger = { kind: "fidelity" };
+        diagnosticEvidence = firstDecision.evidence;
+      } else if (trigger.kind === "semantic") {
+        if (!firstTerminal) throw new Error(`${revisionFile.relativePath} nonterminal repair가 semantic revision을 가리킵니다`);
+        const semantic = await persistedSemanticRevisionTrigger(
+          entry,
+          problemEvidence,
+          evidence,
+          stateDir,
+          effectiveProblemCorpusHash,
+          input.key,
+          diagnosticDecisionHash,
+          trigger,
+          revision.semanticDecision
+        );
+        triggerEvidence = semantic.evidence;
+        revisionTrigger = semantic.runtime;
+        diagnosticEvidence = semantic.diagnosticEvidence;
+      } else if (trigger.kind === "persisted") {
+        if (trigger.persistedTriggerVersion !== PERSISTED_SOLUTION_REVISION_TRIGGER_VERSION) {
+          throw new Error(`${revisionFile.relativePath} persisted revision trigger version이 다릅니다`);
+        }
+        const predecessor = persistedRevisionAuthority(
+          trigger.predecessor,
+          `${revisionFile.relativePath}.trigger.predecessor`
+        );
+        triggerEvidence = {
+          kind: "persisted",
+          fidelityDecisionHash: diagnosticDecisionHash,
+          persistedTriggerVersion: PERSISTED_SOLUTION_REVISION_TRIGGER_VERSION,
+          predecessor,
+        };
+        revisionTrigger = { kind: "persisted", authority: predecessor };
+        diagnosticEvidence = predecessor.diagnosticEvidence;
+      } else {
+        throw new Error(`${revisionFile.relativePath} persisted revision trigger kind가 유효하지 않습니다`);
+      }
+      if (
+        trigger.fidelityDecisionHash !== diagnosticDecisionHash ||
+        canonicalEvidenceHash(trigger) !== canonicalEvidenceHash(triggerEvidence)
+      ) throw new Error(`${revisionFile.relativePath} persisted revision trigger가 다릅니다`);
+      const revisedItem = parseSolutionItems(JSON.stringify([revision.item]))[0];
+      const revisedItemHash = canonicalEvidenceHash(revisedItem);
+      if (
+        numericPrintedLocator(revisedItem.number) !== printedNumber || revisedItem.page !== revision.effectivePage ||
+        revisedItem.page < input.baseContextFrom || revisedItem.page > input.baseContextTo || revisedItem.complete !== true ||
+        !revisedItem.answer.trim() || !revisedItem.explanation.trim()
+      ) throw new Error(`${revisionFile.relativePath} persisted revision item이 유효하지 않습니다`);
+      const baseRepairFidelityArtifact = {
+        path: fidelityFile.relativePath,
+        sha256: fidelityFile.sha256,
+        promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      };
+      const revisionBasisHash = canonicalEvidenceHash({
+        key: input.key,
+        sourceHash: evidence.sha256,
+        basePage: input.sourcePage,
+        contextFrom: input.baseContextFrom,
+        contextTo: input.baseContextTo,
+        baseSolutionCheckpoint: baseEvidence.checkpoint,
+        baseSolutionItemHash: baseEvidence.itemHash,
+        baseRepairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
+        baseRepairFidelityArtifact,
+        baseRepairSolutionItemHash: repairedItemHash,
+        trigger: triggerEvidence,
+        revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+      });
+      const expectedRevisionPath = `solution-revisions/v${SOLUTION_REVISION_VERSION}-` +
+        `${String(repairedItem.page).padStart(4, "0")}-${String(printedNumber).padStart(4, "0")}-` +
+        `${revisionBasisHash}.json`;
+      const expectedRevision = {
+        version: SOLUTION_REVISION_VERSION,
+        entryId: entry.id,
+        key: input.key,
+        printedNumber: input.printedNumber,
+        sourceHash: evidence.sha256,
+        basePage: input.sourcePage,
+        contextFrom: input.baseContextFrom,
+        contextTo: input.baseContextTo,
+        baseOwnedFrom: input.baseOwnedFrom,
+        baseOwnedTo: input.baseOwnedTo,
+        effectiveProblemCorpusHash,
+        baseSolutionCheckpoint: baseEvidence.checkpoint,
+        baseSolutionItemHash: baseEvidence.itemHash,
+        baseRepairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
+        baseRepairFidelityArtifact,
+        baseRepairPage: repairedItem.page,
+        baseRepairSolutionItemHash: repairedItemHash,
+        trigger: triggerEvidence,
+        diagnosticDecision: firstDecision,
+        diagnosticDecisionHash,
+        ...(trigger.kind === "semantic"
+          ? { semanticDecision: (revisionTrigger as Extract<SolutionRevisionTrigger, { kind: "semantic" }>).semanticDecision }
+          : {}),
+        promptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+        promptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+        model: IMPORT_MODEL,
+        reasoningEffort: IMPORT_REASONING_EFFORT,
+        effectivePage: revisedItem.page,
+        item: revisedItem,
+      };
+      if (
+        revisionFile.relativePath !== expectedRevisionPath ||
+        canonicalEvidenceHash(revision) !== canonicalEvidenceHash(expectedRevision)
+      ) throw new Error(`기존 solution revision 체크포인트 메타데이터가 다릅니다: ${revisionFile.relativePath}`);
+      const revisionFidelityChildren = revisionFidelityFiles.filter((candidate) =>
+        object(candidate.checkpoint.revisionArtifact, "persisted revision fidelity parent").path ===
+          revisionFile.relativePath
+      );
+      if (revisionFidelityChildren.length !== 1) {
+        if (!allowCurrentPartial || effectiveProblemCorpusHash !== currentEffectiveProblemCorpusHash ||
+            revisionFidelityChildren.length > 1) {
+          throw new Error(`${revisionFile.relativePath} revision fidelity child coverage가 다릅니다`);
+        }
+        partialCurrentKeys.add(input.key);
+        if (revisionTrigger?.kind === "semantic" || revisionTrigger?.kind === "persisted") {
+          const prior = partialRevisionTriggers.get(input.key);
+          if (prior && canonicalEvidenceHash(prior) !== canonicalEvidenceHash(revisionTrigger)) {
+            throw new Error(`${input.key} partial solution revision trigger가 충돌합니다`);
+          }
+          partialRevisionTriggers.set(input.key, revisionTrigger);
+        }
+        continue;
+      }
+      const revisionFidelityFile = revisionFidelityChildren[0];
+      assignedRevisionFidelity.add(revisionFidelityFile.relativePath);
+      const revisionFidelity = revisionFidelityFile.checkpoint;
+      const revisedInput: SolutionFidelityInput = {
+        ...input,
+        sourcePage: revisedItem.page,
+        rawAnswer: revisedItem.answer,
+        explanation: revisedItem.explanation,
+      };
+      const revisedInputHash = canonicalEvidenceHash(revisedInput);
+      const expectedRevisionFidelityPath = `solution-fidelity-revisions/v${SOLUTION_REVISION_FIDELITY_VERSION}-` +
+        `${String(repairedItem.page).padStart(4, "0")}-${String(printedNumber).padStart(4, "0")}-` +
+        `${revisionFile.sha256}-${revisedItemHash}.json`;
+      const finalDecision = parseSolutionFidelityDecisions([revisionFidelity.item], [revisedInput])[0];
+      const expectedRevisionFidelity = {
+        version: SOLUTION_REVISION_FIDELITY_VERSION,
+        entryId: entry.id,
+        key: input.key,
+        sourceHash: evidence.sha256,
+        from: input.baseContextFrom,
+        to: input.baseContextTo,
+        basePage: input.sourcePage,
+        baseRepairPage: repairedItem.page,
+        effectivePage: revisedItem.page,
+        baseOwnedFrom: input.baseOwnedFrom,
+        baseOwnedTo: input.baseOwnedTo,
+        effectiveProblemCorpusHash,
+        baseSolutionCheckpoint: baseEvidence.checkpoint,
+        baseSolutionItemHash: baseEvidence.itemHash,
+        baseRepairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
+        baseRepairFidelityArtifact,
+        baseRepairSolutionItemHash: repairedItemHash,
+        diagnosticDecisionHash,
+        trigger: triggerEvidence,
+        revisionArtifact: { path: revisionFile.relativePath, sha256: revisionFile.sha256 },
+        effectiveSolutionItemHash: revisedItemHash,
+        inputHash: revisedInputHash,
+        promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+        model: IMPORT_MODEL,
+        reasoningEffort: IMPORT_REASONING_EFFORT,
+        input: revisedInput,
+        item: finalDecision,
+      };
+      if (
+        revisionFidelityFile.relativePath !== expectedRevisionFidelityPath ||
+        canonicalEvidenceHash(revisionFidelity) !== canonicalEvidenceHash(expectedRevisionFidelity)
+      ) throw new Error(`${revisionFidelityFile.relativePath} persisted revision fidelity 메타데이터가 다릅니다`);
+      if (!terminalSolutionFidelity(revisedInput, revisedItem, finalDecision)) {
+        throw new Error(`${revisionFidelityFile.relativePath} persisted revision이 terminal이 아닙니다`);
+      }
+      revisionAuthority = {
+        generationId,
+        key: input.key,
+        repairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
+        repairFidelityArtifact: { path: fidelityFile.relativePath, sha256: fidelityFile.sha256 },
+        revisionArtifact: { path: revisionFile.relativePath, sha256: revisionFile.sha256 },
+        revisionFidelityArtifact: {
+          path: revisionFidelityFile.relativePath,
+          sha256: revisionFidelityFile.sha256,
+        },
+        finalSolutionItemHash: revisedItemHash,
+        diagnosticDecisionHash,
+        diagnosticEvidence,
+      };
+    } else if (!firstTerminal) {
+      throw new Error(`${fidelityFile.relativePath} persisted first repair가 terminal이 아닙니다`);
+    }
+    generations.set(generationId, {
+      generationId,
+      key: input.key,
+      effectiveProblemCorpusHash,
+      baseFidelityCheckpoint: { path: baseFidelityPath, sha256: baseFidelityPointerSha },
+      repairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
+      repairFidelityArtifact: { path: fidelityFile.relativePath, sha256: fidelityFile.sha256 },
+      repairedItem,
+      repairedItemHash,
+      ...(seededFromGenerationId ? { seededFromGenerationId } : {}),
+      ...(persistedSeed ? { persistedSeed } : {}),
+      revision: revisionAuthority,
+      revisionTrigger,
+    });
+  }
+  if (repairFidelityFiles.some((file) => !assignedRepairFidelity.has(file.relativePath))) {
+    throw new Error("orphan solution repair fidelity artifact가 있습니다");
+  }
+  if (revisionFiles.some((file) => !assignedRevision.has(file.relativePath))) {
+    throw new Error("orphan solution revision artifact가 있습니다");
+  }
+  if (revisionFidelityFiles.some((file) => !assignedRevisionFidelity.has(file.relativePath))) {
+    throw new Error("orphan solution revision fidelity artifact가 있습니다");
+  }
+  for (const generation of generations.values()) {
+    if (!generation.seededFromGenerationId) continue;
+    const seed = generations.get(generation.seededFromGenerationId);
+    const expectedSeed = seed && {
+      version: PERSISTED_SOLUTION_REPAIR_SEED_VERSION,
+      generationId: seed.generationId,
+      effectiveProblemCorpusHash: seed.effectiveProblemCorpusHash,
+      baseFidelityCheckpoint: seed.baseFidelityCheckpoint,
+      repairArtifact: seed.repairArtifact,
+      repairFidelityArtifact: seed.repairFidelityArtifact,
+      repairedItemHash: seed.repairedItemHash,
+    };
+    if (
+      !seed || seed === generation || seed.key !== generation.key ||
+      seed.repairedItemHash !== generation.repairedItemHash || !generation.persistedSeed ||
+      canonicalEvidenceHash(generation.persistedSeed) !== canonicalEvidenceHash(expectedSeed)
+    ) throw new Error(`${generation.key} persisted repair seed generation이 유효하지 않습니다`);
+  }
+  for (const generation of generations.values()) {
+    if (generation.revisionTrigger?.kind !== "persisted") continue;
+    const predecessor = generation.revisionTrigger.authority;
+    const candidates = [...generations.values()].filter((candidate) =>
+      candidate.revision && canonicalEvidenceHash(candidate.revision) === canonicalEvidenceHash(predecessor)
+    );
+    if (
+      candidates.length !== 1 || candidates[0] === generation ||
+      candidates[0].generationId !== predecessor.generationId || candidates[0].key !== generation.key
+    ) throw new Error(`${generation.key} persisted revision predecessor가 유효하지 않습니다`);
+  }
+  const stickyFirst = new Map<string, PersistedSolutionFirstAuthority>();
+  const revisionTriggers = new Map<string, Exclude<SolutionRevisionTrigger, { kind: "fidelity" }>>();
+  const requiredRevisionKeys = new Set<string>();
+  const byKey = new Map<string, PersistedSolutionFirstAuthority[]>();
+  for (const generation of generations.values()) {
+    const values = byKey.get(generation.key) ?? [];
+    values.push(generation);
+    byKey.set(generation.key, values);
+  }
+  for (const [key, values] of byKey) {
+    values.sort((left, right) => {
+      const leftCurrent = left.effectiveProblemCorpusHash === currentEffectiveProblemCorpusHash ? 1 : 0;
+      const rightCurrent = right.effectiveProblemCorpusHash === currentEffectiveProblemCorpusHash ? 1 : 0;
+      return rightCurrent - leftCurrent || left.generationId.localeCompare(right.generationId);
+    });
+    const current = values.find((value) => value.effectiveProblemCorpusHash === currentEffectiveProblemCorpusHash);
+    const withRevision = values.find((value) => value.revision);
+    const currentSeed = current?.seededFromGenerationId
+      ? generations.get(current.seededFromGenerationId)
+      : undefined;
+    const selected = currentSeed ?? current ?? withRevision ?? values[0];
+    stickyFirst.set(key, selected);
+    if (!withRevision?.revision) continue;
+    requiredRevisionKeys.add(key);
+    if (withRevision.effectiveProblemCorpusHash !== currentEffectiveProblemCorpusHash) {
+      revisionTriggers.set(key, { kind: "persisted", authority: withRevision.revision });
+    } else if (withRevision.revisionTrigger?.kind === "semantic" || withRevision.revisionTrigger?.kind === "persisted") {
+      revisionTriggers.set(key, withRevision.revisionTrigger);
+    }
+  }
+  for (const [key, trigger] of partialRevisionTriggers) {
+    const prior = revisionTriggers.get(key);
+    if (prior && canonicalEvidenceHash(prior) !== canonicalEvidenceHash(trigger)) {
+      throw new Error(`${key} complete/partial solution revision trigger가 충돌합니다`);
+    }
+    revisionTriggers.set(key, trigger);
+    requiredRevisionKeys.add(key);
+  }
+  return { stickyFirst, revisionTriggers, requiredRevisionKeys, currentPartialKeys: partialCurrentKeys };
+}
+
 async function reviseSolutionItem(
   entry: CorpusManifestEntry,
   evidence: PdfEvidence,
@@ -2642,7 +3528,8 @@ async function reviseSolutionItem(
     firstEvidence.effectiveSolutionItemHash !== canonicalEvidenceHash(firstSolution) ||
     firstEvidence.effectivePage !== firstSolution.page ||
     trigger.kind === "fidelity" && firstTerminal ||
-    trigger.kind === "semantic" && (!firstTerminal || trigger.semanticDecision.key !== base.key)
+    trigger.kind === "semantic" && (!firstTerminal || trigger.semanticDecision.key !== base.key) ||
+    trigger.kind === "persisted" && trigger.authority.key !== base.key
   ) throw new Error(`${base.key} 해설 revision 입력이 첫 repair evidence와 다릅니다`);
 
   for (const [label, pointer] of [
@@ -2660,14 +3547,19 @@ async function reviseSolutionItem(
     ? canonicalEvidenceHash(trigger.semanticDecision)
     : undefined;
   const triggerEvidence = trigger.kind === "semantic" ? {
-    kind: trigger.kind,
-    fidelityDecisionHash: diagnosticDecisionHash,
-    semanticCheckpoint: trigger.semanticCheckpoint,
-    semanticDecisionHash,
-  } : {
-    kind: trigger.kind,
-    fidelityDecisionHash: diagnosticDecisionHash,
-  };
+      kind: trigger.kind,
+      fidelityDecisionHash: diagnosticDecisionHash,
+      semanticCheckpoint: trigger.semanticCheckpoint,
+      semanticDecisionHash,
+    } : trigger.kind === "persisted" ? {
+      kind: trigger.kind,
+      fidelityDecisionHash: diagnosticDecisionHash,
+      persistedTriggerVersion: PERSISTED_SOLUTION_REVISION_TRIGGER_VERSION,
+      predecessor: trigger.authority,
+    } : {
+      kind: trigger.kind,
+      fidelityDecisionHash: diagnosticDecisionHash,
+    };
   if (trigger.kind === "semantic") {
     const semanticPath = confinedStateFile(stateDir, trigger.semanticCheckpoint.path, "semantic choice");
     if (await sha256File(semanticPath) !== trigger.semanticCheckpoint.sha256) {
@@ -2680,6 +3572,20 @@ async function reviseSolutionItem(
       checkpoint.effectiveCorpusHash !== trigger.semanticCheckpoint.effectiveCorpusHash ||
       checkpoint.effectiveSolutionCorpusHash !== trigger.semanticCheckpoint.effectiveSolutionCorpusHash
     ) throw new Error(`${base.key} semantic choice corpus binding이 다릅니다`);
+  } else if (trigger.kind === "persisted") {
+    if (
+      trigger.authority.key !== base.key || trigger.authority.diagnosticDecisionHash.length !== 64 ||
+      !trigger.authority.diagnosticEvidence.trim()
+    ) throw new Error(`${base.key} persisted solution revision authority가 유효하지 않습니다`);
+    for (const [label, pointer] of [
+      ["persisted predecessor repair", trigger.authority.repairArtifact],
+      ["persisted predecessor repair fidelity", trigger.authority.repairFidelityArtifact],
+      ["persisted predecessor revision", trigger.authority.revisionArtifact],
+      ["persisted predecessor revision fidelity", trigger.authority.revisionFidelityArtifact],
+    ] as const) {
+      const path = confinedStateFile(stateDir, pointer.path, label);
+      if (await sha256File(path) !== pointer.sha256) throw new Error(`${base.key} ${label} hash가 다릅니다`);
+    }
   }
   const revisionBasisHash = canonicalEvidenceHash({
     key: base.key,
@@ -2736,7 +3642,9 @@ async function reviseSolutionItem(
       sliceBase: base.baseContextFrom,
       contentPageCount: base.baseContextTo - base.baseContextFrom + 1,
       target: { printedNumber: base.printedNumber },
-      revisionEvidence: trigger.kind === "semantic" ? trigger.semanticDecision.evidence : firstDecision.evidence,
+      revisionEvidence: trigger.kind === "semantic"
+        ? trigger.semanticDecision.evidence
+        : trigger.kind === "persisted" ? trigger.authority.diagnosticEvidence : firstDecision.evidence,
       reasoningEffort: IMPORT_REASONING_EFFORT,
     })))[0];
     revisionCheckpoint = {
@@ -2917,7 +3825,8 @@ async function repairSolutionItem(
   effectiveProblemCorpusHash: string,
   base: SolutionFidelityInput,
   baseFidelityCheckpoint: SolutionFidelityCheckpointEvidence,
-  revisionTrigger?: Extract<SolutionRevisionTrigger, { kind: "semantic" }>
+  revisionTrigger?: Exclude<SolutionRevisionTrigger, { kind: "fidelity" }>,
+  persistedFirst?: PersistedSolutionFirstAuthority
 ): Promise<{
   solution: SolutionItem;
   decision: SolutionFidelityDecision;
@@ -2930,6 +3839,15 @@ async function repairSolutionItem(
     `solution-repairs/v${SOLUTION_REPAIR_VERSION}-${String(basePage).padStart(4, "0")}-` +
     `${number.padStart(4, "0")}-${baseFidelityCheckpoint.sha256}.json`;
   const repairPath = join(stateDir, repairRelativePath);
+  const persistedSeed = persistedFirst ? {
+    version: PERSISTED_SOLUTION_REPAIR_SEED_VERSION,
+    generationId: persistedFirst.generationId,
+    effectiveProblemCorpusHash: persistedFirst.effectiveProblemCorpusHash,
+    baseFidelityCheckpoint: persistedFirst.baseFidelityCheckpoint,
+    repairArtifact: persistedFirst.repairArtifact,
+    repairFidelityArtifact: persistedFirst.repairFidelityArtifact,
+    repairedItemHash: persistedFirst.repairedItemHash,
+  } : undefined;
 
   return withSolutionContextSlice(analysisPath, base.baseContextFrom, base.baseContextTo, async (contextPath) => {
     let corrected: SolutionItem;
@@ -2959,12 +3877,24 @@ async function repairSolutionItem(
       ) throw new Error(`기존 해설 repair 체크포인트 메타데이터가 다릅니다: ${repairPath}`);
       corrected = parseSolutionItems(JSON.stringify([repairCheckpoint.item]))[0];
     } else {
-      corrected = (await withTargetedAi(() => extractSolutionsFromFile(contextPath, "pdf", {
-        sliceBase: base.baseContextFrom,
-        contentPageCount: base.baseContextTo - base.baseContextFrom + 1,
-        target: { printedNumber: number },
-        reasoningEffort: IMPORT_REASONING_EFFORT,
-      })))[0];
+      if (persistedFirst && persistedSeed) {
+        for (const [label, pointer] of [
+          ["persisted first base fidelity", persistedFirst.baseFidelityCheckpoint],
+          ["persisted first repair", persistedFirst.repairArtifact],
+          ["persisted first repair fidelity", persistedFirst.repairFidelityArtifact],
+        ] as const) {
+          const path = confinedStateFile(stateDir, pointer.path, label);
+          if (await sha256File(path) !== pointer.sha256) throw new Error(`${base.key} ${label} hash가 다릅니다`);
+        }
+        corrected = structuredClone(persistedFirst.repairedItem);
+      } else {
+        corrected = (await withTargetedAi(() => extractSolutionsFromFile(contextPath, "pdf", {
+          sliceBase: base.baseContextFrom,
+          contentPageCount: base.baseContextTo - base.baseContextFrom + 1,
+          target: { printedNumber: number },
+          reasoningEffort: IMPORT_REASONING_EFFORT,
+        })))[0];
+      }
       repairCheckpoint = {
         version: SOLUTION_REPAIR_VERSION,
         entryId: entry.id,
@@ -2989,10 +3919,34 @@ async function repairSolutionItem(
         promptDigest: TARGETED_SOLUTION_PROMPT_DIGEST,
         model: IMPORT_MODEL,
         reasoningEffort: IMPORT_REASONING_EFFORT,
+        ...(persistedSeed ? { persistedSeed } : {}),
         effectivePage: corrected.page,
         item: corrected,
       };
       await writeImmutableEvidence(repairPath, repairCheckpoint);
+    }
+    if (repairCheckpoint.persistedSeed !== undefined) {
+      const seed = object(repairCheckpoint.persistedSeed, "persisted solution repair seed");
+      if (
+        !persistedSeed ||
+        canonicalEvidenceHash(seed) !== canonicalEvidenceHash(persistedSeed) ||
+        seed.version !== PERSISTED_SOLUTION_REPAIR_SEED_VERSION ||
+        typeof seed.generationId !== "string" || !/^[a-f0-9]{64}$/u.test(seed.generationId) ||
+        typeof seed.effectiveProblemCorpusHash !== "string" ||
+        !/^[a-f0-9]{64}$/u.test(seed.effectiveProblemCorpusHash) ||
+        seed.repairedItemHash !== canonicalEvidenceHash(corrected)
+      ) throw new Error(`${base.key} persisted solution repair seed가 유효하지 않습니다`);
+      for (const [label, rawPointer] of [
+        ["persisted seed base fidelity", seed.baseFidelityCheckpoint],
+        ["persisted seed repair", seed.repairArtifact],
+        ["persisted seed repair fidelity", seed.repairFidelityArtifact],
+      ] as const) {
+        const pointer = object(rawPointer, label);
+        const path = confinedStateFile(stateDir, exactString(pointer.path, `${label} path`, 500), label);
+        if (await sha256File(path) !== exactHash(pointer.sha256, `${label} hash`)) {
+          throw new Error(`${base.key} ${label} hash가 다릅니다`);
+        }
+      }
     }
     if (
       numericPrintedLocator(corrected.number) !== Number(number) || corrected.page < base.baseContextFrom ||
@@ -3148,6 +4102,7 @@ async function repairSolutionItem(
 
 async function auditAcceptedSolutions(
   entry: CorpusManifestEntry,
+  problemEvidence: PdfEvidence,
   evidence: PdfEvidence,
   stateDir: string,
   classified: ClassifiedQuestion[],
@@ -3202,8 +4157,28 @@ async function auditAcceptedSolutions(
   const terminalItems = new Map<string, SolutionFidelityTerminalItem>();
   const expectedRepairKeys = new Set<string>();
   const seen = new Set<string>();
+  const persistedHistory = await scanPersistedSolutionHistory(
+    entry,
+    problemEvidence,
+    evidence,
+    stateDir,
+    classified,
+    baseSolutions,
+    effectiveProblemCorpusHash,
+    true
+  );
 
   if (inputs.length === 0) {
+    await scanPersistedSolutionHistory(
+      entry,
+      problemEvidence,
+      evidence,
+      stateDir,
+      classified,
+      baseSolutions,
+      effectiveProblemCorpusHash,
+      false
+    );
     return {
       solutions: baseSolutions,
       checkpoints,
@@ -3248,7 +4223,9 @@ async function auditAcceptedSolutions(
             const terminalAnswer = decision.answerStatus === "exact" ||
               decision.answerStatus === "not_visible" && input.allowDerivedMarkerAnswer;
             const needsRepair = decision.sourcePage !== input.sourcePage ||
-              decision.explanationStatus !== "exact" || !terminalAnswer || input.baseContextTo > slice.to;
+              decision.explanationStatus !== "exact" || !terminalAnswer || input.baseContextTo > slice.to ||
+              persistedHistory.stickyFirst.has(input.key) ||
+              persistedHistory.currentPartialKeys.has(input.key);
             if (!needsRepair) {
               terminalItems.set(input.key, {
                 key: input.key,
@@ -3270,6 +4247,12 @@ async function auditAcceptedSolutions(
               continue;
             }
             expectedRepairKeys.add(input.key);
+            const persistedTrigger = persistedHistory.revisionTriggers.get(input.key);
+            const semanticTrigger = revisionTriggers.get(input.key);
+            if (
+              persistedTrigger?.kind === "semantic" && semanticTrigger &&
+              canonicalEvidenceHash(persistedTrigger) !== canonicalEvidenceHash(semanticTrigger)
+            ) throw new Error(`${input.key} persisted/current semantic revision authority가 충돌합니다`);
             const repaired = await repairSolutionItem(
               entry,
               evidence,
@@ -3278,7 +4261,8 @@ async function auditAcceptedSolutions(
               effectiveProblemCorpusHash,
               input,
               result.evidence,
-              revisionTriggers.get(input.key)
+              persistedTrigger ?? semanticTrigger,
+              persistedHistory.stickyFirst.get(input.key)
             );
             effectiveByNumber.set(Number(input.printedNumber), repaired.solution);
             repairs.push(repaired.evidence);
@@ -3313,6 +4297,22 @@ async function auditAcceptedSolutions(
   if ([...revisionTriggers.keys()].some((key) => !repairs.find((repair) => repair.key === key)?.revision)) {
     throw new Error("semantic 해설 revision 대상에 first repair가 없습니다");
   }
+  if ([...persistedHistory.requiredRevisionKeys].some((key) =>
+    inputs.some((input) => input.key === key) && !repairs.find((repair) => repair.key === key)?.revision
+  )) throw new Error("persisted 해설 revision depth가 current audit에 유지되지 않았습니다");
+  const strictHistory = await scanPersistedSolutionHistory(
+    entry,
+    problemEvidence,
+    evidence,
+    stateDir,
+    classified,
+    baseSolutions,
+    effectiveProblemCorpusHash,
+    false
+  );
+  if ([...strictHistory.requiredRevisionKeys].some((key) =>
+    inputs.some((input) => input.key === key) && !repairs.find((repair) => repair.key === key)?.revision
+  )) throw new Error("persisted 해설 revision authority가 current audit에서 누락되었습니다");
   const effectiveSolutions = baseSolutions.map((solution) =>
     effectiveByNumber.get(numericPrintedLocator(solution.number)!) ?? solution
   );
@@ -5429,6 +6429,7 @@ export async function repairAndAuditOfficialAnswers(
     }
     finalSolutionAudit = await auditAcceptedSolutions(
       entry,
+      problem,
       solutionEvidence,
       stateDir,
       effective,

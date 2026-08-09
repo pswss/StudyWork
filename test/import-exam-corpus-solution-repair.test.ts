@@ -184,6 +184,19 @@ describe("exam corpus official solution repair", () => {
         if (attached.getPageCount() === 22) {
           calls.bulkFidelity++;
           expect(request.prompt).toContain("original pages 1-22");
+          if (calls.bulkFidelity > 1) {
+            return {
+              text: JSON.stringify([{
+                key: "11:27",
+                sourcePage: 17,
+                answerStatus: "exact",
+                explanationStatus: "exact",
+                evidence: "새 세대 bulk 판독은 잘못된 base 해설도 exact로 보았다.",
+              }]),
+              provider: "codex-cli",
+              model: "gpt-5.6-sol",
+            };
+          }
           return {
             text: JSON.stringify([{
               key: "11:27",
@@ -317,13 +330,31 @@ describe("exam corpus official solution repair", () => {
     expect(calls).toEqual({ bulkFidelity: 1, target: 2, repairFidelity: 2 });
     expect(replay.auditHash).toBe(repaired.auditHash);
 
+    const changed = structuredClone(classified);
+    changed[0].question.question = "1번 범위 밖 문제의 무관한 표현만 바뀌었다.";
+    const migrated = await repairAndAuditOfficialAnswers(entry, problem, solution, root, changed, solutions);
+    expect(calls).toEqual({ bulkFidelity: 2, target: 2, repairFidelity: 3 });
+    expect(migrated.solutionRepairs).toHaveLength(1);
+    expect(migrated.solutionRepairs[0].repairArtifact.path).not.toBe(repaired.solutionRepairs[0].repairArtifact.path);
+    expect(migrated.solutions[26].explanation).toContain("m=3^2q^3");
+    const migratedRepair = JSON.parse(readFileSync(join(root, migrated.solutionRepairs[0].repairArtifact.path), "utf8"));
+    expect(migratedRepair.persistedSeed).toMatchObject({
+      version: 1,
+      generationId: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      repairArtifact: repaired.solutionRepairs[0].repairArtifact,
+      repairedItemHash: repaired.solutionRepairs[0].effectiveSolutionItemHash,
+    });
+    const migratedReplay = await repairAndAuditOfficialAnswers(entry, problem, solution, root, changed, solutions);
+    expect(calls).toEqual({ bulkFidelity: 2, target: 2, repairFidelity: 3 });
+    expect(migratedReplay.auditHash).toBe(migrated.auditHash);
+
     const fidelityPath = join(root, repaired.solutionRepairs[0].fidelityArtifact.path);
     const stale = JSON.parse(readFileSync(fidelityPath, "utf8"));
     stale.promptDigest = "stale";
     writeFileSync(fidelityPath, `${JSON.stringify(stale, null, 2)}\n`);
     await expect(repairAndAuditOfficialAnswers(
       entry, problem, solution, root, classified, solutions
-    )).rejects.toThrow("repair 해설 fidelity 메타데이터가 다릅니다");
+    )).rejects.toThrow(/hash가 다릅니다|repair 해설 fidelity 메타데이터가 다릅니다/u);
   });
 
   it("uses exact 22/18 fidelity ownership without start-page gaps or duplicates", () => {

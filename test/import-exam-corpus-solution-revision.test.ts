@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -172,12 +172,13 @@ describe("exam corpus official solution revision", () => {
           return { text: JSON.stringify([{ key: "11:28", sourcePage: 17, answerStatus: "not_visible", explanationStatus: "mismatch", evidence: "분모·분자의 x→-2 극한과 '크거나 같아야'가 누락됐다." }]) };
         }
         calls.revisionAudit++;
+        if (calls.revisionAudit === 1) throw new Error("simulated revision fidelity interruption");
+        if (calls.revisionAudit === 4) throw new Error("simulated persisted revision fidelity interruption");
         return { text: JSON.stringify([{ key: "11:28", sourcePage: 17, answerStatus: "not_visible", explanationStatus: "exact", evidence: "±2 네 극한 줄과 문구가 모두 일치한다." }]) };
       }
       if (request.schema?.name === "studywork_solution_file_items") {
         if (request.prompt.includes("SECOND SOURCE-GROUNDED SOLUTION REVISION")) {
           calls.revision++;
-          if (calls.revision === 1) throw new Error("simulated solution revision interruption");
           return { text: JSON.stringify([{ number: "28", answer: "②", explanation: `${finalExplanation} 따라서 값은 3이다.`, page: 17, complete: true }]) };
         }
         calls.repair++;
@@ -191,10 +192,15 @@ describe("exam corpus official solution revision", () => {
 
     await expect(repairAndAuditOfficialAnswers(
       data.entry, data.problem, data.solution, root, data.classified, data.solutions
-    )).rejects.toThrow("simulated solution revision interruption");
+    )).rejects.toThrow("simulated revision fidelity interruption");
+    expect(calls.revision).toBe(1);
+    expect(readdirSync(join(root, "solution-revisions"))).toHaveLength(1);
+    expect(() => readdirSync(join(root, "solution-fidelity-revisions"))).toThrow();
     const repaired = await repairAndAuditOfficialAnswers(
       data.entry, data.problem, data.solution, root, data.classified, data.solutions
     );
+    expect(calls.revision).toBe(1);
+    expect(calls.revisionAudit).toBe(2);
     expect([SOLUTION_REVISION_VERSION, SOLUTION_REVISION_FIDELITY_VERSION]).toEqual([1, 1]);
     expect(TARGETED_SOLUTION_REVISION_VERSION).toBe(2);
     expect(TARGETED_SOLUTION_REVISION_RULES).toContain('answer must be "②"');
@@ -216,6 +222,41 @@ describe("exam corpus official solution revision", () => {
     );
     expect(calls).toEqual(beforeReplay);
     expect(replay.auditHash).toBe(repaired.auditHash);
+
+    const changed = structuredClone(data.classified);
+    changed[0].question.question = "1번 범위 밖 문제의 무관한 표현만 바뀌었다.";
+    const beforeMigration = { ...calls };
+    await expect(repairAndAuditOfficialAnswers(
+      data.entry, data.problem, data.solution, root, changed, data.solutions
+    )).rejects.toThrow("simulated persisted revision fidelity interruption");
+    expect(calls.repair).toBe(beforeMigration.repair);
+    expect(calls.revision).toBe(beforeMigration.revision + 1);
+    const revisionCallsAfterCrash = calls.revision;
+    const migrated = await repairAndAuditOfficialAnswers(
+      data.entry, data.problem, data.solution, root, changed, data.solutions
+    );
+    expect(calls.repair).toBe(beforeMigration.repair);
+    expect(calls.revision).toBe(revisionCallsAfterCrash);
+    expect(migrated.solutions[27].explanation).toContain("\\lim_{x\\to-2}f(x)");
+    expect(migrated.solutionRepairs[0].revision?.trigger).toMatchObject({
+      kind: "persisted",
+      persistedTriggerVersion: 1,
+      predecessor: {
+        generationId: expect.stringMatching(/^[a-f0-9]{64}$/u),
+        revisionArtifact: {
+          path: repaired.solutionRepairs[0].revision!.solutionArtifact.path,
+          sha256: repaired.solutionRepairs[0].revision!.solutionArtifact.sha256,
+        },
+      },
+    });
+    const migratedRepair = JSON.parse(readFileSync(join(root, migrated.solutionRepairs[0].repairArtifact.path), "utf8"));
+    expect(migratedRepair.persistedSeed.repairArtifact).toEqual(repaired.solutionRepairs[0].repairArtifact);
+    const beforeMigratedReplay = { ...calls };
+    const migratedReplay = await repairAndAuditOfficialAnswers(
+      data.entry, data.problem, data.solution, root, changed, data.solutions
+    );
+    expect(calls).toEqual(beforeMigratedReplay);
+    expect(migratedReplay.auditHash).toBe(migrated.auditHash);
 
     const revisionPath = join(root, repaired.solutionRepairs[0].revision!.solutionArtifact.path);
     const stale = JSON.parse(readFileSync(revisionPath, "utf8"));
@@ -255,6 +296,7 @@ describe("exam corpus official solution revision", () => {
           return { text: JSON.stringify([{ key: "11:1", sourcePage: 18, answerStatus: "exact", explanationStatus: "exact", evidence: "일치한다." }]) };
         }
         calls.revisionAudit++;
+        if (calls.revisionAudit === 1) throw new Error("simulated semantic revision fidelity interruption");
         return { text: JSON.stringify([{ key: "11:1", sourcePage: 18, answerStatus: "not_visible", explanationStatus: "exact", evidence: "공식 식과 값 3이 일치한다." }]) };
       }
       if (request.schema?.name === "studywork_solution_file_items") {
@@ -276,9 +318,17 @@ describe("exam corpus official solution revision", () => {
       throw new Error(`unexpected schema ${request.schema?.name}`);
     });
 
+    await expect(repairAndAuditOfficialAnswers(
+      data.entry, data.problem, data.solution, root, data.classified, data.solutions
+    )).rejects.toThrow("simulated semantic revision fidelity interruption");
+    expect(calls.revision).toBe(1);
+    expect(readdirSync(join(root, "solution-revisions"))).toHaveLength(1);
+    expect(() => readdirSync(join(root, "solution-fidelity-revisions"))).toThrow();
     const repaired = await repairAndAuditOfficialAnswers(
       data.entry, data.problem, data.solution, root, data.classified, data.solutions
     );
+    expect(calls.revision).toBe(1);
+    expect(calls.revisionAudit).toBe(2);
     const revision = repaired.solutionRepairs[0].revision!;
     expect(revision.trigger).toMatchObject({
       kind: "semantic",
