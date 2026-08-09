@@ -2455,6 +2455,31 @@ type V3RepairRow = {
   officialRawAnswerHash: string;
 };
 
+type PersistedV2ProblemRecord = {
+  key: string;
+  base: ClassifiedEvidence;
+  solution: OfficialSolution;
+  question: ProblemQuestion;
+  contextFrom: number;
+  contextTo: number;
+  problemArtifact: EvidencePointer;
+  problemArtifactItemHash: string;
+};
+
+type PersistedV2ClassificationGraph = {
+  contextKey: string;
+  path: string;
+  pointer: EvidencePointer;
+  records: PersistedV2ProblemRecord[];
+  classifications: Map<string, ClassificationEvidence>;
+};
+
+type PersistedV2GraphSelection = {
+  effectiveCorpusHash: string | null;
+  selectedClassificationPaths: string[];
+  historicalProblemBatchPaths: Set<string>;
+};
+
 type V3FirstRepair = {
   row: V3RepairRow;
   classified: ClassifiedEvidence;
@@ -2583,9 +2608,718 @@ function prepareV3RepairRows(
   });
 }
 
+function strictRepairGraphNames(
+  stateDir: string,
+  directory: string,
+  label: string,
+  validName: (name: string) => boolean,
+): string[] {
+  const absolute = join(stateDir, directory);
+  if (!existsSync(absolute)) return [];
+  const directoryStat = lstatSync(absolute);
+  if (directoryStat.isSymbolicLink() || !directoryStat.isDirectory()) {
+    throw new Error(`${label} directory is invalid`);
+  }
+  return readdirSync(absolute, { withFileTypes: true }).flatMap((child) => {
+    if (child.isFile() && child.name.endsWith(".tmp")) return [];
+    if (child.isSymbolicLink() || !child.isFile()) {
+      throw new Error(`${directory}/${child.name}: ${label} artifact is invalid`);
+    }
+    if (!validName(child.name)) {
+      throw new Error(`${directory}/${child.name}: malformed ${label} artifact name`);
+    }
+    return [child.name];
+  }).sort();
+}
+
+function readCanonicalGraphArtifact(
+  stateDir: string,
+  relativePath: string,
+  label: string,
+): { pointer: EvidencePointer; checkpoint: Record<string, unknown> } {
+  const placeholder = { path: relativePath, sha256: "0".repeat(64) };
+  const absolute = confinedEvidencePath(stateDir, placeholder, label);
+  const sha256 = hashFile(absolute);
+  const checkpoint = object(json(absolute), label);
+  if (canonicalEvidenceHash(checkpoint) !== sha256) {
+    throw new Error(`${relativePath}: ${label} is not canonical immutable JSON`);
+  }
+  return { pointer: { path: relativePath, sha256 }, checkpoint };
+}
+
+function persistedV2ProblemBase(
+  key: string,
+  base: DecisionSummary,
+  solutions: Map<string, OfficialSolution>,
+): {
+  base: ClassifiedEvidence;
+  solution: OfficialSolution;
+  baseQuestionHash: string;
+  baseClassificationHash: string;
+  baseSolutionItemHash: string;
+  officialRawAnswerHash: string;
+} {
+  const record = base.records.get(key);
+  if (!record) throw new Error(`${key}: persisted repair graph has no immutable base problem`);
+  const solution = solutions.get(record.question.printedNumber);
+  if (!solution) throw new Error(`${key}: persisted repair graph has no immutable base solution`);
+  return {
+    base: record,
+    solution,
+    baseQuestionHash: canonicalEvidenceHash(record.question.evidence),
+    baseClassificationHash: canonicalEvidenceHash(record.classification),
+    baseSolutionItemHash: canonicalEvidenceHash(solution.evidence),
+    officialRawAnswerHash: sha256(solution.rawAnswer),
+  };
+}
+
+function scanPersistedV2ProblemRecords(
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  base: DecisionSummary,
+  solutions: Map<string, OfficialSolution>,
+): {
+  recordsByIdentity: Map<string, PersistedV2ProblemRecord>;
+  recordsByContext: Map<string, PersistedV2ProblemRecord[]>;
+  batchVersions: Map<string, 1 | 2>;
+} {
+  const batchNames = strictRepairGraphNames(
+    stateDir,
+    "problem-repair-batches",
+    "problem repair batch",
+    (name) => /^v1-\d{4}-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
+      || /^v2-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name),
+  );
+  const batchVersions = new Map<string, 1 | 2>();
+  for (const name of batchNames) {
+    const match = /^v([12])-(\d{4})-(\d{4})-/u.exec(name)!;
+    const context = `${Number(match[2])}:${Number(match[3])}`;
+    const version = Number(match[1]) as 1 | 2;
+    const prior = batchVersions.get(context);
+    if (prior !== undefined && prior !== version) {
+      throw new Error(`${context}: legacy v1 and cross-page v2 problem repair batches cannot share a context`);
+    }
+    batchVersions.set(context, version);
+  }
+
+  const recordsByIdentity = new Map<string, PersistedV2ProblemRecord>();
+  const recordsByContext = new Map<string, PersistedV2ProblemRecord[]>();
+  const identity = (path: string, key: string) => JSON.stringify([path, key]);
+  const addRecord = (record: PersistedV2ProblemRecord) => {
+    const recordIdentity = identity(record.problemArtifact.path, record.key);
+    if (recordsByIdentity.has(recordIdentity)) {
+      throw new Error(`${record.problemArtifact.path} ${record.key}: persisted problem repair member is duplicated`);
+    }
+    recordsByIdentity.set(recordIdentity, record);
+    const context = `${record.contextFrom}:${record.contextTo}`;
+    recordsByContext.set(context, [...(recordsByContext.get(context) ?? []), record]);
+  };
+
+  for (const name of batchNames) {
+    const match = /^v2-(\d{4})-(\d{4})-([a-f0-9]{64})\.json$/u.exec(name);
+    if (!match) continue;
+    const contextFrom = Number(match[1]);
+    const contextTo = Number(match[2]);
+    const relativePath = `problem-repair-batches/${name}`;
+    const { pointer, checkpoint } = readCanonicalGraphArtifact(
+      stateDir,
+      relativePath,
+      "persisted v2 problem repair graph",
+    );
+    const rawMembers = Array.isArray(checkpoint.members)
+      ? checkpoint.members.map((value, index) => object(value, `${relativePath}.members[${index}]`))
+      : [];
+    const memberKeys = rawMembers.map((member, index) =>
+      exactString(member.key, `${relativePath}.members[${index}].key`));
+    if (memberKeys.length === 0 || new Set(memberKeys).size !== memberKeys.length) {
+      throw new Error(`${relativePath}: persisted v2 problem repair members are empty or duplicated`);
+    }
+    const members = memberKeys.map((key) => {
+      const immutable = persistedV2ProblemBase(key, base, solutions);
+      return {
+        key,
+        immutable,
+        expected: {
+          key,
+          printedNumber: immutable.base.question.printedNumber,
+          sourcePage: immutable.base.question.page,
+          baseProblemCheckpoint: immutable.base.problemCheckpoint,
+          baseQuestionHash: immutable.baseQuestionHash,
+          baseClassificationCheckpoint: immutable.base.classificationCheckpoint,
+          baseClassificationHash: immutable.baseClassificationHash,
+          baseTranscriptionEvidenceHash: sha256(immutable.base.classification.transcription_evidence),
+          baseSolutionCheckpoint: immutable.solution.checkpoint,
+          baseSolutionItemHash: immutable.baseSolutionItemHash,
+          officialRawAnswerHash: immutable.officialRawAnswerHash,
+        },
+      };
+    }).sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+    const expectedMembers = members.map((member) => member.expected);
+    const targetsDigest = canonicalEvidenceHash(expectedMembers);
+    if (!Array.isArray(checkpoint.items)) {
+      throw new Error(`${relativePath}: persisted v2 problem repair items are missing`);
+    }
+    const items = checkpoint.items.map((value, index) =>
+      parseProblem(value, `${relativePath}.items[${index}]`));
+    const itemByKey = new Map<string, ProblemQuestion>();
+    for (const item of items) {
+      if (itemByKey.has(item.key)) throw new Error(`${relativePath}: duplicate problem output ${item.key}`);
+      itemByKey.set(item.key, item);
+    }
+    if (itemByKey.size !== members.length || members.some((member) => !itemByKey.has(member.key))) {
+      throw new Error(`${relativePath}: persisted v2 problem member/output coverage is not exact`);
+    }
+    const expectedCheckpoint = {
+      version: PROBLEM_REPAIR_BATCH_VERSION,
+      entryId: entry.id,
+      sourceHash: problemEvidence.sha256,
+      contextFrom,
+      contextTo,
+      targetsDigest,
+      members: expectedMembers,
+      batchPromptVersion: TARGETED_PROBLEM_BATCH_VERSION,
+      batchPromptDigest: TARGETED_PROBLEM_BATCH_PROMPT_DIGEST,
+      revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+      revisionPromptDigest: TARGETED_PROBLEM_BATCH_REVISION_PROMPT_DIGEST,
+      diagnosticEvidenceHash: sha256(JSON.stringify(members.map((member) => ({
+        key: member.key,
+        evidence: member.immutable.base.classification.transcription_evidence,
+      })))),
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      items: members.map((member) => itemByKey.get(member.key)!.evidence),
+    };
+    if (match[3] !== targetsDigest || !isDeepStrictEqual(checkpoint, expectedCheckpoint)
+      || members.some((member) => member.immutable.base.contextFrom !== contextFrom
+        || member.immutable.base.contextTo !== contextTo
+        || itemByKey.get(member.key)!.page !== member.immutable.base.question.page)) {
+      throw new Error(`${relativePath}: persisted v2 problem repair graph is stale`);
+    }
+    for (const member of members) {
+      const question = itemByKey.get(member.key)!;
+      addRecord({
+        key: member.key,
+        base: member.immutable.base,
+        solution: member.immutable.solution,
+        question,
+        contextFrom,
+        contextTo,
+        problemArtifact: pointer,
+        problemArtifactItemHash: canonicalEvidenceHash(question.evidence),
+      });
+    }
+  }
+
+  for (const name of strictRepairGraphNames(
+    stateDir,
+    "problem-repairs",
+    "legacy problem repair graph",
+    (candidate) => /^v2-\d{4}-\d{4}\.json$/u.test(candidate),
+  )) {
+    const relativePath = `problem-repairs/${name}`;
+    const { pointer, checkpoint } = readCanonicalGraphArtifact(
+      stateDir,
+      relativePath,
+      "persisted legacy problem repair graph",
+    );
+    const key = exactString(checkpoint.key, `${relativePath}.key`);
+    const immutable = persistedV2ProblemBase(key, base, solutions);
+    const question = parseProblem(checkpoint.item, `${relativePath}.item`);
+    const expectedPath = `problem-repairs/v${PROBLEM_REPAIR_VERSION}-` +
+      `${String(immutable.base.question.page).padStart(4, "0")}-` +
+      `${immutable.base.question.printedNumber.padStart(4, "0")}.json`;
+    const expectedCheckpoint = {
+      version: PROBLEM_REPAIR_VERSION,
+      entryId: entry.id,
+      key,
+      sourcePage: immutable.base.question.page,
+      printedNumber: immutable.base.question.printedNumber,
+      contextFrom: immutable.base.contextFrom,
+      contextTo: immutable.base.contextTo,
+      sourceHash: problemEvidence.sha256,
+      baseProblemCheckpoint: immutable.base.problemCheckpoint,
+      baseQuestionHash: immutable.baseQuestionHash,
+      baseSolutionCheckpoint: immutable.solution.checkpoint,
+      baseSolutionItemHash: immutable.baseSolutionItemHash,
+      officialRawAnswerHash: immutable.officialRawAnswerHash,
+      promptVersion: TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+      promptDigest: TARGETED_PROBLEM_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      item: question.evidence,
+    };
+    if (relativePath !== expectedPath || question.key !== key || !isDeepStrictEqual(checkpoint, expectedCheckpoint)) {
+      throw new Error(`${relativePath}: persisted legacy problem repair graph is stale`);
+    }
+    const context = `${immutable.base.contextFrom}:${immutable.base.contextTo}`;
+    if (batchVersions.get(context) === 1) continue;
+    addRecord({
+      key,
+      base: immutable.base,
+      solution: immutable.solution,
+      question,
+      contextFrom: immutable.base.contextFrom,
+      contextTo: immutable.base.contextTo,
+      problemArtifact: pointer,
+      problemArtifactItemHash: canonicalEvidenceHash(question.evidence),
+    });
+  }
+
+  return { recordsByIdentity, recordsByContext, batchVersions };
+}
+
+function scanPersistedV2ClassificationGraphs(
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  rulesDigest: string,
+  recordsByIdentity: Map<string, PersistedV2ProblemRecord>,
+  batchVersions: Map<string, 1 | 2>,
+  declaredPaths: Set<string>,
+): PersistedV2ClassificationGraph[] {
+  const graphs: PersistedV2ClassificationGraph[] = [];
+  for (const name of strictRepairGraphNames(
+    stateDir,
+    "classification-repair-batches",
+    "classification repair batch",
+    (candidate) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(candidate),
+  )) {
+    const match = /^v1-(\d{4})-(\d{4})-([a-f0-9]{64})-([a-f0-9]{16})\.json$/u.exec(name)!;
+    const contextFrom = Number(match[1]);
+    const contextTo = Number(match[2]);
+    const contextKey = `${contextFrom}:${contextTo}`;
+    const relativePath = `classification-repair-batches/${name}`;
+    if (batchVersions.get(contextKey) === 1) {
+      if (!declaredPaths.has(relativePath)) {
+        throw new Error(`${relativePath}: legacy classification repair graph is not declared by the terminal audit`);
+      }
+      continue;
+    }
+    const { pointer, checkpoint } = readCanonicalGraphArtifact(
+      stateDir,
+      relativePath,
+      "persisted classification repair graph",
+    );
+    const rawMembers = Array.isArray(checkpoint.members)
+      ? checkpoint.members.map((value, index) => object(value, `${relativePath}.members[${index}]`))
+      : [];
+    const memberKeys = rawMembers.map((member, index) =>
+      exactString(member.key, `${relativePath}.members[${index}].key`));
+    if (!Array.isArray(checkpoint.items)) {
+      throw new Error(`${relativePath}: classification repair graph items are missing`);
+    }
+    const itemRows = checkpoint.items.map((value, index) =>
+      object(value, `${relativePath}.items[${index}]`));
+    const itemKeys = itemRows.map((item, index) =>
+      exactString(item.key, `${relativePath}.items[${index}].key`));
+    if (rawMembers.length === 0 || rawMembers.length !== itemRows.length
+      || new Set(memberKeys).size !== memberKeys.length || new Set(itemKeys).size !== itemKeys.length
+      || itemKeys.some((key) => !memberKeys.includes(key))) {
+      throw new Error(`${relativePath}: classification repair graph member/output coverage is not exact`);
+    }
+    const records = rawMembers.map((member, index) => {
+      const authority = object(member.problemAuthority, `${relativePath}.members[${index}].problemAuthority`);
+      const problemPath = exactString(authority.path, `${relativePath}.members[${index}].problemAuthority.path`);
+      const record = recordsByIdentity.get(JSON.stringify([problemPath, memberKeys[index]]));
+      if (!record) throw new Error(`${relativePath}: classification repair graph references partial authority`);
+      if (record.contextFrom !== contextFrom || record.contextTo !== contextTo) {
+        throw new Error(`${relativePath}: classification repair graph context does not match problem authority`);
+      }
+      return record;
+    });
+    const expectedMembers = records.map((record, index) => ({
+      key: memberKeys[index],
+      problemAuthority: {
+        key: memberKeys[index],
+        path: record.problemArtifact.path,
+        sha256: record.problemArtifact.sha256,
+        itemHash: record.problemArtifactItemHash,
+      },
+      effectiveQuestionHash: canonicalEvidenceHash(record.question.evidence),
+      baseClassificationCheckpoint: record.base.classificationCheckpoint,
+      baseClassificationHash: canonicalEvidenceHash(record.base.classification),
+    }));
+    const overlayDigest = canonicalEvidenceHash(expectedMembers);
+    const questionByKey = new Map(records.map((record) => [record.key, record.question]));
+    const classifications = new Map<string, ClassificationEvidence>();
+    const items = itemRows.map((value, index) => {
+      const key = itemKeys[index];
+      const question = questionByKey.get(key);
+      if (!question || classifications.has(key)) {
+        throw new Error(`${relativePath}: classification repair graph item ${key} is missing or duplicated`);
+      }
+      const classification = parseClassificationEvidence(
+        value,
+        question,
+        entry,
+        `${relativePath}.items[${index}]`,
+      );
+      classifications.set(key, classification);
+      return classification;
+    });
+    const expectedCheckpoint = {
+      version: CLASSIFICATION_REPAIR_BATCH_VERSION,
+      entryId: entry.id,
+      sourceHash: problemEvidence.sha256,
+      contextFrom,
+      contextTo,
+      overlayDigest,
+      classifierVersion: CLASSIFIER_VERSION,
+      rulesDigest,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      members: expectedMembers,
+      items,
+    };
+    if (match[3] !== overlayDigest || match[4] !== rulesDigest
+      || !isDeepStrictEqual(checkpoint, expectedCheckpoint)) {
+      throw new Error(`${relativePath}: classification repair graph metadata/content is stale`);
+    }
+    graphs.push({ contextKey, path: relativePath, pointer, records, classifications });
+  }
+  return graphs;
+}
+
+function existingTerminalBacksProblemCorpus(
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  effective: DecisionSummary,
+  cache: EvidenceCache,
+  contract: VerificationContract,
+): boolean {
+  if (contract.problemTerminalFidelityVersion !== PROBLEM_TERMINAL_FIDELITY_VERSION) {
+    throw new Error("persisted regrouping requires terminal problem fidelity v2 authority");
+  }
+  const effectiveCorpusHash = canonicalEvidenceHash(effective.order.map((key) => {
+    const record = effective.records.get(key)!;
+    return { question: record.question.evidence, classification: record.classification };
+  }));
+  const targets = expectedProblemFidelitySlices(problemEvidence.pageCount).flatMap((slice) => {
+    const records = effective.order.map((key) => effective.records.get(key)!)
+      .filter((record) => record.question.page >= slice.ownedFrom && record.question.page <= slice.ownedTo);
+    if (records.length === 0) return [];
+    const inputs = records.map(problemTerminalInput);
+    const inputHash = canonicalEvidenceHash(inputs);
+    const relativePath = `problem-terminal-fidelity/v${PROBLEM_TERMINAL_FIDELITY_VERSION}-` +
+      `${String(slice.index).padStart(4, "0")}-${effectiveCorpusHash}-${inputHash}.json`;
+    return [{ slice, inputHash, relativePath }];
+  });
+  const existing = targets.filter((target) => existsSync(join(stateDir, target.relativePath)));
+  if (existing.length === 0) return false;
+  if (existing.length !== targets.length) {
+    throw new Error(`${effectiveCorpusHash}: persisted regrouping terminal generation coverage is incomplete`);
+  }
+  for (const target of targets) {
+    const placeholder = { path: target.relativePath, sha256: "0".repeat(64) };
+    const absolute = confinedEvidencePath(stateDir, placeholder, "persisted regrouping terminal checkpoint");
+    const pointer: ProblemTerminalFidelityCheckpoint = {
+      path: target.relativePath,
+      sha256: hashFile(absolute),
+      from: target.slice.from,
+      to: target.slice.to,
+      ownedFrom: target.slice.ownedFrom,
+      ownedTo: target.slice.ownedTo,
+      inputHash: target.inputHash,
+    };
+    verifyProblemTerminalFidelityCheckpoint(
+      stateDir,
+      entry,
+      problemEvidence,
+      effective,
+      effectiveCorpusHash,
+      pointer,
+      cache,
+      contract,
+    );
+  }
+  return true;
+}
+
+function graphRepairs(
+  graph: PersistedV2ClassificationGraph,
+): Array<{
+  key: string;
+  classified: ClassifiedEvidence;
+  problemArtifact: EvidencePointer;
+  problemArtifactItemHash: string;
+  classificationArtifact: EvidencePointer;
+  classificationArtifactItemHash: string;
+}> {
+  return graph.records.map((record) => {
+    const classification = graph.classifications.get(record.key);
+    if (!classification) throw new Error(`${graph.path}: classification graph omits ${record.key}`);
+    return {
+      key: record.key,
+      classified: {
+        question: record.question,
+        classification,
+        problemCheckpoint: record.base.problemCheckpoint,
+        classificationCheckpoint: record.base.classificationCheckpoint,
+        contextFrom: record.contextFrom,
+        contextTo: record.contextTo,
+      },
+      problemArtifact: record.problemArtifact,
+      problemArtifactItemHash: record.problemArtifactItemHash,
+      classificationArtifact: graph.pointer,
+      classificationArtifactItemHash: canonicalEvidenceHash(classification),
+    };
+  });
+}
+
+function verifyPersistedV2RepairGraphSelection(
+  rows: V3RepairRow[] | null,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  rulesDigest: string,
+  base: DecisionSummary,
+  solutions: Map<string, OfficialSolution>,
+  cache: EvidenceCache,
+  contract: VerificationContract,
+): PersistedV2GraphSelection {
+  const scanned = scanPersistedV2ProblemRecords(
+    stateDir,
+    entry,
+    problemEvidence,
+    base,
+    solutions,
+  );
+  const declaredClassificationPaths = new Set((rows ?? []).map((row) => row.classificationArtifact.path));
+  const graphs = scanPersistedV2ClassificationGraphs(
+    stateDir,
+    entry,
+    problemEvidence,
+    rulesDigest,
+    scanned.recordsByIdentity,
+    scanned.batchVersions,
+    declaredClassificationPaths,
+  );
+  const duplicateContexts = new Set<string>();
+  for (const [context, records] of scanned.recordsByContext) {
+    const counts = new Map<string, number>();
+    for (const record of records) counts.set(record.key, (counts.get(record.key) ?? 0) + 1);
+    if ([...counts.values()].some((count) => count > 1)) duplicateContexts.add(context);
+  }
+
+  const fixedGraphs = graphs.filter((graph) => !duplicateContexts.has(graph.contextKey));
+  const fixedRepairs = new Map<string, ReturnType<typeof graphRepairs>[number]>();
+  for (const graph of fixedGraphs) {
+    for (const repair of graphRepairs(graph)) {
+      if (fixedRepairs.has(repair.key)) {
+        throw new Error(`${repair.key}: non-overlapping classification repair graphs conflict`);
+      }
+      fixedRepairs.set(repair.key, repair);
+    }
+  }
+  if (duplicateContexts.size === 0) {
+    return {
+      effectiveCorpusHash: null,
+      selectedClassificationPaths: fixedGraphs.map((graph) => graph.path),
+      historicalProblemBatchPaths: new Set<string>(),
+    };
+  }
+
+  const coversByContext = [...duplicateContexts].sort().map((context) => {
+    const records = scanned.recordsByContext.get(context) ?? [];
+    const expectedKeys = new Set(records.map((record) => record.key));
+    const contextGraphs = graphs.filter((graph) => graph.contextKey === context);
+    const referencedIdentities = new Set(contextGraphs.flatMap((graph) => graph.records.map((record) =>
+      JSON.stringify([record.problemArtifact.path, record.key]))));
+    const unreferenced = records.find((record) =>
+      !referencedIdentities.has(JSON.stringify([record.problemArtifact.path, record.key])));
+    if (unreferenced) {
+      throw new Error(
+        `${unreferenced.problemArtifact.path} ${unreferenced.key}: persisted regrouping problem artifact ` +
+        "is not referenced by a classification graph",
+      );
+    }
+    if (contextGraphs.length > 24) throw new Error(`${context}: persisted regrouping has too many graphs`);
+    const covers: PersistedV2ClassificationGraph[][] = [];
+    let searchSteps = 0;
+    const visit = (covered: ReadonlySet<string>, chosen: PersistedV2ClassificationGraph[]) => {
+      searchSteps += 1;
+      if (searchSteps > 4096 || covers.length > 256) {
+        throw new Error(`${context}: persisted regrouping full-cover search bound exceeded`);
+      }
+      if (covered.size === expectedKeys.size) {
+        covers.push(chosen);
+        return;
+      }
+      const nextKey = [...expectedKeys].sort(compareCorpusQuestionKeys).find((key) => !covered.has(key));
+      if (!nextKey) return;
+      for (const graph of contextGraphs) {
+        const keys = graph.records.map((record) => record.key);
+        if (!keys.includes(nextKey) || keys.some((key) => covered.has(key))) continue;
+        const next = new Set(covered);
+        for (const key of keys) next.add(key);
+        visit(next, [...chosen, graph]);
+      }
+    };
+    visit(new Set(), []);
+    const participatingGraphs = new Set(covers.flat());
+    if (participatingGraphs.size !== contextGraphs.length) {
+      const orphan = contextGraphs.find((graph) => !participatingGraphs.has(graph))!;
+      throw new Error(`${orphan.path}: classification repair graph does not participate in any full cover`);
+    }
+    return covers;
+  });
+  let combinations: PersistedV2ClassificationGraph[][] = [[]];
+  for (const covers of coversByContext) {
+    combinations = combinations.flatMap((combination) => covers.map((cover) => [...combination, ...cover]));
+    if (combinations.length > 256) throw new Error("persisted regrouping full-cover combination bound exceeded");
+  }
+
+  const terminalBacked: Array<{
+    graphs: PersistedV2ClassificationGraph[];
+    repairs: Map<string, ReturnType<typeof graphRepairs>[number]>;
+    effectiveCorpusHash: string;
+  }> = [];
+  for (const combination of combinations) {
+    const repairs = new Map(fixedRepairs);
+    for (const graph of combination) {
+      for (const repair of graphRepairs(graph)) {
+        if (repairs.has(repair.key)) throw new Error(`${repair.key}: persisted regrouping cover overlaps`);
+        repairs.set(repair.key, repair);
+      }
+    }
+    const records = new Map(base.records);
+    for (const [key, repair] of repairs) records.set(key, repair.classified);
+    const effective = summarizeDecisions(records, base.order, rulesDigest);
+    if (existingTerminalBacksProblemCorpus(
+      stateDir,
+      entry,
+      problemEvidence,
+      effective,
+      cache,
+      contract,
+    )) {
+      terminalBacked.push({
+        graphs: [...fixedGraphs, ...combination],
+        repairs,
+        effectiveCorpusHash: canonicalEvidenceHash(effective.order.map((key) => {
+          const record = effective.records.get(key)!;
+          return { question: record.question.evidence, classification: record.classification };
+        })),
+      });
+    }
+  }
+  if (terminalBacked.length !== 1) {
+    throw new Error(`persisted regrouping terminal-backed full-cover is not unique: ${terminalBacked.length}`);
+  }
+  const selected = terminalBacked[0];
+  if (rows !== null) {
+    const rowByKey = new Map(rows.map((row) => [row.key, row]));
+    for (const repair of selected.repairs.values()) {
+      const row = rowByKey.get(repair.key);
+      if (!row || !isDeepStrictEqual(row.problemArtifact, repair.problemArtifact)
+        || row.problemArtifactItemHash !== repair.problemArtifactItemHash
+        || !isDeepStrictEqual(row.classificationArtifact, repair.classificationArtifact)
+        || row.classificationArtifactItemHash !== repair.classificationArtifactItemHash) {
+        throw new Error(`${repair.key}: terminal-backed repair graph does not match the terminal audit pointers`);
+      }
+    }
+    const duplicateProblemPaths = new Set(
+      [...duplicateContexts].flatMap((context) =>
+        (scanned.recordsByContext.get(context) ?? []).map((record) => record.problemArtifact.path)),
+    );
+    for (const row of rows) {
+      if (!duplicateProblemPaths.has(row.problemArtifact.path)) continue;
+      const repair = selected.repairs.get(row.key);
+      if (!repair || !isDeepStrictEqual(row.problemArtifact, repair.problemArtifact)
+        || !isDeepStrictEqual(row.classificationArtifact, repair.classificationArtifact)) {
+        throw new Error(`${row.key}: terminal audit selects a non-authoritative regrouping cover`);
+      }
+    }
+  }
+  const historicalProblemBatchPaths = new Set<string>();
+  for (const context of duplicateContexts) {
+    for (const record of scanned.recordsByContext.get(context) ?? []) {
+      if (record.problemArtifact.path.startsWith("problem-repair-batches/v2-")) {
+        historicalProblemBatchPaths.add(record.problemArtifact.path);
+      }
+    }
+  }
+  return {
+    effectiveCorpusHash: selected.effectiveCorpusHash,
+    selectedClassificationPaths: selected.graphs.map((graph) => graph.path),
+    historicalProblemBatchPaths,
+  };
+}
+
+export function verifyPersistedProblemRepairOverlapForTest(stateDir: string, auditPath?: string): {
+  effectiveCorpusHash: string | null;
+  selectedClassificationPaths: string[];
+} {
+  const saved = object(json(join(stateDir, "entry.json")), "entry.json");
+  const raw = object(saved.entry, "entry.json.entry");
+  const subject = exactString(raw.subject, "entry.subject") as SourceSubject;
+  const grade = integer(raw.grade, "entry.grade", 1) as 1 | 2 | 3;
+  if (!(subject in CANONICAL_BY_SOURCE) || grade > 3) throw new Error("entry identity is invalid");
+  const entry: ManifestEntry = {
+    id: exactString(raw.id, "entry.id"),
+    sourceRecordDate: exactString(raw.sourceRecordDate, "entry.sourceRecordDate"),
+    sourceRecordYear: integer(raw.sourceRecordYear, "entry.sourceRecordYear", 2000),
+    sourceRecordMonth: integer(raw.sourceRecordMonth, "entry.sourceRecordMonth", 1),
+    grade,
+    subject,
+    examTitle: exactString(raw.examTitle, "entry.examTitle"),
+    rawTitle: exactString(raw.rawTitle, "entry.rawTitle"),
+    variant: raw.variant === null ? null : exactString(raw.variant, "entry.variant"),
+    form: raw.form as "odd" | "even" | null,
+    problemPdfUrl: exactString(raw.problemPdfUrl, "entry.problemPdfUrl"),
+    solutionPdfUrl: exactString(raw.solutionPdfUrl, "entry.solutionPdfUrl"),
+    raw,
+  };
+  const failures: Failure[] = [];
+  const add: AddFailure = (failure) => failures.push(failure);
+  const downloads = object(json(join(stateDir, "downloads.json")), "downloads.json");
+  const problemEvidence = parseDownload(downloads.problem, "problem", entry.problemPdfUrl, entry.id, add);
+  const solutionEvidence = parseDownload(downloads.solution, "solution", entry.solutionPdfUrl, entry.id, add);
+  if (!problemEvidence || !solutionEvidence || failures.length > 0) {
+    throw new Error(failures.map((failure) => failure.message).join("; ") || "download evidence is invalid");
+  }
+  for (const evidence of [problemEvidence, solutionEvidence]) {
+    const absolute = join(stateDir, evidence.path);
+    if (!statSync(absolute).isFile() || hashFile(absolute) !== evidence.sha256) {
+      throw new Error(`${evidence.path}: source evidence hash is invalid`);
+    }
+  }
+  const base = loadDecisions(stateDir, entry, problemEvidence, null, CURRENT_CONTRACT, add);
+  const solutions = loadSolutions(stateDir, entry, solutionEvidence, add);
+  if (failures.length > 0 || base.rulesDigest === null) {
+    throw new Error(failures.map((failure) => failure.message).join("; ") || "base corpus is invalid");
+  }
+  let rows: V3RepairRow[] | null = null;
+  if (auditPath !== undefined) {
+    const audit = object(json(join(stateDir, auditPath)), auditPath);
+    if (!Array.isArray(audit.repairs)) throw new Error(`${auditPath}: answer audit repairs are missing`);
+    rows = prepareV3RepairRows(audit.repairs, stateDir, base, solutions);
+  }
+  const selected = verifyPersistedV2RepairGraphSelection(
+    rows,
+    stateDir,
+    entry,
+    problemEvidence,
+    base.rulesDigest,
+    base,
+    solutions,
+    new Map(),
+    CURRENT_CONTRACT,
+  );
+  return {
+    effectiveCorpusHash: selected.effectiveCorpusHash,
+    selectedClassificationPaths: selected.selectedClassificationPaths,
+  };
+}
+
 function problemRepairBatchVersionsByContext(
   stateDir: string,
   declaredPaths: Set<string>,
+  historicalPaths: ReadonlySet<string>,
 ): Map<string, 1 | 2> {
   const versions = new Map<string, 1 | 2>();
   const names = listJson(join(stateDir, "problem-repair-batches"), /\.json$/u);
@@ -2605,7 +3339,7 @@ function problemRepairBatchVersionsByContext(
     candidates.push(`problem-repair-batches/${name}`);
   }
   for (const candidate of candidates) {
-    if (!declaredPaths.has(candidate)) {
+    if (!declaredPaths.has(candidate) && !historicalPaths.has(candidate)) {
       throw new Error(`${candidate}: problem repair batch is not declared by the terminal audit`);
     }
   }
@@ -2618,12 +3352,13 @@ function verifyV3FirstProblemArtifacts(
   entry: ManifestEntry,
   problemEvidence: DownloadEvidence,
   cache: EvidenceCache,
+  historicalProblemBatchPaths: ReadonlySet<string>,
 ): Map<string, ProblemQuestion> {
   const corrected = new Map<string, ProblemQuestion>();
   const batchVersions = problemRepairBatchVersionsByContext(stateDir, new Set(rows.flatMap((row) =>
     row.problemArtifact.path.startsWith("problem-repair-batches/")
       ? [row.problemArtifact.path]
-      : [])));
+      : [])), historicalProblemBatchPaths);
   for (const [path, group] of groupByArtifact(rows, (row) => row.problemArtifact)) {
     const pointer = group[0].problemArtifact;
     if (/^problem-repairs\/v2-\d{4}-\d{4}\.json$/u.test(path)) {
@@ -5854,7 +6589,25 @@ function applyDeclaredRepairsV3(
 ): Map<string, ClassifiedEvidence> {
   verifyProblemRecoveryCoverage(values, stateDir, contract);
   const rows = prepareV3RepairRows(values, stateDir, base, solutions);
-  const corrected = verifyV3FirstProblemArtifacts(rows, stateDir, entry, problemEvidence, cache);
+  const persistedGraphSelection = verifyPersistedV2RepairGraphSelection(
+    rows,
+    stateDir,
+    entry,
+    problemEvidence,
+    rulesDigest,
+    base,
+    solutions,
+    cache,
+    contract,
+  );
+  const corrected = verifyV3FirstProblemArtifacts(
+    rows,
+    stateDir,
+    entry,
+    problemEvidence,
+    cache,
+    persistedGraphSelection.historicalProblemBatchPaths,
+  );
   const first = verifyV3FirstClassificationArtifacts(
     rows,
     corrected,

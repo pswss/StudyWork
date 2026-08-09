@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +26,7 @@ import {
   parseCorpusManifest,
   parseDecisions,
   repairAndAuditOfficialAnswers,
+  type ClassifiedQuestion,
 } from "../scripts/import-exam-corpus";
 
 const repository = join(import.meta.dirname, "..");
@@ -42,9 +52,39 @@ const cases = [
   },
 ] as const;
 const deferredTerminalCase = { entryId: "ebsi:5854176", token: "413873ff32393142ef756fc3" } as const;
+const regroupingCases = [
+  {
+    entryId: "ebsi:5594500",
+    token: "e9fcb8ccb0af1356a50a6de4",
+    terminalBackedCorpusHash: "b987fa87a2159fb4b2cfcb99993560a9490307ef0358f302605af605869f9b17",
+    finalCorpusHash: "3afdc2e5f9b32575f91acf4a7d2b6a77198f61c797d2f2694c3131d63b0e7041",
+    nextSchema: null,
+  },
+  {
+    entryId: "ebsi:5594501",
+    token: "b395aca2790e257b1487b455",
+    terminalBackedCorpusHash: "9899689cf6ebc256fbe32d7898c3cb29d0dabda066799ccbeaaf977c70894d31",
+    finalCorpusHash: null,
+    nextSchema: "studywork_exam_corpus_solution_fidelity",
+  },
+  {
+    entryId: "ebsi:5643101",
+    token: "5a72e90edfe68c75f79ce8ef",
+    terminalBackedCorpusHash: "7f4dd66d75a99e1b3b595184bcebb8e60fff1aebdd43fac9a32fbf787d75a168",
+    finalCorpusHash: null,
+    nextSchema: "studywork_exam_corpus_scope_adjudication",
+  },
+  {
+    entryId: "ebsi:5643102",
+    token: "887df3e562b3dab6874de994",
+    terminalBackedCorpusHash: "854ffad3fac0dd3f0c89e4cd275a8d043da15aaa2ea1c36c0aab69e2892a7721",
+    finalCorpusHash: null,
+    nextSchema: "studywork_exam_corpus_solution_fidelity",
+  },
+] as const;
 const legacyV1ContextCase = { entryId: "ebsi:5525984", token: "7755c70fefaa45f755086e2b" } as const;
 const legacySinglePreflightCase = { entryId: "ebsi:5643100", token: "194298dd83aaf47b6f3218fe" } as const;
-const available = [...cases, deferredTerminalCase, legacyV1ContextCase, legacySinglePreflightCase]
+const available = [...cases, ...regroupingCases, deferredTerminalCase, legacyV1ContextCase, legacySinglePreflightCase]
   .every(({ token }) => existsSync(join(liveRoot, token, "problem.pdf")));
 let roots: string[] = [];
 
@@ -107,7 +147,7 @@ function replayInputs(root: string) {
     entry
   );
   const byKey = new Map(decisions.map((decision) => [decision.key, decision]));
-  const classified = questions.map((question: { page: number; number: string }) => ({
+  const classified: ClassifiedQuestion[] = questions.map((question: { page: number; number: string }) => ({
     question,
     classification: byKey.get(`${question.page}:${Number(question.number)}`)!,
   }));
@@ -123,7 +163,180 @@ function replayInputs(root: string) {
   return { entry, problem, solution, classified, solutions };
 }
 
+function fixtureQuestionKey(question: { page: number | null; number: string | null }): string {
+  if (question.page === null || question.number === null) throw new Error("fixture question locator가 없습니다");
+  return `${question.page}:${Number(question.number)}`;
+}
+
+function classifiedFromRepairGraphs(root: string, graphDigests: string[]) {
+  const input = replayInputs(root);
+  const overlay = new Map<string, (typeof input.classified)[number]>();
+  const directory = join(root, "classification-repair-batches");
+  for (const digest of graphDigests) {
+    const name = readdirSync(directory).find((candidate) => candidate.includes(digest))!;
+    const checkpoint = JSON.parse(readFileSync(join(directory, name), "utf8"));
+    const questions: ClassifiedQuestion["question"][] = checkpoint.members.map(
+      (member: { key: string; problemAuthority: { path: string } }) => {
+      const problemCheckpoint = JSON.parse(readFileSync(join(root, member.problemAuthority.path), "utf8"));
+      const items = problemCheckpoint.items ?? [problemCheckpoint.item];
+      return items.find((item: { page: number; number: string }) => fixtureQuestionKey(item) === member.key)!;
+      }
+    );
+    const decisions = parseDecisions(checkpoint.items, questions, input.entry);
+    for (const [index, member] of checkpoint.members.entries()) {
+      overlay.set(member.key, { question: questions[index], classification: decisions[index] });
+    }
+  }
+  return input.classified.map((item) => overlay.get(fixtureQuestionKey(item.question)) ?? item);
+}
+
+function addTerminalFixture(
+  root: string,
+  classified: ReturnType<typeof classifiedFromRepairGraphs>,
+  templateCorpusHash: string
+): string {
+  const directory = join(root, "problem-terminal-fidelity");
+  const templateName = readdirSync(directory).find((name) => name.includes(templateCorpusHash))!;
+  const template = JSON.parse(readFileSync(join(directory, templateName), "utf8"));
+  const inputs = classified
+    .filter(({ question }) => question.page! >= template.ownedFrom && question.page! <= template.ownedTo)
+    .map(({ question }) => ({
+      key: fixtureQuestionKey(question),
+      printed_number: String(Number(question.number)),
+      source_page: question.page,
+      qtype: question.qtype,
+      question: question.question,
+      choices: question.choices,
+      figure: question.figure,
+      figure_description: question.figure_description,
+      box: question.box,
+    }));
+  const effectiveCorpusHash = canonicalEvidenceHash(classified);
+  const inputHash = canonicalEvidenceHash(inputs);
+  const checkpoint = { ...template, effectiveCorpusHash, inputHash, inputs };
+  const index = /^v2-(\d{4})-/u.exec(templateName)![1];
+  const name = `v2-${index}-${effectiveCorpusHash}-${inputHash}.json`;
+  writeCanonical(join(directory, name), checkpoint);
+  return name;
+}
+
 describe.skipIf(!available)("persisted v2 repair graph hydration", () => {
+  it.each(regroupingCases)("selects the unique terminal-backed regrouping cover for $entryId", async (testCase) => {
+    const { token, terminalBackedCorpusHash, finalCorpusHash, nextSchema } = testCase;
+    const root = mkdtempSync(join(tmpdir(), `studywork-regrouping-${token}-`));
+    roots.push(root);
+    cpSync(join(liveRoot, token), root, { recursive: true });
+    expect(readdirSync(join(root, "problem-terminal-fidelity"))
+      .some((name) => name.includes(terminalBackedCorpusHash))).toBe(true);
+    providerMock.complete.mockImplementation((request: { schema?: { name?: string } }) =>
+      Promise.reject(new Error(`unexpected AI call: ${request.schema?.name ?? "unknown"}`))
+    );
+    const input = replayInputs(root);
+
+    if (nextSchema) {
+      const before = snapshot(root);
+      await expect(repairAndAuditOfficialAnswers(
+        input.entry,
+        input.problem,
+        input.solution,
+        root,
+        input.classified,
+        input.solutions
+      )).rejects.toThrow(`unexpected AI call: ${nextSchema}`);
+      expect(providerMock.complete).toHaveBeenCalledTimes(1);
+      expect(providerMock.complete.mock.calls[0][0].schema?.name).toBe(nextSchema);
+      expect(snapshot(root)).toEqual(before);
+      return;
+    }
+
+    const first = await repairAndAuditOfficialAnswers(
+      input.entry, input.problem, input.solution, root, input.classified, input.solutions
+    );
+    expect(first.effectiveCorpusHash).toBe(finalCorpusHash);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    const afterFirst = snapshot(root);
+    const replay = await repairAndAuditOfficialAnswers(
+      input.entry, input.problem, input.solution, root, input.classified, input.solutions
+    );
+    expect(replay).toMatchObject(first);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(snapshot(root)).toEqual(afterFirst);
+  });
+
+  it.each([
+    "tampered-terminal",
+    "terminal-symlink",
+    "no-terminal",
+    "ambiguous-terminal",
+    "orphan-partial-graph",
+    "unreferenced-parent",
+    "orphan-junk",
+  ] as const)(
+    "fails closed for a %s regrouping graph before AI",
+    async (mode) => {
+      const testCase = regroupingCases[0];
+      const root = mkdtempSync(join(tmpdir(), `studywork-regrouping-${mode}-`));
+      roots.push(root);
+      cpSync(join(liveRoot, testCase.token), root, { recursive: true });
+      const terminalDirectory = join(root, "problem-terminal-fidelity");
+      const terminalName = readdirSync(terminalDirectory)
+        .find((name) => name.includes(testCase.terminalBackedCorpusHash))!;
+      if (mode === "tampered-terminal") {
+        const path = join(terminalDirectory, terminalName);
+        const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+        checkpoint.unexpected = true;
+        writeCanonical(path, checkpoint);
+      } else if (mode === "terminal-symlink") {
+        const path = join(terminalDirectory, terminalName);
+        const target = join(root, "terminal-authority-copy.json");
+        cpSync(path, target);
+        rmSync(path);
+        symlinkSync(target, path);
+      } else if (mode === "no-terminal") {
+        rmSync(join(terminalDirectory, terminalName));
+      } else if (mode === "ambiguous-terminal") {
+        const historical = classifiedFromRepairGraphs(root, ["5f3c70fa", "65ec252e"]);
+        const historicalHash = canonicalEvidenceHash(historical);
+        expect(readdirSync(terminalDirectory).some((name) => name.includes(historicalHash))).toBe(false);
+        addTerminalFixture(root, historical, testCase.terminalBackedCorpusHash);
+      } else if (mode === "orphan-partial-graph") {
+        const directory = join(root, "classification-repair-batches");
+        const sourceName = readdirSync(directory).find((candidate) => candidate.includes("45da6057"))!;
+        const checkpoint = JSON.parse(readFileSync(join(directory, sourceName), "utf8"));
+        checkpoint.members = [checkpoint.members[0]];
+        checkpoint.items = checkpoint.items.filter((item: { key: string }) => item.key === checkpoint.members[0].key);
+        checkpoint.overlayDigest = canonicalEvidenceHash(checkpoint.members);
+        writeCanonical(
+          join(directory, `v1-0001-0012-${checkpoint.overlayDigest}-${CLASSIFIER_DIGEST}.json`),
+          checkpoint
+        );
+      } else {
+        const directory = join(root, "classification-repair-batches");
+        if (mode === "unreferenced-parent") {
+          const name = readdirSync(directory).find((candidate) => candidate.includes("5f3c70fa"))!;
+          rmSync(join(directory, name));
+        } else {
+          writeFileSync(join(directory, "undeclared.txt"), "orphan\n");
+        }
+      }
+      const before = snapshot(root);
+      providerMock.complete.mockRejectedValue(new Error("unexpected AI call"));
+      const input = replayInputs(root);
+      await expect(repairAndAuditOfficialAnswers(
+        input.entry,
+        input.problem,
+        input.solution,
+        root,
+        input.classified,
+        input.solutions
+      )).rejects.toThrow(
+        /terminal 문제 fidelity exact envelope|terminal 문제 fidelity checkpoint|terminal-backed full-cover|disjoint full-cover에 속하지|classification graph에서 누락|classification repair batch (?:파일|filename)/u
+      );
+      expect(providerMock.complete).not.toHaveBeenCalled();
+      expect(snapshot(root)).toEqual(before);
+    }
+  );
+
   it.each(cases)("replays $entryId byte-for-byte without AI", async ({ token, auditPath, auditHash }) => {
     const root = mkdtempSync(join(tmpdir(), `studywork-persisted-${token}-`));
     roots.push(root);
@@ -192,7 +405,7 @@ describe.skipIf(!available)("persisted v2 repair graph hydration", () => {
     const before = Object.fromEntries(Object.entries(snapshot(root)).filter(([path]) =>
       /^(problem-repairs|problem-repair-batches|classification-repair-batches)\//u.test(path)
     ));
-    providerMock.complete.mockRejectedValue(new Error("expected legacy normal-path call"));
+    providerMock.complete.mockRejectedValue(new Error("unexpected AI call"));
     const input = replayInputs(root);
 
     await expect(repairAndAuditOfficialAnswers(
@@ -202,8 +415,8 @@ describe.skipIf(!available)("persisted v2 repair graph hydration", () => {
       root,
       input.classified,
       input.solutions
-    )).rejects.toThrow("expected legacy normal-path call");
-    expect(providerMock.complete).toHaveBeenCalledTimes(1);
+    )).rejects.toThrow("3:8 problem recovery는 한 번만 허용됩니다");
+    expect(providerMock.complete).not.toHaveBeenCalled();
     expect(Object.fromEntries(Object.entries(snapshot(root)).filter(([path]) =>
       /^(problem-repairs|problem-repair-batches|classification-repair-batches)\//u.test(path)
     ))).toEqual(before);

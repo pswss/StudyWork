@@ -2698,22 +2698,28 @@ function assertTerminalProblemPolicy(
   }
 }
 
-async function auditProblemTerminalFidelity(
+type ProblemTerminalFidelityAudit = {
+  items: ProblemTerminalFidelityItem[];
+  checkpoints: ProblemTerminalFidelityCheckpoint[];
+};
+
+async function readOrAuditProblemTerminalFidelity(
   entry: CorpusManifestEntry,
   evidence: PdfEvidence,
   stateDir: string,
-  classified: ClassifiedQuestion[]
-): Promise<{ items: ProblemTerminalFidelityItem[]; checkpoints: ProblemTerminalFidelityCheckpoint[] }> {
+  classified: ClassifiedQuestion[],
+  existingOnly: boolean
+): Promise<ProblemTerminalFidelityAudit | null> {
   const effectiveCorpusHash = canonicalEvidenceHash(classified);
   return withImporterPdfForAnalysis(evidence, (analysisEvidence) =>
     withSlices(analysisEvidence, PROBLEM_SLICE_PAGES, PROBLEM_SLICE_STRIDE, async (slices) => {
       const ownership = validateProblemSliceTopology(slices);
-      const allItems: ProblemTerminalFidelityItem[] = [];
-      const checkpoints: ProblemTerminalFidelityCheckpoint[] = [];
-      for (const [index, slice] of slices.entries()) {
+      const targets = slices.flatMap((slice, index) => {
         const owned = ownership[index];
-        const questions = classified.filter(({ question }) => question.page! >= owned.from && question.page! <= owned.to);
-        if (questions.length === 0) continue;
+        const questions = classified.filter(({ question }) =>
+          question.page! >= owned.from && question.page! <= owned.to
+        );
+        if (questions.length === 0) return [];
         const inputs = questions.map(({ question }) => ({
           key: questionKey(question),
           printed_number: String(numericPrintedLocator(question.number)),
@@ -2728,7 +2734,22 @@ async function auditProblemTerminalFidelity(
         const inputHash = canonicalEvidenceHash(inputs);
         const relativePath = `problem-terminal-fidelity/v${PROBLEM_TERMINAL_FIDELITY_VERSION}-` +
           `${String(index).padStart(4, "0")}-${effectiveCorpusHash}-${inputHash}.json`;
-        const path = join(stateDir, relativePath);
+        return [{ index, slice, owned, questions, inputs, inputHash, relativePath }];
+      });
+      if (existingOnly) {
+        const existingCount = targets.filter(({ relativePath }) => existsSync(join(stateDir, relativePath))).length;
+        if (existingCount === 0) return null;
+        if (existingCount !== targets.length) {
+          throw new Error(`terminal 문제 fidelity 기존 generation coverage가 다릅니다: ${effectiveCorpusHash}`);
+        }
+      }
+      const allItems: ProblemTerminalFidelityItem[] = [];
+      const checkpoints: ProblemTerminalFidelityCheckpoint[] = [];
+      for (const { slice, owned, questions, inputs, inputHash, relativePath } of targets) {
+        const joinedPath = join(stateDir, relativePath);
+        const path = existsSync(joinedPath)
+          ? confinedStateFile(stateDir, relativePath, "terminal 문제 fidelity checkpoint")
+          : joinedPath;
         let checkpoint: Record<string, unknown>;
         let items: ProblemTerminalFidelityItem[];
         if (existsSync(path)) {
@@ -2747,6 +2768,9 @@ async function auditProblemTerminalFidelity(
           ) throw new Error(`terminal 문제 fidelity 체크포인트 메타데이터가 다릅니다: ${path}`);
           items = parseProblemTerminalFidelity(checkpoint.items, questions);
         } else {
+          if (existingOnly) {
+            throw new Error(`terminal 문제 fidelity 기존 generation이 검증 중 사라졌습니다: ${relativePath}`);
+          }
           const prompt = `Attached official problem PDF slice contains original pages ${slice.from}-${slice.to}. ` +
             `Exam source subject is ${entry.subject}; source school grade is ${entry.grade ?? "unknown"}. ` +
             `Independently audit every final transcription and its curriculum scope from source pixels. ` +
@@ -2787,6 +2811,28 @@ async function auditProblemTerminalFidelity(
           };
           await writeImmutableEvidence(path, checkpoint);
         }
+        const expectedCheckpoint = {
+          version: PROBLEM_TERMINAL_FIDELITY_VERSION,
+          entryId: entry.id,
+          sourceHash: evidence.sha256,
+          from: slice.from,
+          to: slice.to,
+          ownedFrom: owned.from,
+          ownedTo: owned.to,
+          effectiveCorpusHash,
+          inputHash,
+          transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+          transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+          rulesDigest: CLASSIFIER_DIGEST,
+          scopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+          model: IMPORT_MODEL,
+          reasoningEffort: IMPORT_REASONING_EFFORT,
+          inputs,
+          items,
+        };
+        if (canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(expectedCheckpoint)) {
+          throw new Error(`terminal 문제 fidelity exact envelope가 다릅니다: ${path}`);
+        }
         const sha256 = await sha256File(path);
         if (sha256 !== canonicalEvidenceHash(checkpoint)) throw new Error(`terminal 문제 fidelity hash가 다릅니다: ${path}`);
         allItems.push(...items);
@@ -2799,6 +2845,17 @@ async function auditProblemTerminalFidelity(
       return { items: allItems.sort((a, b) => compareCorpusQuestionKeys(a.key, b.key)), checkpoints };
     })
   );
+}
+
+async function auditProblemTerminalFidelity(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  stateDir: string,
+  classified: ClassifiedQuestion[]
+): Promise<ProblemTerminalFidelityAudit> {
+  const result = await readOrAuditProblemTerminalFidelity(entry, evidence, stateDir, classified, false);
+  if (!result) throw new Error("terminal 문제 fidelity checkpoint를 만들지 못했습니다");
+  return result;
 }
 
 async function extractAndClassifyProblems(
@@ -6276,6 +6333,26 @@ export function semanticExplanationWithoutMarkers(value: string): string {
     .replace(/[①-⑩]/gu, "[CHOICE MARKER HIDDEN]");
 }
 
+function strictArtifactNames(
+  directory: string,
+  label: string,
+  validName: (name: string) => boolean
+): string[] {
+  if (!existsSync(directory)) return [];
+  const directoryStat = lstatSync(directory);
+  if (directoryStat.isSymbolicLink() || !directoryStat.isDirectory()) {
+    throw new Error(`${label} 디렉터리가 유효하지 않습니다`);
+  }
+  return readdirSync(directory, { withFileTypes: true }).flatMap((child) => {
+    if (child.isFile() && child.name.endsWith(".tmp")) return [];
+    if (child.isSymbolicLink() || !child.isFile()) {
+      throw new Error(`${label} 파일이 유효하지 않습니다: ${child.name}`);
+    }
+    if (!validName(child.name)) throw new Error(`${label} filename이 유효하지 않습니다: ${child.name}`);
+    return [child.name];
+  }).sort();
+}
+
 async function problemRepairBatchAuthorityVersion(
   entry: CorpusManifestEntry,
   problem: PdfEvidence,
@@ -6369,12 +6446,13 @@ async function persistedProblemRepairAttemptKeys(
 ): Promise<Set<string>> {
   const keys = new Set<string>();
   const singleDir = join(stateDir, "problem-repairs");
-  if (existsSync(singleDir)) {
-    if (lstatSync(singleDir).isSymbolicLink() || !lstatSync(singleDir).isDirectory()) {
-      throw new Error("problem repair 디렉터리가 유효하지 않습니다");
-    }
-    for (const name of readdirSync(singleDir).filter((value) => value.endsWith(".json"))) {
-      if (!/^v2-\d{4}-\d{4}\.json$/u.test(name)) throw new Error(`problem repair filename이 유효하지 않습니다: ${name}`);
+  const singleNames = strictArtifactNames(
+    singleDir,
+    "problem repair",
+    (name) => /^v2-\d{4}-\d{4}\.json$/u.test(name)
+  );
+  if (singleNames.length > 0) {
+    for (const name of singleNames) {
       const relativePath = `problem-repairs/${name}`;
       const path = confinedStateFile(stateDir, relativePath, "persisted problem repair");
       const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), relativePath);
@@ -6409,7 +6487,7 @@ async function persistedProblemRepairAttemptKeys(
         item,
       };
       if (
-        relativePath !== expectedRelativePath || keys.has(key) ||
+        relativePath !== expectedRelativePath ||
         checkpoint.version !== PROBLEM_REPAIR_VERSION || checkpoint.entryId !== entry.id ||
         checkpoint.key !== key || checkpoint.sourcePage !== original.question.page ||
         checkpoint.printedNumber !== String(number) || checkpoint.sourceHash !== problem.sha256 ||
@@ -6429,11 +6507,13 @@ async function persistedProblemRepairAttemptKeys(
     }
   }
   const batchDir = join(stateDir, "problem-repair-batches");
-  if (!existsSync(batchDir)) return keys;
-  if (lstatSync(batchDir).isSymbolicLink() || !lstatSync(batchDir).isDirectory()) {
-    throw new Error("problem repair batch 디렉터리가 유효하지 않습니다");
-  }
-  for (const name of readdirSync(batchDir).filter((value) => value.endsWith(".json"))) {
+  const batchNames = strictArtifactNames(
+    batchDir,
+    "problem repair batch",
+    (name) => /^v1-\d{4}-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name) ||
+      /^v2-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
+  );
+  for (const name of batchNames) {
     const v1 = /^v1-(\d{4})-(\d{4})-(\d{4})-([a-f0-9]{64})\.json$/u.exec(name);
     const v2 = /^v2-(\d{4})-(\d{4})-([a-f0-9]{64})\.json$/u.exec(name);
     if (!v1 && !v2) throw new Error(`problem repair batch filename이 유효하지 않습니다: ${name}`);
@@ -6459,9 +6539,6 @@ async function persistedProblemRepairAttemptKeys(
       (version === 1 ? checkpoint.membersDigest : checkpoint.targetsDigest) !== digest ||
       await sha256File(path) !== canonicalEvidenceHash(checkpoint)
     ) throw new Error(`persisted problem repair batch가 유효하지 않습니다: ${path}`);
-    if (memberKeys.some((key) => keys.has(key))) {
-      throw new Error("persisted problem repair key가 중복되었습니다");
-    }
     for (const key of memberKeys) keys.add(key);
   }
   return keys;
@@ -6485,14 +6562,35 @@ async function hydratePersistedProblemRepairBatches(
     question: QuizItemEx;
     problemArtifact: EvidencePointer & { itemHash: string };
   };
+  type HydratedRepair = { classified: ClassifiedQuestion; evidence: ProblemRepairEvidence };
+  type ClassificationGraph = {
+    contextKey: string;
+    records: Record[];
+    repairs: HydratedRepair[];
+  };
   const groups: Record[][] = [];
   const legacySingleByClassificationPath = new Map<string, Record>();
-  const recordsByKey = new Map<string, Record>();
-  const seenKeys = new Set<string>();
+  const recordsByIdentity = new Map<string, Record>();
+  const recordsByContext = new Map<string, Record[]>();
+  const recordIdentity = (record: Record) => JSON.stringify([record.problemArtifact.path, record.key]);
+  const contextKey = (record: Record) => `${record.baseQuestion.contextFrom}:${record.baseQuestion.contextTo}`;
+  const addRecord = (record: Record) => {
+    const identity = recordIdentity(record);
+    if (recordsByIdentity.has(identity)) {
+      throw new Error(`persisted problem repair artifact member가 중복되었습니다: ${record.problemArtifact.path} ${record.key}`);
+    }
+    recordsByIdentity.set(identity, record);
+    const context = contextKey(record);
+    recordsByContext.set(context, [...(recordsByContext.get(context) ?? []), record]);
+  };
   const singleDirectory = join(stateDir, "problem-repairs");
-  if (existsSync(singleDirectory)) {
-    for (const name of readdirSync(singleDirectory).filter((value) => value.endsWith(".json")).sort()) {
-      if (!/^v2-\d{4}-\d{4}\.json$/u.test(name)) continue;
+  const singleNames = strictArtifactNames(
+    singleDirectory,
+    "persisted legacy problem repair graph",
+    (name) => /^v2-\d{4}-\d{4}\.json$/u.test(name)
+  );
+  if (singleNames.length > 0) {
+    for (const name of singleNames) {
       const relativePath = `problem-repairs/${name}`;
       const path = confinedStateFile(stateDir, relativePath, "persisted legacy problem repair graph");
       const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), relativePath);
@@ -6542,7 +6640,7 @@ async function hydratePersistedProblemRepairBatches(
         checkpoint.promptDigest !== TARGETED_PROBLEM_PROMPT_DIGEST || checkpoint.model !== IMPORT_MODEL ||
         checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT || questionKey(question) !== key ||
         canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(expectedCheckpoint) ||
-        problemSha !== canonicalEvidenceHash(checkpoint) || seenKeys.has(key)
+        problemSha !== canonicalEvidenceHash(checkpoint)
       ) throw new Error(`persisted legacy problem repair graph가 유효하지 않습니다: ${path}`);
       const record = {
         key,
@@ -6565,13 +6663,18 @@ async function hydratePersistedProblemRepairBatches(
         baseQuestion.contextFrom,
         baseQuestion.contextTo
       ) === 1) continue;
-      seenKeys.add(key);
-      recordsByKey.set(key, record);
+      addRecord(record);
       groups.push([record]);
     }
   }
-  if (existsSync(directory)) {
-    const names = readdirSync(directory).sort();
+  const problemBatchNames = strictArtifactNames(
+    directory,
+    "persisted problem repair graph",
+    (name) => /^v1-\d{4}-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name) ||
+      /^v2-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
+  );
+  if (problemBatchNames.length > 0) {
+    const names = problemBatchNames;
     const contexts = new Set(names.flatMap((name) => {
       const match = /^v[12]-(\d{4})-(\d{4})-/u.exec(name);
       return match ? [`${Number(match[1])}:${Number(match[2])}`] : [];
@@ -6590,9 +6693,7 @@ async function hydratePersistedProblemRepairBatches(
         ? checkpoint.members.map((value, index) => object(value, `${relativePath}.members[${index}]`))
         : [];
       const keys = rawMembers.map((member, index) => exactString(member.key, `${relativePath}.members[${index}].key`, 100));
-      if (keys.length === 0 || keys.some((key) => seenKeys.has(key))) {
-        throw new Error("persisted problem repair v2 key가 중복되었습니다");
-      }
+      if (keys.length === 0) throw new Error("persisted problem repair v2 key가 없습니다");
       const originals = keys.map((key) => {
         const original = baseByKey.get(key);
         if (!original) throw new Error(`${key} persisted problem repair v2 base가 없습니다`);
@@ -6686,25 +6787,22 @@ async function hydratePersistedProblemRepairBatches(
         };
       });
       for (const record of group) {
-        seenKeys.add(record.key);
-        recordsByKey.set(record.key, record);
+        addRecord(record);
       }
       groups.push(group);
     }
   }
 
-  const hydrated = new Map<string, { classified: ClassifiedQuestion; evidence: ProblemRepairEvidence }>();
+  const classificationGraphs: ClassificationGraph[] = [];
   const classificationDirectory = join(stateDir, "classification-repair-batches");
-  if (existsSync(classificationDirectory)) {
-    if (lstatSync(classificationDirectory).isSymbolicLink() || !lstatSync(classificationDirectory).isDirectory()) {
-      throw new Error("classification repair batch 디렉터리가 유효하지 않습니다");
-    }
-    for (const name of readdirSync(classificationDirectory).sort()) {
-      if (!name.endsWith(".json")) continue;
-      const match = /^v1-(\d{4})-(\d{4})-([a-f0-9]{64})-([a-f0-9]{16})\.json$/u.exec(name);
-      if (!match) {
-        throw new Error(`classification repair batch filename이 유효하지 않습니다: ${name}`);
-      }
+  const classificationNames = strictArtifactNames(
+    classificationDirectory,
+    "classification repair batch",
+    (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
+  );
+  if (classificationNames.length > 0) {
+    for (const name of classificationNames) {
+      const match = /^v1-(\d{4})-(\d{4})-([a-f0-9]{64})-([a-f0-9]{16})\.json$/u.exec(name)!;
       const relativePath = `classification-repair-batches/${name}`;
       const path = confinedStateFile(stateDir, relativePath, "persisted classification repair graph");
       const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), relativePath);
@@ -6721,8 +6819,7 @@ async function hydratePersistedProblemRepairBatches(
       const graphRecords = members.map((member, index) => {
         const authority = object(member.problemAuthority, `${relativePath}.members[${index}].problemAuthority`);
         const problemPath = exactString(authority.path, `${relativePath}.members[${index}].problemAuthority.path`, 500);
-        const record = recordsByKey.get(memberKeys[index]);
-        return record?.problemArtifact.path === problemPath ? record : null;
+        return recordsByIdentity.get(JSON.stringify([problemPath, memberKeys[index]])) ?? null;
       });
       const checkpointSha = await sha256File(path);
       if (
@@ -6752,6 +6849,10 @@ async function hydratePersistedProblemRepairBatches(
       }
       if (graphRecords.some((record) => !record)) {
         throw new Error(`classification repair graph가 부분 authority만 참조합니다: ${path}`);
+      }
+      const graphContextKey = `${Number(match[1])}:${Number(match[2])}`;
+      if (graphRecords.some((record) => record && contextKey(record) !== graphContextKey)) {
+        throw new Error(`classification repair graph context가 problem authority와 다릅니다: ${path}`);
       }
       const expectedMembers = graphRecords.map((record, index) => {
         if (!record) throw new Error(`classification repair graph가 부분 authority만 참조합니다: ${path}`);
@@ -6792,12 +6893,13 @@ async function hydratePersistedProblemRepairBatches(
         throw new Error(`classification repair graph exact envelope가 다릅니다: ${path}`);
       }
       const decisionByKey = new Map(decisions.map((decision) => [decision.key, decision]));
+      const graphRepairs: HydratedRepair[] = [];
       for (const [index, member] of members.entries()) {
         const authority = object(member.problemAuthority, `${relativePath}.members[${index}].problemAuthority`);
         const problemPath = exactString(authority.path, `${relativePath}.members[${index}].problemAuthority.path`, 500);
         const key = memberKeys[index];
         const record = graphRecords[index];
-        if (!record || record.problemArtifact.path !== problemPath || hydrated.has(key)) {
+        if (!record || record.problemArtifact.path !== problemPath) {
           throw new Error(`classification repair v2 graph가 orphan/conflict입니다: ${path}`);
         }
         const expectedMember = {
@@ -6812,7 +6914,7 @@ async function hydratePersistedProblemRepairBatches(
         }
         const classification = decisionByKey.get(key);
         if (!classification) throw new Error(`${key} classification repair graph decision이 없습니다`);
-        hydrated.set(key, {
+        graphRepairs.push({
           classified: { question: record.question, classification },
           evidence: {
             key,
@@ -6842,10 +6944,102 @@ async function hydratePersistedProblemRepairBatches(
           },
         });
       }
+      classificationGraphs.push({ contextKey: graphContextKey, records: graphRecords as Record[], repairs: graphRepairs });
+    }
+  }
+
+  const hydrated = new Map<string, HydratedRepair>();
+  const duplicateContexts = new Set<string>();
+  for (const [context, records] of recordsByContext) {
+    const counts = new Map<string, number>();
+    for (const record of records) counts.set(record.key, (counts.get(record.key) ?? 0) + 1);
+    if ([...counts.values()].some((count) => count > 1)) duplicateContexts.add(context);
+  }
+  for (const graph of classificationGraphs.filter((candidate) => !duplicateContexts.has(candidate.contextKey))) {
+    for (const repair of graph.repairs) {
+      const key = questionKey(repair.classified.question);
+      if (hydrated.has(key)) throw new Error(`classification repair v2 graph가 orphan/conflict입니다: ${key}`);
+      hydrated.set(key, repair);
+    }
+  }
+  if (duplicateContexts.size > 0) {
+    const coversByContext = [...duplicateContexts].sort().map((context) => {
+      const records = recordsByContext.get(context) ?? [];
+      const expectedKeys = new Set(records.map((record) => record.key));
+      const graphs = classificationGraphs.filter((graph) => graph.contextKey === context);
+      const referencedIdentities = new Set(graphs.flatMap((graph) => graph.records.map(recordIdentity)));
+      const unreferenced = records.find((record) => !referencedIdentities.has(recordIdentity(record)));
+      if (unreferenced) {
+        throw new Error(
+          `persisted regrouping problem artifact가 classification graph에서 누락되었습니다: ` +
+          `${unreferenced.problemArtifact.path} ${unreferenced.key}`
+        );
+      }
+      if (graphs.length > 24) throw new Error(`${context} persisted regrouping graph가 너무 많습니다`);
+      const covers: ClassificationGraph[][] = [];
+      let searchSteps = 0;
+      const visit = (covered: ReadonlySet<string>, chosen: ClassificationGraph[]) => {
+        searchSteps += 1;
+        if (searchSteps > 4096 || covers.length > 256) {
+          throw new Error(`${context} persisted regrouping full-cover 탐색 범위를 초과했습니다`);
+        }
+        if (covered.size === expectedKeys.size) {
+          covers.push(chosen);
+          return;
+        }
+        const nextKey = [...expectedKeys].sort(compareCorpusQuestionKeys).find((key) => !covered.has(key));
+        if (!nextKey) return;
+        for (const graph of graphs) {
+          const graphKeys = graph.records.map((record) => record.key);
+          if (!graphKeys.includes(nextKey) || graphKeys.some((key) => covered.has(key))) continue;
+          const nextCovered = new Set(covered);
+          for (const key of graphKeys) nextCovered.add(key);
+          visit(nextCovered, [...chosen, graph]);
+        }
+      };
+      visit(new Set(), []);
+      const participatingGraphs = new Set(covers.flat());
+      if (participatingGraphs.size !== graphs.length || graphs.some((graph) => !participatingGraphs.has(graph))) {
+        throw new Error(`${context} classification repair graph가 disjoint full-cover에 속하지 않습니다`);
+      }
+      return covers;
+    });
+    let combinations: ClassificationGraph[][] = [[]];
+    for (const covers of coversByContext) {
+      combinations = combinations.flatMap((combination) => covers.map((cover) => [...combination, ...cover]));
+      if (combinations.length > 256) throw new Error("persisted regrouping full-cover 조합 범위를 초과했습니다");
+    }
+    const terminalBacked: ClassificationGraph[][] = [];
+    for (const combination of combinations) {
+      const candidateRepairs = new Map(hydrated);
+      for (const graph of combination) {
+        for (const repair of graph.repairs) {
+          const key = questionKey(repair.classified.question);
+          if (candidateRepairs.has(key)) throw new Error(`${key} persisted regrouping cover가 겹칩니다`);
+          candidateRepairs.set(key, repair);
+        }
+      }
+      const candidate = [...baseByKey.values()].map((item) =>
+        candidateRepairs.get(questionKey(item.question))?.classified ?? item
+      );
+      if (await readOrAuditProblemTerminalFidelity(entry, problem, stateDir, candidate, true)) {
+        terminalBacked.push(combination);
+      }
+    }
+    if (terminalBacked.length !== 1) {
+      throw new Error(`persisted regrouping terminal-backed full-cover가 유일하지 않습니다: ${terminalBacked.length}`);
+    }
+    for (const graph of terminalBacked[0]) {
+      for (const repair of graph.repairs) {
+        const key = questionKey(repair.classified.question);
+        if (hydrated.has(key)) throw new Error(`${key} persisted regrouping hydration이 중복되었습니다`);
+        hydrated.set(key, repair);
+      }
     }
   }
 
   const pendingGroups = groups.flatMap((group) => {
+    if (duplicateContexts.has(contextKey(group[0]))) return [];
     const partial = group.filter((record) => !hydrated.has(record.key));
     if (partial.length === 0) return [];
     if (partial.length !== group.length) {

@@ -11,10 +11,11 @@ import {
   renameSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import {
@@ -53,6 +54,7 @@ import {
   solutionPromptUpgradeAllowlistFingerprint,
   TARGET_SUBJECTS,
   verifyExamCorpus,
+  verifyPersistedProblemRepairOverlapForTest,
 } from "../scripts/verify-exam-corpus";
 import {
   applyAllowlistedProblemManualCorrection,
@@ -302,6 +304,45 @@ const SOLUTION_FIDELITY_ADJUDICATION_STATE = join(
   process.cwd(),
   "data/import-exam-corpus/bc7655b894a573179fae1c73",
 );
+const PERSISTED_REGROUPING_CASES = [{
+  entryId: "ebsi:5594500",
+  stateDir: join(process.cwd(), "data/import-exam-corpus/e9fcb8ccb0af1356a50a6de4"),
+  effectiveCorpusHash: "b987fa87a2159fb4b2cfcb99993560a9490307ef0358f302605af605869f9b17",
+  selectedClassificationPaths: [
+    "classification-repair-batches/" +
+      `v1-0001-0012-45da6057257be9c8dd99a51e446a9a9bb10185352a80c9547d2422d926ede434-${DIGEST}.json`,
+  ],
+  auditPath: "answer-audit/v5-1ea8994dca6c961a78178fa833c1889cc20706d64c81c11f5d8e20048e740a3e.json",
+}, {
+  entryId: "ebsi:5594501",
+  stateDir: join(process.cwd(), "data/import-exam-corpus/b395aca2790e257b1487b455"),
+  effectiveCorpusHash: "9899689cf6ebc256fbe32d7898c3cb29d0dabda066799ccbeaaf977c70894d31",
+  selectedClassificationPaths: [
+    "classification-repair-batches/" +
+      `v1-0001-0012-4079b0d5cd668c23d07ca0792d4cdbaa5c2f3f5950f4bb0097c423a7c593f7d0-${DIGEST}.json`,
+  ],
+  auditPath: null,
+}, {
+  entryId: "ebsi:5643101",
+  stateDir: join(process.cwd(), "data/import-exam-corpus/5a72e90edfe68c75f79ce8ef"),
+  effectiveCorpusHash: "7f4dd66d75a99e1b3b595184bcebb8e60fff1aebdd43fac9a32fbf787d75a168",
+  selectedClassificationPaths: [
+    "classification-repair-batches/" +
+      `v1-0001-0012-e00d25b291379897841f4123592aeb1c278d3f157e89ac759b3a5219468353ab-${DIGEST}.json`,
+  ],
+  auditPath: null,
+}, {
+  entryId: "ebsi:5643102",
+  stateDir: join(process.cwd(), "data/import-exam-corpus/887df3e562b3dab6874de994"),
+  effectiveCorpusHash: "854ffad3fac0dd3f0c89e4cd275a8d043da15aaa2ea1c36c0aab69e2892a7721",
+  selectedClassificationPaths: [
+    "classification-repair-batches/" +
+      `v1-0001-0012-5e7df2f90052672c32558f747b24737db76778adcc4cf676c2a8d6b1646763fe-${DIGEST}.json`,
+    "classification-repair-batches/" +
+      `v1-0001-0012-2772d412366370a9eaf4eb143619f76e0d2a7e9eb482badc5c314b21ae9d405d-${DIGEST}.json`,
+  ],
+  auditPath: null,
+}] as const;
 const TARGETED_PROMPT_DIGEST = hash(
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
 );
@@ -440,6 +481,173 @@ function writeEvidence(path: string, value: unknown): string {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, `${JSON.stringify(canonicalize(value), null, 2)}\n`);
   return canonicalEvidenceHash(value);
+}
+
+type RegroupingClassified = {
+  question: Record<string, any>;
+  classification: Record<string, any>;
+};
+
+function regroupingQuestionKey(question: Record<string, any>): string {
+  return `${Number(question.page)}:${Number(question.number)}`;
+}
+
+function regroupingBaseCorpus(stateDir: string): RegroupingClassified[] {
+  const result: RegroupingClassified[] = [];
+  for (const problemName of readdirSync(join(stateDir, "problem-chunks"))
+    .filter((name) => /^v2-\d{4}\.json$/u.test(name)).sort()) {
+    const index = problemName.slice(3, 7);
+    const problem = JSON.parse(readFileSync(join(stateDir, "problem-chunks", problemName), "utf8"));
+    const classificationName = readdirSync(join(stateDir, "classification-chunks"))
+      .find((name) => name.startsWith(`v5-${index}-`))!;
+    const classification = JSON.parse(
+      readFileSync(join(stateDir, "classification-chunks", classificationName), "utf8"),
+    );
+    const byKey = new Map<string, Record<string, any>>(
+      classification.items.map((item: Record<string, any>) => [item.key, item]),
+    );
+    for (const question of problem.items as Array<Record<string, any>>) {
+      result.push({ question, classification: byKey.get(regroupingQuestionKey(question))! });
+    }
+  }
+  return result.sort((left, right) =>
+    Number(left.question.page) - Number(right.question.page)
+    || Number(left.question.number) - Number(right.question.number));
+}
+
+function regroupingCorpusFromGraphs(stateDir: string, graphDigests: string[]): RegroupingClassified[] {
+  const base = regroupingBaseCorpus(stateDir);
+  const overlay = new Map<string, RegroupingClassified>();
+  for (const digest of graphDigests) {
+    const name = readdirSync(join(stateDir, "classification-repair-batches"))
+      .find((candidate) => candidate.includes(digest))!;
+    const checkpoint = JSON.parse(
+      readFileSync(join(stateDir, "classification-repair-batches", name), "utf8"),
+    );
+    const classificationByKey = new Map<string, Record<string, any>>(
+      checkpoint.items.map((item: Record<string, any>) => [item.key, item]),
+    );
+    for (const member of checkpoint.members as Array<Record<string, any>>) {
+      const problem = JSON.parse(readFileSync(join(stateDir, member.problemAuthority.path), "utf8"));
+      const question = (problem.items ?? [problem.item]).find(
+        (item: Record<string, any>) => regroupingQuestionKey(item) === member.key,
+      );
+      overlay.set(member.key, { question, classification: classificationByKey.get(member.key)! });
+    }
+  }
+  return base.map((item) => overlay.get(regroupingQuestionKey(item.question)) ?? item);
+}
+
+function addRegroupingTerminal(
+  stateDir: string,
+  classified: RegroupingClassified[],
+  templateCorpusHash: string,
+): string {
+  const directory = join(stateDir, "problem-terminal-fidelity");
+  const templateName = readdirSync(directory).find((name) => name.includes(templateCorpusHash))!;
+  const template = JSON.parse(readFileSync(join(directory, templateName), "utf8"));
+  const inputs = classified
+    .filter(({ question }) => Number(question.page) >= template.ownedFrom && Number(question.page) <= template.ownedTo)
+    .map(({ question }) => ({
+      key: regroupingQuestionKey(question),
+      printed_number: String(Number(question.number)),
+      source_page: question.page,
+      qtype: question.qtype,
+      question: question.question,
+      choices: question.choices,
+      figure: question.figure,
+      figure_description: question.figure_description,
+      box: question.box,
+    }));
+  const effectiveCorpusHash = canonicalEvidenceHash(classified);
+  const inputHash = canonicalEvidenceHash(inputs);
+  const checkpoint = { ...template, effectiveCorpusHash, inputHash, inputs };
+  const index = /^v2-(\d{4})-/u.exec(templateName)![1];
+  const name = `v2-${index}-${effectiveCorpusHash}-${inputHash}.json`;
+  writeEvidence(join(directory, name), checkpoint);
+  return name;
+}
+
+function installSyntheticRegroupingHistory(
+  stateDir: string,
+  selectedProblemArtifact: string,
+  selectedClassificationArtifact: string,
+): Array<{
+  key: string;
+  problemArtifact: { path: string; sha256: string };
+  problemArtifactItemHash: string;
+  classificationArtifact: { path: string; sha256: string };
+  classificationArtifactItemHash: string;
+  effectiveQuestionHash: string;
+  effectiveClassificationHash: string;
+}> {
+  const selectedProblem = JSON.parse(readFileSync(selectedProblemArtifact, "utf8"));
+  const selectedClassification = JSON.parse(readFileSync(selectedClassificationArtifact, "utf8"));
+  return selectedProblem.members.map((member: Record<string, any>) => {
+    const selectedQuestion = selectedProblem.items.find(
+      (item: Record<string, any>) => regroupingQuestionKey(item) === member.key,
+    );
+    const question = {
+      ...selectedQuestion,
+      question: `${selectedQuestion.question} [historical alternate ${member.key}]`,
+    };
+    const members = [member];
+    const targetsDigest = canonicalEvidenceHash(members);
+    const baseClassification = JSON.parse(
+      readFileSync(join(stateDir, member.baseClassificationCheckpoint.path), "utf8"),
+    );
+    const baseDecision = baseClassification.items.find(
+      (item: Record<string, any>) => item.key === member.key,
+    );
+    const problemRelativePath = `problem-repair-batches/v2-` +
+      `${String(selectedProblem.contextFrom).padStart(4, "0")}-` +
+      `${String(selectedProblem.contextTo).padStart(4, "0")}-${targetsDigest}.json`;
+    const problemSha = writeEvidence(join(stateDir, problemRelativePath), {
+      ...selectedProblem,
+      targetsDigest,
+      members,
+      diagnosticEvidenceHash: hash(JSON.stringify([{
+        key: member.key,
+        evidence: baseDecision.transcription_evidence,
+      }])),
+      items: [question],
+    });
+    const classification = selectedClassification.items.find(
+      (item: Record<string, any>) => item.key === member.key,
+    );
+    const classificationMembers = [{
+      key: member.key,
+      problemAuthority: {
+        key: member.key,
+        path: problemRelativePath,
+        sha256: problemSha,
+        itemHash: canonicalEvidenceHash(question),
+      },
+      effectiveQuestionHash: canonicalEvidenceHash(question),
+      baseClassificationCheckpoint: member.baseClassificationCheckpoint,
+      baseClassificationHash: member.baseClassificationHash,
+    }];
+    const overlayDigest = canonicalEvidenceHash(classificationMembers);
+    const classificationRelativePath = `classification-repair-batches/v1-` +
+      `${String(selectedClassification.contextFrom).padStart(4, "0")}-` +
+      `${String(selectedClassification.contextTo).padStart(4, "0")}-` +
+      `${overlayDigest}-${DIGEST}.json`;
+    const classificationSha = writeEvidence(join(stateDir, classificationRelativePath), {
+      ...selectedClassification,
+      overlayDigest,
+      members: classificationMembers,
+      items: [classification],
+    });
+    return {
+      key: member.key,
+      problemArtifact: { path: problemRelativePath, sha256: problemSha },
+      problemArtifactItemHash: canonicalEvidenceHash(question),
+      classificationArtifact: { path: classificationRelativePath, sha256: classificationSha },
+      classificationArtifactItemHash: canonicalEvidenceHash(classification),
+      effectiveQuestionHash: canonicalEvidenceHash(question),
+      effectiveClassificationHash: canonicalEvidenceHash(classification),
+    };
+  });
 }
 
 const execFileP = promisify(execFile);
@@ -8964,7 +9172,178 @@ describe("exam corpus verifier", () => {
     ), {});
     const orphan = verifyExamCorpus(orphanFiles);
     expect(orphan.failures.some((failure) =>
-      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+  });
+
+  it.each(PERSISTED_REGROUPING_CASES)(
+    "selects the unique terminal-backed persisted v2 repair cover for $entryId",
+    (testCase) => {
+      if (!existsSync(join(testCase.stateDir, "problem.pdf"))) return;
+      const selected = verifyPersistedProblemRepairOverlapForTest(
+        testCase.stateDir,
+        testCase.auditPath ?? undefined,
+      );
+      expect(selected.effectiveCorpusHash).toBe(testCase.effectiveCorpusHash);
+      expect(selected.selectedClassificationPaths).toEqual(testCase.selectedClassificationPaths);
+    },
+  );
+
+  it("verifies a full current audit with one terminal-backed cover and retained alternate history", () => {
+    const files = fixture();
+    const artifacts = upgradeEntryToV3(files, "math", {
+      crossPageBatchRepair: true,
+      terminalScope: "authorized-reject",
+      answerV5: true,
+    });
+    const alternate = installSyntheticRegroupingHistory(
+      files.stateDirs.math,
+      artifacts.problemBatchArtifact!,
+      artifacts.classificationBatchArtifact!,
+    );
+    expect(alternate).toHaveLength(2);
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures, null, 2)).toMatchObject({ ok: true, failureCount: 0 });
+    expect(alternate.every((value) => existsSync(join(files.stateDirs.math, value.problemArtifact.path))))
+      .toBe(true);
+
+    const tamperedFiles = fixture();
+    const tamperedArtifacts = upgradeEntryToV3(tamperedFiles, "math", {
+      crossPageBatchRepair: true,
+      terminalScope: "authorized-reject",
+      answerV5: true,
+    });
+    const tamperedAlternate = installSyntheticRegroupingHistory(
+      tamperedFiles.stateDirs.math,
+      tamperedArtifacts.problemBatchArtifact!,
+      tamperedArtifacts.classificationBatchArtifact!,
+    );
+    const dormantPath = join(tamperedFiles.stateDirs.math, tamperedAlternate[0].problemArtifact.path);
+    const dormant = JSON.parse(readFileSync(dormantPath, "utf8"));
+    dormant.items[0].question += " tampered";
+    writeEvidence(dormantPath, dormant);
+    expect(verifyExamCorpus(tamperedFiles).failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "ANSWER_AUDIT_INVALID" }),
+    ]));
+
+    const alternateAuditFiles = fixture();
+    const alternateAuditArtifacts = upgradeEntryToV3(alternateAuditFiles, "math", {
+      crossPageBatchRepair: true,
+      terminalScope: "authorized-reject",
+      answerV5: true,
+    });
+    const alternateAuthority = installSyntheticRegroupingHistory(
+      alternateAuditFiles.stateDirs.math,
+      alternateAuditArtifacts.problemBatchArtifact!,
+      alternateAuditArtifacts.classificationBatchArtifact!,
+    );
+    rewriteCurrentV3Authority(alternateAuditFiles, (audit) => {
+      const replacement = alternateAuthority[0];
+      const repair = audit.repairs.find((value: Record<string, any>) => value.key === replacement.key)!;
+      repair.problemArtifact = replacement.problemArtifact;
+      repair.problemArtifactItemHash = replacement.problemArtifactItemHash;
+      repair.classificationArtifact = {
+        ...replacement.classificationArtifact,
+        rulesDigest: DIGEST,
+        transcriptionGateVersion: 2,
+        transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+      };
+      repair.classificationArtifactItemHash = replacement.classificationArtifactItemHash;
+      repair.effectiveQuestionHash = replacement.effectiveQuestionHash;
+      repair.effectiveClassificationHash = replacement.effectiveClassificationHash;
+    });
+    expect(verifyExamCorpus(alternateAuditFiles).failures).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "ANSWER_AUDIT_INVALID",
+        message: expect.stringContaining("terminal-backed repair graph"),
+      }),
+    ]));
+  });
+
+  it.each([
+    "tampered-terminal",
+    "terminal-symlink",
+    "no-terminal",
+    "ambiguous-terminal",
+    "unreferenced-parent",
+    "orphan-junk",
+    "graph-without-cover",
+    "audit-selects-alternate",
+  ] as const)("fails closed for persisted regrouping %s", (mode) => {
+    const testCase = PERSISTED_REGROUPING_CASES[0];
+    if (!existsSync(join(testCase.stateDir, "problem.pdf"))) return;
+    const root = mkdtempSync(join(tmpdir(), `verify-persisted-regrouping-${mode}-`));
+    cpSync(testCase.stateDir, root, { recursive: true });
+    try {
+      const terminalDirectory = join(root, "problem-terminal-fidelity");
+      const terminalName = readdirSync(terminalDirectory)
+        .find((name) => name.includes(testCase.effectiveCorpusHash))!;
+      let auditPath: string | undefined;
+      if (mode === "tampered-terminal") {
+        const path = join(terminalDirectory, terminalName);
+        const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+        checkpoint.unexpected = true;
+        writeEvidence(path, checkpoint);
+      } else if (mode === "terminal-symlink") {
+        const path = join(terminalDirectory, terminalName);
+        const copy = join(root, "terminal-authority-copy.json");
+        cpSync(path, copy);
+        rmSync(path);
+        symlinkSync(copy, path);
+      } else if (mode === "no-terminal") {
+        rmSync(join(terminalDirectory, terminalName));
+      } else if (mode === "ambiguous-terminal") {
+        const alternate = regroupingCorpusFromGraphs(root, ["5f3c70fa", "65ec252e"]);
+        addRegroupingTerminal(root, alternate, testCase.effectiveCorpusHash);
+      } else if (mode === "unreferenced-parent") {
+        const directory = join(root, "classification-repair-batches");
+        const name = readdirSync(directory).find((candidate) => candidate.includes("5f3c70fa"))!;
+        rmSync(join(directory, name));
+      } else if (mode === "orphan-junk") {
+        writeFileSync(join(root, "classification-repair-batches", "undeclared.txt"), "orphan\n");
+      } else if (mode === "graph-without-cover") {
+        const directory = join(root, "classification-repair-batches");
+        const sourceName = readdirSync(directory).find((candidate) => candidate.includes("45da6057"))!;
+        const checkpoint = JSON.parse(readFileSync(join(directory, sourceName), "utf8"));
+        const keys = new Set(["1:2", "10:25"]);
+        checkpoint.members = checkpoint.members.filter((member: Record<string, any>) => keys.has(member.key));
+        checkpoint.items = checkpoint.items.filter((item: Record<string, any>) => keys.has(item.key));
+        checkpoint.overlayDigest = canonicalEvidenceHash(checkpoint.members);
+        const name = `v1-0001-0012-${checkpoint.overlayDigest}-${DIGEST}.json`;
+        writeEvidence(join(directory, name), checkpoint);
+      } else {
+        const sourceAudit = JSON.parse(readFileSync(join(root, testCase.auditPath!), "utf8"));
+        const repair = sourceAudit.repairs.find((value: Record<string, any>) => value.key === "10:25")!;
+        const problemName = readdirSync(join(root, "problem-repair-batches"))
+          .find((candidate) => candidate.includes("f6c1496a"))!;
+        const problemPath = `problem-repair-batches/${problemName}`;
+        const problem = JSON.parse(readFileSync(join(root, problemPath), "utf8"));
+        const question = problem.items.find(
+          (item: Record<string, any>) => regroupingQuestionKey(item) === "10:25",
+        );
+        const classificationName = readdirSync(join(root, "classification-repair-batches"))
+          .find((candidate) => candidate.includes("5f3c70fa"))!;
+        const classificationPath = `classification-repair-batches/${classificationName}`;
+        const classification = JSON.parse(readFileSync(join(root, classificationPath), "utf8"));
+        const decision = classification.items.find((item: Record<string, any>) => item.key === "10:25");
+        repair.problemArtifact = { path: problemPath, sha256: hash(readFileSync(join(root, problemPath))) };
+        repair.problemArtifactItemHash = canonicalEvidenceHash(question);
+        repair.classificationArtifact = {
+          path: classificationPath,
+          sha256: hash(readFileSync(join(root, classificationPath))),
+          rulesDigest: DIGEST,
+          transcriptionGateVersion: 2,
+          transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+        };
+        repair.classificationArtifactItemHash = canonicalEvidenceHash(decision);
+        repair.effectiveQuestionHash = canonicalEvidenceHash(question);
+        repair.effectiveClassificationHash = canonicalEvidenceHash(decision);
+        auditPath = "tampered-audit.json";
+        writeEvidence(join(root, auditPath), sourceAudit);
+      }
+      expect(() => verifyPersistedProblemRepairOverlapForTest(root, auditPath)).toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("reconstructs one terminal-triggered shared problem revision generation", () => {

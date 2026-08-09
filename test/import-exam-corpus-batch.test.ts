@@ -346,7 +346,7 @@ describe("exam corpus page-batch problem repair", () => {
     });
     await expect(repairAndAuditOfficialAnswers(
       entry, problem, solution, root, classified, solutions
-    )).rejects.toThrow("problem repair key가 중복되었습니다");
+    )).rejects.toThrow("persisted regrouping problem artifact가 classification graph에서 누락되었습니다");
     expect(calls).toEqual(beforeReplay);
     rmSync(overlapPath);
 
@@ -406,7 +406,7 @@ describe("exam corpus page-batch problem repair", () => {
     });
     await expect(repairAndAuditOfficialAnswers(
       entry, problem, solution, root, classified, solutions
-    )).rejects.toThrow("problem repair key가 중복되었습니다");
+    )).rejects.toThrow("problem repair batch v1/v2 authority가 섞였습니다");
 
     rmSync(join(root, "problem-repair-batches", v2Name));
     rmSync(legacySinglePath);
