@@ -27,6 +27,7 @@ import {
   SOLUTION_FIDELITY_VERSION,
   SOLUTION_REPAIR_FIDELITY_VERSION,
   SOLUTION_REPAIR_VERSION,
+  baseDifficultyByQuestionKey,
   canonicalEvidenceHash,
   matchOfficialSolutions,
   parseCorpusManifest,
@@ -295,7 +296,12 @@ describe("exam corpus official solution repair", () => {
     })]);
     expect(repaired.auditPath).toMatch(/^answer-audit\/v5-[a-f0-9]{64}\.json$/u);
 
-    const imported = matchOfficialSolutions(entry, repaired.classified, repaired.solutions);
+    const imported = matchOfficialSolutions(
+      entry,
+      repaired.classified,
+      repaired.solutions,
+      baseDifficultyByQuestionKey(classified)
+    );
     expect(imported).toHaveLength(1);
     expect(imported[0]).toMatchObject({
       printedNumber: "27",

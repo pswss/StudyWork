@@ -31,6 +31,7 @@ import {
   IMPORT_CONCURRENCY,
   FULL_CONTEXT_CONCURRENCY,
   assertImportSchema,
+  baseDifficultyByQuestionKey,
   buildImageOnlyPdfFromPngs,
   canonicalEvidenceHash,
   compareCorpusQuestionKeys,
@@ -402,7 +403,7 @@ describe("exam corpus importer", () => {
           question: number === 1 ? {
             number: "1",
             qtype: "mcq" as const,
-            difficulty: "중" as const,
+            difficulty: "상" as const,
             question: "$2^x=2$일 때 $x$는?",
             choices: ["① 1", "② 2"],
             answer: "② 2",
@@ -455,22 +456,33 @@ describe("exam corpus importer", () => {
         page: 3 + Math.floor(index / 5),
         complete: true as const,
       }));
-      const imported = matchOfficialSolutions(entry, classified, officialSolutions);
+      const baseDifficultyByKey = baseDifficultyByQuestionKey(classified);
+      const difficultyDrifted = classified.map((item, index) => index === 0
+        ? { ...item, question: { ...item.question, difficulty: "하" as const } }
+        : item);
+      const imported = matchOfficialSolutions(entry, difficultyDrifted, officialSolutions, baseDifficultyByKey);
       expect(imported[0].officialAnswer).toBe("①");
+      expect(imported[0].difficulty).toBe("상");
+      const missingDifficulty = new Map(baseDifficultyByKey);
+      missingDifficulty.delete(decision.key);
+      expect(() => matchOfficialSolutions(entry, classified, officialSolutions, missingDifficulty))
+        .toThrow("base difficulty key 집합이 effective corpus와 다릅니다");
+      expect(() => baseDifficultyByQuestionKey([...classified, classified[0]]))
+        .toThrow("base difficulty key가 중복입니다");
       expect(() => matchOfficialSolutions(entry, classified, officialSolutions.map((solution, index) =>
         index === 0 ? { ...solution, explanation: "" } : solution
-      ))).toThrow(
+      ), baseDifficultyByKey)).toThrow(
         "공식 해설 본문이 비어 있습니다"
       );
       expect(() => matchOfficialSolutions(entry, classified.map((item, index) =>
         index === 29 ? { ...item, question: { ...item.question, number: "29" } } : item
-      ), officialSolutions)).toThrow("문제 인쇄 번호가 중복입니다");
+      ), officialSolutions, baseDifficultyByKey)).toThrow("effective difficulty key가 중복입니다");
       expect(() => matchOfficialSolutions(entry, classified, officialSolutions.map((solution, index) =>
         index === 29 ? { ...solution, number: "31" } : solution
-      ))).toThrow("인쇄 번호 집합이 다릅니다");
+      ), baseDifficultyByKey)).toThrow("인쇄 번호 집합이 다릅니다");
       expect(() => matchOfficialSolutions(entry, classified, officialSolutions.map((solution, index) =>
         index === 0 ? { ...solution, answer: "③" } : solution
-      ))).toThrow("보기 범위를 벗어났습니다");
+      ), baseDifficultyByKey)).toThrow("보기 범위를 벗어났습니다");
 
       expect(parsePdfInfoOutput("Pages: 28\nEncrypted: yes (print:yes copy:yes change:no algorithm:AES)\n"))
         .toEqual({ pages: 28, encrypted: true, printAllowed: true, copyAllowed: true });

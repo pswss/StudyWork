@@ -8651,13 +8651,39 @@ export async function writeAnswerAttestation(
   return { path: relativePath, sha256 };
 }
 
+export function baseDifficultyByQuestionKey(
+  classified: ClassifiedQuestion[]
+): Map<string, QuizItemEx["difficulty"]> {
+  const result = new Map<string, QuizItemEx["difficulty"]>();
+  for (const { question } of classified) {
+    const key = questionKey(question);
+    if (result.has(key)) throw new Error(`base difficulty key가 중복입니다: ${key}`);
+    result.set(key, question.difficulty);
+  }
+  return result;
+}
+
 export function matchOfficialSolutions(
   entry: Pick<CorpusManifestEntry, "subject">,
   classified: ClassifiedQuestion[],
-  solutions: SolutionItem[]
+  solutions: SolutionItem[],
+  baseDifficultyByKey: ReadonlyMap<string, QuizItemEx["difficulty"]>
 ): ImportedQuestion[] {
+  const effectiveKeys = classified.map(({ question }) => questionKey(question));
+  const effectiveKeySet = new Set(effectiveKeys);
+  if (effectiveKeySet.size !== effectiveKeys.length) throw new Error("effective difficulty key가 중복입니다");
+  if (
+    baseDifficultyByKey.size !== effectiveKeySet.size ||
+    effectiveKeys.some((key) => !baseDifficultyByKey.has(key)) ||
+    [...baseDifficultyByKey.keys()].some((key) => !effectiveKeySet.has(key))
+  ) throw new Error("base difficulty key 집합이 effective corpus와 다릅니다");
   const byNumber = officialSolutionsByNumber(entry, classified, solutions);
   return classified.flatMap(({ question, classification }) => {
+    const key = questionKey(question);
+    const difficulty = baseDifficultyByKey.get(key)!;
+    if (difficulty !== "하" && difficulty !== "중" && difficulty !== "상") {
+      throw new Error(`${key} base difficulty가 유효하지 않습니다`);
+    }
     const number = numericPrintedLocator(question.number)!;
     const solution = byNumber.get(number);
     if (!solution) throw new Error(`${number}번 공식 해설이 없습니다`);
@@ -8665,6 +8691,7 @@ export function matchOfficialSolutions(
     if (!solution.explanation.trim()) throw new Error(`${number}번 공식 해설 본문이 비어 있습니다`);
     return [{
       ...question,
+      difficulty,
       printedNumber: String(number),
       officialAnswer: officialAnswerForStorage(question, solution.answer),
       officialExplanation: solution.explanation,
@@ -9184,6 +9211,7 @@ async function processEntry(
   });
 
   let classified = await extractAndClassifyProblems(entry, problem, stateDir);
+  const baseDifficultyByKey = baseDifficultyByQuestionKey(classified);
   validateProblemNumberRange(entry, classified);
   const solutions = await extractSolutions(solution, stateDir);
   const answerAudit = await repairAndAuditOfficialAnswers(
@@ -9231,7 +9259,7 @@ async function processEntry(
   if (!answerAudit.auditPath || !answerAudit.auditHash) {
     throw new Error("accepted corpus의 terminal answer audit이 없습니다");
   }
-  const imported = matchOfficialSolutions(entry, classified, answerAudit.solutions);
+  const imported = matchOfficialSolutions(entry, classified, answerAudit.solutions, baseDifficultyByKey);
   const receipt = {
     version: 2,
     status: "committed",

@@ -33,6 +33,7 @@ import {
   TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
   assertNoCommittedReceiptForFilteredResult,
   assertNoReceiptResultConflict,
+  baseDifficultyByQuestionKey,
   canonicalEvidenceHash,
   matchOfficialSolutions,
   parseCorpusManifest,
@@ -612,7 +613,12 @@ describe("exam corpus targeted problem repair", () => {
     expect(repaired.classified[10].question.question).toContain("$[3점]$");
     expect(repaired.classified[10].question.question).not.toContain("만나게");
     expect(repaired.classified[10].question.figure_description).toContain("x축 눈금 1");
-    const imported = matchOfficialSolutions(entry, repaired.classified, repaired.solutions);
+    const imported = matchOfficialSolutions(
+      entry,
+      repaired.classified,
+      repaired.solutions,
+      baseDifficultyByQuestionKey(classified)
+    );
     expect(imported.some((item) => item.printedNumber === "11")).toBe(false);
     expect(imported).toHaveLength(1);
     expect(readdirSync(join(root, "semantic-choice-checks"))[0]).toMatch(/^v5-/u);
