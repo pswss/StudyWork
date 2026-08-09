@@ -66,7 +66,7 @@ function copyAuthority(relativePath: string): void {
 describe("Q5 exact allowlisted revision-parent scope adjudication", () => {
   it("pins the two official sources, revision parents, and rejecting terminal", () => {
     expect(PROBLEM_REVISION_SCOPE_ADJUDICATION_VERSION).toBe(1);
-    expect(PROBLEM_REVISION_SCOPE_ADJUDICATION_ALLOWLIST).toEqual([{
+    expect(PROBLEM_REVISION_SCOPE_ADJUDICATION_ALLOWLIST).toContainEqual({
       allowlistId: "ebsi-5854872-q5-revision-scope-v1",
       entryId: "ebsi:5854872",
       key: "1:5",
@@ -76,7 +76,7 @@ describe("Q5 exact allowlisted revision-parent scope adjudication", () => {
       parentProblemArtifactHash: "da793744650ed65a79de220d4e51f746cecb39b9e932aa6829a39a977edcd7a0",
       parentClassificationArtifactHash: "84e8fb1957108e36433a5afae777dc230d0cab3dee0a5cb18481a5010247cdf5",
       terminalArtifactHash: "59fe7d9b37963f6dfc84f47815aba628492d3c468e06a8ab1fff330236aa37a4",
-    }]);
+    });
   });
 
   it.skipIf(!available)(

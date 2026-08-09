@@ -1310,6 +1310,16 @@ export const PROBLEM_REVISION_SCOPE_ADJUDICATION_ALLOWLIST: readonly ProblemScop
   parentProblemArtifactHash: "da793744650ed65a79de220d4e51f746cecb39b9e932aa6829a39a977edcd7a0",
   parentClassificationArtifactHash: "84e8fb1957108e36433a5afae777dc230d0cab3dee0a5cb18481a5010247cdf5",
   terminalArtifactHash: "59fe7d9b37963f6dfc84f47815aba628492d3c468e06a8ab1fff330236aa37a4",
+}, {
+  allowlistId: "ebsi-5875878-q30-revision-scope-v1",
+  entryId: "ebsi:5875878",
+  key: "12:30",
+  sourcePage: 12,
+  sourceHash: "6b554bbb4cfbe16d492c76be41793d64d5fa0fdaae1aaf109aafee3bab99ea59",
+  solutionSourceHash: "223c02f244c22c598e0cb72285d611c03695c133c29000b9dceb5068c43b701d",
+  parentProblemArtifactHash: "2dd552325794fc05dc07f584edc440cf7e948462e6eeb1260efee7d507c62a9e",
+  parentClassificationArtifactHash: "ee67e5c39a90b391b32b1779f00e3e86e2189571cc82d50741cfec00f4d9dd81",
+  terminalArtifactHash: "25f8d116b90e7a17e768a264bce2d72dc0e426e178e71ac27b37bbd650f3e521",
 }] as const;
 
 type ProblemCropAdjudicationSpec = {
