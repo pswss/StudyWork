@@ -288,9 +288,12 @@ const PROBLEM_MANUAL_CORRECTION_DIGEST =
   "a116ca7dd3fb35028db717aac3aa09e78d7c7671ab5ca9ecdaa3364bdb397b46";
 const PROBLEM_SCOPE_ADJUDICATION_VERSION = 1;
 const PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION = 1;
+const PROBLEM_REVISION_SCOPE_ADJUDICATION_VERSION = 1;
 const PROBLEM_SCOPE_ADJUDICATION_PROMPT_DIGEST =
   "cec5be77bf9745d05593e497842a3642c8a30c1ef1105ba1940f0a74fad3124e";
 const PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST =
+  "cec5be77bf9745d05593e497842a3642c8a30c1ef1105ba1940f0a74fad3124e";
+const PROBLEM_REVISION_SCOPE_ADJUDICATION_PROMPT_DIGEST =
   "cec5be77bf9745d05593e497842a3642c8a30c1ef1105ba1940f0a74fad3124e";
 const PROBLEM_CROP_DPI = 300;
 const PROBLEM_SLICE_PAGES = 20;
@@ -456,6 +459,9 @@ type ProblemScopeAdjudicationSpec = {
   sourcePage: number;
   sourceHash: string;
   solutionSourceHash: string;
+  parentProblemArtifactHash?: string;
+  parentClassificationArtifactHash?: string;
+  terminalArtifactHash?: string;
 };
 
 type ProblemManualReplacement = {
@@ -501,6 +507,28 @@ const PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST: readonly ProblemScopeAdjudica
   sourcePage: 12,
   sourceHash: "b164d4dc867f0790525ca7ddae3c1003113f454c4d015f161db3d5ec4a1c9fc2",
   solutionSourceHash: "1aff1dcfcb4954d355661ebe03f823d1d4227db1339f604f2391ce0673552557",
+}] as const;
+
+const PROBLEM_REVISION_SCOPE_ADJUDICATION_ALLOWLIST: readonly ProblemScopeAdjudicationSpec[] = [{
+  allowlistId: "ebsi-5854872-q5-revision-scope-v1",
+  entryId: "ebsi:5854872",
+  key: "1:5",
+  sourcePage: 1,
+  sourceHash: "983b160d8149a02aadc8be8e2f6791fb3ed0db7e0055f3be0929fc8029556b47",
+  solutionSourceHash: "005b3a21fe032c74f63604f7d6dc68099f22dff0d2981a85a2fb6179435d5a7c",
+  parentProblemArtifactHash: "da793744650ed65a79de220d4e51f746cecb39b9e932aa6829a39a977edcd7a0",
+  parentClassificationArtifactHash: "84e8fb1957108e36433a5afae777dc230d0cab3dee0a5cb18481a5010247cdf5",
+  terminalArtifactHash: "59fe7d9b37963f6dfc84f47815aba628492d3c468e06a8ab1fff330236aa37a4",
+}, {
+  allowlistId: "ebsi-5875878-q30-revision-scope-v1",
+  entryId: "ebsi:5875878",
+  key: "12:30",
+  sourcePage: 12,
+  sourceHash: "6b554bbb4cfbe16d492c76be41793d64d5fa0fdaae1aaf109aafee3bab99ea59",
+  solutionSourceHash: "223c02f244c22c598e0cb72285d611c03695c133c29000b9dceb5068c43b701d",
+  parentProblemArtifactHash: "2dd552325794fc05dc07f584edc440cf7e948462e6eeb1260efee7d507c62a9e",
+  parentClassificationArtifactHash: "ee67e5c39a90b391b32b1779f00e3e86e2189571cc82d50741cfec00f4d9dd81",
+  terminalArtifactHash: "25f8d116b90e7a17e768a264bce2d72dc0e426e178e71ac27b37bbd650f3e521",
 }] as const;
 
 const PROBLEM_CROP_ADJUDICATION_ALLOWLIST: readonly ProblemCropAdjudicationSpec[] = [
@@ -821,6 +849,10 @@ export function manualAdjudicationAllowlistFingerprint(): string {
 
 export function repairScopeAdjudicationAllowlistFingerprint(): string {
   return canonicalEvidenceHash(PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST);
+}
+
+export function revisionScopeAdjudicationAllowlistFingerprint(): string {
+  return canonicalEvidenceHash(PROBLEM_REVISION_SCOPE_ADJUDICATION_ALLOWLIST);
 }
 
 export function solutionPromptUpgradeAllowlistFingerprint(): string {
@@ -2316,6 +2348,9 @@ function verifyProblemTerminalFidelity(
       }
       if (repair.revision === undefined) continue;
       const revision = object(repair.revision, `answer audit repairs[${index}].revision`);
+      if (revision.scopeAdjudication !== undefined) {
+        scopeAdjudicatedKeys.add(exactString(repair.key, `answer audit repairs[${index}].key`));
+      }
       if (revision.recovery === undefined) continue;
       const recovery = object(revision.recovery, `answer audit repairs[${index}].revision.recovery`);
       if (recovery.scopeAdjudication !== undefined || recovery.manualAdjudication !== undefined) {
@@ -2842,6 +2877,7 @@ function verifyProblemRecoveryCoverage(
   const declaredCrop = new Set<string>();
   const declaredScope = new Set<string>();
   const declaredRepairScope = new Set<string>();
+  const declaredRevisionScope = new Set<string>();
   const declaredManual = new Set<string>();
   for (const [index, value] of values.entries()) {
     const repair = object(value, `answer audit repairs[${index}]`);
@@ -2865,6 +2901,25 @@ function verifyProblemRecoveryCoverage(
     }
     if (repair.revision === undefined) continue;
     const revision = object(repair.revision, `answer audit repairs[${index}].revision`);
+    if (revision.scopeAdjudication !== undefined) {
+      if (contract.auditVersion !== 5 || repair.scopeAdjudication !== undefined
+        || revision.recovery !== undefined) {
+        throw new Error("problem revision scope adjudication requires answer audit v5 and no other terminal child");
+      }
+      const adjudication = object(
+        revision.scopeAdjudication,
+        `answer audit repairs[${index}].revision.scopeAdjudication`,
+      );
+      const envelope = object(adjudication.classificationArtifact, "problem revision scope classification artifact");
+      const pointer = evidencePointer(
+        { path: envelope.path, sha256: envelope.sha256 },
+        "problem revision scope classification artifact",
+      );
+      if (declaredRevisionScope.has(pointer.path)) {
+        throw new Error(`${pointer.path}: duplicate revision scope adjudication authority`);
+      }
+      declaredRevisionScope.add(pointer.path);
+    }
     if (revision.recovery === undefined) continue;
     if (contract.auditVersion < 4) throw new Error("problem recovery requires answer audit v4 or newer");
     const recovery = object(revision.recovery, `answer audit repairs[${index}].revision.recovery`);
@@ -3052,6 +3107,32 @@ function verifyProblemRecoveryCoverage(
   for (const path of declaredRepairScope) {
     if (!existsSync(join(stateDir, path))) {
       throw new Error(`${path}: declared repair scope adjudication artifact is missing`);
+    }
+  }
+  const revisionScopeDirectory = join(stateDir, "classification-revision-scope-adjudications");
+  if (existsSync(revisionScopeDirectory)) {
+    for (const entry of readdirSync(revisionScopeDirectory, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name))) {
+      if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
+      if (!entry.isFile() || entry.isSymbolicLink()) {
+        throw new Error(
+          `classification-revision-scope-adjudications/${entry.name}: revision scope artifact must be a regular file`,
+        );
+      }
+      if (!/^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(entry.name)) {
+        throw new Error(
+          `classification-revision-scope-adjudications/${entry.name}: malformed revision scope artifact name`,
+        );
+      }
+      const path = `classification-revision-scope-adjudications/${entry.name}`;
+      if (!declaredRevisionScope.has(path)) {
+        throw new Error(`${path}: revision scope adjudication artifact is not declared by the terminal audit`);
+      }
+    }
+  }
+  for (const path of declaredRevisionScope) {
+    if (!existsSync(join(stateDir, path))) {
+      throw new Error(`${path}: declared revision scope adjudication artifact is missing`);
     }
   }
   for (const [directory, patterns] of [
@@ -4068,6 +4149,24 @@ function problemRepairScopeAdjudicationSpec(
   return matches[0];
 }
 
+function problemRevisionScopeAdjudicationSpec(
+  entry: ManifestEntry,
+  key: string,
+  sourcePage: number,
+  sourceHash: string,
+  solutionSourceHash: string,
+): ProblemScopeAdjudicationSpec {
+  const matches = PROBLEM_REVISION_SCOPE_ADJUDICATION_ALLOWLIST.filter((spec) =>
+    spec.entryId === entry.id && spec.key === key && spec.sourcePage === sourcePage);
+  if (matches.length !== 1) {
+    throw new Error(`${entry.id} ${key}: revision scope adjudication is not uniquely allowlisted`);
+  }
+  if (matches[0].sourceHash !== sourceHash || matches[0].solutionSourceHash !== solutionSourceHash) {
+    throw new Error(`${entry.id} ${key}: official revision scope sources do not match the allowlist`);
+  }
+  return matches[0];
+}
+
 function verifyProblemScopeAdjudication(
   value: unknown,
   parentRecovery: Record<string, unknown>,
@@ -4378,37 +4477,59 @@ function verifyProblemRepairScopeAdjudication(
   rulesDigest: string,
   cache: EvidenceCache,
   contract: VerificationContract,
+  revisionParent?: V3RevisionVerification,
 ): {
   classified: ClassifiedEvidence;
   evidence: Record<string, unknown>;
   generation: { key: string; current: ClassifiedEvidence; checkpoint: ProblemTerminalFidelityCheckpoint };
 } {
-  const current = first.classified;
+  const current = revisionParent?.classified ?? first.classified;
   const key = current.question.key;
+  const revisionMode = revisionParent !== undefined;
+  const rawRevision = first.row.raw.revision === undefined
+    ? null
+    : object(first.row.raw.revision, `${key}.revision`);
   if (contract.auditVersion !== 5
     || contract.problemTerminalFidelityVersion !== PROBLEM_TERMINAL_FIDELITY_VERSION
     || current.classification.transcription_status !== "exact"
-    || current.classification.decision !== "accept" || first.row.raw.revision !== undefined) {
-    throw new Error(`${key}: repair scope adjudication requires one current exact accept first repair`);
+    || current.classification.decision !== "accept"
+    || (!revisionMode && rawRevision !== null)
+    || (revisionMode && (rawRevision === null || rawRevision.recovery !== undefined))) {
+    throw new Error(`${key}: repair/revision scope adjudication requires one current exact accept parent`);
   }
-  const spec = problemRepairScopeAdjudicationSpec(
-    entry,
-    key,
-    current.question.page,
-    problemEvidence.sha256,
-    solutionEvidence.sha256,
-  );
+  const spec = revisionMode
+    ? problemRevisionScopeAdjudicationSpec(
+        entry,
+        key,
+        current.question.page,
+        problemEvidence.sha256,
+        solutionEvidence.sha256,
+      )
+    : problemRepairScopeAdjudicationSpec(
+        entry,
+        key,
+        current.question.page,
+        problemEvidence.sha256,
+        solutionEvidence.sha256,
+      );
   if (problemEvidence.pageCount > PROBLEM_SLICE_PAGES
     || first.row.contextFrom !== 1 || first.row.contextTo !== problemEvidence.pageCount) {
     throw new Error(`${key}: repair scope problem context is not the exact bounded source`);
   }
   const adjudication = object(value, `${key}.scopeAdjudication`);
-  const parentRepair = first.evidence;
+  const parentRevision = revisionParent?.evidence;
+  const parentRepair = parentRevision === undefined
+    ? first.evidence
+    : { ...first.evidence, revision: parentRevision };
   const parentRepairEvidenceHash = canonicalEvidenceHash(parentRepair);
+  const parentRevisionEvidenceHash = parentRevision === undefined
+    ? undefined
+    : canonicalEvidenceHash(parentRevision);
   if (adjudication.parentRecoveryEvidenceHash !== undefined
     || adjudication.parentRepairEvidenceHash !== parentRepairEvidenceHash
-    || parentRepair.effectiveQuestionHash !== canonicalEvidenceHash(current.question.evidence)
-    || parentRepair.effectiveClassificationHash !== canonicalEvidenceHash(current.classification)) {
+    || adjudication.parentRevisionEvidenceHash !== parentRevisionEvidenceHash
+    || (parentRevision ?? parentRepair).effectiveQuestionHash !== canonicalEvidenceHash(current.question.evidence)
+    || (parentRevision ?? parentRepair).effectiveClassificationHash !== canonicalEvidenceHash(current.classification)) {
     throw new Error(`${key}: repair scope adjudication parent repair hash is stale`);
   }
 
@@ -4417,6 +4538,25 @@ function verifyProblemRepairScopeAdjudication(
     triggerRow.terminalCheckpoint,
     `${key}.repairScopeAdjudication.trigger.terminalCheckpoint`,
   );
+  if (parentRevision !== undefined) {
+    const parentProblemArtifact = evidencePointer(
+      parentRevision.problemArtifact,
+      `${key}.revisionScopeAdjudication.parentProblemArtifact`,
+    );
+    const parentClassificationEnvelope = object(
+      parentRevision.classificationArtifact,
+      `${key}.revisionScopeAdjudication.parentClassificationArtifact`,
+    );
+    const parentClassificationArtifact = evidencePointer(
+      { path: parentClassificationEnvelope.path, sha256: parentClassificationEnvelope.sha256 },
+      `${key}.revisionScopeAdjudication.parentClassificationArtifact`,
+    );
+    if (parentProblemArtifact.sha256 !== spec.parentProblemArtifactHash
+      || parentClassificationArtifact.sha256 !== spec.parentClassificationArtifactHash
+      || terminalCheckpoint.sha256 !== spec.terminalArtifactHash) {
+      throw new Error(`${key}: revision scope pinned parent/terminal hash is stale`);
+    }
+  }
   const pathMatch = new RegExp(
     `^problem-terminal-fidelity/v${PROBLEM_TERMINAL_FIDELITY_VERSION}-(\\d{4})-` +
       "([a-f0-9]{64})-([a-f0-9]{64})\\.json$",
@@ -4549,11 +4689,21 @@ function verifyProblemRepairScopeAdjudication(
     baseSolutionItemHash: canonicalEvidenceHash(baseSolution.evidence),
     parentRepair,
     parentRepairEvidenceHash,
+    ...(parentRevisionEvidenceHash ? { parentRevisionEvidenceHash } : {}),
     trigger,
     baseQuestionHash: canonicalEvidenceHash(current.question.evidence),
     baseClassificationHash: canonicalEvidenceHash(current.classification),
   };
   const basisDigest = canonicalEvidenceHash(basis);
+  const adjudicationVersion = revisionMode
+    ? PROBLEM_REVISION_SCOPE_ADJUDICATION_VERSION
+    : PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION;
+  const adjudicationPromptDigest = revisionMode
+    ? PROBLEM_REVISION_SCOPE_ADJUDICATION_PROMPT_DIGEST
+    : PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST;
+  const adjudicationDirectory = revisionMode
+    ? "classification-revision-scope-adjudications"
+    : "classification-repair-scope-adjudications";
   const classificationEnvelope = object(
     adjudication.classificationArtifact,
     `${key}.repairScopeAdjudication.classificationArtifact`,
@@ -4563,16 +4713,16 @@ function verifyProblemRepairScopeAdjudication(
     || classificationEnvelope.rulesDigest !== rulesDigest
     || classificationEnvelope.transcriptionGateVersion !== contract.transcriptionGateVersion
     || classificationEnvelope.transcriptionPromptDigest !== contract.transcriptionPromptDigest
-    || classificationEnvelope.adjudicationPromptVersion !== PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION
-    || classificationEnvelope.adjudicationPromptDigest !== PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST) {
+    || classificationEnvelope.adjudicationPromptVersion !== adjudicationVersion
+    || classificationEnvelope.adjudicationPromptDigest !== adjudicationPromptDigest) {
     throw new Error(`${key}: repair scope classification envelope is stale`);
   }
   const classificationArtifact = evidencePointer(
     { path: classificationEnvelope.path, sha256: classificationEnvelope.sha256 },
     `${key}.repairScopeAdjudication.classificationArtifact`,
   );
-  const expectedPath = `classification-repair-scope-adjudications/` +
-    `v${PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION}-${String(current.question.page).padStart(4, "0")}-` +
+  const expectedPath = `${adjudicationDirectory}/` +
+    `v${adjudicationVersion}-${String(current.question.page).padStart(4, "0")}-` +
     `${current.question.printedNumber.padStart(4, "0")}-${basisDigest}-${rulesDigest}.json`;
   if (classificationArtifact.path !== expectedPath) {
     throw new Error(`${key}: repair scope classification path is stale`);
@@ -4593,7 +4743,7 @@ function verifyProblemRepairScopeAdjudication(
     `${key}.repairScopeAdjudication.classification.items[0]`,
   );
   const expectedCheckpoint = {
-    version: PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION,
+    version: adjudicationVersion,
     entryId: entry.id,
     basisDigest,
     basis,
@@ -4601,8 +4751,8 @@ function verifyProblemRepairScopeAdjudication(
     rulesDigest,
     transcriptionGateVersion: contract.transcriptionGateVersion,
     transcriptionPromptDigest: contract.transcriptionPromptDigest,
-    adjudicationPromptVersion: PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION,
-    adjudicationPromptDigest: PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST,
+    adjudicationPromptVersion: adjudicationVersion,
+    adjudicationPromptDigest,
     model: "gpt-5.6-sol",
     reasoningEffort: "high",
     items: [classification],
@@ -4630,14 +4780,15 @@ function verifyProblemRepairScopeAdjudication(
     baseSolutionCheckpoint,
     baseSolutionItemHash: canonicalEvidenceHash(baseSolution.evidence),
     parentRepairEvidenceHash,
+    ...(parentRevisionEvidenceHash ? { parentRevisionEvidenceHash } : {}),
     trigger,
     classificationArtifact: {
       ...classificationArtifact,
       rulesDigest,
       transcriptionGateVersion: contract.transcriptionGateVersion,
       transcriptionPromptDigest: contract.transcriptionPromptDigest,
-      adjudicationPromptVersion: PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION,
-      adjudicationPromptDigest: PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST,
+      adjudicationPromptVersion: adjudicationVersion,
+      adjudicationPromptDigest,
     },
     classificationArtifactItemHash,
     baseQuestionHash: canonicalEvidenceHash(current.question.evidence),
@@ -5316,7 +5467,11 @@ function verifyV3RevisionArtifacts(
         throw new Error(`${key}: non-exact problem revision has no recovery`);
       }
       const expectedEvidence = recovery === null ? evidence : { ...evidence, recovery: recovery.evidence };
-      if (!isDeepStrictEqual(row.raw, expectedEvidence)) {
+      if (row.raw.scopeAdjudication !== undefined && recovery !== null) {
+        throw new Error(`${key}: revision cannot combine recovery and scope adjudication`);
+      }
+      const { scopeAdjudication: _scopeAdjudication, ...parentRevision } = row.raw;
+      if (!isDeepStrictEqual(parentRevision, expectedEvidence)) {
         throw new Error(`${key}: revision evidence envelope does not match its exact shared chain`);
       }
       result.set(key, {
@@ -5699,6 +5854,32 @@ function applyDeclaredRepairsV3(
       contract,
     );
     for (const [key, value] of terminalRevisionResults) records.set(key, value.classified);
+  }
+
+  for (const value of first.values()) {
+    if (value.row.raw.revision === undefined) continue;
+    const rawRevision = object(value.row.raw.revision, `${value.row.key}.revision`);
+    if (rawRevision.scopeAdjudication === undefined) continue;
+    const revisionParent = classificationRevisionResults.get(value.row.key)
+      ?? terminalRevisionResults.get(value.row.key);
+    if (!revisionParent) throw new Error(`${value.row.key}: revision scope parent authority is missing`);
+    const scope = verifyProblemRepairScopeAdjudication(
+      rawRevision.scopeAdjudication,
+      value,
+      stateDir,
+      entry,
+      problemEvidence,
+      solutionEvidence,
+      rulesDigest,
+      cache,
+      contract,
+      revisionParent,
+    );
+    revisionParent.preScopeClassified = revisionParent.classified;
+    revisionParent.classified = scope.classified;
+    revisionParent.scopeAdjudicationGeneration = scope.generation;
+    revisionParent.evidence = { ...revisionParent.evidence, scopeAdjudication: scope.evidence };
+    records.set(value.row.key, scope.classified);
   }
 
   verifyV3TerminalRecoveryGenerations(
@@ -8570,6 +8751,10 @@ function selectVerificationContract(
   const repairScopeAdjudicationSignal = existsSync(repairScopeAdjudicationDirectory)
     && readdirSync(repairScopeAdjudicationDirectory, { withFileTypes: true }).some((entry) =>
       !(entry.isFile() && entry.name.endsWith(".tmp")));
+  const revisionScopeAdjudicationDirectory = join(stateDir, "classification-revision-scope-adjudications");
+  const revisionScopeAdjudicationSignal = existsSync(revisionScopeAdjudicationDirectory)
+    && readdirSync(revisionScopeAdjudicationDirectory, { withFileTypes: true }).some((entry) =>
+      !(entry.isFile() && entry.name.endsWith(".tmp")));
   const manualAdjudicationSignal = [
     "problem-manual-evidence",
     "problem-manual-adjudications",
@@ -8585,6 +8770,7 @@ function selectVerificationContract(
     || listJson(join(stateDir, "answer-attestation"), /^v5-.*\.json$/u).length > 0
     || scopeAdjudicationSignal
     || repairScopeAdjudicationSignal
+    || revisionScopeAdjudicationSignal
     || manualAdjudicationSignal
     || hasPersistedSolutionGenerationSignal(stateDir)
   );
