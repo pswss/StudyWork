@@ -45,6 +45,7 @@ import {
   existingCorpusMigrationAllowlistFingerprint,
   manualAdjudicationAllowlistFingerprint,
   officialAnswerForDb,
+  positiveRepairScopeAdjudicationAllowlistFingerprint,
   repairScopeAdjudicationAllowlistFingerprint,
   revisionScopeAdjudicationAllowlistFingerprint,
   runCli,
@@ -63,6 +64,9 @@ import {
   PROBLEM_MANUAL_CORRECTION_DIGEST,
   PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST,
   PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST,
+  PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_ALLOWLIST,
+  PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_PROMPT_DIGEST,
+  PROBLEM_REPAIR_POSITIVE_SCOPE_AUTHORITY_REASON_CODE,
   PROBLEM_REVISION_SCOPE_ADJUDICATION_ALLOWLIST,
   PROBLEM_REVISION_SCOPE_ADJUDICATION_PROMPT_DIGEST,
   SOLUTION_PROMPT_UPGRADE_ALLOWLIST,
@@ -225,9 +229,12 @@ const Q26_REPAIR_SCOPE_SPEC = PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST.find((
   spec.entryId === "ebsi:5643101")!;
 const Q30_REPAIR_SCOPE_SPEC = PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5696441")!;
+const Q10_POSITIVE_REPAIR_SCOPE_SPEC = PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_ALLOWLIST[0];
 const REPAIR_SCOPE_STATES = new Map([
   [Q26_REPAIR_SCOPE_SPEC.entryId, join(process.cwd(), "data/import-exam-corpus/5a72e90edfe68c75f79ce8ef")],
   [Q30_REPAIR_SCOPE_SPEC.entryId, join(process.cwd(), "data/import-exam-corpus/8166de955e4bb324c5a7b92b")],
+  [Q10_POSITIVE_REPAIR_SCOPE_SPEC.entryId,
+    join(process.cwd(), "data/import-exam-corpus/88ece0f684366acb34508a33")],
 ]);
 const REVISION_SCOPE_CASES = [{
   id: "science" as const,
@@ -1225,7 +1232,8 @@ function prepareQ11ScopeFixture(files: ReturnType<typeof fixture>): void {
 
 function prepareRepairScopeFixture(
   files: ReturnType<typeof fixture>,
-  spec: (typeof PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST)[number],
+  spec: (typeof PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST)[number]
+    | (typeof PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_ALLOWLIST)[number],
 ): void {
   const officialState = REPAIR_SCOPE_STATES.get(spec.entryId);
   if (!officialState) throw new Error(`missing repair-scope fixture state for ${spec.entryId}`);
@@ -2223,8 +2231,12 @@ function upgradeEntryToV3(
   if (options.scopeAdjudication && entry.id !== Q11_SCOPE_SPEC.entryId) {
     throw new Error("scope adjudication fixture requires the exact Q11 entry");
   }
+  const positiveRepairScopeSpec = options.repairScopeAdjudication
+    ? PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_ALLOWLIST.find((spec) => spec.entryId === entry.id)
+    : undefined;
   const repairScopeSpec = options.repairScopeAdjudication
     ? PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST.find((spec) => spec.entryId === entry.id)
+      ?? positiveRepairScopeSpec
     : undefined;
   if (options.repairScopeAdjudication && !repairScopeSpec) {
     throw new Error("repair scope adjudication fixture requires an exact allowlisted entry");
@@ -2441,8 +2453,21 @@ function upgradeEntryToV3(
       };
       return member;
     }).sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+    const positiveOfficialQuestion = positiveRepairScopeSpec ? readdirSync(join(
+      REPAIR_SCOPE_STATES.get(positiveRepairScopeSpec.entryId)!,
+      "problem-repair-batches",
+    )).sort().map((name) => JSON.parse(readFileSync(join(
+      REPAIR_SCOPE_STATES.get(positiveRepairScopeSpec.entryId)!,
+      "problem-repair-batches",
+      name,
+    ), "utf8")).items as Array<Record<string, unknown>>).flat()
+      .find((item) => String(item.number) === String(recoveryTargetNumber)
+        && item.qtype === "mcq" && String(item.question).includes("[3점]")) : undefined;
     const corrected = members.map((member) => {
       const number = Number(member.printedNumber);
+      if (positiveOfficialQuestion && number === recoveryTargetNumber) {
+        return structuredClone(positiveOfficialQuestion);
+      }
       return {
         ...problemCheckpoint.items[number - 1],
         question: options.difficultyRepair
@@ -2506,15 +2531,25 @@ function upgradeEntryToV3(
       const number = Number(member.printedNumber);
       return {
         ...classification.items[number - 1],
-        ...(options.repairScopeAdjudication && number === recoveryTargetNumber ? {
-          decision: "accept",
-          canonical_subject: "math_B",
-          curriculum_course: "2015 수학Ⅰ",
-          domain: "지수함수와 로그함수",
-          achievement_codes: ["12수학Ⅰ01-07"],
-          reason_codes: ["IN_SCOPE_LOGARITHMS"],
-          confidence: 0.99,
-        } : {}),
+        ...(options.repairScopeAdjudication && number === recoveryTargetNumber
+          ? positiveRepairScopeSpec ? {
+              decision: "accept",
+              canonical_subject: "math_A",
+              curriculum_course: "2015 수학Ⅱ",
+              domain: "적분",
+              achievement_codes: ["12수학Ⅱ03-04"],
+              reason_codes: ["IN_SCOPE_RIEMANN_SUM_DEFINITION"],
+              confidence: 0.99,
+            } : {
+              decision: "accept",
+              canonical_subject: "math_B",
+              curriculum_course: "2015 수학Ⅰ",
+              domain: "지수함수와 로그함수",
+              achievement_codes: ["12수학Ⅰ01-07"],
+              reason_codes: ["IN_SCOPE_LOGARITHMS"],
+              confidence: 0.99,
+            }
+          : {}),
         transcription_status: (options.classificationRevision || options.problemRecovery || options.cropAdjudication
           || options.scopeAdjudication || options.manualAdjudication)
           && number === recoveryTargetNumber
@@ -2696,6 +2731,14 @@ function upgradeEntryToV3(
       baseSolutionItemHash: canonicalEvidenceHash(baseSolutionItem),
       parentRepair,
       parentRepairEvidenceHash,
+      ...(positiveRepairScopeSpec ? {
+        scopeAuthority: {
+          decision: "accept",
+          canonicalSubject: positiveRepairScopeSpec.expectedCanonicalSubject,
+          allowedAchievementCodes: [...positiveRepairScopeSpec.allowedAchievementCodes],
+          requiredReasonCode: PROBLEM_REPAIR_POSITIVE_SCOPE_AUTHORITY_REASON_CODE,
+        },
+      } : {}),
       trigger,
       baseQuestionHash: canonicalEvidenceHash(currentQuestion),
       baseClassificationHash: canonicalEvidenceHash(currentClassification),
@@ -2703,17 +2746,37 @@ function upgradeEntryToV3(
     const basisDigest = canonicalEvidenceHash(basis);
     const finalClassification = {
       ...currentClassification,
-      decision: "reject",
-      canonical_subject: null,
-      curriculum_course: null,
-      domain: null,
-      achievement_codes: [],
+      ...(positiveRepairScopeSpec ? {
+        decision: "accept",
+        canonical_subject: positiveRepairScopeSpec.expectedCanonicalSubject,
+        curriculum_course: "2015 수학Ⅱ",
+        domain: "적분",
+        achievement_codes: [...positiveRepairScopeSpec.allowedAchievementCodes],
+        reason_codes: [
+          "IN_SCOPE_RIEMANN_SUM_DEFINITION",
+          PROBLEM_REPAIR_POSITIVE_SCOPE_AUTHORITY_REASON_CODE,
+        ],
+      } : {
+        decision: "reject",
+        canonical_subject: null,
+        curriculum_course: null,
+        domain: null,
+        achievement_codes: [],
+        reason_codes: ["OUT_OF_SCOPE"],
+      }),
       confidence: 0.99,
-      reason_codes: ["OUT_OF_SCOPE"],
       transcription_status: "exact",
-      transcription_evidence: "the exact source is outside the canonical target curriculum",
+      transcription_evidence: positiveRepairScopeSpec
+        ? "the exact source states the in-scope Riemann-sum definition"
+        : "the exact source is outside the canonical target curriculum",
     };
-    const classificationRelativePath = `classification-repair-scope-adjudications/v1-` +
+    const classificationDirectory = positiveRepairScopeSpec
+      ? "classification-repair-positive-scope-adjudications"
+      : "classification-repair-scope-adjudications";
+    const adjudicationPromptDigest = positiveRepairScopeSpec
+      ? PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_PROMPT_DIGEST
+      : PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST;
+    const classificationRelativePath = `${classificationDirectory}/v1-` +
       `${String(recoveryTargetPage).padStart(4, "0")}-` +
       `${String(recoveryTargetNumber).padStart(4, "0")}-${basisDigest}-${DIGEST}.json`;
     const classificationHash = writeEvidence(join(stateDir, classificationRelativePath), {
@@ -2726,7 +2789,7 @@ function upgradeEntryToV3(
       transcriptionGateVersion: 2,
       transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
       adjudicationPromptVersion: 1,
-      adjudicationPromptDigest: PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST,
+      adjudicationPromptDigest,
       model: "gpt-5.6-sol",
       reasoningEffort: "high",
       items: [finalClassification],
@@ -2755,7 +2818,7 @@ function upgradeEntryToV3(
         transcriptionGateVersion: 2,
         transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
         adjudicationPromptVersion: 1,
-        adjudicationPromptDigest: PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST,
+        adjudicationPromptDigest,
       },
       classificationArtifactItemHash,
       baseQuestionHash: canonicalEvidenceHash(currentQuestion),
@@ -4137,9 +4200,10 @@ function upgradeEntryToV3(
       && options.terminalScope !== "accepted-scope-reject"
     ) || Boolean(options.mixedTerminalRecovery && number === 20);
     const acceptedScopeReject = number === 1 && options.terminalScope === "accepted-scope-reject";
+    const positiveScopeReject = positiveRepairScopeSpec?.key === input.key;
     const scopeDecision = targetReject && options.terminalScope === "scope-accept"
       ? "accept"
-      : acceptedScopeReject ? "reject" : classificationItem.decision;
+      : acceptedScopeReject || positiveScopeReject ? "reject" : classificationItem.decision;
     return {
       key: input.key,
       status: targetReject && options.terminalScope !== "terminal-exact" ? "mismatch" : "exact",
@@ -4218,6 +4282,41 @@ function upgradeEntryToV3(
     };
     return { key, solution, input, decision };
   })() : null;
+  const positiveAcceptedSolution = positiveRepairScopeSpec ? (() => {
+    const key = positiveRepairScopeSpec.key;
+    const relativePath = "solution-chunks/v3-0000.json";
+    const absolutePath = join(stateDir, relativePath);
+    const checkpoint = JSON.parse(readFileSync(absolutePath, "utf8"));
+    const solution = checkpoint.items.find(
+      (item: { number: string }) => item.number === String(recoveryTargetNumber),
+    );
+    const question = effectiveProblems[recoveryTargetNumber - 1];
+    const baseSolutionCheckpoint = { path: relativePath, sha256: hash(readFileSync(absolutePath)) };
+    const input = {
+      key,
+      printedNumber: String(recoveryTargetNumber),
+      qtype: question.qtype,
+      allowDerivedMarkerAnswer: true,
+      sourcePage: solution.page,
+      rawAnswer: solution.answer,
+      explanation: solution.explanation,
+      complete: true,
+      baseSolutionCheckpoint,
+      baseSolutionItemHash: canonicalEvidenceHash(solution),
+      baseContextFrom: checkpoint.from,
+      baseContextTo: checkpoint.to,
+      baseOwnedFrom: checkpoint.ownedFrom,
+      baseOwnedTo: checkpoint.ownedTo,
+    };
+    const decision = {
+      key,
+      sourcePage: solution.page,
+      answerStatus: "not_visible",
+      explanationStatus: "exact",
+      evidence: "the complete explanation is exact; its ordinal raw answer is not visible in this range",
+    };
+    return { key, question, solution, input, decision };
+  })() : null;
 
   const legacyAuditName = readdirSync(join(stateDir, "answer-audit"))
     .find((name) => name.startsWith("v2-"))!;
@@ -4275,6 +4374,15 @@ function upgradeEntryToV3(
             };
           })(),
         }));
+        if (positiveAcceptedSolution
+          && !child.inputs.some((input: Record<string, unknown>) => input.key === positiveAcceptedSolution.key)) {
+          child.inputs.push(positiveAcceptedSolution.input);
+          child.items.push(positiveAcceptedSolution.decision);
+          child.inputs.sort((left: { key: string }, right: { key: string }) =>
+            compareCorpusQuestionKeys(left.key, right.key));
+          child.items.sort((left: { key: string }, right: { key: string }) =>
+            compareCorpusQuestionKeys(left.key, right.key));
+        }
         for (const input of child.inputs as Array<Record<string, unknown>>) {
           fidelityInputByKey.set(String(input.key), input);
         }
@@ -4347,6 +4455,30 @@ function upgradeEntryToV3(
       baseExplanationHash: hash(manualAcceptedSolution.solution.explanation),
       effectiveExplanationHash: hash(manualAcceptedSolution.solution.explanation),
     }];
+  if (positiveAcceptedSolution) {
+    solutionFidelityItems.push({
+      key: positiveAcceptedSolution.key,
+      printedNumber: String(recoveryTargetNumber),
+      qtype: "mcq",
+      basePage: positiveAcceptedSolution.solution.page,
+      effectivePage: positiveAcceptedSolution.solution.page,
+      answerStatus: positiveAcceptedSolution.decision.answerStatus,
+      explanationStatus: positiveAcceptedSolution.decision.explanationStatus,
+      evidence: positiveAcceptedSolution.decision.evidence,
+      fidelityArtifact: {
+        path: solutionFidelityCheckpoints[0].path,
+        sha256: solutionFidelityCheckpoints[0].sha256,
+      },
+      baseSolutionItemHash: positiveAcceptedSolution.input.baseSolutionItemHash,
+      effectiveSolutionItemHash: positiveAcceptedSolution.input.baseSolutionItemHash,
+      baseRawAnswerHash: hash(positiveAcceptedSolution.solution.answer),
+      effectiveRawAnswerHash: hash(positiveAcceptedSolution.solution.answer),
+      baseExplanationHash: hash(positiveAcceptedSolution.solution.explanation),
+      effectiveExplanationHash: hash(positiveAcceptedSolution.solution.explanation),
+    });
+    solutionFidelityItems.sort((left: { key: string }, right: { key: string }) =>
+      compareCorpusQuestionKeys(left.key, right.key));
+  }
   const currentSolutionItems = readdirSync(join(stateDir, "solution-chunks"))
     .filter((name) => /^v3-\d{4}\.json$/u.test(name))
     .sort()
@@ -4361,20 +4493,46 @@ function upgradeEntryToV3(
   ).sort((left: { key: string }, right: { key: string }) =>
     compareCorpusQuestionKeys(left.key, right.key)));
   const semanticCheckpoint = (() => {
-    if (legacyAudit.semanticCheckpoint === null) return null;
-    const legacyPointer = legacyAudit.semanticCheckpoint as Record<string, unknown>;
-    const child = JSON.parse(readFileSync(join(stateDir, String(legacyPointer.path)), "utf8"));
+    if (legacyAudit.semanticCheckpoint === null && !positiveAcceptedSolution) return null;
+    const child = legacyAudit.semanticCheckpoint === null ? {
+      inputs: [],
+      items: [],
+    } : JSON.parse(readFileSync(
+      join(stateDir, String((legacyAudit.semanticCheckpoint as Record<string, unknown>).path)),
+      "utf8",
+    ));
+    if (positiveAcceptedSolution) {
+      child.inputs.push({
+        key: positiveAcceptedSolution.key,
+        choices: positiveAcceptedSolution.question.choices,
+        detailedExplanation: redactedExplanation(positiveAcceptedSolution.solution.explanation),
+      });
+      child.items.push({
+        key: positiveAcceptedSolution.key,
+        status: "resolved",
+        choiceIndex: 1,
+        evidence: "the official explanation evaluates the Riemann sum to 9, which is choice 1",
+      });
+      child.inputs.sort((left: { key: string }, right: { key: string }) =>
+        compareCorpusQuestionKeys(left.key, right.key));
+      child.items.sort((left: { key: string }, right: { key: string }) =>
+        compareCorpusQuestionKeys(left.key, right.key));
+      child.inputHash = canonicalEvidenceHash(child.inputs);
+    }
     const semanticVersion = options.answerV5 ? 5 : 4;
     child.version = semanticVersion;
     child.entryId = entry.id;
     child.problemHash = downloads.problem.sha256;
     child.solutionHash = downloads.solution.sha256;
     child.classifierVersion = 5;
+    child.rulesDigest = DIGEST;
     child.transcriptionGateVersion = 2;
     child.transcriptionPromptDigest = CURRENT_TRANSCRIPTION_PROMPT_DIGEST;
     child.effectiveCorpusHash = effectiveCorpusHash;
     child.effectiveSolutionCorpusHash = effectiveSolutionCorpusHash;
     child.promptDigest = options.answerV5 ? V5_SEMANTIC_PROMPT_DIGEST : CURRENT_SEMANTIC_PROMPT_DIGEST;
+    child.model = "gpt-5.6-sol";
+    child.reasoningEffort = "high";
     const relativePath = options.answerV5
       ? `semantic-choice-checks/v5-${effectiveCorpusHash}-` +
         `${effectiveSolutionCorpusHash}-${child.inputHash}.json`
@@ -4389,10 +4547,14 @@ function upgradeEntryToV3(
   })();
   const acceptedSolutionKeys = solutionFidelityItems.map((item: { key: string }) => item.key)
     .sort((left: string, right: string) => compareCorpusQuestionKeys(left, right));
-  const acceptedMcqKeys = manualAcceptedSolution === null
+  const acceptedMcqKeys = (manualAcceptedSolution === null
     ? legacyAudit.acceptedMcqKeys
-    : [manualAcceptedSolution.key];
-  const auditItems = manualAcceptedSolution === null
+    : [manualAcceptedSolution.key]) as string[];
+  if (positiveAcceptedSolution) {
+    acceptedMcqKeys.push(positiveAcceptedSolution.key);
+    acceptedMcqKeys.sort(compareCorpusQuestionKeys);
+  }
+  const auditItems = (manualAcceptedSolution === null
     ? legacyAudit.items
     : [{
       key: manualAcceptedSolution.key,
@@ -4403,7 +4565,25 @@ function upgradeEntryToV3(
       mode: "choice-content",
       choiceIndex: 3,
       semantic: null,
-    }];
+    }]) as Array<Record<string, unknown>>;
+  if (positiveAcceptedSolution) {
+    auditItems.push({
+      key: positiveAcceptedSolution.key,
+      printedNumber: String(recoveryTargetNumber),
+      sourcePage: recoveryTargetPage,
+      officialRawAnswerHash: hash(positiveAcceptedSolution.solution.answer),
+      storedAnswerHash: hash(positiveAcceptedSolution.solution.answer),
+      mode: "choice-marker",
+      choiceIndex: 1,
+      semantic: {
+        status: "resolved",
+        choiceIndex: 1,
+        evidence: "the official explanation evaluates the Riemann sum to 9, which is choice 1",
+      },
+    });
+    auditItems.sort((left, right) =>
+      compareCorpusQuestionKeys(String(left.key), String(right.key)));
+  }
   const auditBasis = {
     entryId: entry.id,
     problemHash: downloads.problem.sha256,
@@ -4421,13 +4601,18 @@ function upgradeEntryToV3(
     semanticChoiceVersion: options.answerV5 ? 5 : 4,
     semanticPromptDigest: options.answerV5 ? V5_SEMANTIC_PROMPT_DIGEST : CURRENT_SEMANTIC_PROMPT_DIGEST,
     sourceQuestionCount: legacyAudit.sourceQuestionCount,
-    acceptedQuestionCount: legacyAudit.acceptedQuestionCount,
-    rejectedQuestionCount: legacyAudit.rejectedQuestionCount,
+    acceptedQuestionCount: legacyAudit.acceptedQuestionCount + (positiveAcceptedSolution ? 1 : 0),
+    rejectedQuestionCount: legacyAudit.rejectedQuestionCount - (positiveAcceptedSolution ? 1 : 0),
     reviewQuestionCount: 0,
-    targetQuestionCounts: legacyAudit.targetQuestionCounts,
+    targetQuestionCounts: positiveAcceptedSolution ? {
+      ...legacyAudit.targetQuestionCounts,
+      "수학 - 수학Ⅱ·미적분Ⅰ": legacyAudit.targetQuestionCounts["수학 - 수학Ⅱ·미적분Ⅰ"] + 1,
+    } : legacyAudit.targetQuestionCounts,
     acceptedSolutionKeys,
     solutionRepairKeys: [],
-    derivedAnswerKeys: manualAcceptedSolution === null ? legacyAudit.derivedAnswerKeys : [],
+    derivedAnswerKeys: positiveAcceptedSolution
+      ? [...legacyAudit.derivedAnswerKeys, positiveAcceptedSolution.key].sort(compareCorpusQuestionKeys)
+      : manualAcceptedSolution === null ? legacyAudit.derivedAnswerKeys : [],
     acceptedMcqKeys,
     effectiveCorpusHash,
     effectiveSolutionCorpusHash,
@@ -4448,6 +4633,72 @@ function upgradeEntryToV3(
     ...auditBasis,
   });
   const receipt = JSON.parse(readFileSync(join(stateDir, "receipt.json"), "utf8"));
+  if (positiveAcceptedSolution) {
+    const target = receipt.targetBooks.find(
+      (value: { subject: string }) => value.subject === "수학 - 수학Ⅱ·미적분Ⅰ",
+    ) as { expectedQuestionCount: number; problemR2Key: string; solutionR2Key: string };
+    target.expectedQuestionCount += 1;
+    receipt.acceptedQuestionCount += 1;
+    receipt.rejectedQuestionCount -= 1;
+    const question = positiveAcceptedSolution.question;
+    const db = new Database(files.dbPath);
+    const problemFile = db.prepare("SELECT id, book_id FROM book_files WHERE r2_key = ?")
+      .get(target.problemR2Key) as { id: number; book_id: number };
+    const solutionFile = db.prepare("SELECT id FROM book_files WHERE r2_key = ?")
+      .get(target.solutionR2Key) as { id: number };
+    const subject = db.prepare("SELECT subject_id FROM books WHERE id = ?")
+      .get(problemFile.book_id) as { subject_id: number };
+    const questionId = Number((db.prepare("SELECT COALESCE(MAX(id), 0) + 1 AS id FROM questions")
+      .get() as { id: number }).id);
+    const firstItemId = Number((db.prepare("SELECT COALESCE(MAX(id), 0) + 1 AS id FROM book_items")
+      .get() as { id: number }).id);
+    db.prepare(
+      `INSERT INTO questions
+       (id, subject_id, source, qtype, question, choices, answer, explanation, book_id,
+        difficulty, book_number, printed_number, src_file_id, src_page)
+       VALUES (?, ?, 'uploaded', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      questionId,
+      subject.subject_id,
+      question.qtype,
+      question.question,
+      JSON.stringify(question.choices),
+      positiveAcceptedSolution.solution.answer,
+      positiveAcceptedSolution.solution.explanation,
+      problemFile.book_id,
+      question.difficulty,
+      String(recoveryTargetNumber),
+      String(recoveryTargetNumber),
+      problemFile.id,
+      recoveryTargetPage,
+    );
+    db.prepare(
+      "INSERT INTO book_items (id, book_id, file_id, category, number, answer, content, page) " +
+      "VALUES (?, ?, ?, '문제', ?, ?, ?, ?)",
+    ).run(
+      firstItemId,
+      problemFile.book_id,
+      problemFile.id,
+      String(recoveryTargetNumber),
+      positiveAcceptedSolution.solution.answer,
+      question.question,
+      recoveryTargetPage,
+    );
+    db.prepare(
+      "INSERT INTO book_items (id, book_id, file_id, category, number, answer, content, page) " +
+      "VALUES (?, ?, ?, '해설', ?, ?, ?, ?)",
+    ).run(
+      firstItemId + 1,
+      problemFile.book_id,
+      solutionFile.id,
+      String(recoveryTargetNumber),
+      positiveAcceptedSolution.solution.answer,
+      positiveAcceptedSolution.solution.explanation,
+      positiveAcceptedSolution.solution.page,
+    );
+    db.close();
+    writeEvidence(join(stateDir, "receipt.json"), receipt);
+  }
   if (manualAcceptedSolution !== null) {
     const target = receipt.targetBooks[0] as { problemR2Key: string; solutionR2Key: string };
     const question = effectiveProblems[recoveryTargetNumber - 1];
@@ -9175,6 +9426,153 @@ describe("exam corpus verifier", () => {
   it("keeps the repair-scope allowlist byte-aligned with the importer", () => {
     expect(repairScopeAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST));
+  });
+
+  it("keeps the positive repair-scope authority byte-aligned with the importer", () => {
+    expect(positiveRepairScopeAdjudicationAllowlistFingerprint())
+      .toBe(canonicalEvidenceHash(PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_ALLOWLIST));
+    expect(PROBLEM_REPAIR_POSITIVE_SCOPE_AUTHORITY_REASON_CODE)
+      .toBe("ALLOWLISTED_POSITIVE_SCOPE_AUTHORITY");
+    expect(PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_PROMPT_DIGEST)
+      .toBe("aab22d3d596c15e2d4054a999e9fc90df6c46ee6fe9bdde389a88005fd1d4f7d");
+  });
+
+  it.skipIf(!existsSync(join(REPAIR_SCOPE_STATES.get(Q10_POSITIVE_REPAIR_SCOPE_SPEC.entryId)!, "problem.pdf")))(
+  "reconstructs the exact Q10 positive repair-scope authority and rejects missing or orphan authority",
+  () => {
+    const scopedFixture = () => {
+      const files = fixture();
+      prepareRepairScopeFixture(files, Q10_POSITIVE_REPAIR_SCOPE_SPEC);
+      const artifacts = upgradeEntryToV3(files, "math", {
+        repairScopeAdjudication: true,
+        terminalScope: "authorized-reject",
+        answerV5: true,
+      });
+      return { files, artifacts };
+    };
+
+    const valid = scopedFixture();
+    const modifiedBefore = statSync(valid.files.dbPath).mtimeMs;
+    const report = verifyExamCorpus(valid.files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    expect(statSync(valid.files.dbPath).mtimeMs).toBe(modifiedBefore);
+    expect(valid.artifacts.classificationScopeAdjudicationArtifact).toContain(
+      "classification-repair-positive-scope-adjudications/v1-0003-0010-",
+    );
+    const validAudit = JSON.parse(readFileSync(valid.artifacts.auditArtifact, "utf8"));
+    const validRepair = validAudit.repairs.find(
+      (value: { key: string }) => value.key === Q10_POSITIVE_REPAIR_SCOPE_SPEC.key,
+    );
+    expect(validRepair.revision).toBeUndefined();
+    expect(validRepair).toMatchObject({
+      scopeAdjudication: {
+        allowlistId: Q10_POSITIVE_REPAIR_SCOPE_SPEC.allowlistId,
+        classificationArtifact: {
+          adjudicationPromptDigest: PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_PROMPT_DIGEST,
+        },
+      },
+    });
+    const decision = JSON.parse(readFileSync(
+      valid.artifacts.classificationScopeAdjudicationArtifact!,
+      "utf8",
+    )).items[0];
+    expect(decision).toMatchObject({
+      decision: "accept",
+      canonical_subject: "math_A",
+      achievement_codes: ["12수학Ⅱ03-04"],
+      transcription_status: "exact",
+    });
+    expect(decision.reason_codes).toContain(PROBLEM_REPAIR_POSITIVE_SCOPE_AUTHORITY_REASON_CODE);
+    expect(validAudit.problemTerminalFidelityItems.find(
+      (item: { key: string }) => item.key === Q10_POSITIVE_REPAIR_SCOPE_SPEC.key,
+    )).toMatchObject({ status: "exact", scopeDecision: "reject" });
+
+    const transcriptionOnly = scopedFixture();
+    rewriteCurrentV3Authority(transcriptionOnly.files, (audit) => {
+      const pointer = audit.problemTerminalFidelityCheckpoints[0];
+      const checkpointPath = join(transcriptionOnly.files.stateDirs.math, pointer.path);
+      const checkpoint = JSON.parse(readFileSync(checkpointPath, "utf8"));
+      const item = checkpoint.items.find(
+        (value: { key: string }) => value.key === Q10_POSITIVE_REPAIR_SCOPE_SPEC.key,
+      );
+      item.scopeDecision = "accept";
+      item.scopeEvidence = "the fresh terminal scope observation differs but transcription remains exact";
+      pointer.sha256 = writeEvidence(checkpointPath, checkpoint);
+      Object.assign(audit.problemTerminalFidelityItems.find(
+        (value: { key: string }) => value.key === Q10_POSITIVE_REPAIR_SCOPE_SPEC.key,
+      ), item);
+    });
+    const transcriptionOnlyReport = verifyExamCorpus(transcriptionOnly.files);
+    expect(transcriptionOnlyReport, JSON.stringify(transcriptionOnlyReport.failures)).toMatchObject({ ok: true });
+
+    const childTamper = scopedFixture();
+    const child = JSON.parse(readFileSync(
+      childTamper.artifacts.classificationScopeAdjudicationArtifact!,
+      "utf8",
+    ));
+    child.items[0].reason_codes = ["IN_SCOPE_RIEMANN_SUM_DEFINITION"];
+    const childHash = writeEvidence(childTamper.artifacts.classificationScopeAdjudicationArtifact!, child);
+    const childItemHash = canonicalEvidenceHash(child.items[0]);
+    rewriteCurrentV3Authority(childTamper.files, (audit) => {
+      const scope = audit.repairs.find(
+        (value: { key: string }) => value.key === Q10_POSITIVE_REPAIR_SCOPE_SPEC.key,
+      ).scopeAdjudication;
+      scope.classificationArtifact.sha256 = childHash;
+      scope.classificationArtifactItemHash = childItemHash;
+      scope.effectiveClassificationHash = childItemHash;
+    });
+    expect(verifyExamCorpus(childTamper.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+        && failure.message.includes("exact allowlisted authority"))).toBe(true);
+
+    const stale = scopedFixture();
+    rewriteCurrentV3Authority(stale.files, (audit) => {
+      const repair = audit.repairs.find(
+        (value: { key: string }) => value.key === Q10_POSITIVE_REPAIR_SCOPE_SPEC.key,
+      );
+      const scope = repair.scopeAdjudication;
+      const oldTerminalPath = join(stale.files.stateDirs.math, scope.trigger.terminalCheckpoint.path);
+      const terminal = JSON.parse(readFileSync(oldTerminalPath, "utf8"));
+      const staleCorpusHash = "a".repeat(64);
+      terminal.effectiveCorpusHash = staleCorpusHash;
+      const terminalRelativePath = `problem-terminal-fidelity/v2-0000-${staleCorpusHash}-` +
+        `${terminal.inputHash}.json`;
+      const terminalHash = writeEvidence(join(stale.files.stateDirs.math, terminalRelativePath), terminal);
+      scope.trigger.preAdjudicationEffectiveCorpusHash = staleCorpusHash;
+      scope.trigger.terminalCheckpoint = {
+        ...scope.trigger.terminalCheckpoint,
+        path: terminalRelativePath,
+        sha256: terminalHash,
+      };
+      const oldChildPath = join(stale.files.stateDirs.math, scope.classificationArtifact.path);
+      const staleChild = JSON.parse(readFileSync(oldChildPath, "utf8"));
+      staleChild.basis.trigger = scope.trigger;
+      staleChild.basisDigest = canonicalEvidenceHash(staleChild.basis);
+      const childRelativePath = `classification-repair-positive-scope-adjudications/v1-0003-0010-` +
+        `${staleChild.basisDigest}-${DIGEST}.json`;
+      const childHash = writeEvidence(join(stale.files.stateDirs.math, childRelativePath), staleChild);
+      scope.classificationArtifact.path = childRelativePath;
+      scope.classificationArtifact.sha256 = childHash;
+      rmSync(oldTerminalPath);
+      rmSync(oldChildPath);
+    });
+    expect(verifyExamCorpus(stale.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+        && failure.message.includes("does not bind one exact prior corpus generation"))).toBe(true);
+
+    const missing = scopedFixture();
+    rmSync(missing.artifacts.classificationScopeAdjudicationArtifact!);
+    expect(verifyExamCorpus(missing.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("missing"))).toBe(true);
+
+    const orphan = scopedFixture();
+    writeJson(join(
+      orphan.files.stateDirs.math,
+      "classification-repair-positive-scope-adjudications",
+      `v1-0003-0010-${"1".repeat(64)}-${DIGEST}.json`,
+    ), {});
+    expect(verifyExamCorpus(orphan.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
   });
 
   it.skipIf([...REPAIR_SCOPE_STATES.values()].some((stateDir) =>
