@@ -112,6 +112,7 @@ export const SOLUTION_REVISION_FIDELITY_VERSION = 1;
 export const PERSISTED_SOLUTION_REVISION_TRIGGER_VERSION = 1;
 export const SOLUTION_PROMPT_UPGRADE_VERSION = 1;
 export const SOLUTION_PROMPT_UPGRADE_FIDELITY_VERSION = 1;
+export const SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION = 1;
 export const LEGACY_TARGETED_SOLUTION_REVISION_VERSION = 1;
 export const LEGACY_TARGETED_SOLUTION_REVISION_PROMPT_DIGEST =
   "d357d4bf715cea8b712b02546272f353c31eb94accfaefa960da616f2abd7884";
@@ -845,6 +846,29 @@ export type SolutionRevisionEvidence = {
   effectiveRawAnswerHash: string;
   baseRepairExplanationHash: string;
   effectiveExplanationHash: string;
+  fidelityAdjudication?: SolutionRevisionFidelityAdjudicationEvidence;
+};
+
+export type SolutionRevisionFidelityAdjudicationEvidence = {
+  allowlistId: string;
+  key: string;
+  sourcePage: number;
+  sourcePages: number[];
+  sourceHash: string;
+  dpi: number;
+  revisionArtifact: EvidencePointer;
+  failedFidelityArtifact: EvidencePointer & { promptDigest: string };
+  revisionSolutionItemHash: string;
+  failedDecisionHash: string;
+  failedEvidenceHash: string;
+  cropEvidenceArtifact: EvidencePointer;
+  cropEvidencePdf: EvidencePointer;
+  cropViews: ProblemCropAdjudicationEvidence["cropViews"];
+  adjudicationArtifact: EvidencePointer & {
+    version: number;
+    promptDigest: string;
+  };
+  adjudicationDecisionHash: string;
 };
 
 export type LegacySolutionRevisionPredecessor = {
@@ -872,6 +896,7 @@ export type PersistedSolutionRevisionAuthority = {
   finalSolutionItemHash: string;
   diagnosticDecisionHash: string;
   diagnosticEvidence: string;
+  fidelityAdjudication?: SolutionRevisionFidelityAdjudicationEvidence;
 };
 
 type PersistedSolutionFirstAuthority = {
@@ -1605,6 +1630,38 @@ export const SOLUTION_PROMPT_UPGRADE_ALLOWLIST = [{
   legacyPromptDigest: LEGACY_TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
   expectedAnswer: "②",
 }] as const;
+export const SOLUTION_REVISION_FIDELITY_ADJUDICATION_RULES = `
+The attached image-only PDF contains immutable 600-DPI full-page and bounded crop evidence from the official solution.
+The supplied solution transcription is unchanged from its prior source-grounded revision. Independently compare its raw
+answer and complete explanation with every relevant source pixel. Treat the previous mismatch diagnostic only as an
+untrusted locator. Do not solve, rewrite, summarize, or infer alternate wording. For this exact allowlisted source,
+the visible statement "함수 f(x)는 극솟값을 갖는다. (거짓)" must be preserved literally. Report answerStatus exact and
+explanationStatus exact only when the raw answer and every explanation detail agree with the pixels.
+`.trim();
+export const SOLUTION_REVISION_FIDELITY_ADJUDICATION_PROMPT_DIGEST = sha256Text(
+  `${SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION}\n` +
+  `${SOLUTION_REVISION_FIDELITY_ADJUDICATION_RULES}\n${SOLUTION_FIDELITY_RULES}`
+);
+export const SOLUTION_REVISION_FIDELITY_ADJUDICATION_ALLOWLIST = [{
+  allowlistId: "ebsi-5769268-q20-solution-fidelity-v1",
+  entryId: "ebsi:5769268",
+  key: "8:20",
+  sourcePage: 6,
+  sourceHash: "bb5b5d03101f67e1f56fe33870def9bd90d91892ed3ef893d9e6c7df4d90aa66",
+  revisionArtifactHash: "00da6e80bdbbe87cbff4ce54b57737c77167f0e2764c64ae5c87c1972ef9c9dc",
+  failedFidelityArtifactHash: "0fd860b862ad7015dfbaa52fdd899667168fd377cd770d33b4d5abbc2db8a89d",
+  revisionSolutionItemHash: "7ad16feb562bc2650dc29272ca0d842e4569b512acb7ae6dae122feb30ffa94a",
+  failedDecisionHash: "24a8ac10fc3d42e7ad9a852988d5b500c89fb7ad5acf56ecd4502d32c33432ce",
+  failedEvidenceHash: "e9fabf2766b52183ab4c505a0e7e21eea3f0288f1dd2c7e4f4e8216b858f7edf",
+  dpi: 600,
+  views: [
+    { sourcePage: 6, label: "p6 full", rect: [0, 0, 1, 1] },
+    { sourcePage: 7, label: "p7 full", rect: [0, 0, 1, 1] },
+    { sourcePage: 7, label: "p7 Q20 statement ㄴ", rect: [0.08, 0.46, 0.53, 0.67] },
+  ],
+  requiredTokens: ["함수 $f(x)$는 극솟값을 갖는다. (거짓)", "정답 ③"],
+  literalToken: "함수 $f(x)$는 극솟값을 갖는다. (거짓)",
+}] as const;
 const SEMANTIC_CHOICE_PROMPT_DIGEST = sha256Text(
   `${SEMANTIC_CHOICE_CHECK_VERSION}\n${SEMANTIC_CHOICE_RULES}`
 );
@@ -1807,10 +1864,12 @@ async function prepareProblemCropEvidence(
   problem: PdfEvidence,
   stateDir: string,
   spec: ProblemCropAdjudicationSpec,
-  options: { namespace?: string; version?: number } = {}
+  options: { namespace?: string; version?: number; dpi?: number } = {}
 ): Promise<PreparedProblemCropEvidence> {
   const namespace = options.namespace ?? "problem-crop-evidence";
   const version = options.version ?? PROBLEM_CROP_ADJUDICATION_VERSION;
+  const dpi = options.dpi ?? PROBLEM_CROP_DPI;
+  if (!Number.isInteger(dpi) || dpi < 72 || dpi > 600) throw new Error("crop evidence DPI가 유효하지 않습니다");
   if (problem.sha256 !== spec.sourceHash || await sha256File(problem.path) !== problem.sha256) {
     throw new Error(`${spec.key} crop adjudication official source hash가 allowlist와 다릅니다`);
   }
@@ -1822,7 +1881,7 @@ async function prepareProblemCropEvidence(
     sourcePage: spec.sourcePage,
     sourcePages,
     sourceHash: problem.sha256,
-    dpi: PROBLEM_CROP_DPI,
+    dpi,
     views: spec.views,
     requiredTokens: spec.requiredTokens,
   };
@@ -1840,7 +1899,7 @@ async function prepareProblemCropEvidence(
     if (
       checkpoint.version !== version || checkpoint.entryId !== entry.id ||
       checkpoint.basisDigest !== basisDigest || canonicalEvidenceHash(checkpoint.basis) !== canonicalEvidenceHash(basis) ||
-      checkpoint.renderer !== "pdftocairo-png+pdf-lib" || checkpoint.dpi !== PROBLEM_CROP_DPI ||
+      checkpoint.renderer !== "pdftocairo-png+pdf-lib" || checkpoint.dpi !== dpi ||
       canonicalEvidenceHash(checkpoint.evidencePdf) !== canonicalEvidenceHash({
         path: pdfRelativePath,
         sha256: object(checkpoint.evidencePdf, "crop evidence PDF").sha256,
@@ -1854,7 +1913,7 @@ async function prepareProblemCropEvidence(
         for (const page of sourcePages) {
           const prefix = join(tempDir, `source-${String(page).padStart(4, "0")}`);
           await execFileP(popplerCommand("pdftocairo"), [
-            "-png", "-r", String(PROBLEM_CROP_DPI), "-f", String(page), "-l", String(page),
+            "-png", "-r", String(dpi), "-f", String(page), "-l", String(page),
             "-singlefile", analysisProblem.path, prefix,
           ], { encoding: "utf8", timeout: 5 * 60 * 1000, maxBuffer: 4 * 1024 * 1024 });
           const path = `${prefix}.png`;
@@ -1870,7 +1929,7 @@ async function prepareProblemCropEvidence(
           if (!(pixels.x === 0 && pixels.y === 0 && pixels.width === full.width && pixels.height === full.height)) {
             const prefix = join(tempDir, `view-${String(index).padStart(2, "0")}`);
             await execFileP(popplerCommand("pdftocairo"), [
-              "-png", "-r", String(PROBLEM_CROP_DPI), "-f", String(view.sourcePage),
+              "-png", "-r", String(dpi), "-f", String(view.sourcePage),
               "-l", String(view.sourcePage), "-singlefile", "-x", String(pixels.x), "-y", String(pixels.y),
               "-W", String(pixels.width), "-H", String(pixels.height), analysisProblem.path, prefix,
             ], { encoding: "utf8", timeout: 5 * 60 * 1000, maxBuffer: 4 * 1024 * 1024 });
@@ -1891,7 +1950,7 @@ async function prepareProblemCropEvidence(
           });
         }
         const tempPdf = join(tempDir, "evidence.pdf");
-        await buildImageOnlyPdfFromPngs(rendered.map((view) => view.path), tempPdf, PROBLEM_CROP_DPI);
+        await buildImageOnlyPdfFromPngs(rendered.map((view) => view.path), tempPdf, dpi);
         const pdfStat = statSync(tempPdf);
         if (!pdfStat.isFile() || pdfStat.size < 5 || pdfStat.size > MAX_PDF_BYTES) {
           throw new Error(`${spec.key} crop evidence PDF 크기가 AI 입력 한도를 벗어났습니다`);
@@ -1913,7 +1972,7 @@ async function prepareProblemCropEvidence(
           basisDigest,
           basis,
           renderer: "pdftocairo-png+pdf-lib",
-          dpi: PROBLEM_CROP_DPI,
+          dpi,
           evidencePdf: { path: pdfRelativePath, sha256: evidencePdfSha },
           views: persistedViews,
         };
@@ -2979,6 +3038,210 @@ async function evaluateSolutionFidelity(
   return parseSolutionFidelityDecisions(schemaItems(result.text, "해설 fidelity 응답"), inputs);
 }
 
+function solutionRevisionFidelityAdjudicationSpec(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  key: string,
+  revisionArtifactHash: string,
+  failedFidelityArtifactHash: string,
+  revisionSolutionItemHash: string,
+  failedDecision: SolutionFidelityDecision
+) {
+  return SOLUTION_REVISION_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
+    candidate.entryId === entry.id && candidate.key === key && candidate.sourceHash === evidence.sha256 &&
+    candidate.revisionArtifactHash === revisionArtifactHash &&
+    candidate.failedFidelityArtifactHash === failedFidelityArtifactHash &&
+    candidate.revisionSolutionItemHash === revisionSolutionItemHash &&
+    candidate.failedDecisionHash === canonicalEvidenceHash(failedDecision) &&
+    candidate.failedEvidenceHash === sha256Text(failedDecision.evidence)
+  );
+}
+
+function normalizedSolutionLiteral(value: string): string {
+  return value.replace(/\\\(|\\\)|\$/gu, "").replace(/\s+/gu, "");
+}
+
+function assertSolutionRevisionFidelityAdjudicationLiteral(
+  spec: typeof SOLUTION_REVISION_FIDELITY_ADJUDICATION_ALLOWLIST[number],
+  solution: SolutionItem
+): void {
+  if (
+    solution.answer !== "③" ||
+    !normalizedSolutionLiteral(solution.explanation).includes(normalizedSolutionLiteral(spec.literalToken))
+  ) throw new Error(`${spec.key} allowlisted 해설 literal이 공식 source와 다릅니다`);
+}
+
+async function adjudicateSolutionRevisionFidelity(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  stateDir: string,
+  effectiveProblemCorpusHash: string,
+  input: SolutionFidelityInput,
+  solution: SolutionItem,
+  revisionArtifact: EvidencePointer,
+  failedFidelityArtifact: EvidencePointer & { promptDigest: string },
+  failedDecision: SolutionFidelityDecision
+): Promise<{
+  decision: SolutionFidelityDecision;
+  artifact: EvidencePointer;
+  evidence: SolutionRevisionFidelityAdjudicationEvidence;
+}> {
+  const revisionSolutionItemHash = canonicalEvidenceHash(solution);
+  const spec = solutionRevisionFidelityAdjudicationSpec(
+    entry,
+    evidence,
+    input.key,
+    revisionArtifact.sha256,
+    failedFidelityArtifact.sha256,
+    revisionSolutionItemHash,
+    failedDecision
+  );
+  if (
+    !spec || failedFidelityArtifact.promptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST ||
+    failedDecision.sourcePage !== solution.page || terminalSolutionFidelity(input, solution, failedDecision) ||
+    await sha256File(evidence.path) !== evidence.sha256
+  ) throw new Error(`${input.key} solution fidelity adjudication authority가 없습니다`);
+  assertSolutionRevisionFidelityAdjudicationLiteral(spec, solution);
+  for (const [label, pointer] of [
+    ["solution revision", revisionArtifact],
+    ["failed solution revision fidelity", failedFidelityArtifact],
+  ] as const) {
+    const path = confinedStateFile(stateDir, pointer.path, label);
+    if (await sha256File(path) !== pointer.sha256) throw new Error(`${input.key} ${label} hash가 다릅니다`);
+  }
+  const cropSpec: ProblemCropAdjudicationSpec = {
+    allowlistId: spec.allowlistId,
+    entryId: spec.entryId,
+    key: spec.key,
+    sourcePage: spec.sourcePage,
+    sourceHash: spec.sourceHash,
+    views: spec.views.map((view) => ({ ...view, rect: [...view.rect] })),
+    requiredTokens: [...spec.requiredTokens],
+  };
+  const prepared = await prepareProblemCropEvidence(entry, evidence, stateDir, cropSpec, {
+    namespace: "solution-fidelity-adjudication-evidence",
+    version: SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION,
+    dpi: spec.dpi,
+  });
+  const sourcePages = [...new Set(spec.views.map((view) => view.sourcePage))].sort((a, b) => a - b);
+  const failedDecisionHash = canonicalEvidenceHash(failedDecision);
+  const failedEvidenceHash = sha256Text(failedDecision.evidence);
+  const inputHash = canonicalEvidenceHash(input);
+  const basis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key: input.key,
+    sourcePage: spec.sourcePage,
+    sourcePages,
+    sourceHash: evidence.sha256,
+    dpi: spec.dpi,
+    effectiveProblemCorpusHash,
+    revisionArtifact,
+    failedFidelityArtifact,
+    revisionSolutionItemHash,
+    failedDecision,
+    failedDecisionHash,
+    failedEvidenceHash,
+    cropEvidenceArtifact: prepared.artifact,
+    cropEvidencePdf: { path: prepared.pdf.path, sha256: prepared.pdf.sha256 },
+    cropViews: prepared.views,
+    inputHash,
+    promptDigest: SOLUTION_REVISION_FIDELITY_ADJUDICATION_PROMPT_DIGEST,
+  };
+  const basisDigest = canonicalEvidenceHash(basis);
+  const relativePath = `solution-fidelity-adjudications/v${SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION}-` +
+    `${String(solution.page).padStart(4, "0")}-${input.printedNumber.padStart(4, "0")}-${basisDigest}.json`;
+  const path = join(stateDir, relativePath);
+  let checkpoint: Record<string, unknown>;
+  let decision: SolutionFidelityDecision;
+  if (existsSync(path)) {
+    checkpoint = object(JSON.parse(readFileSync(path, "utf8")), relativePath);
+    decision = parseSolutionFidelityDecisions([checkpoint.item], [input])[0];
+  } else {
+    const prompt =
+      `The attached image-only evidence PDF contains ordered views of official solution pages ` +
+      `${sourcePages.join(", ")}. View labels and normalized crop rectangles are ` +
+      `${JSON.stringify(spec.views)}.\n\n${SOLUTION_REVISION_FIDELITY_ADJUDICATION_RULES}\n\n` +
+      `Solution transcription:\n${JSON.stringify([{
+        key: input.key,
+        printed_number: input.printedNumber,
+        question_type: input.qtype,
+        source_page: input.sourcePage,
+        raw_answer: input.rawAnswer,
+        explanation: input.explanation,
+        complete: input.complete,
+      }])}`;
+    const result = await withFullContextAi(() => getCodexProvider({
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+    }).complete({
+      operation: "problem-extract",
+      prompt,
+      file: { path: prepared.pdf.absolutePath, kind: "pdf" },
+      schema: SOLUTION_FIDELITY_SCHEMA,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      lane: "bulk",
+    }));
+    decision = parseSolutionFidelityDecisions(schemaItems(result.text, "해설 fidelity adjudication 응답"), [input])[0];
+    checkpoint = {
+      version: SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION,
+      basisDigest,
+      basis,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      input,
+      item: decision,
+    };
+    await writeImmutableEvidence(path, checkpoint);
+  }
+  const expectedCheckpoint = {
+    version: SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION,
+    basisDigest,
+    basis,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    input,
+    item: decision,
+  };
+  if (
+    canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(expectedCheckpoint) ||
+    decision.sourcePage !== solution.page || decision.answerStatus !== "exact" ||
+    decision.explanationStatus !== "exact"
+  ) throw new Error(`${input.key} solution fidelity adjudication이 terminal exact가 아닙니다`);
+  const sha256 = await sha256File(path);
+  if (sha256 !== canonicalEvidenceHash(checkpoint)) {
+    throw new Error(`${input.key} solution fidelity adjudication hash가 다릅니다`);
+  }
+  return {
+    decision,
+    artifact: { path: relativePath, sha256 },
+    evidence: {
+      allowlistId: spec.allowlistId,
+      key: input.key,
+      sourcePage: spec.sourcePage,
+      sourcePages,
+      sourceHash: evidence.sha256,
+      dpi: spec.dpi,
+      revisionArtifact,
+      failedFidelityArtifact,
+      revisionSolutionItemHash,
+      failedDecisionHash,
+      failedEvidenceHash,
+      cropEvidenceArtifact: prepared.artifact,
+      cropEvidencePdf: { path: prepared.pdf.path, sha256: prepared.pdf.sha256 },
+      cropViews: prepared.views,
+      adjudicationArtifact: {
+        path: relativePath,
+        sha256,
+        version: SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION,
+        promptDigest: SOLUTION_REVISION_FIDELITY_ADJUDICATION_PROMPT_DIGEST,
+      },
+      adjudicationDecisionHash: canonicalEvidenceHash(decision),
+    },
+  };
+}
+
 async function solutionFidelityCheckpoint(
   entry: CorpusManifestEntry,
   evidence: PdfEvidence,
@@ -3107,6 +3370,10 @@ function persistedEvidencePointer(value: unknown, label: string): EvidencePointe
 
 function persistedRevisionAuthority(value: unknown, label: string): PersistedSolutionRevisionAuthority {
   const row = object(value, label);
+  const fidelityAdjudication = row.fidelityAdjudication === undefined
+    ? undefined
+    : structuredClone(object(row.fidelityAdjudication, `${label}.fidelityAdjudication`)) as
+      unknown as SolutionRevisionFidelityAdjudicationEvidence;
   const authority: PersistedSolutionRevisionAuthority = {
     generationId: exactHash(row.generationId, `${label}.generationId`),
     key: exactString(row.key, `${label}.key`, 100),
@@ -3123,6 +3390,7 @@ function persistedRevisionAuthority(value: unknown, label: string): PersistedSol
     finalSolutionItemHash: exactHash(row.finalSolutionItemHash, `${label}.finalSolutionItemHash`),
     diagnosticDecisionHash: exactHash(row.diagnosticDecisionHash, `${label}.diagnosticDecisionHash`),
     diagnosticEvidence: exactString(row.diagnosticEvidence, `${label}.diagnosticEvidence`, 2000),
+    ...(fidelityAdjudication ? { fidelityAdjudication } : {}),
   };
   if (canonicalEvidenceHash(row) !== canonicalEvidenceHash(authority)) {
     throw new Error(`${label}에 예상하지 않은 필드가 있습니다`);
@@ -3209,6 +3477,200 @@ async function readCanonicalSolutionArtifacts(
     artifacts.push({ relativePath, sha256, checkpoint });
   }
   return artifacts;
+}
+
+async function validatePersistedSolutionRevisionFidelityAdjudication(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  stateDir: string,
+  effectiveProblemCorpusHash: string,
+  input: SolutionFidelityInput,
+  solution: SolutionItem,
+  revisionArtifact: EvidencePointer,
+  failedFidelityArtifact: EvidencePointer & { promptDigest: string },
+  failedDecision: SolutionFidelityDecision,
+  candidates: CanonicalSolutionArtifact[]
+): Promise<{
+  decision: SolutionFidelityDecision;
+  evidence: SolutionRevisionFidelityAdjudicationEvidence;
+  childPath: string;
+  evidencePaths: string[];
+}> {
+  const revisionSolutionItemHash = canonicalEvidenceHash(solution);
+  const spec = solutionRevisionFidelityAdjudicationSpec(
+    entry,
+    evidence,
+    input.key,
+    revisionArtifact.sha256,
+    failedFidelityArtifact.sha256,
+    revisionSolutionItemHash,
+    failedDecision
+  );
+  if (
+    !spec || failedDecision.sourcePage !== solution.page ||
+    failedDecision.answerStatus !== "exact" || failedDecision.explanationStatus !== "mismatch" ||
+    terminalSolutionFidelity(input, solution, failedDecision)
+  ) throw new Error(`${input.key} persisted solution fidelity adjudication allowlist가 다릅니다`);
+  assertSolutionRevisionFidelityAdjudicationLiteral(spec, solution);
+
+  const children = candidates.filter((candidate) => {
+    const basis = object(candidate.checkpoint.basis, `${candidate.relativePath}.basis`);
+    const pointer = object(basis.revisionArtifact, `${candidate.relativePath}.basis.revisionArtifact`);
+    return pointer.path === revisionArtifact.path;
+  });
+  if (children.length !== 1) {
+    throw new Error(`${input.key} solution fidelity adjudication child coverage가 다릅니다`);
+  }
+  const child = children[0];
+  const sourcePages = [...new Set(spec.views.map((view) => view.sourcePage))].sort((a, b) => a - b);
+  const evidenceBasis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key: input.key,
+    sourcePage: spec.sourcePage,
+    sourcePages,
+    sourceHash: evidence.sha256,
+    dpi: spec.dpi,
+    views: spec.views,
+    requiredTokens: spec.requiredTokens,
+  };
+  const evidenceDigest = canonicalEvidenceHash(evidenceBasis);
+  const evidenceStem = `v${SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION}-` +
+    `${String(spec.sourcePage).padStart(4, "0")}-${input.printedNumber.padStart(4, "0")}-${evidenceDigest}`;
+  const evidenceRelativePath = `solution-fidelity-adjudication-evidence/${evidenceStem}.json`;
+  const evidencePdfRelativePath = `solution-fidelity-adjudication-evidence/${evidenceStem}.pdf`;
+  const evidencePath = confinedStateFile(stateDir, evidenceRelativePath, "solution fidelity adjudication evidence");
+  const evidenceCheckpoint = object(JSON.parse(readFileSync(evidencePath, "utf8")), evidenceRelativePath);
+  const evidencePdf = object(evidenceCheckpoint.evidencePdf, `${evidenceRelativePath}.evidencePdf`);
+  const cropViews: ProblemCropAdjudicationEvidence["cropViews"] = [];
+  if (Array.isArray(evidenceCheckpoint.views)) {
+    for (const [index, raw] of evidenceCheckpoint.views.entries()) {
+      const row = object(raw, `${evidenceRelativePath}.views[${index}]`);
+      const expected = spec.views[index];
+      if (!expected) throw new Error(`${evidenceRelativePath} crop view가 초과되었습니다`);
+      const artifact = persistedEvidencePointer(row.artifact, `${evidenceRelativePath}.views[${index}].artifact`);
+      const view = {
+        sourcePage: Number(row.sourcePage),
+        label: exactString(row.label, `${evidenceRelativePath}.views[${index}].label`, 200),
+        rect: row.rect as [number, number, number, number],
+        pixelWidth: Number(row.pixelWidth),
+        pixelHeight: Number(row.pixelHeight),
+        pixelSha256: exactHash(row.pixelSha256, `${evidenceRelativePath}.views[${index}].pixelSha256`),
+        artifact,
+      };
+      const expectedViewPath = `solution-fidelity-adjudication-evidence/${evidenceStem}-view-` +
+        `${String(index).padStart(2, "0")}.png`;
+      const viewPath = confinedStateFile(stateDir, artifact.path, `solution fidelity adjudication view ${index + 1}`);
+      const dimensions = pngDimensions(viewPath);
+      if (
+        view.sourcePage !== expected.sourcePage || view.label !== expected.label ||
+        canonicalEvidenceHash(view.rect) !== canonicalEvidenceHash(expected.rect) ||
+        view.pixelWidth !== dimensions.width || view.pixelHeight !== dimensions.height ||
+        artifact.path !== expectedViewPath || artifact.sha256 !== view.pixelSha256 ||
+        await sha256File(viewPath) !== view.pixelSha256 ||
+        canonicalEvidenceHash(row) !== canonicalEvidenceHash(view)
+      ) throw new Error(`${input.key} persisted solution fidelity crop view가 다릅니다`);
+      cropViews.push(view);
+    }
+  }
+  const evidencePdfPointer = {
+    path: exactString(evidencePdf.path, `${evidenceRelativePath}.evidencePdf.path`, 500),
+    sha256: exactHash(evidencePdf.sha256, `${evidenceRelativePath}.evidencePdf.sha256`),
+  };
+  const expectedEvidence = {
+    version: SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION,
+    entryId: entry.id,
+    basisDigest: evidenceDigest,
+    basis: evidenceBasis,
+    renderer: "pdftocairo-png+pdf-lib",
+    dpi: spec.dpi,
+    evidencePdf: evidencePdfPointer,
+    views: cropViews,
+  };
+  if (
+    evidencePdfPointer.path !== evidencePdfRelativePath || cropViews.length !== spec.views.length ||
+    await sha256File(evidencePath) !== canonicalEvidenceHash(evidenceCheckpoint) ||
+    canonicalEvidenceHash(evidenceCheckpoint) !== canonicalEvidenceHash(expectedEvidence) ||
+    await sha256File(confinedStateFile(stateDir, evidencePdfRelativePath, "solution fidelity evidence PDF")) !==
+      evidencePdfPointer.sha256
+  ) throw new Error(`${input.key} persisted solution fidelity crop evidence가 다릅니다`);
+
+  const failedDecisionHash = canonicalEvidenceHash(failedDecision);
+  const failedEvidenceHash = sha256Text(failedDecision.evidence);
+  const inputHash = canonicalEvidenceHash(input);
+  const cropEvidenceArtifact = { path: evidenceRelativePath, sha256: canonicalEvidenceHash(evidenceCheckpoint) };
+  const basis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key: input.key,
+    sourcePage: spec.sourcePage,
+    sourcePages,
+    sourceHash: evidence.sha256,
+    dpi: spec.dpi,
+    effectiveProblemCorpusHash,
+    revisionArtifact,
+    failedFidelityArtifact,
+    revisionSolutionItemHash,
+    failedDecision,
+    failedDecisionHash,
+    failedEvidenceHash,
+    cropEvidenceArtifact,
+    cropEvidencePdf: evidencePdfPointer,
+    cropViews,
+    inputHash,
+    promptDigest: SOLUTION_REVISION_FIDELITY_ADJUDICATION_PROMPT_DIGEST,
+  };
+  const basisDigest = canonicalEvidenceHash(basis);
+  const expectedChildPath = `solution-fidelity-adjudications/` +
+    `v${SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION}-${String(solution.page).padStart(4, "0")}-` +
+    `${input.printedNumber.padStart(4, "0")}-${basisDigest}.json`;
+  const decision = parseSolutionFidelityDecisions([child.checkpoint.item], [input])[0];
+  const expectedChild = {
+    version: SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION,
+    basisDigest,
+    basis,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    input,
+    item: decision,
+  };
+  if (
+    child.relativePath !== expectedChildPath || canonicalEvidenceHash(child.checkpoint) !== canonicalEvidenceHash(expectedChild) ||
+    decision.sourcePage !== solution.page || decision.answerStatus !== "exact" ||
+    decision.explanationStatus !== "exact"
+  ) throw new Error(`${input.key} persisted solution fidelity adjudication child가 다릅니다`);
+  return {
+    decision,
+    childPath: child.relativePath,
+    evidencePaths: [
+      evidenceRelativePath,
+      evidencePdfRelativePath,
+      ...cropViews.map((view) => view.artifact.path),
+    ],
+    evidence: {
+      allowlistId: spec.allowlistId,
+      key: input.key,
+      sourcePage: spec.sourcePage,
+      sourcePages,
+      sourceHash: evidence.sha256,
+      dpi: spec.dpi,
+      revisionArtifact,
+      failedFidelityArtifact,
+      revisionSolutionItemHash,
+      failedDecisionHash,
+      failedEvidenceHash,
+      cropEvidenceArtifact,
+      cropEvidencePdf: evidencePdfPointer,
+      cropViews,
+      adjudicationArtifact: {
+        path: child.relativePath,
+        sha256: child.sha256,
+        version: SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION,
+        promptDigest: SOLUTION_REVISION_FIDELITY_ADJUDICATION_PROMPT_DIGEST,
+      },
+      adjudicationDecisionHash: canonicalEvidenceHash(decision),
+    },
+  };
 }
 
 function historicalTranscriptionBinding(checkpoint: Record<string, unknown>): boolean {
@@ -3369,6 +3831,11 @@ async function scanPersistedSolutionHistory(
     "solution-fidelity-revisions",
     /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u
   );
+  const revisionFidelityAdjudicationFiles = await readCanonicalSolutionArtifacts(
+    stateDir,
+    "solution-fidelity-adjudications",
+    /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u
+  );
   const promptUpgradeFiles = await readCanonicalSolutionArtifacts(
     stateDir,
     "solution-revision-upgrades",
@@ -3379,9 +3846,15 @@ async function scanPersistedSolutionHistory(
     "solution-fidelity-revision-upgrades",
     /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u
   );
+  const hasRevisionFidelityAdjudicationEvidence = existsSync(
+    join(stateDir, "solution-fidelity-adjudication-evidence")
+  ) && readdirSync(join(stateDir, "solution-fidelity-adjudication-evidence")).some((name) =>
+    !name.endsWith(".tmp"));
   if (
     repairFiles.length + repairFidelityFiles.length + revisionFiles.length + revisionFidelityFiles.length +
-      promptUpgradeFiles.length + promptUpgradeFidelityFiles.length === 0
+      revisionFidelityAdjudicationFiles.length +
+      promptUpgradeFiles.length + promptUpgradeFidelityFiles.length === 0 &&
+    !hasRevisionFidelityAdjudicationEvidence
   ) return {
     stickyFirst: new Map(),
     revisionTriggers: new Map(),
@@ -3401,6 +3874,8 @@ async function scanPersistedSolutionHistory(
   const assignedRepairFidelity = new Set<string>();
   const assignedRevision = new Set<string>();
   const assignedRevisionFidelity = new Set<string>();
+  const assignedRevisionFidelityAdjudication = new Set<string>();
+  const assignedRevisionFidelityAdjudicationEvidence = new Set<string>();
   const assignedPromptUpgrade = new Set<string>();
   const assignedPromptUpgradeFidelity = new Set<string>();
   const generations = new Map<string, PersistedSolutionFirstAuthority>();
@@ -3899,38 +4374,125 @@ async function scanPersistedSolutionHistory(
         canonicalEvidenceHash(revisionFidelity) !== canonicalEvidenceHash(expectedRevisionFidelity)
       ) throw new Error(`${revisionFidelityFile.relativePath} persisted revision fidelity 메타데이터가 다릅니다`);
       if (!terminalSolutionFidelity(revisedInput, revisedItem, finalDecision)) {
-        if (
-          !legacyPromptUpgradeSpec ||
-          revisionFidelityFile.sha256 !== legacyPromptUpgradeSpec.legacyRevisionFidelityArtifactHash ||
-          finalDecision.answerStatus !== "mismatch" || finalDecision.explanationStatus !== "exact" ||
-          finalDecision.sourcePage !== revisedItem.page
-        ) throw new Error(`${revisionFidelityFile.relativePath} persisted revision이 terminal이 아닙니다`);
-        const predecessor: LegacySolutionRevisionPredecessor = {
-          allowlistId: legacyPromptUpgradeSpec.allowlistId,
-          generationId,
-          key: input.key,
-          effectiveProblemCorpusHash,
-          repairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
-          repairFidelityArtifact: { path: fidelityFile.relativePath, sha256: fidelityFile.sha256 },
-          revisionArtifact: {
-            path: revisionFile.relativePath,
-            sha256: revisionFile.sha256,
-            promptVersion: legacyPromptUpgradeSpec.legacyPromptVersion,
-            promptDigest: legacyPromptUpgradeSpec.legacyPromptDigest,
-          },
-          revisionFidelityArtifact: {
-            path: revisionFidelityFile.relativePath,
-            sha256: revisionFidelityFile.sha256,
-          },
-          revisionSolutionItemHash: revisedItemHash,
-          failedDecisionHash: canonicalEvidenceHash(finalDecision),
-          failedEvidenceHash: sha256Text(finalDecision.evidence),
-          failedEvidence: finalDecision.evidence,
+        const failedFidelityArtifact = {
+          path: revisionFidelityFile.relativePath,
+          sha256: revisionFidelityFile.sha256,
+          promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
         };
-        if (legacyPromptUpgradePredecessors.has(revisionFile.relativePath)) {
-          throw new Error(`${input.key} legacy solution revision predecessor가 중복입니다`);
+        const adjudicationSpec = solutionRevisionFidelityAdjudicationSpec(
+          entry,
+          evidence,
+          input.key,
+          revisionFile.sha256,
+          revisionFidelityFile.sha256,
+          revisedItemHash,
+          finalDecision
+        );
+        if (adjudicationSpec) {
+          const adjudicationChildren = revisionFidelityAdjudicationFiles.filter((candidate) => {
+            const basis = object(candidate.checkpoint.basis, `${candidate.relativePath}.basis`);
+            return object(
+              basis.revisionArtifact,
+              `${candidate.relativePath}.basis.revisionArtifact`
+            ).path === revisionFile.relativePath;
+          });
+          if (adjudicationChildren.length === 0) {
+            if (!allowCurrentPartial || effectiveProblemCorpusHash !== currentEffectiveProblemCorpusHash) {
+              throw new Error(`${revisionFile.relativePath} solution fidelity adjudication child가 없습니다`);
+            }
+            const cropSpec: ProblemCropAdjudicationSpec = {
+              allowlistId: adjudicationSpec.allowlistId,
+              entryId: adjudicationSpec.entryId,
+              key: adjudicationSpec.key,
+              sourcePage: adjudicationSpec.sourcePage,
+              sourceHash: adjudicationSpec.sourceHash,
+              views: adjudicationSpec.views.map((view) => ({ ...view, rect: [...view.rect] })),
+              requiredTokens: [...adjudicationSpec.requiredTokens],
+            };
+            const prepared = await prepareProblemCropEvidence(entry, evidence, stateDir, cropSpec, {
+              namespace: "solution-fidelity-adjudication-evidence",
+              version: SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION,
+              dpi: adjudicationSpec.dpi,
+            });
+            for (const path of [
+              prepared.artifact.path,
+              prepared.pdf.path,
+              ...prepared.views.map((view) => view.artifact.path),
+            ]) assignedRevisionFidelityAdjudicationEvidence.add(path);
+            partialCurrentKeys.add(input.key);
+            continue;
+          }
+          if (adjudicationChildren.length !== 1) {
+            throw new Error(`${revisionFile.relativePath} solution fidelity adjudication child가 중복입니다`);
+          }
+          const adjudicated = await validatePersistedSolutionRevisionFidelityAdjudication(
+            entry,
+            evidence,
+            stateDir,
+            effectiveProblemCorpusHash,
+            revisedInput,
+            revisedItem,
+            { path: revisionFile.relativePath, sha256: revisionFile.sha256 },
+            failedFidelityArtifact,
+            finalDecision,
+            revisionFidelityAdjudicationFiles
+          );
+          assignedRevisionFidelityAdjudication.add(adjudicated.childPath);
+          for (const path of adjudicated.evidencePaths) {
+            if (assignedRevisionFidelityAdjudicationEvidence.has(path)) {
+              throw new Error(`${input.key} solution fidelity adjudication evidence가 중복입니다`);
+            }
+            assignedRevisionFidelityAdjudicationEvidence.add(path);
+          }
+          revisionAuthority = {
+            generationId,
+            key: input.key,
+            repairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
+            repairFidelityArtifact: { path: fidelityFile.relativePath, sha256: fidelityFile.sha256 },
+            revisionArtifact: { path: revisionFile.relativePath, sha256: revisionFile.sha256 },
+            revisionFidelityArtifact: {
+              path: revisionFidelityFile.relativePath,
+              sha256: revisionFidelityFile.sha256,
+            },
+            finalSolutionItemHash: revisedItemHash,
+            diagnosticDecisionHash,
+            diagnosticEvidence,
+            fidelityAdjudication: adjudicated.evidence,
+          };
+        } else {
+          if (
+            !legacyPromptUpgradeSpec ||
+            revisionFidelityFile.sha256 !== legacyPromptUpgradeSpec.legacyRevisionFidelityArtifactHash ||
+            finalDecision.answerStatus !== "mismatch" || finalDecision.explanationStatus !== "exact" ||
+            finalDecision.sourcePage !== revisedItem.page
+          ) throw new Error(`${revisionFidelityFile.relativePath} persisted revision이 terminal이 아닙니다`);
+          const predecessor: LegacySolutionRevisionPredecessor = {
+            allowlistId: legacyPromptUpgradeSpec.allowlistId,
+            generationId,
+            key: input.key,
+            effectiveProblemCorpusHash,
+            repairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
+            repairFidelityArtifact: { path: fidelityFile.relativePath, sha256: fidelityFile.sha256 },
+            revisionArtifact: {
+              path: revisionFile.relativePath,
+              sha256: revisionFile.sha256,
+              promptVersion: legacyPromptUpgradeSpec.legacyPromptVersion,
+              promptDigest: legacyPromptUpgradeSpec.legacyPromptDigest,
+            },
+            revisionFidelityArtifact: {
+              path: revisionFidelityFile.relativePath,
+              sha256: revisionFidelityFile.sha256,
+            },
+            revisionSolutionItemHash: revisedItemHash,
+            failedDecisionHash: canonicalEvidenceHash(finalDecision),
+            failedEvidenceHash: sha256Text(finalDecision.evidence),
+            failedEvidence: finalDecision.evidence,
+          };
+          if (legacyPromptUpgradePredecessors.has(revisionFile.relativePath)) {
+            throw new Error(`${input.key} legacy solution revision predecessor가 중복입니다`);
+          }
+          legacyPromptUpgradePredecessors.set(revisionFile.relativePath, predecessor);
         }
-        legacyPromptUpgradePredecessors.set(revisionFile.relativePath, predecessor);
       } else {
         if (legacyPromptUpgradeSpec) {
           throw new Error(`${revisionFidelityFile.relativePath} legacy prompt v1 revision을 terminal로 승격할 수 없습니다`);
@@ -4196,6 +4758,27 @@ async function scanPersistedSolutionHistory(
   if (revisionFidelityFiles.some((file) => !assignedRevisionFidelity.has(file.relativePath))) {
     throw new Error("orphan solution revision fidelity artifact가 있습니다");
   }
+  if (revisionFidelityAdjudicationFiles.some((file) =>
+    !assignedRevisionFidelityAdjudication.has(file.relativePath)
+  )) throw new Error("orphan solution revision fidelity adjudication artifact가 있습니다");
+  const fidelityAdjudicationEvidenceDirectory = join(stateDir, "solution-fidelity-adjudication-evidence");
+  const actualFidelityAdjudicationEvidence = new Set<string>();
+  if (existsSync(fidelityAdjudicationEvidenceDirectory)) {
+    for (const child of readdirSync(fidelityAdjudicationEvidenceDirectory, { withFileTypes: true })) {
+      if (child.isFile() && child.name.endsWith(".tmp")) continue;
+      if (!child.isFile() || child.isSymbolicLink()) {
+        throw new Error(`solution fidelity adjudication evidence에 regular file이 아닌 항목이 있습니다: ${child.name}`);
+      }
+      actualFidelityAdjudicationEvidence.add(`solution-fidelity-adjudication-evidence/${child.name}`);
+    }
+  }
+  if (
+    [...actualFidelityAdjudicationEvidence].some((path) =>
+      !assignedRevisionFidelityAdjudicationEvidence.has(path)
+    ) || [...assignedRevisionFidelityAdjudicationEvidence].some((path) =>
+      !actualFidelityAdjudicationEvidence.has(path)
+    )
+  ) throw new Error("solution fidelity adjudication evidence orphan/conflict가 있습니다");
   if (promptUpgradeFiles.some((file) => !assignedPromptUpgrade.has(file.relativePath))) {
     throw new Error("orphan solution prompt upgrade artifact가 있습니다");
   }
@@ -4274,6 +4857,86 @@ async function scanPersistedSolutionHistory(
     requiredRevisionKeys.add(key);
   }
   return { stickyFirst, revisionTriggers, requiredRevisionKeys, currentPartialKeys: partialCurrentKeys };
+}
+
+async function assertSolutionRevisionFidelityAdjudicationAuthority(
+  stateDir: string,
+  repairs: Iterable<SolutionRepairEvidence>
+): Promise<void> {
+  const declared = new Map<string, string>();
+  const declare = async (label: string, pointer: EvidencePointer): Promise<void> => {
+    if (declared.has(pointer.path)) throw new Error(`${label} artifact가 중복 선언됐습니다: ${pointer.path}`);
+    const path = confinedStateFile(stateDir, pointer.path, label);
+    if (await sha256File(path) !== pointer.sha256) throw new Error(`${label} hash가 다릅니다: ${pointer.path}`);
+    declared.set(pointer.path, pointer.sha256);
+  };
+  for (const repair of repairs) {
+    const revision = repair.revision;
+    const adjudication = revision?.fidelityAdjudication;
+    if (!revision || !adjudication) continue;
+    const spec = SOLUTION_REVISION_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === adjudication.allowlistId && candidate.key === repair.key &&
+      candidate.sourceHash === adjudication.sourceHash && candidate.sourcePage === adjudication.sourcePage &&
+      candidate.revisionArtifactHash === revision.solutionArtifact.sha256 &&
+      candidate.failedFidelityArtifactHash === revision.fidelityArtifact.sha256 &&
+      candidate.revisionSolutionItemHash === revision.effectiveSolutionItemHash &&
+      candidate.failedDecisionHash === adjudication.failedDecisionHash &&
+      candidate.failedEvidenceHash === adjudication.failedEvidenceHash
+    );
+    if (
+      !spec || adjudication.key !== repair.key || adjudication.dpi !== spec.dpi ||
+      canonicalEvidenceHash(adjudication.revisionArtifact) !== canonicalEvidenceHash({
+        path: revision.solutionArtifact.path,
+        sha256: revision.solutionArtifact.sha256,
+      }) || canonicalEvidenceHash(adjudication.failedFidelityArtifact) !== canonicalEvidenceHash(
+        revision.fidelityArtifact
+      ) || adjudication.revisionSolutionItemHash !== revision.effectiveSolutionItemHash ||
+      adjudication.adjudicationArtifact.version !== SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION ||
+      adjudication.adjudicationArtifact.promptDigest !==
+        SOLUTION_REVISION_FIDELITY_ADJUDICATION_PROMPT_DIGEST ||
+      canonicalEvidenceHash(adjudication.sourcePages) !== canonicalEvidenceHash(
+        [...new Set(spec.views.map((view) => view.sourcePage))].sort((a, b) => a - b)
+      ) || canonicalEvidenceHash(adjudication.cropViews.map(({ sourcePage, label, rect }) => ({
+        sourcePage,
+        label,
+        rect,
+      }))) !== canonicalEvidenceHash(spec.views)
+    ) throw new Error(`${repair.key} solution fidelity adjudication evidence가 parent/allowlist와 다릅니다`);
+    for (const [label, pointer] of [
+      ["solution fidelity adjudication revision", adjudication.revisionArtifact],
+      ["solution fidelity adjudication failed fidelity", adjudication.failedFidelityArtifact],
+    ] as const) {
+      const path = confinedStateFile(stateDir, pointer.path, label);
+      if (await sha256File(path) !== pointer.sha256) throw new Error(`${label} hash가 다릅니다`);
+    }
+    await declare("solution fidelity adjudication evidence", adjudication.cropEvidenceArtifact);
+    await declare("solution fidelity adjudication PDF", adjudication.cropEvidencePdf);
+    for (const [index, view] of adjudication.cropViews.entries()) {
+      if (view.pixelSha256 !== view.artifact.sha256) {
+        throw new Error(`${repair.key} solution fidelity adjudication view ${index + 1} hash가 다릅니다`);
+      }
+      await declare(`solution fidelity adjudication view ${index + 1}`, view.artifact);
+      const dimensions = pngDimensions(confinedStateFile(
+        stateDir,
+        view.artifact.path,
+        `solution fidelity adjudication view ${index + 1}`
+      ));
+      if (dimensions.width !== view.pixelWidth || dimensions.height !== view.pixelHeight) {
+        throw new Error(`${repair.key} solution fidelity adjudication view ${index + 1} 크기가 다릅니다`);
+      }
+    }
+    await declare("solution fidelity adjudication child", adjudication.adjudicationArtifact);
+    const child = object(JSON.parse(readFileSync(confinedStateFile(
+      stateDir,
+      adjudication.adjudicationArtifact.path,
+      "solution fidelity adjudication child"
+    ), "utf8")), adjudication.adjudicationArtifact.path);
+    if (
+      canonicalEvidenceHash(child.item) !== adjudication.adjudicationDecisionHash ||
+      object(child.basis, "solution fidelity adjudication basis").failedDecisionHash !==
+        adjudication.failedDecisionHash
+    ) throw new Error(`${repair.key} solution fidelity adjudication child decision binding이 다릅니다`);
+  }
 }
 
 async function reviseSolutionItem(
@@ -4607,17 +5270,51 @@ async function reviseSolutionItem(
   if (fidelityArtifactHash !== canonicalEvidenceHash(fidelityCheckpoint)) {
     throw new Error(`${base.key} revision 해설 fidelity hash가 다릅니다`);
   }
+  const revisionArtifact = { path: revisionRelativePath, sha256: revisionArtifactHash };
+  const failedFidelityArtifact = {
+    path: fidelityRelativePath,
+    sha256: fidelityArtifactHash,
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+  };
+  let terminalDecision = decision;
+  let terminalFidelityArtifact: EvidencePointer = failedFidelityArtifact;
+  let fidelityAdjudication: SolutionRevisionFidelityAdjudicationEvidence | undefined;
   const terminalAnswer = decision.answerStatus === "exact" ||
     decision.answerStatus === "not_visible" && base.allowDerivedMarkerAnswer;
-  if (
-    decision.sourcePage !== revised.page || decision.explanationStatus !== "exact" ||
-    (trigger.kind === "prompt-upgrade" ? decision.answerStatus !== "exact" : !terminalAnswer)
-  ) throw new Error(`${base.key} 두 번째 source-grounded 해설 revision도 terminal이 아닙니다`);
+  const terminal = decision.sourcePage === revised.page && decision.explanationStatus === "exact" &&
+    (trigger.kind === "prompt-upgrade" ? decision.answerStatus === "exact" : terminalAnswer);
+  const adjudicationSpec = solutionRevisionFidelityAdjudicationSpec(
+    entry,
+    evidence,
+    base.key,
+    revisionArtifactHash,
+    fidelityArtifactHash,
+    effectiveSolutionItemHash,
+    decision
+  );
+  if (!terminal && adjudicationSpec) {
+    const adjudicated = await adjudicateSolutionRevisionFidelity(
+      entry,
+      evidence,
+      stateDir,
+      effectiveProblemCorpusHash,
+      revisedInput,
+      revised,
+      revisionArtifact,
+      failedFidelityArtifact,
+      decision
+    );
+    terminalDecision = adjudicated.decision;
+    terminalFidelityArtifact = adjudicated.artifact;
+    fidelityAdjudication = adjudicated.evidence;
+  } else if (!terminal) {
+    throw new Error(`${base.key} 두 번째 source-grounded 해설 revision도 terminal이 아닙니다`);
+  }
 
   return {
     solution: revised,
-    decision,
-    fidelityArtifact: { path: fidelityRelativePath, sha256: fidelityArtifactHash },
+    decision: terminalDecision,
+    fidelityArtifact: terminalFidelityArtifact,
     evidence: {
       trigger: triggerEvidence,
       baseRepairPage: firstSolution.page,
@@ -4635,6 +5332,7 @@ async function reviseSolutionItem(
         sha256: fidelityArtifactHash,
         promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
       },
+      ...(fidelityAdjudication ? { fidelityAdjudication } : {}),
       diagnosticDecisionHash,
       baseSolutionItemHash: base.baseSolutionItemHash,
       baseRepairSolutionItemHash: firstEvidence.effectiveSolutionItemHash,
@@ -4930,7 +5628,7 @@ async function repairSolutionItem(
   });
 }
 
-async function auditAcceptedSolutions(
+export async function auditAcceptedSolutions(
   entry: CorpusManifestEntry,
   problemEvidence: PdfEvidence,
   evidence: PdfEvidence,
@@ -9117,6 +9815,7 @@ export async function writeAnswerAttestation(
   await assertProblemManualAdjudicationAuthority(stateDir, answerAudit.repairs);
   await assertProblemScopeAdjudicationAuthority(stateDir, answerAudit.repairs);
   await assertProblemRepairScopeAdjudicationAuthority(stateDir, answerAudit.repairs);
+  await assertSolutionRevisionFidelityAdjudicationAuthority(stateDir, answerAudit.solutionRepairs);
   if (
     audit.entryId !== entryId || audit.problemHash !== problemHash || audit.solutionHash !== solutionHash ||
     audit.classifierVersion !== CLASSIFIER_VERSION || audit.rulesDigest !== CLASSIFIER_DIGEST ||
