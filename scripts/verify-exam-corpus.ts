@@ -307,6 +307,9 @@ const PERSISTED_SOLUTION_REPAIR_SEED_VERSION = 1;
 const PERSISTED_SOLUTION_REVISION_TRIGGER_VERSION = 1;
 const SOLUTION_PROMPT_UPGRADE_VERSION = 1;
 const SOLUTION_PROMPT_UPGRADE_FIDELITY_VERSION = 1;
+const SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION = 1;
+const SOLUTION_REVISION_FIDELITY_ADJUDICATION_PROMPT_DIGEST =
+  "b38a96cf61fbbfdd0dfbc1b00c85dbf18a46a646a4aa46f9b41f0847b412e375";
 const LEGACY_TARGETED_SOLUTION_REVISION_VERSION = 1;
 const LEGACY_TARGETED_SOLUTION_REVISION_PROMPT_DIGEST =
   "d357d4bf715cea8b712b02546272f353c31eb94accfaefa960da616f2abd7884";
@@ -409,6 +412,27 @@ const SOLUTION_PROMPT_UPGRADE_ALLOWLIST = [{
   legacyPromptVersion: LEGACY_TARGETED_SOLUTION_REVISION_VERSION,
   legacyPromptDigest: LEGACY_TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
   expectedAnswer: "②",
+}] as const;
+
+const SOLUTION_REVISION_FIDELITY_ADJUDICATION_ALLOWLIST = [{
+  allowlistId: "ebsi-5769268-q20-solution-fidelity-v1",
+  entryId: "ebsi:5769268",
+  key: "8:20",
+  sourcePage: 6,
+  sourceHash: "bb5b5d03101f67e1f56fe33870def9bd90d91892ed3ef893d9e6c7df4d90aa66",
+  revisionArtifactHash: "00da6e80bdbbe87cbff4ce54b57737c77167f0e2764c64ae5c87c1972ef9c9dc",
+  failedFidelityArtifactHash: "0fd860b862ad7015dfbaa52fdd899667168fd377cd770d33b4d5abbc2db8a89d",
+  revisionSolutionItemHash: "7ad16feb562bc2650dc29272ca0d842e4569b512acb7ae6dae122feb30ffa94a",
+  failedDecisionHash: "24a8ac10fc3d42e7ad9a852988d5b500c89fb7ad5acf56ecd4502d32c33432ce",
+  failedEvidenceHash: "e9fabf2766b52183ab4c505a0e7e21eea3f0288f1dd2c7e4f4e8216b858f7edf",
+  dpi: 600,
+  views: [
+    { sourcePage: 6, label: "p6 full", rect: [0, 0, 1, 1] },
+    { sourcePage: 7, label: "p7 full", rect: [0, 0, 1, 1] },
+    { sourcePage: 7, label: "p7 Q20 statement ㄴ", rect: [0.08, 0.46, 0.53, 0.67] },
+  ],
+  requiredTokens: ["함수 $f(x)$는 극솟값을 갖는다. (거짓)", "정답 ③"],
+  literalToken: "함수 $f(x)$는 극솟값을 갖는다. (거짓)",
 }] as const;
 
 type ProblemCropAdjudicationSpec = {
@@ -757,6 +781,10 @@ export function repairScopeAdjudicationAllowlistFingerprint(): string {
 
 export function solutionPromptUpgradeAllowlistFingerprint(): string {
   return canonicalEvidenceHash(SOLUTION_PROMPT_UPGRADE_ALLOWLIST);
+}
+
+export function solutionFidelityAdjudicationAllowlistFingerprint(): string {
+  return canonicalEvidenceHash(SOLUTION_REVISION_FIDELITY_ADJUDICATION_ALLOWLIST);
 }
 
 type VerificationContract = {
@@ -5815,6 +5843,33 @@ type CanonicalSolutionArtifact = {
   checkpoint: Record<string, unknown>;
 };
 
+type SolutionRevisionFidelityAdjudicationEvidence = {
+  allowlistId: string;
+  key: string;
+  sourcePage: number;
+  sourcePages: number[];
+  sourceHash: string;
+  dpi: number;
+  revisionArtifact: EvidencePointer;
+  failedFidelityArtifact: EvidencePointer & { promptDigest: string };
+  revisionSolutionItemHash: string;
+  failedDecisionHash: string;
+  failedEvidenceHash: string;
+  cropEvidenceArtifact: EvidencePointer;
+  cropEvidencePdf: EvidencePointer;
+  cropViews: Array<{
+    sourcePage: number;
+    label: string;
+    rect: number[];
+    pixelWidth: number;
+    pixelHeight: number;
+    pixelSha256: string;
+    artifact: EvidencePointer;
+  }>;
+  adjudicationArtifact: EvidencePointer & { version: number; promptDigest: string };
+  adjudicationDecisionHash: string;
+};
+
 type PersistedSolutionRevisionAuthority = {
   generationId: string;
   key: string;
@@ -5825,6 +5880,7 @@ type PersistedSolutionRevisionAuthority = {
   finalSolutionItemHash: string;
   diagnosticDecisionHash: string;
   diagnosticEvidence: string;
+  fidelityAdjudication?: SolutionRevisionFidelityAdjudicationEvidence;
 };
 
 type LegacySolutionRevisionPredecessor = {
@@ -5934,12 +5990,90 @@ function historicalSolutionFidelityInput(value: unknown, label: string): Solutio
   };
 }
 
+function solutionRevisionFidelityAdjudicationEvidence(
+  value: unknown,
+  label: string,
+): SolutionRevisionFidelityAdjudicationEvidence {
+  const row = object(value, label);
+  const failedFidelityRow = object(row.failedFidelityArtifact, `${label}.failedFidelityArtifact`);
+  const failedFidelityArtifact = {
+    ...evidencePointer(
+      { path: failedFidelityRow.path, sha256: failedFidelityRow.sha256 },
+      `${label}.failedFidelityArtifact`,
+    ),
+    promptDigest: digest(failedFidelityRow.promptDigest, `${label}.failedFidelityArtifact.promptDigest`),
+  };
+  const adjudicationRow = object(row.adjudicationArtifact, `${label}.adjudicationArtifact`);
+  const adjudicationArtifact = {
+    ...evidencePointer(
+      { path: adjudicationRow.path, sha256: adjudicationRow.sha256 },
+      `${label}.adjudicationArtifact`,
+    ),
+    version: integer(adjudicationRow.version, `${label}.adjudicationArtifact.version`, 1),
+    promptDigest: digest(adjudicationRow.promptDigest, `${label}.adjudicationArtifact.promptDigest`),
+  };
+  if (!Array.isArray(row.sourcePages) || !Array.isArray(row.cropViews)) {
+    throw new Error(`${label} sourcePages/cropViews are invalid`);
+  }
+  const sourcePages = row.sourcePages.map((page, index) =>
+    integer(page, `${label}.sourcePages[${index}]`, 1));
+  const cropViews = row.cropViews.map((value, index) => {
+    const view = object(value, `${label}.cropViews[${index}]`);
+    if (!Array.isArray(view.rect) || view.rect.length !== 4
+      || view.rect.some((coordinate) => typeof coordinate !== "number"
+        || !Number.isFinite(coordinate) || coordinate < 0 || coordinate > 1)) {
+      throw new Error(`${label}.cropViews[${index}].rect is invalid`);
+    }
+    return {
+      sourcePage: integer(view.sourcePage, `${label}.cropViews[${index}].sourcePage`, 1),
+      label: exactString(view.label, `${label}.cropViews[${index}].label`),
+      rect: [...view.rect] as number[],
+      pixelWidth: integer(view.pixelWidth, `${label}.cropViews[${index}].pixelWidth`, 1),
+      pixelHeight: integer(view.pixelHeight, `${label}.cropViews[${index}].pixelHeight`, 1),
+      pixelSha256: digest(view.pixelSha256, `${label}.cropViews[${index}].pixelSha256`),
+      artifact: evidencePointer(view.artifact, `${label}.cropViews[${index}].artifact`),
+    };
+  });
+  const evidence: SolutionRevisionFidelityAdjudicationEvidence = {
+    allowlistId: exactString(row.allowlistId, `${label}.allowlistId`),
+    key: exactString(row.key, `${label}.key`),
+    sourcePage: integer(row.sourcePage, `${label}.sourcePage`, 1),
+    sourcePages,
+    sourceHash: digest(row.sourceHash, `${label}.sourceHash`),
+    dpi: integer(row.dpi, `${label}.dpi`, 72),
+    revisionArtifact: evidencePointer(row.revisionArtifact, `${label}.revisionArtifact`),
+    failedFidelityArtifact,
+    revisionSolutionItemHash: digest(
+      row.revisionSolutionItemHash,
+      `${label}.revisionSolutionItemHash`,
+    ),
+    failedDecisionHash: digest(row.failedDecisionHash, `${label}.failedDecisionHash`),
+    failedEvidenceHash: digest(row.failedEvidenceHash, `${label}.failedEvidenceHash`),
+    cropEvidenceArtifact: evidencePointer(row.cropEvidenceArtifact, `${label}.cropEvidenceArtifact`),
+    cropEvidencePdf: evidencePointer(row.cropEvidencePdf, `${label}.cropEvidencePdf`),
+    cropViews,
+    adjudicationArtifact,
+    adjudicationDecisionHash: digest(
+      row.adjudicationDecisionHash,
+      `${label}.adjudicationDecisionHash`,
+    ),
+  };
+  if (!isDeepStrictEqual(row, evidence)) throw new Error(`${label} has unexpected fields`);
+  return evidence;
+}
+
 function persistedSolutionRevisionAuthority(
   value: unknown,
   label: string,
 ): PersistedSolutionRevisionAuthority {
   const row = object(value, label);
-  const authority = {
+  const fidelityAdjudication = row.fidelityAdjudication === undefined
+    ? undefined
+    : solutionRevisionFidelityAdjudicationEvidence(
+      row.fidelityAdjudication,
+      `${label}.fidelityAdjudication`,
+    );
+  const authority: PersistedSolutionRevisionAuthority = {
     generationId: digest(row.generationId, `${label}.generationId`),
     key: exactString(row.key, `${label}.key`),
     repairArtifact: evidencePointer(row.repairArtifact, `${label}.repairArtifact`),
@@ -5952,9 +6086,245 @@ function persistedSolutionRevisionAuthority(
     finalSolutionItemHash: digest(row.finalSolutionItemHash, `${label}.finalSolutionItemHash`),
     diagnosticDecisionHash: digest(row.diagnosticDecisionHash, `${label}.diagnosticDecisionHash`),
     diagnosticEvidence: exactString(row.diagnosticEvidence, `${label}.diagnosticEvidence`),
+    ...(fidelityAdjudication ? { fidelityAdjudication } : {}),
   };
   if (!isDeepStrictEqual(row, authority)) throw new Error(`${label} has unexpected fields`);
   return authority;
+}
+
+function normalizedSolutionLiteral(value: string): string {
+  return value.replace(/\\\(|\\\)|\$/gu, "").replace(/\s+/gu, "");
+}
+
+function verifySolutionRevisionFidelityAdjudication(
+  stateDir: string,
+  entry: ManifestEntry,
+  solutionEvidence: DownloadEvidence,
+  effectiveProblemCorpusHash: string,
+  input: SolutionFidelityInput,
+  solution: OfficialSolution,
+  revisionArtifact: EvidencePointer,
+  failedFidelityArtifact: EvidencePointer & { promptDigest: string },
+  failedDecision: SolutionFidelityDecision,
+  candidates: CanonicalSolutionArtifact[],
+  declared?: unknown,
+): {
+  decision: SolutionFidelityDecision;
+  artifact: EvidencePointer;
+  evidence: SolutionRevisionFidelityAdjudicationEvidence;
+  evidencePaths: string[];
+} {
+  const revisionSolutionItemHash = canonicalEvidenceHash(solution.evidence);
+  const failedDecisionHash = canonicalEvidenceHash(failedDecision);
+  const failedEvidenceHash = sha256(failedDecision.evidence);
+  const spec = SOLUTION_REVISION_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
+    candidate.entryId === entry.id && candidate.key === input.key
+      && candidate.sourceHash === solutionEvidence.sha256
+      && candidate.revisionArtifactHash === revisionArtifact.sha256
+      && candidate.failedFidelityArtifactHash === failedFidelityArtifact.sha256
+      && candidate.revisionSolutionItemHash === revisionSolutionItemHash
+      && candidate.failedDecisionHash === failedDecisionHash
+      && candidate.failedEvidenceHash === failedEvidenceHash);
+  if (!spec || failedFidelityArtifact.promptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST
+    || failedDecision.sourcePage !== solution.page || failedDecision.answerStatus !== "exact"
+    || failedDecision.explanationStatus !== "mismatch"
+    || isTerminalSolutionDecision(input, solution, failedDecision)
+    || hashFile(confinedEvidencePath(
+      stateDir,
+      { path: solutionEvidence.path, sha256: solutionEvidence.sha256 },
+      `${input.key} official solution PDF`,
+    )) !== solutionEvidence.sha256
+    || solution.rawAnswer !== "③"
+    || !normalizedSolutionLiteral(solution.explanation).includes(
+      normalizedSolutionLiteral(spec.literalToken),
+    )) {
+    throw new Error(`${input.key}: solution fidelity adjudication is not exactly allowlisted`);
+  }
+  for (const [label, pointer] of [
+    ["solution revision", revisionArtifact],
+    ["failed solution revision fidelity", failedFidelityArtifact],
+  ] as const) {
+    if (hashFile(confinedEvidencePath(stateDir, pointer, `${input.key} ${label}`)) !== pointer.sha256) {
+      throw new Error(`${input.key}: ${label} hash mismatch`);
+    }
+  }
+  const children = candidates.filter((candidate) => {
+    const basis = object(candidate.checkpoint.basis, `${candidate.path}.basis`);
+    return object(basis.revisionArtifact, `${candidate.path}.basis.revisionArtifact`).path
+      === revisionArtifact.path;
+  });
+  if (children.length !== 1) {
+    throw new Error(`${input.key}: solution fidelity adjudication child coverage is not exact`);
+  }
+  const child = children[0];
+  const sourcePages = [...new Set(spec.views.map((view) => view.sourcePage))]
+    .sort((left, right) => left - right);
+  if (sourcePages.some((page) => page > solutionEvidence.pageCount)) {
+    throw new Error(`${input.key}: solution fidelity adjudication source pages are out of range`);
+  }
+  const evidenceBasis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key: input.key,
+    sourcePage: spec.sourcePage,
+    sourcePages,
+    sourceHash: solutionEvidence.sha256,
+    dpi: spec.dpi,
+    views: spec.views,
+    requiredTokens: spec.requiredTokens,
+  };
+  const evidenceDigest = canonicalEvidenceHash(evidenceBasis);
+  const evidenceStem = `v${SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION}-` +
+    `${String(spec.sourcePage).padStart(4, "0")}-${input.printedNumber.padStart(4, "0")}-` +
+    evidenceDigest;
+  const evidencePath = `solution-fidelity-adjudication-evidence/${evidenceStem}.json`;
+  const evidencePdfPath = `solution-fidelity-adjudication-evidence/${evidenceStem}.pdf`;
+  const evidenceCheckpoint = readBoundEvidence(
+    stateDir,
+    { path: evidencePath, sha256: hashFile(confinedEvidencePath(
+      stateDir,
+      { path: evidencePath, sha256: "0".repeat(64) },
+      `${input.key} solution fidelity adjudication evidence`,
+    )) },
+    `${input.key} solution fidelity adjudication evidence`,
+  );
+  if (!Array.isArray(evidenceCheckpoint.views) || evidenceCheckpoint.views.length !== spec.views.length) {
+    throw new Error(`${input.key}: solution fidelity adjudication view coverage is not exact`);
+  }
+  const cropViews = evidenceCheckpoint.views.map((value, index) => {
+    const row = object(value, `${evidencePath}.views[${index}]`);
+    const expected = spec.views[index];
+    if (!Array.isArray(row.rect) || !isDeepStrictEqual(row.rect, [...expected.rect])
+      || row.sourcePage !== expected.sourcePage || row.label !== expected.label) {
+      throw new Error(`${input.key}: solution fidelity adjudication view ${index} is stale`);
+    }
+    const artifact = evidencePointer(row.artifact, `${evidencePath}.views[${index}].artifact`);
+    const pixelWidth = integer(row.pixelWidth, `${evidencePath}.views[${index}].pixelWidth`, 1);
+    const pixelHeight = integer(row.pixelHeight, `${evidencePath}.views[${index}].pixelHeight`, 1);
+    const pixelSha256 = digest(row.pixelSha256, `${evidencePath}.views[${index}].pixelSha256`);
+    const expectedPath = `solution-fidelity-adjudication-evidence/${evidenceStem}-view-` +
+      `${String(index).padStart(2, "0")}.png`;
+    const absolute = confinedEvidencePath(stateDir, artifact, `${input.key} adjudication view ${index}`);
+    const dimensions = cropPngDimensions(absolute, `${input.key} adjudication view ${index}`);
+    const view = {
+      sourcePage: expected.sourcePage,
+      label: expected.label,
+      rect: [...expected.rect] as number[],
+      pixelWidth,
+      pixelHeight,
+      pixelSha256,
+      artifact,
+    };
+    if (artifact.path !== expectedPath || artifact.sha256 !== pixelSha256
+      || hashFile(absolute) !== pixelSha256 || dimensions.width !== pixelWidth
+      || dimensions.height !== pixelHeight || !isDeepStrictEqual(row, view)) {
+      throw new Error(`${input.key}: solution fidelity adjudication view ${index} hash/size is stale`);
+    }
+    return view;
+  });
+  const evidencePdf = evidencePointer(
+    evidenceCheckpoint.evidencePdf,
+    `${evidencePath}.evidencePdf`,
+  );
+  if (evidencePdf.path !== evidencePdfPath
+    || hashFile(confinedEvidencePath(stateDir, evidencePdf, `${input.key} adjudication PDF`))
+      !== evidencePdf.sha256) {
+    throw new Error(`${input.key}: solution fidelity adjudication PDF is stale`);
+  }
+  const expectedEvidenceCheckpoint = {
+    version: SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION,
+    entryId: entry.id,
+    basisDigest: evidenceDigest,
+    basis: evidenceBasis,
+    renderer: "pdftocairo-png+pdf-lib",
+    dpi: spec.dpi,
+    evidencePdf,
+    views: cropViews,
+  };
+  if (!isDeepStrictEqual(evidenceCheckpoint, expectedEvidenceCheckpoint)) {
+    throw new Error(`${input.key}: solution fidelity adjudication evidence checkpoint is stale`);
+  }
+  const cropEvidenceArtifact = { path: evidencePath, sha256: canonicalEvidenceHash(evidenceCheckpoint) };
+  const inputHash = canonicalEvidenceHash(input);
+  const basis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key: input.key,
+    sourcePage: spec.sourcePage,
+    sourcePages,
+    sourceHash: solutionEvidence.sha256,
+    dpi: spec.dpi,
+    effectiveProblemCorpusHash,
+    revisionArtifact,
+    failedFidelityArtifact,
+    revisionSolutionItemHash,
+    failedDecision,
+    failedDecisionHash,
+    failedEvidenceHash,
+    cropEvidenceArtifact,
+    cropEvidencePdf: evidencePdf,
+    cropViews,
+    inputHash,
+    promptDigest: SOLUTION_REVISION_FIDELITY_ADJUDICATION_PROMPT_DIGEST,
+  };
+  const basisDigest = canonicalEvidenceHash(basis);
+  const expectedChildPath = `solution-fidelity-adjudications/` +
+    `v${SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION}-${String(solution.page).padStart(4, "0")}-` +
+    `${input.printedNumber.padStart(4, "0")}-${basisDigest}.json`;
+  const decision = solutionFidelityDecision(
+    child.checkpoint.item,
+    input,
+    `${child.path}.item`,
+  );
+  const expectedChild = {
+    version: SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION,
+    basisDigest,
+    basis,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    input,
+    item: decision,
+  };
+  if (child.path !== expectedChildPath || !isDeepStrictEqual(child.checkpoint, expectedChild)
+    || decision.sourcePage !== solution.page || decision.answerStatus !== "exact"
+    || decision.explanationStatus !== "exact") {
+    throw new Error(`${input.key}: solution fidelity adjudication child is stale or nonterminal`);
+  }
+  const evidence: SolutionRevisionFidelityAdjudicationEvidence = {
+    allowlistId: spec.allowlistId,
+    key: input.key,
+    sourcePage: spec.sourcePage,
+    sourcePages,
+    sourceHash: solutionEvidence.sha256,
+    dpi: spec.dpi,
+    revisionArtifact,
+    failedFidelityArtifact,
+    revisionSolutionItemHash,
+    failedDecisionHash,
+    failedEvidenceHash,
+    cropEvidenceArtifact,
+    cropEvidencePdf: evidencePdf,
+    cropViews,
+    adjudicationArtifact: {
+      path: child.path,
+      sha256: child.sha256,
+      version: SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION,
+      promptDigest: SOLUTION_REVISION_FIDELITY_ADJUDICATION_PROMPT_DIGEST,
+    },
+    adjudicationDecisionHash: canonicalEvidenceHash(decision),
+  };
+  if (declared !== undefined && !isDeepStrictEqual(
+    solutionRevisionFidelityAdjudicationEvidence(declared, `${input.key}.fidelityAdjudication`),
+    evidence,
+  )) {
+    throw new Error(`${input.key}: solution fidelity adjudication envelope is stale`);
+  }
+  return {
+    decision,
+    artifact: { path: child.path, sha256: child.sha256 },
+    evidence,
+    evidencePaths: [evidencePath, evidencePdfPath, ...cropViews.map((view) => view.artifact.path)],
+  };
 }
 
 function legacySolutionRevisionPredecessor(
@@ -6160,6 +6530,11 @@ function verifyPersistedSolutionHistory(
     "solution-fidelity-revisions",
     /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u,
   );
+  const revisionFidelityAdjudicationFiles = readCanonicalSolutionArtifacts(
+    stateDir,
+    "solution-fidelity-adjudications",
+    /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
+  );
   const promptUpgradeFiles = readCanonicalSolutionArtifacts(
     stateDir,
     "solution-revision-upgrades",
@@ -6170,14 +6545,25 @@ function verifyPersistedSolutionHistory(
     "solution-fidelity-revision-upgrades",
     /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u,
   );
+  const adjudicationEvidenceDirectory = join(stateDir, "solution-fidelity-adjudication-evidence");
+  const hasAdjudicationEvidence = existsSync(adjudicationEvidenceDirectory)
+    && readdirSync(adjudicationEvidenceDirectory, { withFileTypes: true }).some((entry) =>
+      !(entry.isFile() && entry.name.endsWith(".tmp")));
   const empty = {
     byKey: new Map<string, PersistedSolutionGeneration[]>(),
     currentByKey: new Map<string, PersistedSolutionGeneration>(),
     requiredRevisionKeys: new Set<string>(),
   };
   if (repairFiles.length + repairFidelityFiles.length + revisionFiles.length + revisionFidelityFiles.length
-    + promptUpgradeFiles.length + promptUpgradeFidelityFiles.length === 0) {
+    + revisionFidelityAdjudicationFiles.length
+    + promptUpgradeFiles.length + promptUpgradeFidelityFiles.length === 0
+    && !hasAdjudicationEvidence) {
     return empty;
+  }
+  if ((revisionFidelityAdjudicationFiles.length > 0
+    || hasAdjudicationEvidence)
+    && contract.auditVersion !== 5) {
+    throw new Error("solution fidelity adjudication requires answer audit v5");
   }
 
   const recordByNumber = new Map<string, ClassifiedEvidence>();
@@ -6191,6 +6577,8 @@ function verifyPersistedSolutionHistory(
   const assignedRepairFidelity = new Set<string>();
   const assignedRevision = new Set<string>();
   const assignedRevisionFidelity = new Set<string>();
+  const assignedRevisionFidelityAdjudication = new Set<string>();
+  const assignedRevisionFidelityAdjudicationEvidence = new Set<string>();
   const assignedPromptUpgrade = new Set<string>();
   const assignedPromptUpgradeFidelity = new Set<string>();
   const generations = new Map<string, PersistedSolutionGeneration>();
@@ -6634,38 +7022,88 @@ function verifyPersistedSolutionHistory(
         throw new Error(`${revisionFidelityFile.path}: persisted revision fidelity is stale`);
       }
       if (!isTerminalSolutionDecision(revisedInput, revised, finalDecision)) {
-        if (!legacyPromptUpgradeSpec
-          || revisionFidelityFile.sha256 !== legacyPromptUpgradeSpec.legacyRevisionFidelityArtifactHash
-          || finalDecision.answerStatus !== "mismatch" || finalDecision.explanationStatus !== "exact"
-          || finalDecision.sourcePage !== revised.page) {
-          throw new Error(`${revisionFidelityFile.path}: persisted revision fidelity is nonterminal`);
+        const adjudicationSpec = SOLUTION_REVISION_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
+          candidate.entryId === entry.id && candidate.key === key
+            && candidate.sourceHash === solutionEvidence.sha256
+            && candidate.revisionArtifactHash === revisionFile.sha256
+            && candidate.failedFidelityArtifactHash === revisionFidelityFile.sha256
+            && candidate.revisionSolutionItemHash === revisedItemHash
+            && candidate.failedDecisionHash === canonicalEvidenceHash(finalDecision)
+            && candidate.failedEvidenceHash === sha256(finalDecision.evidence));
+        if (adjudicationSpec) {
+          const adjudicated = verifySolutionRevisionFidelityAdjudication(
+            stateDir,
+            entry,
+            solutionEvidence,
+            effectiveProblemCorpusHash,
+            revisedInput,
+            revised,
+            { path: revisionFile.path, sha256: revisionFile.sha256 },
+            {
+              path: revisionFidelityFile.path,
+              sha256: revisionFidelityFile.sha256,
+              promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+            },
+            finalDecision,
+            revisionFidelityAdjudicationFiles,
+          );
+          assignedRevisionFidelityAdjudication.add(adjudicated.artifact.path);
+          for (const path of adjudicated.evidencePaths) {
+            if (assignedRevisionFidelityAdjudicationEvidence.has(path)) {
+              throw new Error(`${key}: duplicate solution fidelity adjudication evidence`);
+            }
+            assignedRevisionFidelityAdjudicationEvidence.add(path);
+          }
+          revisionAuthority = {
+            generationId,
+            key,
+            repairArtifact: { path: repairFile.path, sha256: repairFile.sha256 },
+            repairFidelityArtifact: { path: fidelityFile.path, sha256: fidelityFile.sha256 },
+            revisionArtifact: { path: revisionFile.path, sha256: revisionFile.sha256 },
+            revisionFidelityArtifact: {
+              path: revisionFidelityFile.path,
+              sha256: revisionFidelityFile.sha256,
+            },
+            finalSolutionItemHash: revisedItemHash,
+            diagnosticDecisionHash,
+            diagnosticEvidence,
+            fidelityAdjudication: adjudicated.evidence,
+          };
+          if (rawTrigger.kind !== "persisted") revisionTrigger = trigger;
+        } else {
+          if (!legacyPromptUpgradeSpec
+            || revisionFidelityFile.sha256 !== legacyPromptUpgradeSpec.legacyRevisionFidelityArtifactHash
+            || finalDecision.answerStatus !== "mismatch" || finalDecision.explanationStatus !== "exact"
+            || finalDecision.sourcePage !== revised.page) {
+            throw new Error(`${revisionFidelityFile.path}: persisted revision fidelity is nonterminal`);
+          }
+          const predecessor = {
+            allowlistId: legacyPromptUpgradeSpec.allowlistId,
+            generationId,
+            key,
+            effectiveProblemCorpusHash,
+            repairArtifact: { path: repairFile.path, sha256: repairFile.sha256 },
+            repairFidelityArtifact: { path: fidelityFile.path, sha256: fidelityFile.sha256 },
+            revisionArtifact: {
+              path: revisionFile.path,
+              sha256: revisionFile.sha256,
+              promptVersion: legacyPromptUpgradeSpec.legacyPromptVersion,
+              promptDigest: legacyPromptUpgradeSpec.legacyPromptDigest,
+            },
+            revisionFidelityArtifact: {
+              path: revisionFidelityFile.path,
+              sha256: revisionFidelityFile.sha256,
+            },
+            revisionSolutionItemHash: revisedItemHash,
+            failedDecisionHash: canonicalEvidenceHash(finalDecision),
+            failedEvidenceHash: sha256(finalDecision.evidence),
+            failedEvidence: finalDecision.evidence,
+          };
+          if (legacyPromptUpgradePredecessors.has(revisionFile.path)) {
+            throw new Error(`${key}: duplicate legacy solution prompt predecessor`);
+          }
+          legacyPromptUpgradePredecessors.set(revisionFile.path, predecessor);
         }
-        const predecessor = {
-          allowlistId: legacyPromptUpgradeSpec.allowlistId,
-          generationId,
-          key,
-          effectiveProblemCorpusHash,
-          repairArtifact: { path: repairFile.path, sha256: repairFile.sha256 },
-          repairFidelityArtifact: { path: fidelityFile.path, sha256: fidelityFile.sha256 },
-          revisionArtifact: {
-            path: revisionFile.path,
-            sha256: revisionFile.sha256,
-            promptVersion: legacyPromptUpgradeSpec.legacyPromptVersion,
-            promptDigest: legacyPromptUpgradeSpec.legacyPromptDigest,
-          },
-          revisionFidelityArtifact: {
-            path: revisionFidelityFile.path,
-            sha256: revisionFidelityFile.sha256,
-          },
-          revisionSolutionItemHash: revisedItemHash,
-          failedDecisionHash: canonicalEvidenceHash(finalDecision),
-          failedEvidenceHash: sha256(finalDecision.evidence),
-          failedEvidence: finalDecision.evidence,
-        };
-        if (legacyPromptUpgradePredecessors.has(revisionFile.path)) {
-          throw new Error(`${key}: duplicate legacy solution prompt predecessor`);
-        }
-        legacyPromptUpgradePredecessors.set(revisionFile.path, predecessor);
       } else {
         if (legacyPromptUpgradeSpec) {
           throw new Error(`${revisionFidelityFile.path}: legacy prompt revision cannot be terminal authority`);
@@ -6919,6 +7357,26 @@ function verifyPersistedSolutionHistory(
   }
   if (revisionFidelityFiles.some((file) => !assignedRevisionFidelity.has(file.path))) {
     throw new Error("orphan persisted solution revision fidelity artifact");
+  }
+  if (revisionFidelityAdjudicationFiles.some((file) =>
+    !assignedRevisionFidelityAdjudication.has(file.path))) {
+    throw new Error("orphan solution revision fidelity adjudication artifact");
+  }
+  const actualAdjudicationEvidence = new Set<string>();
+  if (existsSync(adjudicationEvidenceDirectory)) {
+    for (const child of readdirSync(adjudicationEvidenceDirectory, { withFileTypes: true })) {
+      if (child.isFile() && child.name.endsWith(".tmp")) continue;
+      if (!child.isFile() || child.isSymbolicLink()) {
+        throw new Error(`solution fidelity adjudication evidence/${child.name} is not a regular file`);
+      }
+      actualAdjudicationEvidence.add(`solution-fidelity-adjudication-evidence/${child.name}`);
+    }
+  }
+  if ([...actualAdjudicationEvidence].some((path) =>
+    !assignedRevisionFidelityAdjudicationEvidence.has(path))
+    || [...assignedRevisionFidelityAdjudicationEvidence].some((path) =>
+      !actualAdjudicationEvidence.has(path))) {
+    throw new Error("solution fidelity adjudication evidence has orphan or missing authority");
   }
   if (promptUpgradeFiles.some((file) => !assignedPromptUpgrade.has(file.path))) {
     throw new Error("orphan solution prompt upgrade artifact");
@@ -7480,9 +7938,39 @@ function verifySolutionRevision(
   if (!isDeepStrictEqual(fidelityCheckpoint, expectedFidelityCheckpoint)) {
     throw new Error(`${key}: solution revision fidelity metadata/content is stale or incomplete`);
   }
-  if (!isTerminalSolutionDecision(input, revised, decision)
-    || promptUpgradeSpec && decision.answerStatus !== "exact") {
-    throw new Error(`${key}: solution revision did not reach terminal source fidelity`);
+  let terminalDecision = decision;
+  let terminalFidelityArtifact = fidelityArtifact;
+  let fidelityAdjudication: SolutionRevisionFidelityAdjudicationEvidence | undefined;
+  if (!isTerminalSolutionDecision(input, revised, decision)) {
+    if (revision.fidelityAdjudication === undefined || contract.auditVersion !== 5) {
+      throw new Error(`${key}: solution revision did not reach terminal source fidelity`);
+    }
+    const candidates = readCanonicalSolutionArtifacts(
+      stateDir,
+      "solution-fidelity-adjudications",
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
+    );
+    const adjudicated = verifySolutionRevisionFidelityAdjudication(
+      stateDir,
+      entry,
+      solutionEvidence,
+      effectiveProblemCorpusHash,
+      revisedInput,
+      revised,
+      solutionArtifact,
+      { ...fidelityArtifact, promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST },
+      decision,
+      candidates,
+      revision.fidelityAdjudication,
+    );
+    terminalDecision = adjudicated.decision;
+    terminalFidelityArtifact = adjudicated.artifact;
+    fidelityAdjudication = adjudicated.evidence;
+  } else if (revision.fidelityAdjudication !== undefined) {
+    throw new Error(`${key}: terminal revision must not declare fidelity adjudication`);
+  }
+  if (promptUpgradeSpec && terminalDecision.answerStatus !== "exact") {
+    throw new Error(`${key}: prompt-upgrade revision answer fidelity is not exact`);
   }
   const expectedEvidence = {
     trigger: expectedTrigger,
@@ -7502,6 +7990,7 @@ function verifySolutionRevision(
       ...fidelityArtifact,
       promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
     },
+    ...(fidelityAdjudication ? { fidelityAdjudication } : {}),
     diagnosticDecisionHash: fidelityDecisionHash,
     baseSolutionItemHash: input.baseSolutionItemHash,
     baseRepairSolutionItemHash: first.effectiveSolutionItemHash,
@@ -7518,10 +8007,19 @@ function verifySolutionRevision(
     !isDeepStrictEqual(persistedGeneration.revision.revisionArtifact, solutionArtifact)
     || !isDeepStrictEqual(persistedGeneration.revision.revisionFidelityArtifact, fidelityArtifact)
     || persistedGeneration.revision.finalSolutionItemHash !== effectiveSolutionItemHash
+    || !isDeepStrictEqual(
+      persistedGeneration.revision.fidelityAdjudication,
+      fidelityAdjudication,
+    )
   )) {
     throw new Error(`${key}: current revision does not match the reconstructed persisted generation`);
   }
-  return { solution: revised, decision, fidelityArtifact, evidence: expectedEvidence };
+  return {
+    solution: revised,
+    decision: terminalDecision,
+    fidelityArtifact: terminalFidelityArtifact,
+    evidence: expectedEvidence,
+  };
 }
 
 function verifySolutionFidelity(
@@ -7968,7 +8466,12 @@ function verifySemanticCheckpoint(
 }
 
 function hasPersistedSolutionGenerationSignal(stateDir: string): boolean {
-  for (const directory of ["solution-revision-upgrades", "solution-fidelity-revision-upgrades"]) {
+  for (const directory of [
+    "solution-revision-upgrades",
+    "solution-fidelity-revision-upgrades",
+    "solution-fidelity-adjudications",
+    "solution-fidelity-adjudication-evidence",
+  ]) {
     const absolute = join(stateDir, directory);
     if (existsSync(absolute) && readdirSync(absolute, { withFileTypes: true }).some((entry) =>
       !(entry.isFile() && entry.name.endsWith(".tmp")))) return true;

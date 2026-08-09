@@ -43,12 +43,15 @@ import {
   officialAnswerForDb,
   repairScopeAdjudicationAllowlistFingerprint,
   runCli,
+  solutionFidelityAdjudicationAllowlistFingerprint,
   solutionPromptUpgradeAllowlistFingerprint,
   TARGET_SUBJECTS,
   verifyExamCorpus,
 } from "../scripts/verify-exam-corpus";
 import {
   applyAllowlistedProblemManualCorrection,
+  auditAcceptedSolutions,
+  parseCorpusManifest,
   PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST,
   PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST,
   PROBLEM_MANUAL_CORRECTION_DIGEST,
@@ -57,7 +60,11 @@ import {
   SOLUTION_PROMPT_UPGRADE_ALLOWLIST,
   SOLUTION_PROMPT_UPGRADE_FIDELITY_VERSION,
   SOLUTION_PROMPT_UPGRADE_VERSION,
+  SOLUTION_REVISION_FIDELITY_ADJUDICATION_ALLOWLIST,
+  SOLUTION_REVISION_FIDELITY_ADJUDICATION_PROMPT_DIGEST,
+  SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION,
   LEGACY_TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+  resolveOfficialAnswer,
 } from "../scripts/import-exam-corpus";
 
 type Target = (typeof TARGET_SUBJECTS)[number];
@@ -205,6 +212,11 @@ const SOLUTION_PROMPT_UPGRADE_SPEC = SOLUTION_PROMPT_UPGRADE_ALLOWLIST[0];
 const SOLUTION_PROMPT_UPGRADE_STATE = join(
   process.cwd(),
   "data/import-exam-corpus/887df3e562b3dab6874de994",
+);
+const SOLUTION_FIDELITY_ADJUDICATION_SPEC = SOLUTION_REVISION_FIDELITY_ADJUDICATION_ALLOWLIST[0];
+const SOLUTION_FIDELITY_ADJUDICATION_STATE = join(
+  process.cwd(),
+  "data/import-exam-corpus/bc7655b894a573179fae1c73",
 );
 const TARGETED_PROMPT_DIGEST = hash(
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`,
@@ -863,6 +875,88 @@ function fixture(): { root: string; dataDir: string; dbPath: string; manifestPat
   ]));
   writeJson(manifestPath, { schemaVersion: 2, summary: { entries: manifestEntries.length, bySubject }, entries: manifestEntries });
   return { root, dataDir, dbPath, manifestPath, stateDirs };
+}
+
+function q20EffectiveClassified(): Array<{
+  question: Record<string, any>;
+  classification: Record<string, any>;
+}> {
+  const terminal = JSON.parse(readFileSync(join(
+    SOLUTION_FIDELITY_ADJUDICATION_STATE,
+    "problem-terminal-fidelity/" +
+      "v2-0000-3f0f4625f5ee5ba0c627c2655ae751e7fdbd334e49143b552b1280b71abbdda6-" +
+      "15bcf83cec42ceb2f2fa4d0640538b6b29825938998e2f8dbf095bbd940afe66.json",
+  ), "utf8"));
+  const baseQuestions = JSON.parse(readFileSync(join(
+    SOLUTION_FIDELITY_ADJUDICATION_STATE,
+    "problem-chunks/v2-0000.json",
+  ), "utf8")).items as Array<Record<string, any>>;
+  const baseDecisions = new Map<string, Record<string, any>>(
+    JSON.parse(readFileSync(join(
+      SOLUTION_FIDELITY_ADJUDICATION_STATE,
+      `classification-chunks/v5-0000-${DIGEST}.json`,
+    ), "utf8")).items.map((decision: Record<string, any>) => [decision.key, decision]),
+  );
+  const repairedByQuestionHash = new Map<string, Record<string, any>>();
+  const classificationRepairDir = join(
+    SOLUTION_FIDELITY_ADJUDICATION_STATE,
+    "classification-repair-batches",
+  );
+  for (const name of readdirSync(classificationRepairDir)) {
+    const checkpoint = JSON.parse(readFileSync(join(classificationRepairDir, name), "utf8"));
+    const itemByKey = new Map<string, Record<string, any>>(
+      checkpoint.items.map((item: Record<string, any>) => [item.key, item]),
+    );
+    for (const member of checkpoint.members) {
+      repairedByQuestionHash.set(member.effectiveQuestionHash, itemByKey.get(member.key)!);
+    }
+  }
+  const repairedQuestions = readdirSync(join(
+    SOLUTION_FIDELITY_ADJUDICATION_STATE,
+    "problem-repair-batches",
+  )).flatMap((name) => JSON.parse(readFileSync(join(
+    SOLUTION_FIDELITY_ADJUDICATION_STATE,
+    "problem-repair-batches",
+    name,
+  ), "utf8")).items as Array<Record<string, any>>);
+  const projection = (question: Record<string, any>) => ({
+    page: question.page,
+    number: question.number,
+    qtype: question.qtype,
+    question: question.question,
+    choices: question.choices,
+    box: question.box,
+    figure: question.figure,
+    figure_description: question.figure_description,
+  });
+  const questions = terminal.inputs.map((input: Record<string, any>) => {
+    const shared = {
+      page: input.source_page,
+      number: input.printed_number,
+      qtype: input.qtype,
+      question: input.question,
+      choices: input.choices,
+      box: input.box,
+      figure: input.figure,
+      figure_description: input.figure_description,
+    };
+    const repaired = repairedQuestions.find((candidate) =>
+      canonicalEvidenceHash(projection(candidate)) === canonicalEvidenceHash(shared)
+        && repairedByQuestionHash.has(canonicalEvidenceHash(candidate)));
+    if (repaired) return structuredClone(repaired);
+    const base = baseQuestions.find((candidate) => `${candidate.page}:${candidate.number}` === input.key);
+    if (!base || canonicalEvidenceHash(projection(base)) !== canonicalEvidenceHash(shared)) {
+      throw new Error(`${input.key} Q20 effective question reconstruction failed`);
+    }
+    return structuredClone(base);
+  });
+  const classified = questions.map((question: Record<string, any>) => ({
+    question,
+    classification: repairedByQuestionHash.get(canonicalEvidenceHash(question))
+      ?? baseDecisions.get(`${question.page}:${question.number}`)!,
+  }));
+  expect(canonicalEvidenceHash(classified)).toBe(terminal.effectiveCorpusHash);
+  return classified;
 }
 
 function prepareQ11ScopeFixture(files: ReturnType<typeof fixture>): void {
@@ -6650,6 +6744,475 @@ function installSolutionPromptUpgrade(files: ReturnType<typeof fixture>): {
   };
 }
 
+async function installSolutionFidelityAdjudication(files: ReturnType<typeof fixture>): Promise<{
+  childArtifact: string;
+  evidenceArtifact: string;
+  failedFidelityArtifact: string;
+}> {
+  const oldStateDir = files.stateDirs.math;
+  const storedEntry = JSON.parse(readFileSync(join(
+    SOLUTION_FIDELITY_ADJUDICATION_STATE,
+    "entry.json",
+  ), "utf8")).entry;
+  const entry = parseCorpusManifest({ schemaVersion: 2, entries: [storedEntry] }).entries[0];
+  const stateDir = join(files.dataDir, "import-exam-corpus", token(entry.id, 24));
+  renameSync(oldStateDir, stateDir);
+  files.stateDirs.math = stateDir;
+  writeJson(join(stateDir, "entry.json"), { schemaVersion: 2, entry: storedEntry });
+  const manifest = JSON.parse(readFileSync(files.manifestPath, "utf8"));
+  const oldEntryId = manifest.entries.find((value: { subject: string }) => value.subject === "수학").id;
+  Object.assign(manifest.entries.find((value: { id: string }) => value.id === oldEntryId), storedEntry);
+  writeJson(files.manifestPath, manifest);
+
+  const downloads = JSON.parse(readFileSync(join(
+    SOLUTION_FIDELITY_ADJUDICATION_STATE,
+    "downloads.json",
+  ), "utf8"));
+  const problemBytes = readFileSync(join(SOLUTION_FIDELITY_ADJUDICATION_STATE, "problem.pdf"));
+  const solutionBytes = readFileSync(join(SOLUTION_FIDELITY_ADJUDICATION_STATE, "solution.pdf"));
+  expect(hash(problemBytes)).toBe(downloads.problem.sha256);
+  expect(hash(solutionBytes)).toBe(SOLUTION_FIDELITY_ADJUDICATION_SPEC.sourceHash);
+  writeFileSync(join(stateDir, "problem.pdf"), problemBytes);
+  writeFileSync(join(stateDir, "solution.pdf"), solutionBytes);
+  writeJson(join(stateDir, "downloads.json"), downloads);
+
+  const classified = q20EffectiveClassified();
+  const problemDir = join(stateDir, "problem-chunks");
+  for (const name of readdirSync(problemDir)) rmSync(join(problemDir, name));
+  const problemCheckpoint = JSON.parse(readFileSync(join(
+    SOLUTION_FIDELITY_ADJUDICATION_STATE,
+    "problem-chunks/v2-0000.json",
+  ), "utf8"));
+  problemCheckpoint.items = classified.map((value) => value.question);
+  writeJson(join(problemDir, "v2-0000.json"), problemCheckpoint);
+  const classificationDir = join(stateDir, "classification-chunks");
+  for (const name of readdirSync(classificationDir)) rmSync(join(classificationDir, name));
+  const classificationCheckpoint = JSON.parse(readFileSync(join(
+    SOLUTION_FIDELITY_ADJUDICATION_STATE,
+    `classification-chunks/v5-0000-${DIGEST}.json`,
+  ), "utf8"));
+  classificationCheckpoint.items = classified.map((value) => value.classification);
+  writeJson(join(classificationDir, `v5-0000-${DIGEST}.json`), classificationCheckpoint);
+
+  const terminalDir = join(stateDir, "problem-terminal-fidelity");
+  mkdirSync(terminalDir, { recursive: true });
+  for (const name of readdirSync(terminalDir)) rmSync(join(terminalDir, name));
+  const terminalName =
+    "v2-0000-3f0f4625f5ee5ba0c627c2655ae751e7fdbd334e49143b552b1280b71abbdda6-" +
+    "15bcf83cec42ceb2f2fa4d0640538b6b29825938998e2f8dbf095bbd940afe66.json";
+  writeFileSync(
+    join(terminalDir, terminalName),
+    readFileSync(join(SOLUTION_FIDELITY_ADJUDICATION_STATE, "problem-terminal-fidelity", terminalName)),
+  );
+
+  const solutionChunkDir = join(stateDir, "solution-chunks");
+  for (const name of readdirSync(solutionChunkDir)) rmSync(join(solutionChunkDir, name));
+  for (const name of ["v3-0000.json", "v3-0001.json", "v3-0002.json"]) {
+    writeFileSync(
+      join(solutionChunkDir, name),
+      readFileSync(join(SOLUTION_FIDELITY_ADJUDICATION_STATE, "solution-chunks", name)),
+    );
+  }
+  const authorityPaths = [
+    "solution-fidelity/v1-0000-3f0f4625f5ee5ba0c627c2655ae751e7fdbd334e49143b552b1280b71abbdda6-" +
+      "07041f5c4c306e5cccea957f29035517be45f115a975ebcf8329009b4407816f.json",
+    "solution-repairs/v1-0006-0020-6a1bcd6840735026cb442ce830c4264d9918f245a36bf54be159b77f958afd48.json",
+    "solution-fidelity-repairs/v1-0006-0020-6a1bcd6840735026cb442ce830c4264d9918f245a36bf54be159b77f958afd48-" +
+      "08a3140a57921a9c64e95ac4b069114c5502db37e8cd060574ffc84ab1804021.json",
+    "solution-revisions/v1-0006-0020-e3583527616f630a8814e871bc7c46c0d2bb4b9a86a7eb0959ccaa9ce4164717.json",
+    "solution-fidelity-revisions/v1-0006-0020-00da6e80bdbbe87cbff4ce54b57737c77167f0e2764c64ae5c87c1972ef9c9dc-" +
+      "7ad16feb562bc2650dc29272ca0d842e4569b512acb7ae6dae122feb30ffa94a.json",
+  ];
+  for (const relativePath of authorityPaths) {
+    const destination = join(stateDir, relativePath);
+    mkdirSync(join(destination, ".."), { recursive: true });
+    writeFileSync(destination, readFileSync(join(SOLUTION_FIDELITY_ADJUDICATION_STATE, relativePath)));
+  }
+
+  const revisionRelativePath = authorityPaths[3];
+  const failedFidelityRelativePath = authorityPaths[4];
+  const revision = JSON.parse(readFileSync(join(stateDir, revisionRelativePath), "utf8"));
+  const failedFidelity = JSON.parse(readFileSync(join(stateDir, failedFidelityRelativePath), "utf8"));
+  const revisionArtifact = { path: revisionRelativePath, sha256: hash(readFileSync(join(stateDir, revisionRelativePath))) };
+  const failedFidelityArtifact = {
+    path: failedFidelityRelativePath,
+    sha256: hash(readFileSync(join(stateDir, failedFidelityRelativePath))),
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+  };
+  const sourcePages = [...new Set(SOLUTION_FIDELITY_ADJUDICATION_SPEC.views.map((view) => view.sourcePage))]
+    .sort((left, right) => left - right);
+  const evidenceBasis = {
+    allowlistId: SOLUTION_FIDELITY_ADJUDICATION_SPEC.allowlistId,
+    entryId: entry.id,
+    key: SOLUTION_FIDELITY_ADJUDICATION_SPEC.key,
+    sourcePage: SOLUTION_FIDELITY_ADJUDICATION_SPEC.sourcePage,
+    sourcePages,
+    sourceHash: downloads.solution.sha256,
+    dpi: SOLUTION_FIDELITY_ADJUDICATION_SPEC.dpi,
+    views: SOLUTION_FIDELITY_ADJUDICATION_SPEC.views,
+    requiredTokens: SOLUTION_FIDELITY_ADJUDICATION_SPEC.requiredTokens,
+  };
+  const evidenceDigest = canonicalEvidenceHash(evidenceBasis);
+  const evidenceStem = `v1-0006-0020-${evidenceDigest}`;
+  const cropViews = SOLUTION_FIDELITY_ADJUDICATION_SPEC.views.map((view, index) => {
+    const width = Math.max(1, Math.ceil((view.rect[2] - view.rect[0]) * 4961));
+    const height = Math.max(1, Math.ceil((view.rect[3] - view.rect[1]) * 7016));
+    const relativePath = `solution-fidelity-adjudication-evidence/${evidenceStem}-view-` +
+      `${String(index).padStart(2, "0")}.png`;
+    const bytes = pngHeader(width, height);
+    mkdirSync(join(stateDir, relativePath, ".."), { recursive: true });
+    writeFileSync(join(stateDir, relativePath), bytes);
+    const sha256 = hash(bytes);
+    return {
+      sourcePage: view.sourcePage,
+      label: view.label,
+      rect: [...view.rect],
+      pixelWidth: width,
+      pixelHeight: height,
+      pixelSha256: sha256,
+      artifact: { path: relativePath, sha256 },
+    };
+  });
+  const evidencePdfRelativePath = `solution-fidelity-adjudication-evidence/${evidenceStem}.pdf`;
+  const evidencePdfBytes = Buffer.from("%PDF-1.4\n% deterministic solution fidelity adjudication fixture\n");
+  writeFileSync(join(stateDir, evidencePdfRelativePath), evidencePdfBytes);
+  const evidencePdf = { path: evidencePdfRelativePath, sha256: hash(evidencePdfBytes) };
+  const evidenceRelativePath = `solution-fidelity-adjudication-evidence/${evidenceStem}.json`;
+  const evidenceCheckpoint = {
+    version: 1,
+    entryId: entry.id,
+    basisDigest: evidenceDigest,
+    basis: evidenceBasis,
+    renderer: "pdftocairo-png+pdf-lib",
+    dpi: SOLUTION_FIDELITY_ADJUDICATION_SPEC.dpi,
+    evidencePdf,
+    views: cropViews,
+  };
+  const evidenceHash = writeEvidence(join(stateDir, evidenceRelativePath), evidenceCheckpoint);
+  const cropEvidenceArtifact = { path: evidenceRelativePath, sha256: evidenceHash };
+  const childBasis = {
+    allowlistId: SOLUTION_FIDELITY_ADJUDICATION_SPEC.allowlistId,
+    entryId: entry.id,
+    key: SOLUTION_FIDELITY_ADJUDICATION_SPEC.key,
+    sourcePage: SOLUTION_FIDELITY_ADJUDICATION_SPEC.sourcePage,
+    sourcePages,
+    sourceHash: downloads.solution.sha256,
+    dpi: SOLUTION_FIDELITY_ADJUDICATION_SPEC.dpi,
+    effectiveProblemCorpusHash: failedFidelity.effectiveProblemCorpusHash,
+    revisionArtifact,
+    failedFidelityArtifact,
+    revisionSolutionItemHash: canonicalEvidenceHash(revision.item),
+    failedDecision: failedFidelity.item,
+    failedDecisionHash: canonicalEvidenceHash(failedFidelity.item),
+    failedEvidenceHash: hash(failedFidelity.item.evidence),
+    cropEvidenceArtifact,
+    cropEvidencePdf: evidencePdf,
+    cropViews,
+    inputHash: canonicalEvidenceHash(failedFidelity.input),
+    promptDigest: SOLUTION_REVISION_FIDELITY_ADJUDICATION_PROMPT_DIGEST,
+  };
+  const childBasisDigest = canonicalEvidenceHash(childBasis);
+  const childRelativePath = `solution-fidelity-adjudications/v1-0006-0020-${childBasisDigest}.json`;
+  const adjudicatedDecision = {
+    key: SOLUTION_FIDELITY_ADJUDICATION_SPEC.key,
+    sourcePage: 6,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: "p6-p7 공식 픽셀은 정답 ③과 극솟값 문구를 포함한 revision 전체 해설에 일치한다.",
+  };
+  writeEvidence(join(stateDir, childRelativePath), {
+    version: 1,
+    basisDigest: childBasisDigest,
+    basis: childBasis,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    input: failedFidelity.input,
+    item: adjudicatedDecision,
+  });
+
+  const problemEvidence = {
+    ...downloads.problem,
+    path: join(stateDir, "problem.pdf"),
+    resolvedUrl: downloads.problem.requestedUrl,
+  };
+  const solutionEvidence = {
+    ...downloads.solution,
+    path: join(stateDir, "solution.pdf"),
+    resolvedUrl: downloads.solution.requestedUrl,
+  };
+  const baseSolutions = ["v3-0000.json", "v3-0001.json", "v3-0002.json"].flatMap((name) =>
+    JSON.parse(readFileSync(join(solutionChunkDir, name), "utf8")).items);
+  const solutionAudit = await auditAcceptedSolutions(
+    entry,
+    problemEvidence,
+    solutionEvidence,
+    stateDir,
+    classified as any,
+    baseSolutions,
+  );
+  const solutionByNumber = new Map(solutionAudit.solutions.map((solution: Record<string, any>) => [
+    String(Number(solution.number)),
+    solution,
+  ]));
+  const accepted = classified.filter((value) => value.classification.decision === "accept");
+  const markerInputs: Array<{ key: string; choices: string[]; detailedExplanation: string }> = [];
+  const auditItems = accepted.flatMap((value) => {
+    if (value.question.qtype !== "mcq") return [];
+    const solution = solutionByNumber.get(String(Number(value.question.number)))!;
+    const resolution = resolveOfficialAnswer(value.question as any, solution.answer);
+    const semantic = resolution.mode === "choice-marker" ? {
+      status: "resolved" as const,
+      choiceIndex: resolution.choiceIndex! + 1,
+      evidence: `공식 해설 결론은 ${resolution.choiceIndex! + 1}번 선택지와 유일하게 일치한다.`,
+    } : null;
+    if (semantic) markerInputs.push({
+      key: value.classification.key,
+      choices: value.question.choices,
+      detailedExplanation: redactedExplanation(solution.explanation),
+    });
+    return [{
+      key: value.classification.key,
+      printedNumber: String(Number(value.question.number)),
+      sourcePage: value.question.page,
+      officialRawAnswerHash: hash(solution.answer),
+      storedAnswerHash: hash(resolution.storedAnswer),
+      mode: resolution.mode,
+      choiceIndex: resolution.choiceIndex! + 1,
+      semantic,
+    }];
+  }).sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+  markerInputs.sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+  const semanticCheckpoint = markerInputs.length === 0 ? null : (() => {
+    const inputHash = canonicalEvidenceHash(markerInputs);
+    const semanticItems = markerInputs.map((input) => auditItems.find((item) => item.key === input.key)!.semantic!);
+    const relativePath = `semantic-choice-checks/v5-${failedFidelity.effectiveProblemCorpusHash}-` +
+      `${solutionAudit.effectiveSolutionCorpusHash}-${inputHash}.json`;
+    const checkpoint = {
+      version: 5,
+      entryId: entry.id,
+      problemHash: downloads.problem.sha256,
+      solutionHash: downloads.solution.sha256,
+      classifierVersion: 5,
+      rulesDigest: DIGEST,
+      transcriptionGateVersion: 2,
+      transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+      effectiveCorpusHash: failedFidelity.effectiveProblemCorpusHash,
+      effectiveSolutionCorpusHash: solutionAudit.effectiveSolutionCorpusHash,
+      inputHash,
+      promptDigest: V5_SEMANTIC_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      inputs: markerInputs,
+      items: markerInputs.map((input, index) => ({ key: input.key, ...semanticItems[index] })),
+    };
+    return {
+      path: relativePath,
+      sha256: writeEvidence(join(stateDir, relativePath), checkpoint),
+      inputHash,
+      effectiveCorpusHash: failedFidelity.effectiveProblemCorpusHash,
+      effectiveSolutionCorpusHash: solutionAudit.effectiveSolutionCorpusHash,
+    };
+  })();
+
+  const canonicalTarget = new Map([
+    ["math_A", "수학 - 수학Ⅱ·미적분Ⅰ"],
+    ["math_B", "수학 - 수학Ⅰ·대수"],
+  ]);
+  const targetQuestionCounts = Object.fromEntries([...canonicalTarget.values()].flatMap((target) => {
+    const count = accepted.filter((value) => canonicalTarget.get(value.classification.canonical_subject) === target).length;
+    return count > 0 ? [[target, count]] : [];
+  }));
+  const terminalPath = join(terminalDir, terminalName);
+  const terminal = JSON.parse(readFileSync(terminalPath, "utf8"));
+  const terminalPointer = {
+    path: `problem-terminal-fidelity/${terminalName}`,
+    sha256: hash(readFileSync(terminalPath)),
+    from: terminal.from,
+    to: terminal.to,
+    ownedFrom: terminal.ownedFrom,
+    ownedTo: terminal.ownedTo,
+    inputHash: terminal.inputHash,
+  };
+  const auditBasis = {
+    entryId: entry.id,
+    problemHash: downloads.problem.sha256,
+    solutionHash: downloads.solution.sha256,
+    classifierVersion: 5,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 2,
+    transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+    solutionFidelityVersion: 1,
+    solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    problemTerminalFidelityVersion: 2,
+    problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+    semanticChoiceVersion: 5,
+    semanticPromptDigest: V5_SEMANTIC_PROMPT_DIGEST,
+    sourceQuestionCount: classified.length,
+    acceptedQuestionCount: accepted.length,
+    rejectedQuestionCount: classified.filter((value) => value.classification.decision === "reject").length,
+    reviewQuestionCount: 0,
+    targetQuestionCounts,
+    acceptedSolutionKeys: solutionAudit.items.map((item) => item.key).sort(compareCorpusQuestionKeys),
+    solutionRepairKeys: solutionAudit.repairs.map((item) => item.key).sort(compareCorpusQuestionKeys),
+    derivedAnswerKeys: solutionAudit.items.filter((item) => item.answerStatus === "not_visible")
+      .map((item) => item.key).sort(compareCorpusQuestionKeys),
+    acceptedMcqKeys: auditItems.map((item) => item.key).sort(compareCorpusQuestionKeys),
+    effectiveCorpusHash: failedFidelity.effectiveProblemCorpusHash,
+    effectiveSolutionCorpusHash: solutionAudit.effectiveSolutionCorpusHash,
+    solutionFidelityCheckpoints: solutionAudit.checkpoints,
+    solutionFidelityItems: solutionAudit.items,
+    solutionRepairs: solutionAudit.repairs,
+    problemTerminalFidelityCheckpoints: [terminalPointer],
+    problemTerminalFidelityItems: terminal.items,
+    semanticCheckpoint,
+    repairs: [],
+    items: auditItems,
+  };
+  const auditDigest = canonicalEvidenceHash(auditBasis);
+  const auditRelativePath = `answer-audit/v5-${auditDigest}.json`;
+  for (const name of readdirSync(join(stateDir, "answer-audit"))) rmSync(join(stateDir, "answer-audit", name));
+  const auditHash = writeEvidence(join(stateDir, auditRelativePath), {
+    version: 5,
+    auditDigest,
+    ...auditBasis,
+  });
+
+  const displayTitle = `${entry.sourceRecordYear}년 · ${entry.rawTitle}`;
+  const db = new Database(files.dbPath);
+  const targetBooks = [] as Array<Record<string, unknown>>;
+  let nextQuestionId = (db.prepare("SELECT COALESCE(MAX(id), 0) AS id FROM questions").get() as { id: number }).id;
+  let nextItemId = (db.prepare("SELECT COALESCE(MAX(id), 0) AS id FROM book_items").get() as { id: number }).id;
+  for (const [canonical, target] of canonicalTarget) {
+    const rows = accepted.filter((value) => value.classification.canonical_subject === canonical);
+    if (rows.length === 0) continue;
+    const book = db.prepare(
+      "SELECT b.id FROM books b JOIN subjects s ON s.id = b.subject_id WHERE s.name = ?",
+    ).get(target) as { id: number };
+    db.prepare("DELETE FROM questions WHERE book_id = ?").run(book.id);
+    db.prepare("DELETE FROM book_items WHERE book_id = ?").run(book.id);
+    db.prepare("UPDATE books SET title = ? WHERE id = ?").run(displayTitle, book.id);
+    const bookFiles = db.prepare("SELECT id, r2_key FROM book_files WHERE book_id = ? ORDER BY id")
+      .all(book.id) as Array<{ id: number; r2_key: string }>;
+    const prefix = `corpus/${token(entry.id, 24)}/${token(target, 16)}`;
+    const problemR2Key = `${prefix}/problem.pdf`;
+    const solutionR2Key = `${prefix}/solution.pdf`;
+    const problemFile = bookFiles[0];
+    const solutionFile = bookFiles[1];
+    db.prepare("UPDATE book_files SET r2_key = ?, content_hash = ?, page_count = ?, status = 'ready' WHERE id = ?")
+      .run(problemR2Key, downloads.problem.sha256, downloads.problem.pageCount, problemFile.id);
+    db.prepare("UPDATE book_files SET r2_key = ?, content_hash = ?, page_count = ?, status = 'ready' WHERE id = ?")
+      .run(solutionR2Key, downloads.solution.sha256, downloads.solution.pageCount, solutionFile.id);
+    mkdirSync(join(files.dataDir, "files", prefix), { recursive: true });
+    writeFileSync(join(files.dataDir, "files", problemR2Key), problemBytes);
+    writeFileSync(join(files.dataDir, "files", solutionR2Key), solutionBytes);
+    for (const value of rows) {
+      const number = String(Number(value.question.number));
+      const solution = solutionByNumber.get(number)!;
+      const storedAnswer = resolveOfficialAnswer(value.question as any, solution.answer).storedAnswer;
+      db.prepare(
+        `INSERT INTO questions
+         (id, subject_id, source, qtype, question, choices, answer, explanation, difficulty,
+          book_id, book_number, printed_number, src_file_id, src_page)
+         VALUES (?, (SELECT id FROM subjects WHERE name = ?), 'uploaded', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        ++nextQuestionId,
+        target,
+        value.question.qtype,
+        value.question.question,
+        value.question.choices ? JSON.stringify(value.question.choices) : null,
+        storedAnswer,
+        solution.explanation,
+        value.question.difficulty,
+        book.id,
+        number,
+        number,
+        problemFile.id,
+        value.question.page,
+      );
+      db.prepare(
+        "INSERT INTO book_items (id, book_id, file_id, category, number, answer, content, page) " +
+        "VALUES (?, ?, ?, '문제', ?, ?, ?, ?)",
+      ).run(++nextItemId, book.id, problemFile.id, number, storedAnswer, value.question.question, value.question.page);
+      db.prepare(
+        "INSERT INTO book_items (id, book_id, file_id, category, number, answer, content, page) " +
+        "VALUES (?, ?, ?, '해설', ?, ?, ?, ?)",
+      ).run(++nextItemId, book.id, solutionFile.id, number, storedAnswer, solution.explanation, solution.page);
+    }
+    targetBooks.push({
+      subject: target,
+      examTitle: entry.examTitle,
+      bookTitle: displayTitle,
+      expectedQuestionCount: rows.length,
+      problemR2Key,
+      solutionR2Key,
+    });
+  }
+  db.close();
+  const receipt = {
+    version: 2,
+    status: "committed",
+    entryId: entry.id,
+    examTitle: entry.examTitle,
+    rawTitle: entry.rawTitle,
+    bookTitle: displayTitle,
+    sourceRecordYear: entry.sourceRecordYear,
+    variant: entry.variant,
+    form: entry.form,
+    sourceSubject: entry.subject,
+    grade: entry.grade,
+    rulesDigest: DIGEST,
+    sourceQuestionCount: classified.length,
+    acceptedQuestionCount: accepted.length,
+    rejectedQuestionCount: classified.filter((value) => value.classification.decision === "reject").length,
+    reviewQuestionCount: 0,
+    problemHash: downloads.problem.sha256,
+    solutionHash: downloads.solution.sha256,
+    problemChunking: { pages: 20, stride: 18, overlap: 2 },
+    targetBooks,
+  };
+  const receiptHash = writeEvidence(join(stateDir, "receipt.json"), receipt);
+  const attestationBasis = {
+    entryId: entry.id,
+    problemHash: downloads.problem.sha256,
+    solutionHash: downloads.solution.sha256,
+    classifierVersion: 5,
+    rulesDigest: DIGEST,
+    transcriptionGateVersion: 2,
+    transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+    solutionFidelityVersion: 1,
+    solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    problemTerminalFidelityVersion: 2,
+    problemTerminalScopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+    receipt: { path: "receipt.json", sha256: receiptHash },
+    answerAudit: {
+      path: auditRelativePath,
+      sha256: auditHash,
+      effectiveCorpusHash: failedFidelity.effectiveProblemCorpusHash,
+      effectiveSolutionCorpusHash: solutionAudit.effectiveSolutionCorpusHash,
+    },
+    repairs: [],
+    solutionFidelityCheckpoints: solutionAudit.checkpoints,
+    solutionFidelityItems: solutionAudit.items,
+    solutionRepairs: solutionAudit.repairs,
+    problemTerminalFidelityCheckpoints: [terminalPointer],
+    problemTerminalFidelityItems: terminal.items,
+  };
+  const attestationDigest = canonicalEvidenceHash(attestationBasis);
+  for (const name of readdirSync(join(stateDir, "answer-attestation"))) {
+    rmSync(join(stateDir, "answer-attestation", name));
+  }
+  writeEvidence(join(stateDir, "answer-attestation", `v5-${attestationDigest}.json`), {
+    version: 5,
+    attestationDigest,
+    ...attestationBasis,
+  });
+  return {
+    childArtifact: join(stateDir, childRelativePath),
+    evidenceArtifact: join(stateDir, evidenceRelativePath),
+    failedFidelityArtifact: join(stateDir, failedFidelityRelativePath),
+  };
+}
+
 function rewriteSolutionRepairAuthority(
   files: ReturnType<typeof fixture>,
   mutateRepair: (repair: Record<string, any>) => void,
@@ -8058,6 +8621,104 @@ describe("exam corpus verifier", () => {
     expect([SOLUTION_PROMPT_UPGRADE_VERSION, SOLUTION_PROMPT_UPGRADE_FIDELITY_VERSION])
       .toEqual([1, 1]);
   });
+
+  it("keeps the Q20 solution-fidelity adjudication allowlist byte-aligned with the importer", () => {
+    expect(solutionFidelityAdjudicationAllowlistFingerprint())
+      .toBe(canonicalEvidenceHash(SOLUTION_REVISION_FIDELITY_ADJUDICATION_ALLOWLIST));
+    expect(SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION).toBe(1);
+    expect(SOLUTION_REVISION_FIDELITY_ADJUDICATION_PROMPT_DIGEST)
+      .toBe("b38a96cf61fbbfdd0dfbc1b00c85dbf18a46a646a4aa46f9b41f0847b412e375");
+    const residue = fixture();
+    const evidenceDir = join(residue.stateDirs.math, "solution-fidelity-adjudication-evidence");
+    mkdirSync(evidenceDir, { recursive: true });
+    writeFileSync(join(evidenceDir, "checkpoint.123.tmp"), "partial immutable write");
+    expect(verifyExamCorpus(residue), "tmp-only evidence directory must not force a new authority generation")
+      .toMatchObject({ ok: true });
+  });
+
+  it.skipIf(!existsSync(join(SOLUTION_FIDELITY_ADJUDICATION_STATE, "problem.pdf"))
+    || !existsSync(join(SOLUTION_FIDELITY_ADJUDICATION_STATE, "solution.pdf")))(
+  "reconstructs Q20 fidelity adjudication and rejects partial, tampered, or orphan authority",
+  async () => {
+    const adjudicatedFixture = async () => {
+      const files = fixture();
+      const artifacts = await installSolutionFidelityAdjudication(files);
+      return { files, artifacts };
+    };
+    const { files, artifacts } = await adjudicatedFixture();
+    const modifiedBefore = statSync(files.dbPath).mtimeMs;
+    const report = verifyExamCorpus(files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    expect(statSync(files.dbPath).mtimeMs).toBe(modifiedBefore);
+    const stateDir = files.stateDirs.math;
+    const attestationName = readdirSync(join(stateDir, "answer-attestation"))
+      .find((name) => /^v5-/u.test(name))!;
+    const attestation = JSON.parse(readFileSync(join(stateDir, "answer-attestation", attestationName), "utf8"));
+    const audit = JSON.parse(readFileSync(join(stateDir, attestation.answerAudit.path), "utf8"));
+    const q20 = audit.solutionRepairs.find((repair: Record<string, any>) => repair.key === "8:20");
+    expect(q20.revision).toMatchObject({
+      fidelityArtifact: { path: expect.stringMatching(/^solution-fidelity-revisions\/v1-/u) },
+      fidelityAdjudication: {
+        allowlistId: SOLUTION_FIDELITY_ADJUDICATION_SPEC.allowlistId,
+        sourceHash: SOLUTION_FIDELITY_ADJUDICATION_SPEC.sourceHash,
+        adjudicationArtifact: { path: expect.stringMatching(/^solution-fidelity-adjudications\/v1-/u) },
+      },
+    });
+    expect(audit.solutionFidelityItems.find((item: Record<string, unknown>) => item.key === "8:20"))
+      .toMatchObject({
+        answerStatus: "exact",
+        explanationStatus: "exact",
+        fidelityArtifact: { path: expect.stringMatching(/^solution-fidelity-adjudications\/v1-/u) },
+      });
+    const db = new Database(files.dbPath, { readonly: true, fileMustExist: true });
+    const row = db.prepare("SELECT answer, explanation FROM questions WHERE printed_number = '20'")
+      .get() as { answer: string; explanation: string };
+    db.close();
+    expect(row.answer).toBe("③");
+    expect(row.explanation).toContain("극솟값을 갖는다. (거짓)");
+
+    const partial = await adjudicatedFixture();
+    rmSync(partial.artifacts.childArtifact);
+    expect(verifyExamCorpus(partial.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+        && failure.message.includes("adjudication child coverage"))).toBe(true);
+
+    const tampered = await adjudicatedFixture();
+    const child = JSON.parse(readFileSync(tampered.artifacts.childArtifact, "utf8"));
+    child.item.explanationStatus = "mismatch";
+    writeJson(tampered.artifacts.childArtifact, child);
+    expect(verifyExamCorpus(tampered.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const pixelTamper = await adjudicatedFixture();
+    const evidence = JSON.parse(readFileSync(pixelTamper.artifacts.evidenceArtifact, "utf8"));
+    writeFileSync(
+      join(pixelTamper.files.stateDirs.math, evidence.views[0].artifact.path),
+      Buffer.from("not the attested PNG"),
+    );
+    expect(verifyExamCorpus(pixelTamper.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const orphan = await adjudicatedFixture();
+    writeFileSync(
+      join(
+        orphan.files.stateDirs.math,
+        "solution-fidelity-adjudications",
+        `v1-0006-0020-${"f".repeat(64)}.json`,
+      ),
+      readFileSync(orphan.artifacts.childArtifact),
+    );
+    expect(verifyExamCorpus(orphan.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+        && (failure.message.includes("coverage") || failure.message.includes("orphan")))).toBe(true);
+
+    const omitted = await adjudicatedFixture();
+    rewriteSolutionRepairAuthority(omitted.files, (repair) => {
+      delete repair.revision.fidelityAdjudication;
+    });
+    expect(verifyExamCorpus(omitted.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+  }, 30_000);
 
   it.skipIf(!existsSync(join(SOLUTION_PROMPT_UPGRADE_STATE, "problem.pdf"))
     || !existsSync(join(SOLUTION_PROMPT_UPGRADE_STATE, "solution.pdf")))(
