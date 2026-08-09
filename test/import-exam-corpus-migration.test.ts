@@ -89,16 +89,16 @@ async function prepareOldSnapshot(root: string): Promise<{ stateDir: string; rec
   if (planName) {
     const plan = JSON.parse(readFileSync(join(planDir, planName), "utf8"));
     const sourceBackup = join(sourceData, plan.backup.path);
-    const targetBackup = join(root, plan.backup.path);
-    mkdirSync(resolve(targetBackup, ".."), { recursive: true });
-    cpSync(sourceBackup, targetBackup);
     cpSync(sourceBackup, join(root, "studywork.db"));
     const history = JSON.parse(readFileSync(
       join(stateDir, "receipt-history", `v1-${oldReceiptSha}.json`), "utf8"
     ));
     writeCanonical(join(stateDir, "receipt.json"), history.receipt.value);
+    rmSync(join(stateDir, "migration-plans"), { recursive: true, force: true });
+    rmSync(join(stateDir, "receipt-history"), { recursive: true, force: true });
     rmSync(join(stateDir, "migration-commits"), { recursive: true, force: true });
     rmSync(join(stateDir, "answer-attestation"), { recursive: true, force: true });
+    rmSync(join(root, "backups"), { recursive: true, force: true });
   } else {
     const source = new Database(join(sourceData, "studywork.db"), { readonly: true, fileMustExist: true });
     try {
