@@ -110,6 +110,11 @@ export const PERSISTED_SOLUTION_REPAIR_SEED_VERSION = 1;
 export const SOLUTION_REVISION_VERSION = 1;
 export const SOLUTION_REVISION_FIDELITY_VERSION = 1;
 export const PERSISTED_SOLUTION_REVISION_TRIGGER_VERSION = 1;
+export const SOLUTION_PROMPT_UPGRADE_VERSION = 1;
+export const SOLUTION_PROMPT_UPGRADE_FIDELITY_VERSION = 1;
+export const LEGACY_TARGETED_SOLUTION_REVISION_VERSION = 1;
+export const LEGACY_TARGETED_SOLUTION_REVISION_PROMPT_DIGEST =
+  "d357d4bf715cea8b712b02546272f353c31eb94accfaefa960da616f2abd7884";
 export const PROBLEM_TERMINAL_FIDELITY_VERSION = 2;
 export const SEMANTIC_CHOICE_CHECK_VERSION = 5;
 export const ANSWER_AUDIT_VERSION = 5;
@@ -810,7 +815,7 @@ export type SolutionRepairEvidence = {
 
 export type SolutionRevisionEvidence = {
   trigger: {
-    kind: "fidelity" | "semantic" | "persisted";
+    kind: "fidelity" | "semantic" | "persisted" | "prompt-upgrade";
     fidelityDecisionHash: string;
     semanticCheckpoint?: EvidencePointer & {
       inputHash: string;
@@ -820,6 +825,8 @@ export type SolutionRevisionEvidence = {
     semanticDecisionHash?: string;
     persistedTriggerVersion?: number;
     predecessor?: PersistedSolutionRevisionAuthority;
+    promptUpgradeVersion?: number;
+    legacyPredecessor?: LegacySolutionRevisionPredecessor;
   };
   baseRepairPage: number;
   effectivePage: number;
@@ -838,6 +845,21 @@ export type SolutionRevisionEvidence = {
   effectiveRawAnswerHash: string;
   baseRepairExplanationHash: string;
   effectiveExplanationHash: string;
+};
+
+export type LegacySolutionRevisionPredecessor = {
+  allowlistId: string;
+  generationId: string;
+  key: string;
+  effectiveProblemCorpusHash: string;
+  repairArtifact: EvidencePointer;
+  repairFidelityArtifact: EvidencePointer;
+  revisionArtifact: EvidencePointer & { promptVersion: number; promptDigest: string };
+  revisionFidelityArtifact: EvidencePointer;
+  revisionSolutionItemHash: string;
+  failedDecisionHash: string;
+  failedEvidenceHash: string;
+  failedEvidence: string;
 };
 
 export type PersistedSolutionRevisionAuthority = {
@@ -902,8 +924,9 @@ type SolutionRevisionTrigger =
         effectiveSolutionCorpusHash: string;
       };
       semanticDecision: SemanticChoiceDecision;
-    }
-  | { kind: "persisted"; authority: PersistedSolutionRevisionAuthority };
+  }
+  | { kind: "persisted"; authority: PersistedSolutionRevisionAuthority }
+  | { kind: "prompt-upgrade"; predecessor: LegacySolutionRevisionPredecessor };
 
 type AnswerAuditResult = {
   classified: ClassifiedQuestion[];
@@ -1496,6 +1519,17 @@ export const TARGETED_SOLUTION_REVISION_PROMPT_DIGEST = sha256Text(
   `${TARGETED_SOLUTION_REVISION_EVIDENCE_PREFIX}\n` +
   `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`
 );
+export const SOLUTION_PROMPT_UPGRADE_ALLOWLIST = [{
+  allowlistId: "ebsi-5643102-q1-solution-prompt-upgrade-v1",
+  entryId: "ebsi:5643102",
+  key: "1:1",
+  sourceHash: "1e8a8a8970bafc066a2f556309e0ca3166a713c0c197b3788cdeb43f2d3de3fb",
+  legacyRevisionArtifactHash: "c8a642d7741e859cb16a6bd0bf630b0e2c06a165cb75efd0883de3c6bd63bf8b",
+  legacyRevisionFidelityArtifactHash: "d314eb6f85339d733bfa98edd2e9e3283252a79bd64989b489a8f9817adb5f71",
+  legacyPromptVersion: LEGACY_TARGETED_SOLUTION_REVISION_VERSION,
+  legacyPromptDigest: LEGACY_TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+  expectedAnswer: "②",
+}] as const;
 const SEMANTIC_CHOICE_PROMPT_DIGEST = sha256Text(
   `${SEMANTIC_CHOICE_CHECK_VERSION}\n${SEMANTIC_CHOICE_RULES}`
 );
@@ -3021,6 +3055,51 @@ function persistedRevisionAuthority(value: unknown, label: string): PersistedSol
   return authority;
 }
 
+function legacySolutionRevisionPredecessor(
+  value: unknown,
+  label: string
+): LegacySolutionRevisionPredecessor {
+  const row = object(value, label);
+  const revisionArtifactRow = object(row.revisionArtifact, `${label}.revisionArtifact`);
+  const revisionArtifact = {
+    path: exactString(revisionArtifactRow.path, `${label}.revisionArtifact.path`, 500),
+    sha256: exactHash(revisionArtifactRow.sha256, `${label}.revisionArtifact.sha256`),
+    promptVersion: Number(revisionArtifactRow.promptVersion),
+    promptDigest: exactHash(revisionArtifactRow.promptDigest, `${label}.revisionArtifact.promptDigest`),
+  };
+  const predecessor: LegacySolutionRevisionPredecessor = {
+    allowlistId: exactString(row.allowlistId, `${label}.allowlistId`, 200),
+    generationId: exactHash(row.generationId, `${label}.generationId`),
+    key: exactString(row.key, `${label}.key`, 100),
+    effectiveProblemCorpusHash: exactHash(
+      row.effectiveProblemCorpusHash,
+      `${label}.effectiveProblemCorpusHash`
+    ),
+    repairArtifact: persistedEvidencePointer(row.repairArtifact, `${label}.repairArtifact`),
+    repairFidelityArtifact: persistedEvidencePointer(
+      row.repairFidelityArtifact,
+      `${label}.repairFidelityArtifact`
+    ),
+    revisionArtifact,
+    revisionFidelityArtifact: persistedEvidencePointer(
+      row.revisionFidelityArtifact,
+      `${label}.revisionFidelityArtifact`
+    ),
+    revisionSolutionItemHash: exactHash(
+      row.revisionSolutionItemHash,
+      `${label}.revisionSolutionItemHash`
+    ),
+    failedDecisionHash: exactHash(row.failedDecisionHash, `${label}.failedDecisionHash`),
+    failedEvidenceHash: exactHash(row.failedEvidenceHash, `${label}.failedEvidenceHash`),
+    failedEvidence: exactString(row.failedEvidence, `${label}.failedEvidence`, 2000),
+  };
+  if (
+    !Number.isInteger(revisionArtifact.promptVersion) ||
+    canonicalEvidenceHash(row) !== canonicalEvidenceHash(predecessor)
+  ) throw new Error(`${label}에 예상하지 않은 필드가 있습니다`);
+  return predecessor;
+}
+
 function terminalSolutionFidelity(
   input: SolutionFidelityInput,
   solution: SolutionItem,
@@ -3215,8 +3294,19 @@ async function scanPersistedSolutionHistory(
     "solution-fidelity-revisions",
     /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u
   );
+  const promptUpgradeFiles = await readCanonicalSolutionArtifacts(
+    stateDir,
+    "solution-revision-upgrades",
+    /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u
+  );
+  const promptUpgradeFidelityFiles = await readCanonicalSolutionArtifacts(
+    stateDir,
+    "solution-fidelity-revision-upgrades",
+    /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u
+  );
   if (
-    repairFiles.length + repairFidelityFiles.length + revisionFiles.length + revisionFidelityFiles.length === 0
+    repairFiles.length + repairFidelityFiles.length + revisionFiles.length + revisionFidelityFiles.length +
+      promptUpgradeFiles.length + promptUpgradeFidelityFiles.length === 0
   ) return {
     stickyFirst: new Map(),
     revisionTriggers: new Map(),
@@ -3236,7 +3326,19 @@ async function scanPersistedSolutionHistory(
   const assignedRepairFidelity = new Set<string>();
   const assignedRevision = new Set<string>();
   const assignedRevisionFidelity = new Set<string>();
+  const assignedPromptUpgrade = new Set<string>();
+  const assignedPromptUpgradeFidelity = new Set<string>();
   const generations = new Map<string, PersistedSolutionFirstAuthority>();
+  const generationContexts = new Map<string, {
+    input: SolutionFidelityInput;
+    baseEvidence: BaseSolutionEvidence;
+    repairFile: CanonicalSolutionArtifact;
+    fidelityFile: CanonicalSolutionArtifact;
+    firstDecision: SolutionFidelityDecision;
+    repairedItem: SolutionItem;
+    repairedItemHash: string;
+  }>();
+  const legacyPromptUpgradePredecessors = new Map<string, LegacySolutionRevisionPredecessor>();
   const partialCurrentKeys = new Set<string>();
   const partialRevisionTriggers = new Map<
     string,
@@ -3593,6 +3695,16 @@ async function scanPersistedSolutionHistory(
         sha256: fidelityFile.sha256,
         promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
       };
+      const legacyPromptUpgradeSpec = SOLUTION_PROMPT_UPGRADE_ALLOWLIST.find((candidate) =>
+        candidate.entryId === entry.id && candidate.key === input.key && candidate.sourceHash === evidence.sha256 &&
+        candidate.legacyRevisionArtifactHash === revisionFile.sha256 &&
+        revision.promptVersion === candidate.legacyPromptVersion &&
+        revision.promptDigest === candidate.legacyPromptDigest
+      );
+      const revisionPromptVersion = legacyPromptUpgradeSpec?.legacyPromptVersion ??
+        TARGETED_SOLUTION_REVISION_VERSION;
+      const revisionPromptDigest = legacyPromptUpgradeSpec?.legacyPromptDigest ??
+        TARGETED_SOLUTION_REVISION_PROMPT_DIGEST;
       const revisionBasisHash = canonicalEvidenceHash({
         key: input.key,
         sourceHash: evidence.sha256,
@@ -3605,7 +3717,7 @@ async function scanPersistedSolutionHistory(
         baseRepairFidelityArtifact,
         baseRepairSolutionItemHash: repairedItemHash,
         trigger: triggerEvidence,
-        revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+        revisionPromptDigest,
       });
       const expectedRevisionPath = `solution-revisions/v${SOLUTION_REVISION_VERSION}-` +
         `${String(repairedItem.page).padStart(4, "0")}-${String(printedNumber).padStart(4, "0")}-` +
@@ -3634,8 +3746,8 @@ async function scanPersistedSolutionHistory(
         ...(trigger.kind === "semantic"
           ? { semanticDecision: (revisionTrigger as Extract<SolutionRevisionTrigger, { kind: "semantic" }>).semanticDecision }
           : {}),
-        promptVersion: TARGETED_SOLUTION_REVISION_VERSION,
-        promptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+        promptVersion: revisionPromptVersion,
+        promptDigest: revisionPromptDigest,
         model: IMPORT_MODEL,
         reasoningEffort: IMPORT_REASONING_EFFORT,
         effectivePage: revisedItem.page,
@@ -3712,26 +3824,61 @@ async function scanPersistedSolutionHistory(
         canonicalEvidenceHash(revisionFidelity) !== canonicalEvidenceHash(expectedRevisionFidelity)
       ) throw new Error(`${revisionFidelityFile.relativePath} persisted revision fidelity 메타데이터가 다릅니다`);
       if (!terminalSolutionFidelity(revisedInput, revisedItem, finalDecision)) {
-        throw new Error(`${revisionFidelityFile.relativePath} persisted revision이 terminal이 아닙니다`);
+        if (
+          !legacyPromptUpgradeSpec ||
+          revisionFidelityFile.sha256 !== legacyPromptUpgradeSpec.legacyRevisionFidelityArtifactHash ||
+          finalDecision.answerStatus !== "mismatch" || finalDecision.explanationStatus !== "exact" ||
+          finalDecision.sourcePage !== revisedItem.page
+        ) throw new Error(`${revisionFidelityFile.relativePath} persisted revision이 terminal이 아닙니다`);
+        const predecessor: LegacySolutionRevisionPredecessor = {
+          allowlistId: legacyPromptUpgradeSpec.allowlistId,
+          generationId,
+          key: input.key,
+          effectiveProblemCorpusHash,
+          repairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
+          repairFidelityArtifact: { path: fidelityFile.relativePath, sha256: fidelityFile.sha256 },
+          revisionArtifact: {
+            path: revisionFile.relativePath,
+            sha256: revisionFile.sha256,
+            promptVersion: legacyPromptUpgradeSpec.legacyPromptVersion,
+            promptDigest: legacyPromptUpgradeSpec.legacyPromptDigest,
+          },
+          revisionFidelityArtifact: {
+            path: revisionFidelityFile.relativePath,
+            sha256: revisionFidelityFile.sha256,
+          },
+          revisionSolutionItemHash: revisedItemHash,
+          failedDecisionHash: canonicalEvidenceHash(finalDecision),
+          failedEvidenceHash: sha256Text(finalDecision.evidence),
+          failedEvidence: finalDecision.evidence,
+        };
+        if (legacyPromptUpgradePredecessors.has(revisionFile.relativePath)) {
+          throw new Error(`${input.key} legacy solution revision predecessor가 중복입니다`);
+        }
+        legacyPromptUpgradePredecessors.set(revisionFile.relativePath, predecessor);
+      } else {
+        if (legacyPromptUpgradeSpec) {
+          throw new Error(`${revisionFidelityFile.relativePath} legacy prompt v1 revision을 terminal로 승격할 수 없습니다`);
+        }
+        revisionAuthority = {
+          generationId,
+          key: input.key,
+          repairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
+          repairFidelityArtifact: { path: fidelityFile.relativePath, sha256: fidelityFile.sha256 },
+          revisionArtifact: { path: revisionFile.relativePath, sha256: revisionFile.sha256 },
+          revisionFidelityArtifact: {
+            path: revisionFidelityFile.relativePath,
+            sha256: revisionFidelityFile.sha256,
+          },
+          finalSolutionItemHash: revisedItemHash,
+          diagnosticDecisionHash,
+          diagnosticEvidence,
+        };
       }
-      revisionAuthority = {
-        generationId,
-        key: input.key,
-        repairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
-        repairFidelityArtifact: { path: fidelityFile.relativePath, sha256: fidelityFile.sha256 },
-        revisionArtifact: { path: revisionFile.relativePath, sha256: revisionFile.sha256 },
-        revisionFidelityArtifact: {
-          path: revisionFidelityFile.relativePath,
-          sha256: revisionFidelityFile.sha256,
-        },
-        finalSolutionItemHash: revisedItemHash,
-        diagnosticDecisionHash,
-        diagnosticEvidence,
-      };
     } else if (!firstTerminal) {
       throw new Error(`${fidelityFile.relativePath} persisted first repair가 terminal이 아닙니다`);
     }
-    generations.set(generationId, {
+    const generation: PersistedSolutionFirstAuthority = {
       generationId,
       key: input.key,
       effectiveProblemCorpusHash,
@@ -3744,7 +3891,226 @@ async function scanPersistedSolutionHistory(
       ...(persistedSeed ? { persistedSeed } : {}),
       revision: revisionAuthority,
       revisionTrigger,
+    };
+    generations.set(generationId, generation);
+    generationContexts.set(generationId, {
+      input,
+      baseEvidence,
+      repairFile,
+      fidelityFile,
+      firstDecision,
+      repairedItem,
+      repairedItemHash,
     });
+  }
+  const usedLegacyPromptUpgradePredecessors = new Set<string>();
+  const generationByRepairPath = new Map(
+    [...generationContexts.entries()].map(([generationId, context]) => [
+      context.repairFile.relativePath,
+      { generationId, context, generation: generations.get(generationId)! },
+    ] as const)
+  );
+  for (const upgradeFile of promptUpgradeFiles) {
+    const upgrade = upgradeFile.checkpoint;
+    const baseRepairPointer = object(upgrade.baseRepairArtifact, "prompt upgrade base repair pointer");
+    const parent = generationByRepairPath.get(exactString(
+      baseRepairPointer.path,
+      "prompt upgrade base repair path",
+      500
+    ));
+    if (!parent) throw new Error(`${upgradeFile.relativePath} prompt upgrade parent가 없습니다`);
+    const { generationId, context, generation } = parent;
+    const { input, baseEvidence, repairFile, fidelityFile, firstDecision, repairedItem, repairedItemHash } = context;
+    if (generation.revision) throw new Error(`${input.key} solution revision authority가 중복입니다`);
+    const rawTrigger = object(upgrade.trigger, `${upgradeFile.relativePath}.trigger`);
+    const predecessor = legacySolutionRevisionPredecessor(
+      rawTrigger.legacyPredecessor,
+      `${upgradeFile.relativePath}.trigger.legacyPredecessor`
+    );
+    const registeredPredecessor = legacyPromptUpgradePredecessors.get(predecessor.revisionArtifact.path);
+    if (
+      !registeredPredecessor ||
+      canonicalEvidenceHash(registeredPredecessor) !== canonicalEvidenceHash(predecessor) ||
+      usedLegacyPromptUpgradePredecessors.has(predecessor.revisionArtifact.path)
+    ) throw new Error(`${upgradeFile.relativePath} legacy prompt predecessor가 유효하지 않습니다`);
+    const spec = SOLUTION_PROMPT_UPGRADE_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === predecessor.allowlistId && candidate.entryId === entry.id &&
+      candidate.key === input.key && candidate.sourceHash === evidence.sha256 &&
+      candidate.legacyRevisionArtifactHash === predecessor.revisionArtifact.sha256 &&
+      candidate.legacyRevisionFidelityArtifactHash === predecessor.revisionFidelityArtifact.sha256
+    );
+    if (!spec) throw new Error(`${upgradeFile.relativePath} prompt upgrade allowlist가 다릅니다`);
+    const diagnosticDecisionHash = canonicalEvidenceHash(firstDecision);
+    const triggerEvidence: SolutionRevisionEvidence["trigger"] = {
+      kind: "prompt-upgrade",
+      fidelityDecisionHash: diagnosticDecisionHash,
+      promptUpgradeVersion: SOLUTION_PROMPT_UPGRADE_VERSION,
+      legacyPredecessor: predecessor,
+    };
+    const revisedItem = parseSolutionItems(JSON.stringify([upgrade.item]))[0];
+    const revisedItemHash = canonicalEvidenceHash(revisedItem);
+    const baseRepairFidelityArtifact = {
+      path: fidelityFile.relativePath,
+      sha256: fidelityFile.sha256,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    };
+    const revisionBasisHash = canonicalEvidenceHash({
+      key: input.key,
+      sourceHash: evidence.sha256,
+      basePage: input.sourcePage,
+      contextFrom: input.baseContextFrom,
+      contextTo: input.baseContextTo,
+      baseSolutionCheckpoint: baseEvidence.checkpoint,
+      baseSolutionItemHash: baseEvidence.itemHash,
+      baseRepairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
+      baseRepairFidelityArtifact,
+      baseRepairSolutionItemHash: repairedItemHash,
+      trigger: triggerEvidence,
+      revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+    });
+    const expectedUpgradePath = `solution-revision-upgrades/v${SOLUTION_PROMPT_UPGRADE_VERSION}-` +
+      `${String(repairedItem.page).padStart(4, "0")}-${String(input.printedNumber).padStart(4, "0")}-` +
+      `${revisionBasisHash}.json`;
+    const expectedUpgrade = {
+      version: SOLUTION_PROMPT_UPGRADE_VERSION,
+      entryId: entry.id,
+      key: input.key,
+      printedNumber: input.printedNumber,
+      sourceHash: evidence.sha256,
+      basePage: input.sourcePage,
+      contextFrom: input.baseContextFrom,
+      contextTo: input.baseContextTo,
+      baseOwnedFrom: input.baseOwnedFrom,
+      baseOwnedTo: input.baseOwnedTo,
+      effectiveProblemCorpusHash: generation.effectiveProblemCorpusHash,
+      baseSolutionCheckpoint: baseEvidence.checkpoint,
+      baseSolutionItemHash: baseEvidence.itemHash,
+      baseRepairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
+      baseRepairFidelityArtifact,
+      baseRepairPage: repairedItem.page,
+      baseRepairSolutionItemHash: repairedItemHash,
+      trigger: triggerEvidence,
+      diagnosticDecision: firstDecision,
+      diagnosticDecisionHash,
+      promptVersion: TARGETED_SOLUTION_REVISION_VERSION,
+      promptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      effectivePage: revisedItem.page,
+      item: revisedItem,
+    };
+    if (
+      upgradeFile.relativePath !== expectedUpgradePath ||
+      numericPrintedLocator(revisedItem.number) !== Number(input.printedNumber) ||
+      revisedItem.page !== upgrade.effectivePage || revisedItem.page < input.baseContextFrom ||
+      revisedItem.page > input.baseContextTo || revisedItem.complete !== true ||
+      revisedItem.answer !== spec.expectedAnswer ||
+      !revisedItem.answer.trim() || !revisedItem.explanation.trim() ||
+      canonicalEvidenceHash(upgrade) !== canonicalEvidenceHash(expectedUpgrade)
+    ) throw new Error(`${upgradeFile.relativePath} solution prompt upgrade가 유효하지 않습니다`);
+    assignedPromptUpgrade.add(upgradeFile.relativePath);
+    usedLegacyPromptUpgradePredecessors.add(predecessor.revisionArtifact.path);
+    const fidelityChildren = promptUpgradeFidelityFiles.filter((candidate) =>
+      object(candidate.checkpoint.revisionArtifact, "prompt upgrade fidelity parent").path ===
+        upgradeFile.relativePath
+    );
+    if (fidelityChildren.length !== 1) {
+      if (
+        fidelityChildren.length > 1 || !allowCurrentPartial ||
+        generation.effectiveProblemCorpusHash !== currentEffectiveProblemCorpusHash
+      ) throw new Error(`${upgradeFile.relativePath} prompt upgrade fidelity child coverage가 다릅니다`);
+      partialCurrentKeys.add(input.key);
+      const trigger: Extract<SolutionRevisionTrigger, { kind: "prompt-upgrade" }> = {
+        kind: "prompt-upgrade",
+        predecessor,
+      };
+      const prior = partialRevisionTriggers.get(input.key);
+      if (prior && canonicalEvidenceHash(prior) !== canonicalEvidenceHash(trigger)) {
+        throw new Error(`${input.key} partial solution prompt upgrade trigger가 충돌합니다`);
+      }
+      partialRevisionTriggers.set(input.key, trigger);
+      continue;
+    }
+    const upgradeFidelityFile = fidelityChildren[0];
+    assignedPromptUpgradeFidelity.add(upgradeFidelityFile.relativePath);
+    const fidelity = upgradeFidelityFile.checkpoint;
+    const revisedInput: SolutionFidelityInput = {
+      ...input,
+      sourcePage: revisedItem.page,
+      rawAnswer: revisedItem.answer,
+      explanation: revisedItem.explanation,
+    };
+    const inputHash = canonicalEvidenceHash(revisedInput);
+    const finalDecision = parseSolutionFidelityDecisions([fidelity.item], [revisedInput])[0];
+    const expectedFidelityPath =
+      `solution-fidelity-revision-upgrades/v${SOLUTION_PROMPT_UPGRADE_FIDELITY_VERSION}-` +
+      `${String(repairedItem.page).padStart(4, "0")}-${String(input.printedNumber).padStart(4, "0")}-` +
+      `${upgradeFile.sha256}-${revisedItemHash}.json`;
+    const expectedFidelity = {
+      version: SOLUTION_PROMPT_UPGRADE_FIDELITY_VERSION,
+      entryId: entry.id,
+      key: input.key,
+      sourceHash: evidence.sha256,
+      from: input.baseContextFrom,
+      to: input.baseContextTo,
+      basePage: input.sourcePage,
+      baseRepairPage: repairedItem.page,
+      effectivePage: revisedItem.page,
+      baseOwnedFrom: input.baseOwnedFrom,
+      baseOwnedTo: input.baseOwnedTo,
+      effectiveProblemCorpusHash: generation.effectiveProblemCorpusHash,
+      baseSolutionCheckpoint: baseEvidence.checkpoint,
+      baseSolutionItemHash: baseEvidence.itemHash,
+      baseRepairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
+      baseRepairFidelityArtifact,
+      baseRepairSolutionItemHash: repairedItemHash,
+      diagnosticDecisionHash,
+      trigger: triggerEvidence,
+      revisionArtifact: { path: upgradeFile.relativePath, sha256: upgradeFile.sha256 },
+      effectiveSolutionItemHash: revisedItemHash,
+      inputHash,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      input: revisedInput,
+      item: finalDecision,
+    };
+    if (
+      upgradeFidelityFile.relativePath !== expectedFidelityPath ||
+      canonicalEvidenceHash(fidelity) !== canonicalEvidenceHash(expectedFidelity) ||
+      finalDecision.sourcePage !== revisedItem.page || finalDecision.answerStatus !== "exact" ||
+      finalDecision.explanationStatus !== "exact"
+    ) throw new Error(`${upgradeFidelityFile.relativePath} solution prompt upgrade fidelity가 유효하지 않습니다`);
+    generation.revision = {
+      generationId,
+      key: input.key,
+      repairArtifact: { path: repairFile.relativePath, sha256: repairFile.sha256 },
+      repairFidelityArtifact: { path: context.fidelityFile.relativePath, sha256: context.fidelityFile.sha256 },
+      revisionArtifact: { path: upgradeFile.relativePath, sha256: upgradeFile.sha256 },
+      revisionFidelityArtifact: {
+        path: upgradeFidelityFile.relativePath,
+        sha256: upgradeFidelityFile.sha256,
+      },
+      finalSolutionItemHash: revisedItemHash,
+      diagnosticDecisionHash,
+      diagnosticEvidence: predecessor.failedEvidence,
+    };
+    generation.revisionTrigger = { kind: "prompt-upgrade", predecessor };
+  }
+  for (const predecessor of legacyPromptUpgradePredecessors.values()) {
+    if (usedLegacyPromptUpgradePredecessors.has(predecessor.revisionArtifact.path)) continue;
+    if (!allowCurrentPartial) {
+      throw new Error(`${predecessor.key} legacy solution revision prompt upgrade가 없습니다`);
+    }
+    const trigger: Extract<SolutionRevisionTrigger, { kind: "prompt-upgrade" }> = {
+      kind: "prompt-upgrade",
+      predecessor,
+    };
+    const prior = partialRevisionTriggers.get(predecessor.key);
+    if (prior && canonicalEvidenceHash(prior) !== canonicalEvidenceHash(trigger)) {
+      throw new Error(`${predecessor.key} legacy prompt upgrade trigger가 충돌합니다`);
+    }
+    partialRevisionTriggers.set(predecessor.key, trigger);
   }
   if (repairFidelityFiles.some((file) => !assignedRepairFidelity.has(file.relativePath))) {
     throw new Error("orphan solution repair fidelity artifact가 있습니다");
@@ -3754,6 +4120,12 @@ async function scanPersistedSolutionHistory(
   }
   if (revisionFidelityFiles.some((file) => !assignedRevisionFidelity.has(file.relativePath))) {
     throw new Error("orphan solution revision fidelity artifact가 있습니다");
+  }
+  if (promptUpgradeFiles.some((file) => !assignedPromptUpgrade.has(file.relativePath))) {
+    throw new Error("orphan solution prompt upgrade artifact가 있습니다");
+  }
+  if (promptUpgradeFidelityFiles.some((file) => !assignedPromptUpgradeFidelity.has(file.relativePath))) {
+    throw new Error("orphan solution prompt upgrade fidelity artifact가 있습니다");
   }
   for (const generation of generations.values()) {
     if (!generation.seededFromGenerationId) continue;
@@ -3810,7 +4182,11 @@ async function scanPersistedSolutionHistory(
     requiredRevisionKeys.add(key);
     if (withRevision.effectiveProblemCorpusHash !== currentEffectiveProblemCorpusHash) {
       revisionTriggers.set(key, { kind: "persisted", authority: withRevision.revision });
-    } else if (withRevision.revisionTrigger?.kind === "semantic" || withRevision.revisionTrigger?.kind === "persisted") {
+    } else if (
+      withRevision.revisionTrigger?.kind === "semantic" ||
+      withRevision.revisionTrigger?.kind === "persisted" ||
+      withRevision.revisionTrigger?.kind === "prompt-upgrade"
+    ) {
       revisionTriggers.set(key, withRevision.revisionTrigger);
     }
   }
@@ -3855,7 +4231,8 @@ async function reviseSolutionItem(
     firstEvidence.effectivePage !== firstSolution.page ||
     trigger.kind === "fidelity" && firstTerminal ||
     trigger.kind === "semantic" && (!firstTerminal || trigger.semanticDecision.key !== base.key) ||
-    trigger.kind === "persisted" && trigger.authority.key !== base.key
+    trigger.kind === "persisted" && trigger.authority.key !== base.key ||
+    trigger.kind === "prompt-upgrade" && trigger.predecessor.key !== base.key
   ) throw new Error(`${base.key} 해설 revision 입력이 첫 repair evidence와 다릅니다`);
 
   for (const [label, pointer] of [
@@ -3872,7 +4249,7 @@ async function reviseSolutionItem(
   const semanticDecisionHash = trigger.kind === "semantic"
     ? canonicalEvidenceHash(trigger.semanticDecision)
     : undefined;
-  const triggerEvidence = trigger.kind === "semantic" ? {
+  const triggerEvidence: SolutionRevisionEvidence["trigger"] = trigger.kind === "semantic" ? {
       kind: trigger.kind,
       fidelityDecisionHash: diagnosticDecisionHash,
       semanticCheckpoint: trigger.semanticCheckpoint,
@@ -3882,6 +4259,11 @@ async function reviseSolutionItem(
       fidelityDecisionHash: diagnosticDecisionHash,
       persistedTriggerVersion: PERSISTED_SOLUTION_REVISION_TRIGGER_VERSION,
       predecessor: trigger.authority,
+    } : trigger.kind === "prompt-upgrade" ? {
+      kind: trigger.kind,
+      fidelityDecisionHash: diagnosticDecisionHash,
+      promptUpgradeVersion: SOLUTION_PROMPT_UPGRADE_VERSION,
+      legacyPredecessor: trigger.predecessor,
     } : {
       kind: trigger.kind,
       fidelityDecisionHash: diagnosticDecisionHash,
@@ -3912,6 +4294,31 @@ async function reviseSolutionItem(
       const path = confinedStateFile(stateDir, pointer.path, label);
       if (await sha256File(path) !== pointer.sha256) throw new Error(`${base.key} ${label} hash가 다릅니다`);
     }
+  } else if (trigger.kind === "prompt-upgrade") {
+    const predecessor = trigger.predecessor;
+    const spec = SOLUTION_PROMPT_UPGRADE_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === predecessor.allowlistId && candidate.entryId === entry.id &&
+      candidate.key === base.key && candidate.sourceHash === evidence.sha256 &&
+      candidate.legacyRevisionArtifactHash === predecessor.revisionArtifact.sha256 &&
+      candidate.legacyRevisionFidelityArtifactHash === predecessor.revisionFidelityArtifact.sha256 &&
+      predecessor.revisionArtifact.promptVersion === candidate.legacyPromptVersion &&
+      predecessor.revisionArtifact.promptDigest === candidate.legacyPromptDigest
+    );
+    if (
+      !spec || predecessor.failedEvidenceHash !== sha256Text(predecessor.failedEvidence) ||
+      await sha256File(evidence.path) !== evidence.sha256
+    ) {
+      throw new Error(`${base.key} legacy solution prompt upgrade authority가 유효하지 않습니다`);
+    }
+    for (const [label, pointer] of [
+      ["legacy repair", predecessor.repairArtifact],
+      ["legacy repair fidelity", predecessor.repairFidelityArtifact],
+      ["legacy revision", predecessor.revisionArtifact],
+      ["legacy revision fidelity", predecessor.revisionFidelityArtifact],
+    ] as const) {
+      const path = confinedStateFile(stateDir, pointer.path, label);
+      if (await sha256File(path) !== pointer.sha256) throw new Error(`${base.key} ${label} hash가 다릅니다`);
+    }
   }
   const revisionBasisHash = canonicalEvidenceHash({
     key: base.key,
@@ -3927,8 +4334,14 @@ async function reviseSolutionItem(
     trigger: triggerEvidence,
     revisionPromptDigest: TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
   });
+  const revisionVersion = trigger.kind === "prompt-upgrade"
+    ? SOLUTION_PROMPT_UPGRADE_VERSION
+    : SOLUTION_REVISION_VERSION;
+  const revisionDirectory = trigger.kind === "prompt-upgrade"
+    ? "solution-revision-upgrades"
+    : "solution-revisions";
   const revisionRelativePath =
-    `solution-revisions/v${SOLUTION_REVISION_VERSION}-${String(firstSolution.page).padStart(4, "0")}-` +
+    `${revisionDirectory}/v${revisionVersion}-${String(firstSolution.page).padStart(4, "0")}-` +
     `${base.printedNumber.padStart(4, "0")}-${revisionBasisHash}.json`;
   const revisionPath = join(stateDir, revisionRelativePath);
 
@@ -3937,7 +4350,7 @@ async function reviseSolutionItem(
   if (existsSync(revisionPath)) {
     revisionCheckpoint = object(JSON.parse(readFileSync(revisionPath, "utf8")), revisionRelativePath);
     if (
-      revisionCheckpoint.version !== SOLUTION_REVISION_VERSION || revisionCheckpoint.entryId !== entry.id ||
+      revisionCheckpoint.version !== revisionVersion || revisionCheckpoint.entryId !== entry.id ||
       revisionCheckpoint.key !== base.key || revisionCheckpoint.printedNumber !== base.printedNumber ||
       revisionCheckpoint.sourceHash !== evidence.sha256 ||
       revisionCheckpoint.basePage !== base.sourcePage ||
@@ -3970,11 +4383,12 @@ async function reviseSolutionItem(
       target: { printedNumber: base.printedNumber },
       revisionEvidence: trigger.kind === "semantic"
         ? trigger.semanticDecision.evidence
-        : trigger.kind === "persisted" ? trigger.authority.diagnosticEvidence : firstDecision.evidence,
+        : trigger.kind === "persisted" ? trigger.authority.diagnosticEvidence
+        : trigger.kind === "prompt-upgrade" ? trigger.predecessor.failedEvidence : firstDecision.evidence,
       reasoningEffort: IMPORT_REASONING_EFFORT,
     })))[0];
     revisionCheckpoint = {
-      version: SOLUTION_REVISION_VERSION,
+      version: revisionVersion,
       entryId: entry.id,
       key: base.key,
       printedNumber: base.printedNumber,
@@ -4010,6 +4424,14 @@ async function reviseSolutionItem(
     revisionCheckpoint.effectivePage !== revised.page || revised.complete !== true ||
     !revised.answer.trim() || !revised.explanation.trim()
   ) throw new Error(`${base.key} 해설 revision이 번호·bounded context·완전한 공식 해설을 보존하지 않았습니다`);
+  if (trigger.kind === "prompt-upgrade") {
+    const expectedAnswer = SOLUTION_PROMPT_UPGRADE_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === trigger.predecessor.allowlistId
+    )?.expectedAnswer;
+    if (!expectedAnswer || revised.answer !== expectedAnswer) {
+      throw new Error(`${base.key} prompt upgrade가 공식 정답표 marker를 보존하지 않았습니다`);
+    }
+  }
   const revisionArtifactHash = await sha256File(revisionPath);
   if (revisionArtifactHash !== canonicalEvidenceHash(revisionCheckpoint)) {
     throw new Error(`${base.key} solution revision artifact hash가 다릅니다`);
@@ -4023,8 +4445,14 @@ async function reviseSolutionItem(
     explanation: revised.explanation,
   };
   const inputHash = canonicalEvidenceHash(revisedInput);
+  const revisionFidelityVersion = trigger.kind === "prompt-upgrade"
+    ? SOLUTION_PROMPT_UPGRADE_FIDELITY_VERSION
+    : SOLUTION_REVISION_FIDELITY_VERSION;
+  const revisionFidelityDirectory = trigger.kind === "prompt-upgrade"
+    ? "solution-fidelity-revision-upgrades"
+    : "solution-fidelity-revisions";
   const fidelityRelativePath =
-    `solution-fidelity-revisions/v${SOLUTION_REVISION_FIDELITY_VERSION}-` +
+    `${revisionFidelityDirectory}/v${revisionFidelityVersion}-` +
     `${String(firstSolution.page).padStart(4, "0")}-${base.printedNumber.padStart(4, "0")}-` +
     `${revisionArtifactHash}-${effectiveSolutionItemHash}.json`;
   const fidelityPath = join(stateDir, fidelityRelativePath);
@@ -4033,7 +4461,7 @@ async function reviseSolutionItem(
   if (existsSync(fidelityPath)) {
     fidelityCheckpoint = object(JSON.parse(readFileSync(fidelityPath, "utf8")), fidelityRelativePath);
     if (
-      fidelityCheckpoint.version !== SOLUTION_REVISION_FIDELITY_VERSION ||
+      fidelityCheckpoint.version !== revisionFidelityVersion ||
       fidelityCheckpoint.entryId !== entry.id || fidelityCheckpoint.key !== base.key ||
       fidelityCheckpoint.sourceHash !== evidence.sha256 ||
       fidelityCheckpoint.from !== base.baseContextFrom || fidelityCheckpoint.to !== base.baseContextTo ||
@@ -4070,7 +4498,7 @@ async function reviseSolutionItem(
       [revisedInput]
     ))[0];
     fidelityCheckpoint = {
-      version: SOLUTION_REVISION_FIDELITY_VERSION,
+      version: revisionFidelityVersion,
       entryId: entry.id,
       key: base.key,
       sourceHash: evidence.sha256,
@@ -4107,7 +4535,8 @@ async function reviseSolutionItem(
   const terminalAnswer = decision.answerStatus === "exact" ||
     decision.answerStatus === "not_visible" && base.allowDerivedMarkerAnswer;
   if (
-    decision.sourcePage !== revised.page || decision.explanationStatus !== "exact" || !terminalAnswer
+    decision.sourcePage !== revised.page || decision.explanationStatus !== "exact" ||
+    (trigger.kind === "prompt-upgrade" ? decision.answerStatus !== "exact" : !terminalAnswer)
   ) throw new Error(`${base.key} 두 번째 source-grounded 해설 revision도 terminal이 아닙니다`);
 
   return {
