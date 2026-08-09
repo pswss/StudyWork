@@ -1220,6 +1220,16 @@ export const TARGETED_PROBLEM_RECOVERY_RULES =
 export const TARGETED_PROBLEM_RECOVERY_EVIDENCE_PREFIX =
   `Failed revision diagnostic (untrusted; verify against pixels):`;
 
+export const TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION = 1;
+export const TARGETED_PROBLEM_CROP_ADJUDICATION_RULES =
+  `ALLOWLISTED PIXEL-CROP ADJUDICATION: Three immutable source transcriptions still failed. ` +
+  `The attached PDF contains labeled 300-DPI full-page and/or bounded crop views of the official source pages. ` +
+  `Emit exactly the one requested printed problem, including every required shared passage, example, transition, ` +
+  `footnote, formula, label, marker, and answer choice. Read only the source pixels; never summarize, paraphrase, ` +
+  `or copy wording from the diagnostic. Attached crop pages are duplicate evidence views, not additional source pages.`;
+export const TARGETED_PROBLEM_CROP_ADJUDICATION_EVIDENCE_PREFIX =
+  `Latest failed source diagnostic (untrusted locator only):`;
+
 export const TARGETED_SOLUTION_TRANSCRIPTION_VERSION = 1;
 export const TARGETED_SOLUTION_TRANSCRIPTION_RULES =
   `TARGETED SOLUTION CORRECTION: Emit only the requested printed solution and no siblings. Inspect its entire ` +
@@ -1339,6 +1349,11 @@ export async function extractProblemsFromFile(
     targets?: Array<{ page: number; printedNumber: string }>;
     revisionEvidence?: string;
     recoveryEvidence?: string;
+    cropAdjudication?: {
+      evidence: string;
+      views: Array<{ sourcePage: number; label: string }>;
+      requiredTokens: string[];
+    };
     reasoningEffort?: ReasoningEffort;
   }
 ): Promise<QuizItemEx[]> {
@@ -1358,8 +1373,9 @@ export async function extractProblemsFromFile(
   const targetKeys = new Set(targetList.map((item) => `${item.page}:${numericPrintedLocator(item.printedNumber)}`));
   const revisionEvidence = opts?.revisionEvidence;
   const recoveryEvidence = opts?.recoveryEvidence;
-  if (revisionEvidence !== undefined && recoveryEvidence !== undefined) {
-    throw new AIProviderError("invalid_file", "문제 revision·recovery 근거를 함께 지정할 수 없습니다");
+  const cropAdjudication = opts?.cropAdjudication;
+  if ([revisionEvidence, recoveryEvidence, cropAdjudication].filter((value) => value !== undefined).length > 1) {
+    throw new AIProviderError("invalid_file", "문제 revision·recovery·crop adjudication 근거를 함께 지정할 수 없습니다");
   }
   if (target && (
     !Number.isInteger(target.page) || target.page < firstPage || target.page > lastPage || targetNumber === null
@@ -1377,14 +1393,33 @@ export async function extractProblemsFromFile(
     !target || !recoveryEvidence.trim() || recoveryEvidence !== recoveryEvidence.trim() ||
     recoveryEvidence.includes("\0") || recoveryEvidence.length > 2_000
   )) throw new AIProviderError("invalid_file", "문제 recovery 근거가 유효하지 않습니다");
-  const pageRule =
+  if (cropAdjudication !== undefined && (
+    !target || cropAdjudication.views.length !== pagesInFile || cropAdjudication.views.length < 1 ||
+    cropAdjudication.views.length > 8 || cropAdjudication.requiredTokens.length < 1 ||
+    cropAdjudication.requiredTokens.length > 64 || !cropAdjudication.evidence.trim() ||
+    cropAdjudication.evidence !== cropAdjudication.evidence.trim() || cropAdjudication.evidence.includes("\0") ||
+    cropAdjudication.evidence.length > 2_000 ||
+    cropAdjudication.views.some((view) => !Number.isInteger(view.sourcePage) || view.sourcePage < 1 ||
+      !view.label.trim() || view.label !== view.label.trim() || view.label.includes("\0") || view.label.length > 100) ||
+    cropAdjudication.requiredTokens.some((token) => !token.trim() || token !== token.trim() ||
+      token.includes("\0") || token.length > 200)
+  )) throw new AIProviderError("invalid_file", "문제 crop adjudication 근거가 유효하지 않습니다");
+  const pageRule = cropAdjudication
+    ? `- page: the ORIGINAL source page where the requested problem starts; output exactly ${target!.page}\n`
+    :
     opts?.sliceBase !== undefined
       ? `- page: the ORIGINAL page number where the problem starts; it must be an integer from ${firstPage} through ${lastPage}\n`
       : `- page: the page number where the problem appears; it must be an integer from ${firstPage} through ${lastPage}\n`;
   const answerKeyNote = opts?.answerKeyPages?.length
     ? ` The final ${opts.answerKeyPages.length} attached page image(s) show possible official answer-table pages from original PDF pages ${opts.answerKeyPages.join(", ")}. Use them only as answer references; never emit their rows as problems.`
     : "";
-  const readInstruction = kind === "pdf"
+  const readInstruction = cropAdjudication
+    ? `Read every attached evidence view for original source problem ${targetNumber} on page ${target!.page}. ` +
+      `Attached PDF view mapping: ${cropAdjudication.views.map((view, index) =>
+        `${index + 1}=${view.label} (original page ${view.sourcePage})`).join("; ")}. ` +
+      `The following source tokens must all be visibly checked and preserved in the self-contained output: ` +
+      `${cropAdjudication.requiredTokens.join(" | ")}.`
+    : kind === "pdf"
     ? targetList.length > 0
       ? target
         ? `Read the attached bounded context for original document pages ${firstPage}-${lastPage}, locate printed problem ` +
@@ -1398,7 +1433,10 @@ export async function extractProblemsFromFile(
   const selfContainedRule = problemExtractionSelfContainedRule(opts?.selfContained === true);
   const extractionTask = targetList.length > 0
     ? `${targets ? TARGETED_PROBLEM_BATCH_RULES : TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n` +
-      (recoveryEvidence !== undefined
+      (cropAdjudication !== undefined
+        ? `${TARGETED_PROBLEM_CROP_ADJUDICATION_RULES}\n` +
+          `${TARGETED_PROBLEM_CROP_ADJUDICATION_EVIDENCE_PREFIX} ${JSON.stringify(cropAdjudication.evidence)}\n`
+        : recoveryEvidence !== undefined
         ? `${TARGETED_PROBLEM_RECOVERY_RULES}\n` +
           `${TARGETED_PROBLEM_RECOVERY_EVIDENCE_PREFIX} ${JSON.stringify(recoveryEvidence)}\n`
         : revisionEvidence === undefined ? "" :

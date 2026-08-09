@@ -528,6 +528,15 @@ describe("exam corpus importer", () => {
       const pdftotext = existsSync("/opt/homebrew/bin/pdftotext") ? "/opt/homebrew/bin/pdftotext" : "pdftotext";
       const extracted = await execFileP(pdftotext, [imageOnlyPath, "-"]);
       expect(String(extracted.stdout).trim()).toBe("");
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+      const replayImageOnlyPath = join(root, "image-only-replay.pdf");
+      await buildImageOnlyPdfFromPngs(
+        [`${pngPrefix}-1.png`, `${pngPrefix}-2.png`],
+        replayImageOnlyPath,
+        72
+      );
+      expect(createHash("sha256").update(readFileSync(replayImageOnlyPath)).digest("hex"))
+        .toBe(createHash("sha256").update(readFileSync(imageOnlyPath)).digest("hex"));
 
       const makeEvidence = (name: string, url: string): PdfEvidence => {
         const path = join(root, name);

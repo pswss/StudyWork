@@ -48,6 +48,9 @@ import {
   TARGETED_PROBLEM_RECOVERY_RULES,
   TARGETED_PROBLEM_RECOVERY_VERSION,
   TARGETED_PROBLEM_RECOVERY_EVIDENCE_PREFIX,
+  TARGETED_PROBLEM_CROP_ADJUDICATION_RULES,
+  TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
+  TARGETED_PROBLEM_CROP_ADJUDICATION_EVIDENCE_PREFIX,
   TARGETED_SOLUTION_TRANSCRIPTION_RULES,
   TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
   TARGETED_SOLUTION_REVISION_RULES,
@@ -92,6 +95,8 @@ export const PROBLEM_RECOVERY_VERSION = 1;
 export const CLASSIFICATION_RECOVERY_VERSION = 1;
 export const PROBLEM_TERMINAL_RECOVERY_VERSION = 2;
 export const CLASSIFICATION_TERMINAL_RECOVERY_VERSION = 2;
+export const PROBLEM_CROP_ADJUDICATION_VERSION = 1;
+export const CLASSIFICATION_CROP_ADJUDICATION_VERSION = 1;
 export const SOLUTION_FIDELITY_VERSION = 1;
 export const SOLUTION_FIDELITY_SLICE_PAGES = 22;
 export const SOLUTION_FIDELITY_SLICE_STRIDE = 18;
@@ -619,6 +624,46 @@ export type ProblemRecoveryEvidence = {
   effectiveQuestionHash: string;
   baseClassificationHash: string;
   effectiveClassificationHash: string;
+  adjudication?: ProblemCropAdjudicationEvidence;
+};
+
+export type ProblemCropAdjudicationEvidence = {
+  allowlistId: string;
+  key: string;
+  printedNumber: string;
+  sourcePage: number;
+  sourcePages: number[];
+  sourceHash: string;
+  parentRecoveryEvidenceHash: string;
+  cropEvidenceArtifact: EvidencePointer;
+  cropEvidencePdf: EvidencePointer;
+  cropViews: Array<{
+    sourcePage: number;
+    label: string;
+    rect: [number, number, number, number];
+    pixelWidth: number;
+    pixelHeight: number;
+    pixelSha256: string;
+    artifact: EvidencePointer;
+  }>;
+  problemArtifact: EvidencePointer & {
+    promptVersion: number;
+    promptDigest: string;
+  };
+  problemArtifactItemHash: string;
+  classificationArtifact: EvidencePointer & {
+    rulesDigest: string;
+    transcriptionGateVersion: number;
+    transcriptionPromptDigest: string;
+    adjudicationPromptVersion: number;
+    adjudicationPromptDigest: string;
+    classificationPromptDigest: string;
+  };
+  classificationArtifactItemHash: string;
+  baseQuestionHash: string;
+  effectiveQuestionHash: string;
+  baseClassificationHash: string;
+  effectiveClassificationHash: string;
 };
 
 type ProblemRevisionTrigger =
@@ -768,6 +813,12 @@ function exactString(value: unknown, label: string, max = 1000): string {
     throw new Error(`${label}: 유효한 문자열이 아닙니다`);
   }
   return value;
+}
+
+function exactHash(value: unknown, label: string): string {
+  const hash = exactString(value, label, 64);
+  if (!/^[a-f0-9]{64}$/u.test(hash)) throw new Error(`${label}: SHA-256이 아닙니다`);
+  return hash;
 }
 
 function httpsUrl(value: unknown, label: string, hostname: "www.ebsi.co.kr" | "wdown.ebsi.co.kr"): string {
@@ -1009,6 +1060,82 @@ export const TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST = sha256Text(
   `${TARGETED_PROBLEM_RECOVERY_EVIDENCE_PREFIX}\n` +
   `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`
 );
+export const TARGETED_PROBLEM_CROP_ADJUDICATION_PROMPT_DIGEST = sha256Text(
+  `${TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION}\n${TARGETED_PROBLEM_CROP_ADJUDICATION_RULES}\n` +
+  `${TARGETED_PROBLEM_CROP_ADJUDICATION_EVIDENCE_PREFIX}\n` +
+  `${TARGETED_PROBLEM_TRANSCRIPTION_VERSION}\n${TARGETED_PROBLEM_TRANSCRIPTION_RULES}\n${QUIZ_EXTRACT_SPEC}`
+);
+const PROBLEM_CROP_ADJUDICATION_CLASSIFICATION_RULES =
+  `The attached PDF is an immutable 300-DPI evidence bundle. Its pages are labeled duplicate full-page or bounded ` +
+  `crop views of the stated official source pages, not additional source pages. Compare the entire supplied ` +
+  `self-contained question against every relevant view and classify scope from those pixels.`;
+export const PROBLEM_CROP_ADJUDICATION_CLASSIFICATION_PROMPT_DIGEST = sha256Text(
+  `${CLASSIFIER_VERSION}\n${TRANSCRIPTION_GATE_VERSION}\n${TRANSCRIPTION_GATE_RULES}\n` +
+  `${PROBLEM_CROP_ADJUDICATION_CLASSIFICATION_RULES}\n${CURRICULUM_RULES}`
+);
+
+type ProblemCropAdjudicationSpec = {
+  allowlistId: string;
+  entryId: string;
+  key: string;
+  sourcePage: number;
+  sourceHash: string;
+  views: Array<{
+    sourcePage: number;
+    label: string;
+    rect: [number, number, number, number];
+  }>;
+  requiredTokens: string[];
+};
+
+export const PROBLEM_CROP_ADJUDICATION_ALLOWLIST: readonly ProblemCropAdjudicationSpec[] = [
+  {
+    allowlistId: "ebsi-5578421-q29-p11-v1",
+    entryId: "ebsi:5578421",
+    key: "11:29",
+    sourcePage: 11,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    views: [
+      { sourcePage: 11, label: "p11 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 11, label: "p11 left article", rect: [0.075, 0.10, 0.50, 0.92] },
+      { sourcePage: 11, label: "p11 right article", rect: [0.49, 0.10, 0.92, 0.80] },
+      { sourcePage: 11, label: "p11 Q29", rect: [0.49, 0.74, 0.92, 0.92] },
+    ],
+    requiredTokens: [
+      "[29~34]", "ⓐ 전통 논리학", "ⓑ 명제 논리학", "㉠ 정언 삼단 논증", "㉡ 전건 긍정",
+      "㉢ 명제 논리학", "전제에만", "‘p’와 ‘q’는", "선행 조건", "(1)", "(2)", "(3)", "(4)",
+      "명사(名辭)",
+      "① 논리학의 발전 과정을 개괄적으로 소개하고 있다.",
+      "② 논리학의 의의를 다양한 관점에서 고찰하고 있다.",
+      "③ 논리학의 특징을 인접 학문과 비교하여 분석하고 있다.",
+      "④ 논리학의 논증 방식이 단순화된 배경을 설명하고 있다.",
+      "⑤ 논리학의 변화에 영향을 준 여러 학문을 고찰하고 있다.",
+    ],
+  },
+  {
+    allowlistId: "ebsi-5594499-q34-p12-p13-v1",
+    entryId: "ebsi:5594499",
+    key: "13:34",
+    sourcePage: 13,
+    sourceHash: "0ddccee92ce4e4ba3da53ed253e780cd7b41b5962f7e9761a920079619f81c31",
+    views: [
+      { sourcePage: 12, label: "p12 left", rect: [0.09, 0.09, 0.51, 0.95] },
+      { sourcePage: 12, label: "p12 right", rect: [0.50, 0.09, 0.95, 0.95] },
+      { sourcePage: 13, label: "p13 left top", rect: [0.09, 0.06, 0.53, 0.74] },
+      { sourcePage: 13, label: "p13 Q34 lower left", rect: [0.09, 0.77, 0.55, 0.98] },
+    ],
+    requiredTokens: [
+      "[34~37]", "(가)", "(나)", "[A]", "[B]", "㉮", "S#58", "S#59", "S#60",
+      "ⓐ", "ⓑ", "ⓒ", "ⓓ", "ⓔ", "O.L*", "* O.L", "갑월", "윤씨 부인", "치수", "월선네",
+      "김 서방", "박경리, 「토지」", "박경리 원작, 이형우 각색, 「토지」",
+      "① 풍자적 서술을 통해 인물의 부정적 행위를 비판하고 있다.",
+      "② 작품 밖 서술자를 통해 인물의 내면 심리를 제시하고 있다.",
+      "③ 시대적 배경을 제시하여 사회 현실의 문제를 드러내고 있다.",
+      "④ 의식의 흐름 기법을 활용하여 인물의 내적 욕망을 드러내고 있다.",
+      "⑤ 인물의 과장된 행동을 통해 비극적 분위기의 반전을 꾀하고 있다.",
+    ],
+  },
+] as const;
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(
   `${TARGETED_SOLUTION_TRANSCRIPTION_VERSION}\n${TARGETED_SOLUTION_TRANSCRIPTION_RULES}`
 );
@@ -1075,7 +1202,7 @@ export async function buildImageOnlyPdfFromPngs(
   if (pngPaths.length === 0 || !Number.isFinite(dpi) || dpi <= 0) {
     throw new Error("image-only PDF 페이지 또는 DPI가 유효하지 않습니다");
   }
-  const document = await PDFDocument.create();
+  const document = await PDFDocument.create({ updateMetadata: false });
   for (const path of pngPaths) {
     const image = await document.embedPng(readFileSync(path));
     const width = image.width * 72 / dpi;
@@ -1155,6 +1282,234 @@ export async function withImporterPdfForAnalysis<T>(
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+const PROBLEM_CROP_DPI = 300;
+
+function pngDimensions(path: string): { width: number; height: number } {
+  const header = readFileSync(path).subarray(0, 24);
+  if (
+    header.length < 24 || header.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a" ||
+    header.subarray(12, 16).toString("ascii") !== "IHDR"
+  ) throw new Error(`crop evidence PNG header가 유효하지 않습니다: ${path}`);
+  const width = header.readUInt32BE(16);
+  const height = header.readUInt32BE(20);
+  if (width < 1 || height < 1) throw new Error(`crop evidence PNG 크기가 유효하지 않습니다: ${path}`);
+  return { width, height };
+}
+
+function outwardCropPixels(
+  rect: readonly [number, number, number, number],
+  width: number,
+  height: number
+): { x: number; y: number; width: number; height: number } {
+  const [left, top, right, bottom] = rect;
+  if (
+    ![left, top, right, bottom].every((value) => Number.isFinite(value)) || left < 0 || top < 0 ||
+    right > 1 || bottom > 1 || right <= left || bottom <= top
+  ) throw new Error("crop evidence normalized rect가 유효하지 않습니다");
+  const x = Math.floor(left * width);
+  const y = Math.floor(top * height);
+  const cropRight = Math.ceil(right * width);
+  const cropBottom = Math.ceil(bottom * height);
+  return { x, y, width: cropRight - x, height: cropBottom - y };
+}
+
+async function copyImmutableBinary(source: string, target: string): Promise<string> {
+  const expected = await sha256File(source);
+  if (existsSync(target)) {
+    if (lstatSync(target).isSymbolicLink() || !lstatSync(target).isFile() || await sha256File(target) !== expected) {
+      throw new Error(`기존 binary evidence가 다릅니다: ${target}`);
+    }
+    return expected;
+  }
+  mkdirSync(dirname(target), { recursive: true });
+  const temp = `${target}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    copyFileSync(source, temp, constants.COPYFILE_EXCL);
+    if (await sha256File(temp) !== expected) throw new Error(`binary evidence 복사 hash가 다릅니다: ${target}`);
+    renameSync(temp, target);
+  } finally {
+    if (existsSync(temp)) unlinkSync(temp);
+  }
+  return expected;
+}
+
+type PreparedProblemCropEvidence = {
+  artifact: EvidencePointer;
+  pdf: EvidencePointer & { absolutePath: string };
+  views: ProblemCropAdjudicationEvidence["cropViews"];
+};
+
+async function prepareProblemCropEvidence(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  stateDir: string,
+  spec: ProblemCropAdjudicationSpec
+): Promise<PreparedProblemCropEvidence> {
+  if (problem.sha256 !== spec.sourceHash || await sha256File(problem.path) !== problem.sha256) {
+    throw new Error(`${spec.key} crop adjudication official source hash가 allowlist와 다릅니다`);
+  }
+  const sourcePages = [...new Set(spec.views.map((view) => view.sourcePage))].sort((a, b) => a - b);
+  const basis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key: spec.key,
+    sourcePage: spec.sourcePage,
+    sourcePages,
+    sourceHash: problem.sha256,
+    dpi: PROBLEM_CROP_DPI,
+    views: spec.views,
+    requiredTokens: spec.requiredTokens,
+  };
+  const basisDigest = canonicalEvidenceHash(basis);
+  const stem = `v${PROBLEM_CROP_ADJUDICATION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+    `${spec.key.split(":")[1]!.padStart(4, "0")}-${basisDigest}`;
+  const relativePath = `problem-crop-evidence/${stem}.json`;
+  const pdfRelativePath = `problem-crop-evidence/${stem}.pdf`;
+  const checkpointPath = join(stateDir, relativePath);
+  const pdfPath = join(stateDir, pdfRelativePath);
+  let checkpoint: Record<string, unknown>;
+  if (existsSync(checkpointPath)) {
+    const safeCheckpointPath = confinedStateFile(stateDir, relativePath, "crop evidence checkpoint");
+    checkpoint = object(JSON.parse(readFileSync(safeCheckpointPath, "utf8")), relativePath);
+    if (
+      checkpoint.version !== PROBLEM_CROP_ADJUDICATION_VERSION || checkpoint.entryId !== entry.id ||
+      checkpoint.basisDigest !== basisDigest || canonicalEvidenceHash(checkpoint.basis) !== canonicalEvidenceHash(basis) ||
+      checkpoint.renderer !== "pdftocairo-png+pdf-lib" || checkpoint.dpi !== PROBLEM_CROP_DPI ||
+      canonicalEvidenceHash(checkpoint.evidencePdf) !== canonicalEvidenceHash({
+        path: pdfRelativePath,
+        sha256: object(checkpoint.evidencePdf, "crop evidence PDF").sha256,
+      }) || !Array.isArray(checkpoint.views) || checkpoint.views.length !== spec.views.length
+    ) throw new Error(`기존 crop evidence 메타데이터가 다릅니다: ${checkpointPath}`);
+  } else {
+    await withImporterPdfForAnalysis(problem, async (analysisProblem) => {
+      const tempDir = mkdtempSync(join(tmpdir(), "studywork-problem-crop-"));
+      try {
+        const fullByPage = new Map<number, { path: string; width: number; height: number }>();
+        for (const page of sourcePages) {
+          const prefix = join(tempDir, `source-${String(page).padStart(4, "0")}`);
+          await execFileP(popplerCommand("pdftocairo"), [
+            "-png", "-r", String(PROBLEM_CROP_DPI), "-f", String(page), "-l", String(page),
+            "-singlefile", analysisProblem.path, prefix,
+          ], { encoding: "utf8", timeout: 5 * 60 * 1000, maxBuffer: 4 * 1024 * 1024 });
+          const path = `${prefix}.png`;
+          fullByPage.set(page, { path, ...pngDimensions(path) });
+        }
+        const rendered: Array<{
+          path: string;
+        } & Omit<ProblemCropAdjudicationEvidence["cropViews"][number], "artifact">> = [];
+        for (const [index, view] of spec.views.entries()) {
+          const full = fullByPage.get(view.sourcePage)!;
+          const pixels = outwardCropPixels(view.rect, full.width, full.height);
+          let path = full.path;
+          if (!(pixels.x === 0 && pixels.y === 0 && pixels.width === full.width && pixels.height === full.height)) {
+            const prefix = join(tempDir, `view-${String(index).padStart(2, "0")}`);
+            await execFileP(popplerCommand("pdftocairo"), [
+              "-png", "-r", String(PROBLEM_CROP_DPI), "-f", String(view.sourcePage),
+              "-l", String(view.sourcePage), "-singlefile", "-x", String(pixels.x), "-y", String(pixels.y),
+              "-W", String(pixels.width), "-H", String(pixels.height), analysisProblem.path, prefix,
+            ], { encoding: "utf8", timeout: 5 * 60 * 1000, maxBuffer: 4 * 1024 * 1024 });
+            path = `${prefix}.png`;
+          }
+          const actual = pngDimensions(path);
+          if (actual.width !== pixels.width || actual.height !== pixels.height) {
+            throw new Error(`${spec.key} crop evidence pixel 크기가 요청 범위와 다릅니다`);
+          }
+          rendered.push({
+            path,
+            sourcePage: view.sourcePage,
+            label: view.label,
+            rect: [...view.rect],
+            pixelWidth: actual.width,
+            pixelHeight: actual.height,
+            pixelSha256: await sha256File(path),
+          });
+        }
+        const tempPdf = join(tempDir, "evidence.pdf");
+        await buildImageOnlyPdfFromPngs(rendered.map((view) => view.path), tempPdf, PROBLEM_CROP_DPI);
+        const pdfStat = statSync(tempPdf);
+        if (!pdfStat.isFile() || pdfStat.size < 5 || pdfStat.size > MAX_PDF_BYTES) {
+          throw new Error(`${spec.key} crop evidence PDF 크기가 AI 입력 한도를 벗어났습니다`);
+        }
+        if (await pdfPageCount(tempPdf) !== rendered.length) {
+          throw new Error(`${spec.key} crop evidence PDF page coverage가 다릅니다`);
+        }
+        const persistedViews: ProblemCropAdjudicationEvidence["cropViews"] = [];
+        for (const [index, { path, ...view }] of rendered.entries()) {
+          const viewRelativePath = `problem-crop-evidence/${stem}-view-${String(index).padStart(2, "0")}.png`;
+          const viewSha = await copyImmutableBinary(path, join(stateDir, viewRelativePath));
+          if (viewSha !== view.pixelSha256) throw new Error(`${spec.key} crop evidence view hash가 다릅니다`);
+          persistedViews.push({ ...view, artifact: { path: viewRelativePath, sha256: viewSha } });
+        }
+        const evidencePdfSha = await copyImmutableBinary(tempPdf, pdfPath);
+        checkpoint = {
+          version: PROBLEM_CROP_ADJUDICATION_VERSION,
+          entryId: entry.id,
+          basisDigest,
+          basis,
+          renderer: "pdftocairo-png+pdf-lib",
+          dpi: PROBLEM_CROP_DPI,
+          evidencePdf: { path: pdfRelativePath, sha256: evidencePdfSha },
+          views: persistedViews,
+        };
+        await writeImmutableEvidence(checkpointPath, checkpoint);
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+  }
+  const checkpointSha = await sha256File(checkpointPath);
+  if (checkpointSha !== canonicalEvidenceHash(checkpoint!)) {
+    throw new Error(`${spec.key} crop evidence checkpoint hash가 다릅니다`);
+  }
+  const evidencePdf = object(checkpoint!.evidencePdf, "crop evidence PDF");
+  const evidencePdfPath = confinedStateFile(stateDir, exactString(evidencePdf.path, "crop evidence PDF path", 500), "crop evidence PDF");
+  const evidencePdfSha = exactHash(evidencePdf.sha256, "crop evidence PDF hash");
+  if (await sha256File(evidencePdfPath) !== evidencePdfSha) throw new Error(`${spec.key} crop evidence PDF hash가 다릅니다`);
+  const views: ProblemCropAdjudicationEvidence["cropViews"] = [];
+  for (const [index, raw] of (checkpoint!.views as unknown[]).entries()) {
+    const row = object(raw, `crop evidence view ${index + 1}`);
+    const expected = spec.views[index];
+    const rect = row.rect;
+    const artifact = object(row.artifact, `crop evidence view ${index + 1} artifact`);
+    const expectedPath = `problem-crop-evidence/${stem}-view-${String(index).padStart(2, "0")}.png`;
+    const artifactPath = exactString(artifact.path, `crop evidence view ${index + 1} path`, 500);
+    const artifactSha = exactHash(artifact.sha256, `crop evidence view ${index + 1} artifact hash`);
+    const pixelSha256 = exactHash(row.pixelSha256, `crop evidence view ${index + 1} hash`);
+    if (
+      row.sourcePage !== expected.sourcePage || row.label !== expected.label ||
+      canonicalEvidenceHash(rect) !== canonicalEvidenceHash(expected.rect) ||
+      !Number.isInteger(row.pixelWidth) || Number(row.pixelWidth) < 1 ||
+      !Number.isInteger(row.pixelHeight) || Number(row.pixelHeight) < 1 || artifactPath !== expectedPath ||
+      artifactSha !== pixelSha256 || canonicalEvidenceHash(artifact) !== canonicalEvidenceHash({
+        path: expectedPath,
+        sha256: pixelSha256,
+      })
+    ) throw new Error(`${spec.key} crop evidence view 메타데이터가 다릅니다`);
+    const absoluteViewPath = confinedStateFile(stateDir, artifactPath, `crop evidence view ${index + 1}`);
+    if (await sha256File(absoluteViewPath) !== pixelSha256) {
+      throw new Error(`${spec.key} crop evidence view file hash가 다릅니다`);
+    }
+    const dimensions = pngDimensions(absoluteViewPath);
+    if (dimensions.width !== row.pixelWidth || dimensions.height !== row.pixelHeight) {
+      throw new Error(`${spec.key} crop evidence view file 크기가 다릅니다`);
+    }
+    views.push({
+      sourcePage: expected.sourcePage,
+      label: expected.label,
+      rect: [...expected.rect] as [number, number, number, number],
+      pixelWidth: Number(row.pixelWidth),
+      pixelHeight: Number(row.pixelHeight),
+      pixelSha256,
+      artifact: { path: artifactPath, sha256: artifactSha },
+    });
+  }
+  return {
+    artifact: { path: relativePath, sha256: checkpointSha },
+    pdf: { path: pdfRelativePath, sha256: evidencePdfSha, absolutePath: evidencePdfPath },
+    views,
+  };
 }
 
 async function inspectPdf(path: string, requestedUrl: string, resolvedUrl = requestedUrl): Promise<PdfEvidence> {
@@ -1368,7 +1723,7 @@ async function classifyQuestions(
   from: number,
   to: number,
   questions: QuizItemEx[],
-  opts?: { revisionEvidence?: string; targeted?: boolean }
+  opts?: { revisionEvidence?: string; sourceEvidenceNote?: string; targeted?: boolean }
 ): Promise<ClassificationDecision[]> {
   if (questions.length === 0) return [];
   const input = questions.map((question) => ({
@@ -1387,13 +1742,16 @@ async function classifyQuestions(
     .sort();
   const revisionEvidence = opts?.revisionEvidence;
   if (revisionEvidence !== undefined) exactString(revisionEvidence, "problem revision evidence", 2000);
+  const sourceEvidenceNote = opts?.sourceEvidenceNote;
+  if (sourceEvidenceNote !== undefined) exactString(sourceEvidenceNote, "problem source evidence note", 8000);
   const revisionRule = revisionEvidence === undefined ? "" :
     `\n\n${TARGETED_PROBLEM_REVISION_RULES}\n` +
     `${TARGETED_PROBLEM_REVISION_EVIDENCE_PREFIX} ${JSON.stringify(revisionEvidence)}`;
   const prompt =
     `Attached official problem PDF slice contains original pages ${from}-${to}. ` +
     `Exam source subject is ${entry.subject}; source school grade is ${entry.grade ?? "unknown"}. ` +
-    `Inspect complete source passages and visual evidence, then classify every supplied question.\n\n` +
+    `Inspect complete source passages and visual evidence, then classify every supplied question.` +
+    (sourceEvidenceNote ? ` ${sourceEvidenceNote}` : "") + `\n\n` +
     `${TRANSCRIPTION_GATE_RULES}${revisionRule}\n\n${CURRICULUM_RULES}\n\n` +
     `Allowed exact achievement codes for this source: ${allowedCodes.join(", ")}\n\n` +
     `Questions:\n${JSON.stringify(input)}`;
@@ -3541,6 +3899,289 @@ type ProblemRecoveryInput = {
   trigger: ProblemRecoveryTrigger;
 };
 
+function problemCropAdjudicationSpec(
+  entry: CorpusManifestEntry,
+  key: string,
+  sourcePage: number,
+  sourceHash: string
+): ProblemCropAdjudicationSpec | null {
+  const matches = PROBLEM_CROP_ADJUDICATION_ALLOWLIST.filter((spec) =>
+    spec.entryId === entry.id && spec.key === key && spec.sourcePage === sourcePage
+  );
+  if (matches.length > 1) throw new Error(`${entry.id} ${key} crop adjudication allowlist가 중복입니다`);
+  const match = matches[0];
+  if (match && match.sourceHash !== sourceHash) {
+    throw new Error(`${entry.id} ${key} crop adjudication source hash가 allowlist와 다릅니다`);
+  }
+  return match ?? null;
+}
+
+export function assertProblemCropAdjudicationTokens(item: QuizItemEx, requiredTokens: readonly string[]): void {
+  const source = [item.question, ...(item.choices ?? []), item.figure_description ?? ""]
+    .join("\n").replace(/\s+/gu, "");
+  const missing = requiredTokens.filter((token) => !source.includes(token.replace(/\s+/gu, "")));
+  if (missing.length > 0) {
+    throw new Error(`${questionKey(item)} crop adjudication 필수 source token 누락: ${missing.join(", ")}`);
+  }
+}
+
+async function adjudicateCropClassifiedQuestion(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  stateDir: string,
+  failed: ClassifiedQuestion,
+  parentRecovery: ProblemRecoveryEvidence
+): Promise<{ classified: ClassifiedQuestion; evidence: ProblemCropAdjudicationEvidence }> {
+  const key = questionKey(failed.question);
+  const sourcePage = failed.question.page!;
+  const spec = problemCropAdjudicationSpec(entry, key, sourcePage, problem.sha256);
+  if (!spec) throw new Error(`${key} crop adjudication allowlist에 없습니다`);
+  if (
+    parentRecovery.adjudication || parentRecovery.key !== key || parentRecovery.sourcePage !== sourcePage ||
+    parentRecovery.sourceHash !== problem.sha256 || failed.classification.transcription_status === "exact" ||
+    canonicalEvidenceHash(failed.question) !== parentRecovery.effectiveQuestionHash ||
+    canonicalEvidenceHash(failed.classification) !== parentRecovery.effectiveClassificationHash
+  ) throw new Error(`${key} crop adjudication 입력이 failed recovery와 다릅니다`);
+  for (const [label, pointer] of [
+    ["base problem repair", parentRecovery.baseProblemRepairArtifact],
+    ["base classification repair", parentRecovery.baseClassificationRepairArtifact],
+    ["base problem revision", parentRecovery.baseProblemRevisionArtifact],
+    ["base classification revision", parentRecovery.baseClassificationRevisionArtifact],
+    ["problem recovery", parentRecovery.problemArtifact],
+    ["classification recovery", parentRecovery.classificationArtifact],
+  ] as const) {
+    const path = confinedStateFile(stateDir, pointer.path, `crop adjudication ${label}`);
+    if (await sha256File(path) !== pointer.sha256) throw new Error(`${key} crop adjudication ${label} hash가 다릅니다`);
+  }
+  const parentRecoveryEvidenceHash = canonicalEvidenceHash(parentRecovery);
+  const prepared = await prepareProblemCropEvidence(entry, problem, stateDir, spec);
+  const sourcePages = [...new Set(spec.views.map((view) => view.sourcePage))].sort((a, b) => a - b);
+  const commonBasis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key,
+    printedNumber: parentRecovery.printedNumber,
+    sourcePage,
+    sourcePages,
+    sourceHash: problem.sha256,
+    parentRecovery,
+    parentRecoveryEvidenceHash,
+    failedRecoveryQuestionHash: canonicalEvidenceHash(failed.question),
+    failedRecoveryClassificationHash: canonicalEvidenceHash(failed.classification),
+    failedRecoveryEvidenceHash: sha256Text(failed.classification.transcription_evidence),
+    cropEvidenceArtifact: prepared.artifact,
+    cropEvidencePdf: { path: prepared.pdf.path, sha256: prepared.pdf.sha256 },
+    cropViews: prepared.views,
+    requiredTokensHash: canonicalEvidenceHash(spec.requiredTokens),
+  };
+  const basisDigest = canonicalEvidenceHash(commonBasis);
+  const stem = `v${PROBLEM_CROP_ADJUDICATION_VERSION}-${String(sourcePage).padStart(4, "0")}-` +
+    `${parentRecovery.printedNumber.padStart(4, "0")}-${basisDigest}`;
+  const problemRelativePath = `problem-crop-adjudications/${stem}.json`;
+  const problemPath = join(stateDir, problemRelativePath);
+  let problemCheckpoint: Record<string, unknown>;
+  let adjudicated: QuizItemEx;
+  if (existsSync(problemPath)) {
+    const safeProblemPath = confinedStateFile(stateDir, problemRelativePath, "problem crop adjudication");
+    problemCheckpoint = object(JSON.parse(readFileSync(safeProblemPath, "utf8")), problemRelativePath);
+    if (
+      problemCheckpoint.version !== PROBLEM_CROP_ADJUDICATION_VERSION || problemCheckpoint.entryId !== entry.id ||
+      problemCheckpoint.basisDigest !== basisDigest ||
+      canonicalEvidenceHash(problemCheckpoint.basis) !== canonicalEvidenceHash(commonBasis) ||
+      problemCheckpoint.promptVersion !== TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION ||
+      problemCheckpoint.promptDigest !== TARGETED_PROBLEM_CROP_ADJUDICATION_PROMPT_DIGEST ||
+      problemCheckpoint.model !== IMPORT_MODEL || problemCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+    ) throw new Error(`기존 problem crop adjudication 메타데이터가 다릅니다: ${problemPath}`);
+    adjudicated = restoredQuizItems([problemCheckpoint.item])[0];
+  } else {
+    adjudicated = (await withTargetedAi(() => extractProblemsFromFile(prepared.pdf.absolutePath, "pdf", {
+      sliceBase: sourcePages[0],
+      contentPageCount: spec.views.length,
+      selfContained: true,
+      target: { page: sourcePage, printedNumber: parentRecovery.printedNumber },
+      cropAdjudication: {
+        evidence: failed.classification.transcription_evidence,
+        views: spec.views.map(({ sourcePage: page, label }) => ({ sourcePage: page, label })),
+        requiredTokens: spec.requiredTokens,
+      },
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+    })))[0];
+    assertProblemCropAdjudicationTokens(adjudicated, spec.requiredTokens);
+    problemCheckpoint = {
+      version: PROBLEM_CROP_ADJUDICATION_VERSION,
+      entryId: entry.id,
+      basisDigest,
+      basis: commonBasis,
+      promptVersion: TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
+      promptDigest: TARGETED_PROBLEM_CROP_ADJUDICATION_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      item: adjudicated,
+    };
+    await writeImmutableEvidence(problemPath, problemCheckpoint);
+  }
+  if (
+    questionKey(adjudicated) !== key || adjudicated.page !== sourcePage ||
+    numericPrintedLocator(adjudicated.number) !== Number(parentRecovery.printedNumber)
+  ) throw new Error(`${key} crop adjudication이 원본 페이지·번호를 보존하지 않았습니다`);
+  assertProblemCropAdjudicationTokens(adjudicated, spec.requiredTokens);
+  const problemSha = await sha256File(problemPath);
+  if (problemSha !== canonicalEvidenceHash(problemCheckpoint)) throw new Error(`${key} crop adjudication hash가 다릅니다`);
+  const problemItemHash = canonicalEvidenceHash(adjudicated);
+  const classificationBasis = {
+    ...commonBasis,
+    problemArtifact: { path: problemRelativePath, sha256: problemSha },
+    problemArtifactItemHash: problemItemHash,
+    effectiveQuestionHash: problemItemHash,
+  };
+  const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+  const classificationRelativePath = `classification-crop-adjudications/` +
+    `v${CLASSIFICATION_CROP_ADJUDICATION_VERSION}-${String(sourcePage).padStart(4, "0")}-` +
+    `${parentRecovery.printedNumber.padStart(4, "0")}-${classificationBasisDigest}-${CLASSIFIER_DIGEST}.json`;
+  const classificationPath = join(stateDir, classificationRelativePath);
+  const mappingNote = `${PROBLEM_CROP_ADJUDICATION_CLASSIFICATION_RULES} Evidence mapping: ` +
+    spec.views.map((view, index) => `view ${index + 1}=${view.label}, original page ${view.sourcePage}`).join("; ") +
+    `. Required source anchors: ${spec.requiredTokens.join(" | ")}.`;
+  let classificationCheckpoint: Record<string, unknown>;
+  let classification: ClassificationDecision;
+  if (existsSync(classificationPath)) {
+    const safeClassificationPath = confinedStateFile(
+      stateDir,
+      classificationRelativePath,
+      "classification crop adjudication"
+    );
+    classificationCheckpoint = object(JSON.parse(readFileSync(safeClassificationPath, "utf8")), classificationRelativePath);
+    if (
+      classificationCheckpoint.version !== CLASSIFICATION_CROP_ADJUDICATION_VERSION ||
+      classificationCheckpoint.entryId !== entry.id || classificationCheckpoint.basisDigest !== classificationBasisDigest ||
+      canonicalEvidenceHash(classificationCheckpoint.basis) !== canonicalEvidenceHash(classificationBasis) ||
+      classificationCheckpoint.classifierVersion !== CLASSIFIER_VERSION ||
+      classificationCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+      classificationCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+      classificationCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+      classificationCheckpoint.adjudicationPromptVersion !== TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION ||
+      classificationCheckpoint.adjudicationPromptDigest !== TARGETED_PROBLEM_CROP_ADJUDICATION_PROMPT_DIGEST ||
+      classificationCheckpoint.classificationPromptDigest !==
+        PROBLEM_CROP_ADJUDICATION_CLASSIFICATION_PROMPT_DIGEST ||
+      classificationCheckpoint.model !== IMPORT_MODEL ||
+      classificationCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+    ) throw new Error(`기존 classification crop adjudication 메타데이터가 다릅니다: ${classificationPath}`);
+    classification = parseDecisions(classificationCheckpoint.items, [adjudicated], entry)[0];
+  } else {
+    classification = (await classifyQuestions(
+      entry,
+      prepared.pdf.absolutePath,
+      sourcePages[0],
+      sourcePages[sourcePages.length - 1],
+      [adjudicated],
+      { targeted: true, sourceEvidenceNote: mappingNote }
+    ))[0];
+    classificationCheckpoint = {
+      version: CLASSIFICATION_CROP_ADJUDICATION_VERSION,
+      entryId: entry.id,
+      basisDigest: classificationBasisDigest,
+      basis: classificationBasis,
+      classifierVersion: CLASSIFIER_VERSION,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      adjudicationPromptVersion: TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
+      adjudicationPromptDigest: TARGETED_PROBLEM_CROP_ADJUDICATION_PROMPT_DIGEST,
+      classificationPromptDigest: PROBLEM_CROP_ADJUDICATION_CLASSIFICATION_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      items: [classification],
+    };
+    await writeImmutableEvidence(classificationPath, classificationCheckpoint);
+  }
+  const classificationSha = await sha256File(classificationPath);
+  if (classificationSha !== canonicalEvidenceHash(classificationCheckpoint)) {
+    throw new Error(`${key} classification crop adjudication hash가 다릅니다`);
+  }
+  if (classification.transcription_status !== "exact") {
+    throw new Error(`${key} allowlisted crop adjudication도 exact가 아닙니다`);
+  }
+  return {
+    classified: { question: adjudicated, classification },
+    evidence: {
+      allowlistId: spec.allowlistId,
+      key,
+      printedNumber: parentRecovery.printedNumber,
+      sourcePage,
+      sourcePages,
+      sourceHash: problem.sha256,
+      parentRecoveryEvidenceHash,
+      cropEvidenceArtifact: prepared.artifact,
+      cropEvidencePdf: { path: prepared.pdf.path, sha256: prepared.pdf.sha256 },
+      cropViews: prepared.views,
+      problemArtifact: {
+        path: problemRelativePath,
+        sha256: problemSha,
+        promptVersion: TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
+        promptDigest: TARGETED_PROBLEM_CROP_ADJUDICATION_PROMPT_DIGEST,
+      },
+      problemArtifactItemHash: problemItemHash,
+      classificationArtifact: {
+        path: classificationRelativePath,
+        sha256: classificationSha,
+        rulesDigest: CLASSIFIER_DIGEST,
+        transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+        transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+        adjudicationPromptVersion: TARGETED_PROBLEM_CROP_ADJUDICATION_VERSION,
+        adjudicationPromptDigest: TARGETED_PROBLEM_CROP_ADJUDICATION_PROMPT_DIGEST,
+        classificationPromptDigest: PROBLEM_CROP_ADJUDICATION_CLASSIFICATION_PROMPT_DIGEST,
+      },
+      classificationArtifactItemHash: canonicalEvidenceHash(classification),
+      baseQuestionHash: canonicalEvidenceHash(failed.question),
+      effectiveQuestionHash: problemItemHash,
+      baseClassificationHash: canonicalEvidenceHash(failed.classification),
+      effectiveClassificationHash: canonicalEvidenceHash(classification),
+    },
+  };
+}
+
+async function assertProblemCropAdjudicationAuthority(
+  stateDir: string,
+  repairs: Iterable<ProblemRepairEvidence>
+): Promise<void> {
+  const declared = new Map<string, string>();
+  for (const repair of repairs) {
+    const adjudication = repair.revision?.recovery?.adjudication;
+    if (!adjudication) continue;
+    for (const [label, pointer] of [
+      ["crop evidence", adjudication.cropEvidenceArtifact],
+      ["crop evidence PDF", adjudication.cropEvidencePdf],
+      ...adjudication.cropViews.map((view, index) => [`crop view ${index + 1}`, view.artifact] as const),
+      ["problem crop adjudication", adjudication.problemArtifact],
+      ["classification crop adjudication", adjudication.classificationArtifact],
+    ] as const) {
+      if (declared.has(pointer.path)) throw new Error(`crop adjudication artifact가 중복 선언됐습니다: ${pointer.path}`);
+      const path = confinedStateFile(stateDir, pointer.path, label);
+      if (await sha256File(path) !== pointer.sha256) throw new Error(`${label} hash가 다릅니다: ${pointer.path}`);
+      declared.set(pointer.path, pointer.sha256);
+    }
+  }
+  const actual = new Set<string>();
+  for (const directory of [
+    "problem-crop-evidence",
+    "problem-crop-adjudications",
+    "classification-crop-adjudications",
+  ]) {
+    const path = join(stateDir, directory);
+    if (!existsSync(path)) continue;
+    for (const entry of readdirSync(path, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
+      if (!entry.isFile() || entry.isSymbolicLink()) throw new Error(`crop adjudication directory에 regular file이 아닌 항목이 있습니다: ${directory}/${entry.name}`);
+      actual.add(`${directory}/${entry.name}`);
+    }
+  }
+  const extras = [...actual].filter((path) => !declared.has(path));
+  const missing = [...declared.keys()].filter((path) => !actual.has(path));
+  if (extras.length > 0 || missing.length > 0) {
+    throw new Error(`crop adjudication orphan/conflict: extra=${extras.join(",") || "-"}, missing=${missing.join(",") || "-"}`);
+  }
+}
+
 async function recoverClassifiedQuestion(
   entry: CorpusManifestEntry,
   problem: PdfEvidence,
@@ -3743,12 +4384,7 @@ async function recoverClassifiedQuestion(
   if (classificationSha !== canonicalEvidenceHash(classificationCheckpoint)) {
     throw new Error(`${input.key} classification recovery hash가 다릅니다`);
   }
-  if (classification.transcription_status !== "exact") {
-    throw new Error(`${input.key} final source-grounded recovery도 exact가 아닙니다`);
-  }
-  return {
-    classified: { question: recovered, classification },
-    evidence: {
+  const recoveryEvidence: ProblemRecoveryEvidence = {
       key: input.key,
       printedNumber: input.printedNumber,
       sourcePage: input.sourcePage,
@@ -3789,7 +4425,25 @@ async function recoverClassifiedQuestion(
       effectiveQuestionHash: problemItemHash,
       baseClassificationHash: problemBasis.baseClassificationHash,
       effectiveClassificationHash: canonicalEvidenceHash(classification),
-    },
+  };
+  if (classification.transcription_status !== "exact") {
+    const spec = problemCropAdjudicationSpec(entry, input.key, input.sourcePage, problem.sha256);
+    if (!spec) throw new Error(`${input.key} final source-grounded recovery도 exact가 아닙니다`);
+    const adjudicated = await adjudicateCropClassifiedQuestion(
+      entry,
+      problem,
+      stateDir,
+      { question: recovered, classification },
+      recoveryEvidence
+    );
+    return {
+      classified: adjudicated.classified,
+      evidence: { ...recoveryEvidence, adjudication: adjudicated.evidence },
+    };
+  }
+  return {
+    classified: { question: recovered, classification },
+    evidence: recoveryEvidence,
   };
 }
 
@@ -4756,6 +5410,7 @@ export async function repairAndAuditOfficialAnswers(
       continue;
     }
     assertTerminalProblemPolicy(effective, finalProblemFidelity.items, repairedKeys);
+    await assertProblemCropAdjudicationAuthority(stateDir, repairs.values());
     if (effective.some(({ classification }) => classification.decision === "review")) {
       return {
         classified: effective,
