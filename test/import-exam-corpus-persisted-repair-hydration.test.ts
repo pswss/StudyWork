@@ -405,7 +405,7 @@ describe.skipIf(!available)("persisted v2 repair graph hydration", () => {
     const before = Object.fromEntries(Object.entries(snapshot(root)).filter(([path]) =>
       /^(problem-repairs|problem-repair-batches|classification-repair-batches)\//u.test(path)
     ));
-    providerMock.complete.mockRejectedValue(new Error("unexpected AI call"));
+    providerMock.complete.mockRejectedValue(new Error("expected terminal fidelity adjudication"));
     const input = replayInputs(root);
 
     await expect(repairAndAuditOfficialAnswers(
@@ -415,8 +415,10 @@ describe.skipIf(!available)("persisted v2 repair graph hydration", () => {
       root,
       input.classified,
       input.solutions
-    )).rejects.toThrow("3:8 problem recovery는 한 번만 허용됩니다");
-    expect(providerMock.complete).not.toHaveBeenCalled();
+    )).rejects.toThrow("expected terminal fidelity adjudication");
+    expect(providerMock.complete).toHaveBeenCalledTimes(1);
+    expect(providerMock.complete.mock.calls[0][0].schema?.name)
+      .toBe("studywork_exam_corpus_problem_terminal_fidelity");
     expect(Object.fromEntries(Object.entries(snapshot(root)).filter(([path]) =>
       /^(problem-repairs|problem-repair-batches|classification-repair-batches)\//u.test(path)
     ))).toEqual(before);

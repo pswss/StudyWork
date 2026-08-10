@@ -285,6 +285,9 @@ const PROBLEM_MANUAL_ADJUDICATION_VERSION = 1;
 const CLASSIFICATION_MANUAL_ADJUDICATION_VERSION = 1;
 const PROBLEM_MANUAL_REVISION_VERSION = 1;
 const CLASSIFICATION_MANUAL_REVISION_VERSION = 1;
+const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION = 1;
+const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST =
+  "e92ed29fdd979e63d56635b2f7c99284ad01f14893384e680acd150cb2a29728";
 const PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST =
   "28434a9872d33e0ef364b6030c6f32b4a51cab9182a9d6c372f225884794d7e9";
 const PROBLEM_MANUAL_CORRECTION_DIGEST =
@@ -515,6 +518,41 @@ type ProblemManualRevisionSpec = {
   requiredTokens: readonly string[];
   expectedDecision: "accept" | "reject";
   expectedCanonicalSubject?: CanonicalSubject;
+};
+
+type ProblemTerminalFidelityAdjudicationSpec = {
+  allowlistId: string;
+  parentKind: "manual" | "repair";
+  parentManualAllowlistId?: string;
+  entryId: string;
+  key: string;
+  sourcePage: number;
+  sourceHash: string;
+  solutionSourceHash: string;
+  parentQuestionHash: string;
+  parentClassificationHash: string;
+  parentProblemArtifactPath: string;
+  parentProblemArtifactHash: string;
+  parentClassificationArtifactPath: string;
+  parentClassificationArtifactHash: string;
+  baseProblemCheckpointPath?: string;
+  baseProblemCheckpointHash?: string;
+  baseClassificationCheckpointPath?: string;
+  baseClassificationCheckpointHash?: string;
+  baseSolutionCheckpointPath?: string;
+  baseSolutionCheckpointHash?: string;
+  baseQuestionHash?: string;
+  baseClassificationHash?: string;
+  baseSolutionItemHash?: string;
+  officialRawAnswerHash?: string;
+  failedTerminalPath: string;
+  failedTerminalArtifactHash: string;
+  failedEffectiveCorpusHash: string;
+  failedInputHash: string;
+  failedTerminalInputHash: string;
+  failedItemHash: string;
+  failedEvidenceHash: string;
+  failedScopeEvidenceHash: string;
 };
 
 const PROBLEM_SCOPE_ADJUDICATION_ALLOWLIST: readonly ProblemScopeAdjudicationSpec[] = [{
@@ -1183,12 +1221,84 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
   expectedDecision: "reject",
 }] as const;
 
+const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST:
+readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
+  allowlistId: "ebsi-5525984-q8-terminal-fidelity-v1",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5525984-q8-manual-v1",
+  entryId: "ebsi:5525984",
+  key: "3:8",
+  sourcePage: 3,
+  sourceHash: "1621eca42821e5feccbb56604249cbcedd8adf6bae6109960f6c790a61c14ec1",
+  solutionSourceHash: "a081092a68c797d8ae2d0becd0fd17d551c7d009f208c7ae9f32301a5531c687",
+  parentQuestionHash: "fbbd4e46ac18d85ae31cbe396c236f8f7a525bc3af467bbb407323ea2a1317bb",
+  parentClassificationHash: "d8e26c108aba6322e9dd8a5c633d776bbf884c07414b24dd21a58d89d44f6ee6",
+  parentProblemArtifactPath: "problem-manual-adjudications/" +
+    "v1-0003-0008-52fae2722d6c898a9ebe6a8ad213c4aad1dcbfd252a2958df8b6d79a0075125f.json",
+  parentProblemArtifactHash: "3b90e6caca3385282163e108e8e9d43ad8200aa161fc95404335fb73c53e428f",
+  parentClassificationArtifactPath: "classification-manual-adjudications/" +
+    "v1-0003-0008-9e52f2d6accfc3c27b4e33c46e1f1cd00e84607380307ac1dc9d685063b5d32d-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "bb86bd78aab7ae0da5ed3a0f8fb219a0053cce020fc6b90d287f7c1bb71963a6",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-1e076c1128fc58f956f12db80716af215f2cedf605c1816acc5e234d0c320021-" +
+    "675077205aaed6d8807112d89b6f10750f22e0bfbef70c35ac14d2ae2eff776d.json",
+  failedTerminalArtifactHash: "c4f64ef621cc454e232fa42af9605fb6af83e0fba5eb4a8c6173c774412fd8c9",
+  failedEffectiveCorpusHash: "1e076c1128fc58f956f12db80716af215f2cedf605c1816acc5e234d0c320021",
+  failedInputHash: "675077205aaed6d8807112d89b6f10750f22e0bfbef70c35ac14d2ae2eff776d",
+  failedTerminalInputHash: "cf4cb43037dfdbdb4b39f7e52f9f261d467aae03242ba60e62759423aed0152a",
+  failedItemHash: "4067ed57d53fd70705c4125f0c2ff3204efaf02885d8f8340566381a380a9db6",
+  failedEvidenceHash: "293899310b6a2285b94f364aa0d11bf3243fece9218b6df792568120d6b10bac",
+  failedScopeEvidenceHash: "15388959741a30d21b5515159649b2f366a4ff6879863b9e51e8d895284d90e9",
+}, {
+  allowlistId: "ebsi-5525984-q20-terminal-fidelity-v1",
+  parentKind: "repair",
+  entryId: "ebsi:5525984",
+  key: "8:20",
+  sourcePage: 8,
+  sourceHash: "1621eca42821e5feccbb56604249cbcedd8adf6bae6109960f6c790a61c14ec1",
+  solutionSourceHash: "a081092a68c797d8ae2d0becd0fd17d551c7d009f208c7ae9f32301a5531c687",
+  parentQuestionHash: "d93c3421dda810dac35f5584575a144c3d8e269619a354b8e5cfa5f701f3465a",
+  parentClassificationHash: "d5d57d9a6899f7790172a79547771760f1f7fd938559db6e353e2423dea60021",
+  parentProblemArtifactPath: "problem-repair-batches/" +
+    "v1-0001-0012-0008-b283d60bec56fb9d49910464308e02992c0e05fb34cfa398ad5ccac92efb7c7c.json",
+  parentProblemArtifactHash: "ca2d3ada6660fba56fec5493f9d0d2adb27b55fab984369967e96afb30ef41c5",
+  parentClassificationArtifactPath: "classification-repair-batches/" +
+    "v1-0001-0012-c73ba3446e8f2bc8e3288245a78fc3fc3b6e74653c62f8c82b971d50ba26e6c6-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "5d080fd28ca92cfe60e163088bdce82a97102db47bbb95b38ec6caf91e0ac4a9",
+  baseProblemCheckpointPath: "problem-chunks/v2-0000.json",
+  baseProblemCheckpointHash: "18d658fbd7f2206944eacb12438c67a5d9885fbe99111ac0ad792d1eedd62ece",
+  baseClassificationCheckpointPath: "classification-chunks/v5-0000-7bb7cb863c8c4855.json",
+  baseClassificationCheckpointHash: "709cb0ee0a921ffdefaa4dfd2b53837e13751f855f1b6d9d19ac51bee74234b2",
+  baseSolutionCheckpointPath: "solution-chunks/v3-0001.json",
+  baseSolutionCheckpointHash: "8f0777900722b0a88164f5beb654b2de48f839f623582dc28e3596a4e989c644",
+  baseQuestionHash: "c538c50fab1c502c129b6c50410e3e89fb0308ca267124804e104877c2335edf",
+  baseClassificationHash: "54d9e219ec6d472588b75e4d159580429e203885ac61bc992000e93f2ecaced0",
+  baseSolutionItemHash: "8297641684d9ed557cdd3d034330a171af3ae04590e3cd408e03e9e23e3e2b81",
+  officialRawAnswerHash: "f3eaa647e8a4604ea6bc01c74dfb365ace6754fb867e170b933cc24eb6a81e7b",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-1e076c1128fc58f956f12db80716af215f2cedf605c1816acc5e234d0c320021-" +
+    "675077205aaed6d8807112d89b6f10750f22e0bfbef70c35ac14d2ae2eff776d.json",
+  failedTerminalArtifactHash: "c4f64ef621cc454e232fa42af9605fb6af83e0fba5eb4a8c6173c774412fd8c9",
+  failedEffectiveCorpusHash: "1e076c1128fc58f956f12db80716af215f2cedf605c1816acc5e234d0c320021",
+  failedInputHash: "675077205aaed6d8807112d89b6f10750f22e0bfbef70c35ac14d2ae2eff776d",
+  failedTerminalInputHash: "6c1e283e9507ec4ac218db6a23329177ec920f0e81bf0693d52ea26006d05bef",
+  failedItemHash: "21a1875add25568fe3b26eeea03c0b2a785c524ac71c5a35d6097f2f71d58506",
+  failedEvidenceHash: "644b2ad4270b75338872f1d1e0211d9297383e2e4ee0cfa6f8751f578dd219cb",
+  failedScopeEvidenceHash: "cc75c4567dbac09b7ea2b7fe184aac906215c3914e46b251c442efdcdaafb4f1",
+}] as const;
+
 export function manualAdjudicationAllowlistFingerprint(): string {
   return canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
 }
 
 export function manualRevisionAllowlistFingerprint(): string {
   return canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST);
+}
+
+export function terminalFidelityAdjudicationAllowlistFingerprint(): string {
+  return canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST);
 }
 
 export function repairScopeAdjudicationAllowlistFingerprint(): string {
@@ -2644,6 +2754,287 @@ function verifyProblemTerminalFidelityCheckpoint(
   return items;
 }
 
+function verifyProblemTerminalFidelityAdjudications(
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  effective: DecisionSummary,
+  repairs: unknown[],
+  solutionSourceHash: string,
+  cache: EvidenceCache,
+  contract: VerificationContract,
+): Map<string, ProblemTerminalFidelityItem> {
+  const effectiveCorpusHash = canonicalEvidenceHash(effective.order.map((key) => {
+    const record = effective.records.get(key)!;
+    return { question: record.question.evidence, classification: record.classification };
+  }));
+  const specs = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.filter((spec) =>
+    spec.entryId === entry.id && spec.sourceHash === problemEvidence.sha256
+      && spec.solutionSourceHash === solutionSourceHash
+      && spec.failedEffectiveCorpusHash === effectiveCorpusHash)
+    .sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+  const rows = repairs.flatMap((value, index) => {
+    const repair = object(value, `answer audit repairs[${index}]`);
+    return repair.terminalAdjudication === undefined ? [] : [{ repair, index }];
+  });
+  const expectedKeys = specs.map((spec) => spec.key);
+  const actualKeys = rows.map(({ repair, index }) =>
+    exactString(repair.key, `answer audit repairs[${index}].key`))
+    .sort(compareCorpusQuestionKeys);
+  if (new Set(expectedKeys).size !== expectedKeys.length
+    || new Set(actualKeys).size !== actualKeys.length
+    || !isDeepStrictEqual(expectedKeys, actualKeys)) {
+    throw new Error("terminal fidelity adjudication must exactly cover its allowlisted corpus generation");
+  }
+
+  const overlays = new Map<string, ProblemTerminalFidelityItem>();
+  for (const { repair, index } of rows) {
+    const key = exactString(repair.key, `answer audit repairs[${index}].key`);
+    const current = effective.records.get(key);
+    const spec = specs.find((candidate) => candidate.key === key);
+    if (!current || !spec || current.question.page !== spec.sourcePage
+      || canonicalEvidenceHash(current.question.evidence) !== spec.parentQuestionHash
+      || canonicalEvidenceHash(current.classification) !== spec.parentClassificationHash
+      || current.classification.transcription_status !== "exact"
+      || current.classification.decision !== "accept") {
+      throw new Error(`${key}: terminal fidelity adjudication current question/classification is stale`);
+    }
+    const { terminalAdjudication: rawAdjudication, ...parentRepair } = repair;
+    const revision = parentRepair.revision === undefined
+      ? undefined
+      : object(parentRepair.revision, `${key}.revision`);
+    if (parentRepair.scopeAdjudication !== undefined || revision?.scopeAdjudication !== undefined) {
+      throw new Error(`${key}: terminal fidelity adjudication conflicts with scope adjudication`);
+    }
+    const recovery = revision?.recovery === undefined
+      ? undefined
+      : object(revision.recovery, `${key}.revision.recovery`);
+    const parentManual = recovery?.manualAdjudication === undefined
+      ? undefined
+      : object(recovery.manualAdjudication, `${key}.revision.recovery.manualAdjudication`);
+    const pointerFromEnvelope = (value: unknown, label: string): EvidencePointer => {
+      const envelope = object(value, label);
+      return evidencePointer({ path: envelope.path, sha256: envelope.sha256 }, label);
+    };
+    const parentProblemArtifact = pointerFromEnvelope(
+      spec.parentKind === "manual" ? parentManual?.problemArtifact : parentRepair.problemArtifact,
+      `${key}.terminalAdjudication.parentProblemArtifact`,
+    );
+    const parentClassificationArtifact = pointerFromEnvelope(
+      spec.parentKind === "manual" ? parentManual?.classificationArtifact : parentRepair.classificationArtifact,
+      `${key}.terminalAdjudication.parentClassificationArtifact`,
+    );
+    if (parentProblemArtifact.path !== spec.parentProblemArtifactPath
+      || parentProblemArtifact.sha256 !== spec.parentProblemArtifactHash
+      || parentClassificationArtifact.path !== spec.parentClassificationArtifactPath
+      || parentClassificationArtifact.sha256 !== spec.parentClassificationArtifactHash) {
+      throw new Error(`${key}: terminal fidelity adjudication parent artifacts are stale`);
+    }
+    readBoundEvidenceCached(cache, stateDir, parentProblemArtifact, `${key} terminal adjudication parent problem`);
+    readBoundEvidenceCached(
+      cache,
+      stateDir,
+      parentClassificationArtifact,
+      `${key} terminal adjudication parent classification`,
+    );
+    if (spec.parentKind === "manual") {
+      if (!parentManual || parentManual.allowlistId !== spec.parentManualAllowlistId
+        || parentManual.revision !== undefined || parentManual.sourceHash !== spec.sourceHash
+        || parentManual.effectiveQuestionHash !== spec.parentQuestionHash
+        || parentManual.effectiveClassificationHash !== spec.parentClassificationHash) {
+        throw new Error(`${key}: terminal fidelity adjudication manual parent is stale`);
+      }
+    } else {
+      const baseProblemCheckpoint = evidencePointer(
+        parentRepair.baseProblemCheckpoint,
+        `${key}.terminalAdjudication.baseProblemCheckpoint`,
+      );
+      const baseClassificationCheckpoint = evidencePointer(
+        parentRepair.baseClassificationCheckpoint,
+        `${key}.terminalAdjudication.baseClassificationCheckpoint`,
+      );
+      const baseSolutionCheckpoint = evidencePointer(
+        parentRepair.baseSolutionCheckpoint,
+        `${key}.terminalAdjudication.baseSolutionCheckpoint`,
+      );
+      if (revision !== undefined
+        || baseProblemCheckpoint.path !== spec.baseProblemCheckpointPath
+        || baseProblemCheckpoint.sha256 !== spec.baseProblemCheckpointHash
+        || baseClassificationCheckpoint.path !== spec.baseClassificationCheckpointPath
+        || baseClassificationCheckpoint.sha256 !== spec.baseClassificationCheckpointHash
+        || baseSolutionCheckpoint.path !== spec.baseSolutionCheckpointPath
+        || baseSolutionCheckpoint.sha256 !== spec.baseSolutionCheckpointHash
+        || parentRepair.baseQuestionHash !== spec.baseQuestionHash
+        || parentRepair.baseClassificationHash !== spec.baseClassificationHash
+        || parentRepair.baseSolutionItemHash !== spec.baseSolutionItemHash
+        || parentRepair.officialRawAnswerHash !== spec.officialRawAnswerHash
+        || parentRepair.problemArtifactItemHash !== spec.parentQuestionHash
+        || parentRepair.classificationArtifactItemHash !== spec.parentClassificationHash
+        || parentRepair.effectiveQuestionHash !== spec.parentQuestionHash
+        || parentRepair.effectiveClassificationHash !== spec.parentClassificationHash) {
+        throw new Error(`${key}: terminal fidelity adjudication first repair parent is stale`);
+      }
+      for (const [label, pointer] of [
+        ["base problem", baseProblemCheckpoint],
+        ["base classification", baseClassificationCheckpoint],
+        ["base solution", baseSolutionCheckpoint],
+      ] as const) {
+        readBoundEvidenceCached(cache, stateDir, pointer, `${key} terminal adjudication ${label}`);
+      }
+    }
+
+    const adjudication = object(rawAdjudication, `${key}.terminalAdjudication`);
+    const failedTerminalCheckpoint = problemTerminalFidelityCheckpoint(
+      adjudication.failedTerminalCheckpoint,
+      `${key}.terminalAdjudication.failedTerminalCheckpoint`,
+    );
+    if (failedTerminalCheckpoint.path !== spec.failedTerminalPath
+      || failedTerminalCheckpoint.sha256 !== spec.failedTerminalArtifactHash
+      || failedTerminalCheckpoint.inputHash !== spec.failedInputHash) {
+      throw new Error(`${key}: terminal fidelity adjudication failed checkpoint is stale`);
+    }
+    const failedItems = verifyProblemTerminalFidelityCheckpoint(
+      stateDir,
+      entry,
+      problemEvidence,
+      effective,
+      effectiveCorpusHash,
+      failedTerminalCheckpoint,
+      cache,
+      contract,
+    );
+    const failedTerminalItem = failedItems.find((item) => item.key === key);
+    const failedTerminalInput = problemTerminalInput(current);
+    if (!failedTerminalItem
+      || canonicalEvidenceHash(failedTerminalInput) !== spec.failedTerminalInputHash
+      || canonicalEvidenceHash(failedTerminalItem) !== spec.failedItemHash
+      || sha256(failedTerminalItem.evidence) !== spec.failedEvidenceHash
+      || failedTerminalItem.scopeEvidence === undefined
+      || sha256(failedTerminalItem.scopeEvidence) !== spec.failedScopeEvidenceHash
+      || failedTerminalItem.status !== "mismatch"
+      || failedTerminalItem.scopeDecision !== "accept"
+      || failedTerminalItem.scopeConfidence < 0.9) {
+      throw new Error(`${key}: terminal fidelity adjudication failed item/input is stale`);
+    }
+    const parentRepairEvidenceHash = canonicalEvidenceHash(parentRepair);
+    const parentManualEvidenceHash = parentManual ? canonicalEvidenceHash(parentManual) : undefined;
+    const sourceEvidence = spec.parentKind === "manual"
+      ? { ...evidencePointer(parentManual!.cropEvidencePdf, `${key}.manual.cropEvidencePdf`), kind: "manual-crop" }
+      : { path: "problem.pdf", sha256: problemEvidence.sha256, kind: "problem-pdf" };
+    const sourcePath = confinedEvidencePath(
+      stateDir,
+      { path: sourceEvidence.path, sha256: sourceEvidence.sha256 },
+      `${key} terminal fidelity adjudication source`,
+    );
+    if (hashFile(sourcePath) !== sourceEvidence.sha256) {
+      throw new Error(`${key}: terminal fidelity adjudication source hash is stale`);
+    }
+    const commonBasis = {
+      allowlistId: spec.allowlistId,
+      entryId: entry.id,
+      key,
+      sourcePage: spec.sourcePage,
+      sourceHash: problemEvidence.sha256,
+      solutionSourceHash,
+      parentKind: spec.parentKind,
+      parentRepair,
+      parentRepairEvidenceHash,
+      ...(parentManual ? {
+        parentManual,
+        parentManualEvidenceHash,
+        cropEvidenceArtifact: parentManual.cropEvidenceArtifact,
+        cropEvidencePdf: parentManual.cropEvidencePdf,
+        cropViews: parentManual.cropViews,
+      } : {}),
+      sourceEvidence,
+      effectiveCorpusHash,
+      failedTerminalCheckpoint,
+      failedTerminalInput,
+      failedTerminalInputHash: spec.failedTerminalInputHash,
+      failedTerminalItem,
+      failedTerminalItemHash: spec.failedItemHash,
+      failedEvidenceHash: spec.failedEvidenceHash,
+      failedScopeEvidenceHash: spec.failedScopeEvidenceHash,
+      adjudicationSpecHash: canonicalEvidenceHash(spec),
+    };
+    const basisDigest = canonicalEvidenceHash(commonBasis);
+    const expectedPath = `problem-terminal-fidelity-adjudications/` +
+      `v${PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+      `${current.question.printedNumber.padStart(4, "0")}-${basisDigest}.json`;
+    const artifactEnvelope = object(adjudication.adjudicationArtifact, `${key}.adjudicationArtifact`);
+    const adjudicationArtifact = evidencePointer(
+      { path: artifactEnvelope.path, sha256: artifactEnvelope.sha256 },
+      `${key}.adjudicationArtifact`,
+    );
+    if (adjudicationArtifact.path !== expectedPath
+      || artifactEnvelope.version !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION
+      || artifactEnvelope.promptDigest !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST) {
+      throw new Error(`${key}: terminal fidelity adjudication artifact envelope is stale`);
+    }
+    const checkpoint = readBoundEvidenceCached(
+      cache,
+      stateDir,
+      adjudicationArtifact,
+      `${key} terminal fidelity adjudication`,
+    );
+    if (!Array.isArray(checkpoint.items) || checkpoint.items.length !== 1) {
+      throw new Error(`${key}: terminal fidelity adjudication must contain exactly one item`);
+    }
+    const item = parseProblemTerminalFidelityItem(
+      checkpoint.items[0],
+      `${key}.terminalAdjudication.items[0]`,
+      contract,
+    );
+    const expectedCheckpoint = {
+      version: PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION,
+      entryId: entry.id,
+      basisDigest,
+      basis: commonBasis,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      rulesDigest: effective.rulesDigest,
+      scopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+      promptDigest: PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      input: failedTerminalInput,
+      items: [item],
+    };
+    const expectedEvidence = {
+      allowlistId: spec.allowlistId,
+      key,
+      sourcePage: spec.sourcePage,
+      sourceHash: problemEvidence.sha256,
+      solutionSourceHash,
+      parentKind: spec.parentKind,
+      parentRepairEvidenceHash,
+      ...(parentManualEvidenceHash ? { parentManualEvidenceHash } : {}),
+      sourceEvidence,
+      effectiveCorpusHash,
+      failedTerminalCheckpoint,
+      failedTerminalInputHash: spec.failedTerminalInputHash,
+      failedTerminalItemHash: spec.failedItemHash,
+      failedEvidenceHash: spec.failedEvidenceHash,
+      failedScopeEvidenceHash: spec.failedScopeEvidenceHash,
+      adjudicationSpecHash: canonicalEvidenceHash(spec),
+      adjudicationArtifact: {
+        ...adjudicationArtifact,
+        version: PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION,
+        promptDigest: PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST,
+      },
+      adjudicationItemHash: canonicalEvidenceHash(item),
+    };
+    if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)
+      || !isDeepStrictEqual(adjudication, expectedEvidence)
+      || item.key !== key || item.status !== "exact"
+      || item.scopeDecision !== "accept" || item.scopeConfidence < 0.9) {
+      throw new Error(`${key}: terminal fidelity adjudication checkpoint/evidence is stale`);
+    }
+    overlays.set(key, item);
+  }
+  return overlays;
+}
+
 function verifyProblemTerminalFidelity(
   stateDir: string,
   entry: ManifestEntry,
@@ -2682,9 +3073,22 @@ function verifyProblemTerminalFidelity(
     cache,
     contract,
   ));
+  if (!Array.isArray(audit.repairs)) throw new Error("answer audit repairs are missing");
+  const adjudicatedItems = verifyProblemTerminalFidelityAdjudications(
+    stateDir,
+    entry,
+    problemEvidence,
+    effective,
+    audit.repairs,
+    exactString(audit.solutionHash, "answer audit.solutionHash"),
+    cache,
+    contract,
+  );
+  const overlaidActualItems = actualItems.map((item) => adjudicatedItems.get(item.key) ?? item);
   const items = audit.problemTerminalFidelityItems.map((value, index) =>
     parseProblemTerminalFidelityItem(value, `problemTerminalFidelityItems[${index}]`, contract));
-  const sortedActual = [...actualItems].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+  const sortedActual = [...overlaidActualItems]
+    .sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
   const sortedExpected = [...items].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
   const itemByKey = new Map(items.map((item) => [item.key, item]));
   const scopeAdjudicatedKeys = new Set<string>();
@@ -2738,8 +3142,8 @@ function verifyProblemTerminalFidelity(
       || item.scopeDecision !== "reject"
       || item.scopeConfidence < 0.9;
   });
-  if (new Set(actualItems.map((item) => item.key)).size !== effective.order.length
-    || actualItems.length !== effective.order.length
+  if (new Set(overlaidActualItems.map((item) => item.key)).size !== effective.order.length
+    || overlaidActualItems.length !== effective.order.length
     || !isDeepStrictEqual(sortedActual, sortedExpected)
     || policyInvalid) {
     throw new Error(
@@ -3975,8 +4379,30 @@ function verifyProblemRecoveryCoverage(
   const declaredPositiveRepairScope = new Set<string>();
   const declaredRevisionScope = new Set<string>();
   const declaredManual = new Set<string>();
+  const declaredTerminalAdjudication = new Set<string>();
   for (const [index, value] of values.entries()) {
     const repair = object(value, `answer audit repairs[${index}]`);
+    if (repair.terminalAdjudication !== undefined) {
+      if (contract.auditVersion !== 5) {
+        throw new Error("terminal fidelity adjudication requires answer audit v5");
+      }
+      const adjudication = object(
+        repair.terminalAdjudication,
+        `answer audit repairs[${index}].terminalAdjudication`,
+      );
+      const envelope = object(
+        adjudication.adjudicationArtifact,
+        `answer audit repairs[${index}].terminalAdjudication.adjudicationArtifact`,
+      );
+      const pointer = evidencePointer(
+        { path: envelope.path, sha256: envelope.sha256 },
+        `answer audit repairs[${index}].terminalAdjudication.adjudicationArtifact`,
+      );
+      if (declaredTerminalAdjudication.has(pointer.path)) {
+        throw new Error(`${pointer.path}: duplicate terminal fidelity adjudication authority`);
+      }
+      declaredTerminalAdjudication.add(pointer.path);
+    }
     if (repair.scopeAdjudication !== undefined) {
       if (contract.auditVersion !== 5 || repair.revision !== undefined) {
         throw new Error("problem repair scope adjudication requires answer audit v5 and no revision");
@@ -4284,6 +4710,32 @@ function verifyProblemRecoveryCoverage(
   for (const path of declaredManual) {
     if (!existsSync(join(stateDir, path))) {
       throw new Error(`${path}: declared manual adjudication artifact is missing`);
+    }
+  }
+  const terminalAdjudicationDirectory = join(stateDir, "problem-terminal-fidelity-adjudications");
+  if (existsSync(terminalAdjudicationDirectory)) {
+    for (const entry of readdirSync(terminalAdjudicationDirectory, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name))) {
+      if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
+      if (!entry.isFile() || entry.isSymbolicLink()) {
+        throw new Error(
+          `problem-terminal-fidelity-adjudications/${entry.name}: terminal fidelity adjudication artifact must be a regular file`,
+        );
+      }
+      if (!/^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(entry.name)) {
+        throw new Error(
+          `problem-terminal-fidelity-adjudications/${entry.name}: malformed terminal fidelity adjudication artifact name`,
+        );
+      }
+      const path = `problem-terminal-fidelity-adjudications/${entry.name}`;
+      if (!declaredTerminalAdjudication.has(path)) {
+        throw new Error(`${path}: terminal fidelity adjudication artifact is not declared by the terminal audit`);
+      }
+    }
+  }
+  for (const path of declaredTerminalAdjudication) {
+    if (!existsSync(join(stateDir, path))) {
+      throw new Error(`${path}: declared terminal fidelity adjudication artifact is missing`);
     }
   }
 }
@@ -7412,6 +7864,9 @@ function applyDeclaredRepairsV3(
       if (!revisionEvidence) throw new Error(`${value.row.key}: revision authority is missing`);
       expected = { ...value.evidence, revision: revisionEvidence };
     }
+    if (value.row.raw.terminalAdjudication !== undefined) {
+      expected = { ...expected, terminalAdjudication: value.row.raw.terminalAdjudication };
+    }
     if (!isDeepStrictEqual(value.row.raw, expected)) {
       throw new Error(`${value.row.key}: repair evidence envelope does not match its exact shared chain`);
     }
@@ -10291,6 +10746,7 @@ function selectVerificationContract(
     "classification-manual-adjudications",
     "problem-manual-revisions",
     "classification-manual-revisions",
+    "problem-terminal-fidelity-adjudications",
   ].some((directory) => {
     const absolute = join(stateDir, directory);
     return existsSync(absolute) && readdirSync(absolute, { withFileTypes: true }).some((entry) =>

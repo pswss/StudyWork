@@ -105,6 +105,7 @@ export const PROBLEM_MANUAL_ADJUDICATION_VERSION = 1;
 export const CLASSIFICATION_MANUAL_ADJUDICATION_VERSION = 1;
 export const PROBLEM_MANUAL_REVISION_VERSION = 1;
 export const CLASSIFICATION_MANUAL_REVISION_VERSION = 1;
+export const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION = 1;
 export const SOLUTION_FIDELITY_VERSION = 1;
 export const SOLUTION_FIDELITY_SLICE_PAGES = 22;
 export const SOLUTION_FIDELITY_SLICE_STRIDE = 18;
@@ -835,6 +836,7 @@ export type ProblemRepairEvidence = {
   officialRawAnswerHash: string;
   revision?: ProblemRevisionEvidence;
   scopeAdjudication?: ProblemScopeAdjudicationEvidence;
+  terminalAdjudication?: ProblemTerminalFidelityAdjudicationEvidence;
 };
 
 export type ProblemRevisionEvidence = {
@@ -944,6 +946,32 @@ export type ProblemManualAdjudicationEvidence = {
   baseClassificationHash: string;
   effectiveClassificationHash: string;
   revision?: ProblemManualRevisionEvidence;
+};
+
+export type ProblemTerminalFidelityAdjudicationEvidence = {
+  allowlistId: string;
+  key: string;
+  sourcePage: number;
+  sourceHash: string;
+  solutionSourceHash: string;
+  parentKind: "manual" | "repair";
+  parentRepairEvidenceHash: string;
+  parentManualEvidenceHash?: string;
+  sourceEvidence: EvidencePointer & {
+    kind: "manual-crop" | "problem-pdf";
+  };
+  effectiveCorpusHash: string;
+  failedTerminalCheckpoint: ProblemTerminalFidelityCheckpoint;
+  failedTerminalInputHash: string;
+  failedTerminalItemHash: string;
+  failedEvidenceHash: string;
+  failedScopeEvidenceHash: string;
+  adjudicationSpecHash: string;
+  adjudicationArtifact: EvidencePointer & {
+    version: number;
+    promptDigest: string;
+  };
+  adjudicationItemHash: string;
 };
 
 export type ProblemManualRevisionEvidence = {
@@ -1733,6 +1761,18 @@ export const PROBLEM_MANUAL_REVISION_PROMPT_DIGEST = sha256Text(
 export const PROBLEM_MANUAL_REVISION_CORRECTION_DIGEST = sha256Text(
   `${PROBLEM_MANUAL_REVISION_VERSION}\ncount-checked-literal-manual-child-revision`
 );
+export const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_RULES = `
+The attached image-only PDF is the immutable source evidence already bound to one exact allowlisted manual problem.
+Independently re-audit only the supplied final item against every relevant source pixel. The earlier terminal decision and
+its labels are intentionally hidden and are not authority. Do not rewrite, repair, solve, or infer missing content.
+Return status exact only when the question, choices, formulas, and bounded graph surrogate are fully source-faithful.
+Classify curriculum scope independently and return accept only when the item belongs to the requested curriculum.
+`.trim();
+export const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST = sha256Text(
+  `${PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION}\n` +
+  `${PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_RULES}\n${TRANSCRIPTION_GATE_RULES}\n` +
+  `${PROBLEM_TERMINAL_SCOPE_RULES}\n${CURRICULUM_RULES}`
+);
 
 type ProblemManualReplacement = {
   field: "question" | "figure_description";
@@ -1768,6 +1808,41 @@ type ProblemManualRevisionSpec = {
   requiredTokens: string[];
   expectedDecision: "accept" | "reject";
   expectedCanonicalSubject?: CanonicalSubject;
+};
+
+type ProblemTerminalFidelityAdjudicationSpec = {
+  allowlistId: string;
+  parentKind: "manual" | "repair";
+  parentManualAllowlistId?: string;
+  entryId: string;
+  key: string;
+  sourcePage: number;
+  sourceHash: string;
+  solutionSourceHash: string;
+  parentQuestionHash: string;
+  parentClassificationHash: string;
+  parentProblemArtifactPath: string;
+  parentProblemArtifactHash: string;
+  parentClassificationArtifactPath: string;
+  parentClassificationArtifactHash: string;
+  baseProblemCheckpointPath?: string;
+  baseProblemCheckpointHash?: string;
+  baseClassificationCheckpointPath?: string;
+  baseClassificationCheckpointHash?: string;
+  baseSolutionCheckpointPath?: string;
+  baseSolutionCheckpointHash?: string;
+  baseQuestionHash?: string;
+  baseClassificationHash?: string;
+  baseSolutionItemHash?: string;
+  officialRawAnswerHash?: string;
+  failedTerminalPath: string;
+  failedTerminalArtifactHash: string;
+  failedEffectiveCorpusHash: string;
+  failedInputHash: string;
+  failedTerminalInputHash: string;
+  failedItemHash: string;
+  failedEvidenceHash: string;
+  failedScopeEvidenceHash: string;
 };
 
 const Q30_FIGURE_DESCRIPTION =
@@ -2329,6 +2404,74 @@ export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSp
     "① $\\dfrac{3(3\\sqrt{3}-\\pi)}{11}$", "⑤ $\\dfrac{4(3\\sqrt{3}-\\pi)}{11}$",
   ],
   expectedDecision: "reject",
+}] as const;
+
+export const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST:
+readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
+  allowlistId: "ebsi-5525984-q8-terminal-fidelity-v1",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5525984-q8-manual-v1",
+  entryId: "ebsi:5525984",
+  key: "3:8",
+  sourcePage: 3,
+  sourceHash: "1621eca42821e5feccbb56604249cbcedd8adf6bae6109960f6c790a61c14ec1",
+  solutionSourceHash: "a081092a68c797d8ae2d0becd0fd17d551c7d009f208c7ae9f32301a5531c687",
+  parentQuestionHash: "fbbd4e46ac18d85ae31cbe396c236f8f7a525bc3af467bbb407323ea2a1317bb",
+  parentClassificationHash: "d8e26c108aba6322e9dd8a5c633d776bbf884c07414b24dd21a58d89d44f6ee6",
+  parentProblemArtifactPath: "problem-manual-adjudications/" +
+    "v1-0003-0008-52fae2722d6c898a9ebe6a8ad213c4aad1dcbfd252a2958df8b6d79a0075125f.json",
+  parentProblemArtifactHash: "3b90e6caca3385282163e108e8e9d43ad8200aa161fc95404335fb73c53e428f",
+  parentClassificationArtifactPath: "classification-manual-adjudications/" +
+    "v1-0003-0008-9e52f2d6accfc3c27b4e33c46e1f1cd00e84607380307ac1dc9d685063b5d32d-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "bb86bd78aab7ae0da5ed3a0f8fb219a0053cce020fc6b90d287f7c1bb71963a6",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-1e076c1128fc58f956f12db80716af215f2cedf605c1816acc5e234d0c320021-" +
+    "675077205aaed6d8807112d89b6f10750f22e0bfbef70c35ac14d2ae2eff776d.json",
+  failedTerminalArtifactHash: "c4f64ef621cc454e232fa42af9605fb6af83e0fba5eb4a8c6173c774412fd8c9",
+  failedEffectiveCorpusHash: "1e076c1128fc58f956f12db80716af215f2cedf605c1816acc5e234d0c320021",
+  failedInputHash: "675077205aaed6d8807112d89b6f10750f22e0bfbef70c35ac14d2ae2eff776d",
+  failedTerminalInputHash: "cf4cb43037dfdbdb4b39f7e52f9f261d467aae03242ba60e62759423aed0152a",
+  failedItemHash: "4067ed57d53fd70705c4125f0c2ff3204efaf02885d8f8340566381a380a9db6",
+  failedEvidenceHash: "293899310b6a2285b94f364aa0d11bf3243fece9218b6df792568120d6b10bac",
+  failedScopeEvidenceHash: "15388959741a30d21b5515159649b2f366a4ff6879863b9e51e8d895284d90e9",
+}, {
+  allowlistId: "ebsi-5525984-q20-terminal-fidelity-v1",
+  parentKind: "repair",
+  entryId: "ebsi:5525984",
+  key: "8:20",
+  sourcePage: 8,
+  sourceHash: "1621eca42821e5feccbb56604249cbcedd8adf6bae6109960f6c790a61c14ec1",
+  solutionSourceHash: "a081092a68c797d8ae2d0becd0fd17d551c7d009f208c7ae9f32301a5531c687",
+  parentQuestionHash: "d93c3421dda810dac35f5584575a144c3d8e269619a354b8e5cfa5f701f3465a",
+  parentClassificationHash: "d5d57d9a6899f7790172a79547771760f1f7fd938559db6e353e2423dea60021",
+  parentProblemArtifactPath: "problem-repair-batches/" +
+    "v1-0001-0012-0008-b283d60bec56fb9d49910464308e02992c0e05fb34cfa398ad5ccac92efb7c7c.json",
+  parentProblemArtifactHash: "ca2d3ada6660fba56fec5493f9d0d2adb27b55fab984369967e96afb30ef41c5",
+  parentClassificationArtifactPath: "classification-repair-batches/" +
+    "v1-0001-0012-c73ba3446e8f2bc8e3288245a78fc3fc3b6e74653c62f8c82b971d50ba26e6c6-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "5d080fd28ca92cfe60e163088bdce82a97102db47bbb95b38ec6caf91e0ac4a9",
+  baseProblemCheckpointPath: "problem-chunks/v2-0000.json",
+  baseProblemCheckpointHash: "18d658fbd7f2206944eacb12438c67a5d9885fbe99111ac0ad792d1eedd62ece",
+  baseClassificationCheckpointPath: "classification-chunks/v5-0000-7bb7cb863c8c4855.json",
+  baseClassificationCheckpointHash: "709cb0ee0a921ffdefaa4dfd2b53837e13751f855f1b6d9d19ac51bee74234b2",
+  baseSolutionCheckpointPath: "solution-chunks/v3-0001.json",
+  baseSolutionCheckpointHash: "8f0777900722b0a88164f5beb654b2de48f839f623582dc28e3596a4e989c644",
+  baseQuestionHash: "c538c50fab1c502c129b6c50410e3e89fb0308ca267124804e104877c2335edf",
+  baseClassificationHash: "54d9e219ec6d472588b75e4d159580429e203885ac61bc992000e93f2ecaced0",
+  baseSolutionItemHash: "8297641684d9ed557cdd3d034330a171af3ae04590e3cd408e03e9e23e3e2b81",
+  officialRawAnswerHash: "f3eaa647e8a4604ea6bc01c74dfb365ace6754fb867e170b933cc24eb6a81e7b",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-1e076c1128fc58f956f12db80716af215f2cedf605c1816acc5e234d0c320021-" +
+    "675077205aaed6d8807112d89b6f10750f22e0bfbef70c35ac14d2ae2eff776d.json",
+  failedTerminalArtifactHash: "c4f64ef621cc454e232fa42af9605fb6af83e0fba5eb4a8c6173c774412fd8c9",
+  failedEffectiveCorpusHash: "1e076c1128fc58f956f12db80716af215f2cedf605c1816acc5e234d0c320021",
+  failedInputHash: "675077205aaed6d8807112d89b6f10750f22e0bfbef70c35ac14d2ae2eff776d",
+  failedTerminalInputHash: "6c1e283e9507ec4ac218db6a23329177ec920f0e81bf0693d52ea26006d05bef",
+  failedItemHash: "21a1875add25568fe3b26eeea03c0b2a785c524ac71c5a35d6097f2f71d58506",
+  failedEvidenceHash: "644b2ad4270b75338872f1d1e0211d9297383e2e4ee0cfa6f8751f578dd219cb",
+  failedScopeEvidenceHash: "cc75c4567dbac09b7ea2b7fe184aac906215c3914e46b251c442efdcdaafb4f1",
 }] as const;
 
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(
@@ -3200,6 +3343,20 @@ type ProblemTerminalFidelityAudit = {
   checkpoints: ProblemTerminalFidelityCheckpoint[];
 };
 
+function problemTerminalInput(question: QuizItemEx) {
+  return {
+    key: questionKey(question),
+    printed_number: String(numericPrintedLocator(question.number)),
+    source_page: question.page,
+    qtype: question.qtype,
+    question: question.question,
+    choices: question.choices,
+    figure: question.figure,
+    figure_description: question.figure_description,
+    box: question.box,
+  };
+}
+
 async function readOrAuditProblemTerminalFidelity(
   entry: CorpusManifestEntry,
   evidence: PdfEvidence,
@@ -3217,17 +3374,7 @@ async function readOrAuditProblemTerminalFidelity(
           question.page! >= owned.from && question.page! <= owned.to
         );
         if (questions.length === 0) return [];
-        const inputs = questions.map(({ question }) => ({
-          key: questionKey(question),
-          printed_number: String(numericPrintedLocator(question.number)),
-          source_page: question.page,
-          qtype: question.qtype,
-          question: question.question,
-          choices: question.choices,
-          figure: question.figure,
-          figure_description: question.figure_description,
-          box: question.box,
-        }));
+        const inputs = questions.map(({ question }) => problemTerminalInput(question));
         const inputHash = canonicalEvidenceHash(inputs);
         const relativePath = `problem-terminal-fidelity/v${PROBLEM_TERMINAL_FIDELITY_VERSION}-` +
           `${String(index).padStart(4, "0")}-${effectiveCorpusHash}-${inputHash}.json`;
@@ -3353,6 +3500,54 @@ async function auditProblemTerminalFidelity(
   const result = await readOrAuditProblemTerminalFidelity(entry, evidence, stateDir, classified, false);
   if (!result) throw new Error("terminal 문제 fidelity checkpoint를 만들지 못했습니다");
   return result;
+}
+
+async function validatedProblemTerminalCheckpoint(
+  stateDir: string,
+  entryId: string,
+  sourceHash: string,
+  classified: ClassifiedQuestion[],
+  effectiveCorpusHash: string,
+  pointer: ProblemTerminalFidelityCheckpoint,
+  label: string
+): Promise<{
+  checkpoint: Record<string, unknown>;
+  inputs: ReturnType<typeof problemTerminalInput>[];
+  items: ProblemTerminalFidelityItem[];
+}> {
+  const path = confinedStateFile(stateDir, pointer.path, label);
+  if (await sha256File(path) !== pointer.sha256) throw new Error(`${label} hash가 다릅니다`);
+  const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), label);
+  const questions = classified.filter(({ question }) =>
+    question.page! >= pointer.ownedFrom && question.page! <= pointer.ownedTo
+  );
+  const inputs = questions.map(({ question }) => problemTerminalInput(question));
+  const items = parseProblemTerminalFidelity(checkpoint.items, questions);
+  const inputHash = canonicalEvidenceHash(inputs);
+  const expected = {
+    version: PROBLEM_TERMINAL_FIDELITY_VERSION,
+    entryId,
+    sourceHash,
+    from: pointer.from,
+    to: pointer.to,
+    ownedFrom: pointer.ownedFrom,
+    ownedTo: pointer.ownedTo,
+    effectiveCorpusHash,
+    inputHash,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    rulesDigest: CLASSIFIER_DIGEST,
+    scopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    inputs,
+    items,
+  };
+  if (
+    pointer.inputHash !== inputHash || canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(expected) ||
+    pointer.sha256 !== canonicalEvidenceHash(expected)
+  ) throw new Error(`${label} exact envelope가 다릅니다`);
+  return { checkpoint, inputs, items };
 }
 
 async function extractAndClassifyProblems(
@@ -8912,6 +9107,352 @@ async function adjudicateProblemManual(
   return { classified: { question: corrected, classification }, evidence };
 }
 
+function problemTerminalFidelityAdjudicationSpec(
+  entryId: string,
+  key: string,
+  sourcePage: number,
+  sourceHash: string,
+  solutionSourceHash: string
+): ProblemTerminalFidelityAdjudicationSpec | null {
+  const matches = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.filter((candidate) =>
+    candidate.entryId === entryId && candidate.key === key && candidate.sourcePage === sourcePage &&
+    candidate.sourceHash === sourceHash && candidate.solutionSourceHash === solutionSourceHash
+  );
+  if (matches.length > 1) throw new Error(`${entryId} ${key} terminal fidelity adjudication allowlist가 중복입니다`);
+  return matches[0] ?? null;
+}
+
+type PreparedProblemTerminalFidelityAdjudication = {
+  spec: ProblemTerminalFidelityAdjudicationSpec;
+  current: ClassifiedQuestion;
+  commonBasis: Record<string, unknown>;
+  basisDigest: string;
+  relativePath: string;
+  absolutePath: string;
+  stateDir: string;
+  sourceEvidencePath: string;
+  sourceEvidence: ProblemTerminalFidelityAdjudicationEvidence["sourceEvidence"];
+  failedInput: ReturnType<typeof problemTerminalInput>;
+  parentRepairEvidenceHash: string;
+  parentManualEvidenceHash?: string;
+};
+
+function assertProblemTerminalFidelityAdjudicationInventory(
+  stateDir: string,
+  expectedPaths: ReadonlySet<string>,
+  requireComplete: boolean
+): void {
+  const directory = join(stateDir, "problem-terminal-fidelity-adjudications");
+  const actual = new Set(strictArtifactNames(
+    directory,
+    "terminal fidelity adjudication",
+    (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
+  ).map((name) => `problem-terminal-fidelity-adjudications/${name}`));
+  const extras = [...actual].filter((path) => !expectedPaths.has(path));
+  const missing = requireComplete ? [...expectedPaths].filter((path) => !actual.has(path)) : [];
+  if (extras.length > 0 || missing.length > 0) {
+    throw new Error(
+      `terminal fidelity adjudication orphan/conflict: extra=${extras.join(",") || "-"}, ` +
+      `missing=${missing.join(",") || "-"}`
+    );
+  }
+}
+
+async function prepareProblemTerminalFidelityAdjudication(
+  entry: Pick<CorpusManifestEntry, "id">,
+  problem: Pick<PdfEvidence, "path" | "sha256">,
+  solution: Pick<PdfEvidence, "path" | "sha256">,
+  stateDir: string,
+  classified: ClassifiedQuestion[],
+  current: ClassifiedQuestion,
+  repair: ProblemRepairEvidence,
+  terminalCheckpoint: ProblemTerminalFidelityCheckpoint
+): Promise<PreparedProblemTerminalFidelityAdjudication> {
+  const key = questionKey(current.question);
+  const sourcePage = current.question.page!;
+  const spec = problemTerminalFidelityAdjudicationSpec(
+    entry.id,
+    key,
+    sourcePage,
+    problem.sha256,
+    solution.sha256
+  );
+  if (!spec) throw new Error(`${key} terminal fidelity adjudication allowlist에 없습니다`);
+  const { terminalAdjudication: _terminalAdjudication, ...parentRepair } = repair;
+  const parentManual = parentRepair.revision?.recovery?.manualAdjudication;
+  const parentProblemArtifact = spec.parentKind === "manual" ? parentManual?.problemArtifact : parentRepair.problemArtifact;
+  const parentClassificationArtifact = spec.parentKind === "manual"
+    ? parentManual?.classificationArtifact
+    : parentRepair.classificationArtifact;
+  const effectiveCorpusHash = canonicalEvidenceHash(classified);
+  if (
+    repair.key !== key || repair.scopeAdjudication || repair.revision?.scopeAdjudication ||
+    !parentProblemArtifact || !parentClassificationArtifact ||
+    parentProblemArtifact.path !== spec.parentProblemArtifactPath ||
+    parentProblemArtifact.sha256 !== spec.parentProblemArtifactHash ||
+    parentClassificationArtifact.path !== spec.parentClassificationArtifactPath ||
+    parentClassificationArtifact.sha256 !== spec.parentClassificationArtifactHash ||
+    canonicalEvidenceHash(current.question) !== spec.parentQuestionHash ||
+    canonicalEvidenceHash(current.classification) !== spec.parentClassificationHash ||
+    current.classification.transcription_status !== "exact" || current.classification.decision !== "accept" ||
+    effectiveCorpusHash !== spec.failedEffectiveCorpusHash || terminalCheckpoint.path !== spec.failedTerminalPath ||
+    terminalCheckpoint.sha256 !== spec.failedTerminalArtifactHash || terminalCheckpoint.inputHash !== spec.failedInputHash ||
+    await sha256File(problem.path) !== spec.sourceHash || await sha256File(solution.path) !== spec.solutionSourceHash
+  ) throw new Error(`${key} terminal fidelity adjudication parent/trigger가 allowlist와 다릅니다`);
+  if (spec.parentKind === "manual") {
+    if (
+      !parentManual || parentManual.allowlistId !== spec.parentManualAllowlistId || parentManual.revision ||
+      parentManual.sourceHash !== spec.sourceHash ||
+      parentManual.effectiveQuestionHash !== spec.parentQuestionHash ||
+      parentManual.effectiveClassificationHash !== spec.parentClassificationHash
+    ) throw new Error(`${key} terminal fidelity adjudication manual parent가 다릅니다`);
+  } else if (
+    parentRepair.revision || parentRepair.baseProblemCheckpoint.sha256 !== spec.baseProblemCheckpointHash ||
+    parentRepair.baseProblemCheckpoint.path !== spec.baseProblemCheckpointPath ||
+    parentRepair.baseClassificationCheckpoint.sha256 !== spec.baseClassificationCheckpointHash ||
+    parentRepair.baseClassificationCheckpoint.path !== spec.baseClassificationCheckpointPath ||
+    parentRepair.baseSolutionCheckpoint.sha256 !== spec.baseSolutionCheckpointHash ||
+    parentRepair.baseSolutionCheckpoint.path !== spec.baseSolutionCheckpointPath ||
+    parentRepair.baseQuestionHash !== spec.baseQuestionHash ||
+    parentRepair.baseClassificationHash !== spec.baseClassificationHash ||
+    parentRepair.baseSolutionItemHash !== spec.baseSolutionItemHash ||
+    parentRepair.officialRawAnswerHash !== spec.officialRawAnswerHash ||
+    parentRepair.problemArtifactItemHash !== spec.parentQuestionHash ||
+    parentRepair.classificationArtifactItemHash !== spec.parentClassificationHash ||
+    parentRepair.effectiveQuestionHash !== spec.parentQuestionHash ||
+    parentRepair.effectiveClassificationHash !== spec.parentClassificationHash
+  ) throw new Error(`${key} terminal fidelity adjudication first repair parent가 다릅니다`);
+  for (const [label, pointer] of [
+    ["parent problem", parentProblemArtifact],
+    ["parent classification", parentClassificationArtifact],
+    ["base problem", parentRepair.baseProblemCheckpoint],
+    ["base classification", parentRepair.baseClassificationCheckpoint],
+    ["base solution", parentRepair.baseSolutionCheckpoint],
+  ] as const) {
+    const path = confinedStateFile(stateDir, pointer.path, `${key} terminal fidelity ${label}`);
+    if (await sha256File(path) !== pointer.sha256) throw new Error(`${key} terminal fidelity ${label} hash가 다릅니다`);
+  }
+  const validated = await validatedProblemTerminalCheckpoint(
+    stateDir,
+    entry.id,
+    problem.sha256,
+    classified,
+    effectiveCorpusHash,
+    terminalCheckpoint,
+    `${key} failed terminal fidelity`
+  );
+  const failedInput = validated.inputs.find((input) => input.key === key);
+  const validatedFailedItem = validated.items.find((item) => item.key === key);
+  if (
+    !failedInput || !validatedFailedItem || canonicalEvidenceHash(failedInput) !== spec.failedTerminalInputHash ||
+    canonicalEvidenceHash(failedInput) !== canonicalEvidenceHash(problemTerminalInput(current.question)) ||
+    canonicalEvidenceHash(validatedFailedItem) !== spec.failedItemHash ||
+    sha256Text(validatedFailedItem.evidence) !== spec.failedEvidenceHash ||
+    sha256Text(validatedFailedItem.scopeEvidence) !== spec.failedScopeEvidenceHash ||
+    validatedFailedItem.key !== key || validatedFailedItem.status !== "mismatch" ||
+    validatedFailedItem.scopeDecision !== "accept" || validatedFailedItem.scopeConfidence < 0.9
+  ) throw new Error(`${key} terminal fidelity adjudication failed input/item이 다릅니다`);
+
+  const parentRepairEvidenceHash = canonicalEvidenceHash(parentRepair);
+  const parentManualEvidenceHash = parentManual ? canonicalEvidenceHash(parentManual) : undefined;
+  const sourceEvidence: ProblemTerminalFidelityAdjudicationEvidence["sourceEvidence"] = spec.parentKind === "manual"
+    ? { ...parentManual!.cropEvidencePdf, kind: "manual-crop" }
+    : { path: "problem.pdf", sha256: problem.sha256, kind: "problem-pdf" };
+  const commonBasis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key,
+    sourcePage,
+    sourceHash: problem.sha256,
+    solutionSourceHash: solution.sha256,
+    parentKind: spec.parentKind,
+    parentRepair,
+    parentRepairEvidenceHash,
+    ...(parentManual ? {
+      parentManual,
+      parentManualEvidenceHash,
+      cropEvidenceArtifact: parentManual.cropEvidenceArtifact,
+      cropEvidencePdf: parentManual.cropEvidencePdf,
+      cropViews: parentManual.cropViews,
+    } : {}),
+    sourceEvidence,
+    effectiveCorpusHash,
+    failedTerminalCheckpoint: terminalCheckpoint,
+    failedTerminalInput: failedInput,
+    failedTerminalInputHash: spec.failedTerminalInputHash,
+    failedTerminalItem: validatedFailedItem,
+    failedTerminalItemHash: spec.failedItemHash,
+    failedEvidenceHash: spec.failedEvidenceHash,
+    failedScopeEvidenceHash: spec.failedScopeEvidenceHash,
+    adjudicationSpecHash: canonicalEvidenceHash(spec),
+  };
+  const basisDigest = canonicalEvidenceHash(commonBasis);
+  const relativePath = `problem-terminal-fidelity-adjudications/` +
+    `v${PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION}-${String(sourcePage).padStart(4, "0")}-` +
+    `${String(numericPrintedLocator(current.question.number)).padStart(4, "0")}-${basisDigest}.json`;
+  const sourceEvidencePath = confinedStateFile(
+    stateDir,
+    sourceEvidence.path,
+    `${key} terminal fidelity adjudication source evidence`
+  );
+  if (await sha256File(sourceEvidencePath) !== sourceEvidence.sha256) {
+    throw new Error(`${key} terminal fidelity adjudication source evidence hash가 다릅니다`);
+  }
+  return {
+    spec,
+    current,
+    commonBasis,
+    basisDigest,
+    relativePath,
+    absolutePath: join(stateDir, relativePath),
+    stateDir,
+    sourceEvidencePath,
+    sourceEvidence,
+    failedInput,
+    parentRepairEvidenceHash,
+    ...(parentManualEvidenceHash ? { parentManualEvidenceHash } : {}),
+  };
+}
+
+function problemTerminalFidelityAdjudicationCheckpoint(
+  prepared: PreparedProblemTerminalFidelityAdjudication,
+  item: ProblemTerminalFidelityItem
+) {
+  return {
+    version: PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION,
+    entryId: prepared.spec.entryId,
+    basisDigest: prepared.basisDigest,
+    basis: prepared.commonBasis,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    rulesDigest: CLASSIFIER_DIGEST,
+    scopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+    promptDigest: PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    input: prepared.failedInput,
+    items: [item],
+  };
+}
+
+function problemTerminalFidelityAdjudicationEvidence(
+  prepared: PreparedProblemTerminalFidelityAdjudication,
+  item: ProblemTerminalFidelityItem,
+  sha256: string
+): ProblemTerminalFidelityAdjudicationEvidence {
+  const { spec } = prepared;
+  return {
+    allowlistId: spec.allowlistId,
+    key: spec.key,
+    sourcePage: spec.sourcePage,
+    sourceHash: spec.sourceHash,
+    solutionSourceHash: spec.solutionSourceHash,
+    parentKind: spec.parentKind,
+    parentRepairEvidenceHash: prepared.parentRepairEvidenceHash,
+    ...(prepared.parentManualEvidenceHash
+      ? { parentManualEvidenceHash: prepared.parentManualEvidenceHash }
+      : {}),
+    sourceEvidence: prepared.sourceEvidence,
+    effectiveCorpusHash: spec.failedEffectiveCorpusHash,
+    failedTerminalCheckpoint: prepared.commonBasis.failedTerminalCheckpoint as ProblemTerminalFidelityCheckpoint,
+    failedTerminalInputHash: spec.failedTerminalInputHash,
+    failedTerminalItemHash: spec.failedItemHash,
+    failedEvidenceHash: spec.failedEvidenceHash,
+    failedScopeEvidenceHash: spec.failedScopeEvidenceHash,
+    adjudicationSpecHash: canonicalEvidenceHash(spec),
+    adjudicationArtifact: {
+      path: prepared.relativePath,
+      sha256,
+      version: PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION,
+      promptDigest: PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST,
+    },
+    adjudicationItemHash: canonicalEvidenceHash(item),
+  };
+}
+
+type CompletedProblemTerminalFidelityAdjudication = {
+  item: ProblemTerminalFidelityItem;
+  evidence: ProblemTerminalFidelityAdjudicationEvidence;
+};
+
+async function readProblemTerminalFidelityAdjudication(
+  prepared: PreparedProblemTerminalFidelityAdjudication
+): Promise<CompletedProblemTerminalFidelityAdjudication | null> {
+  if (!existsSync(prepared.absolutePath)) return null;
+  const path = confinedStateFile(
+    prepared.stateDir,
+    prepared.relativePath,
+    "terminal fidelity adjudication"
+  );
+  const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), prepared.relativePath);
+  const item = parseProblemTerminalFidelity(checkpoint.items, [prepared.current])[0];
+  const expectedCheckpoint = problemTerminalFidelityAdjudicationCheckpoint(prepared, item);
+  const sha256 = await sha256File(path);
+  if (
+    canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(expectedCheckpoint) ||
+    sha256 !== canonicalEvidenceHash(expectedCheckpoint) || item.status !== "exact" ||
+    item.scopeDecision !== "accept" || item.scopeConfidence < 0.9
+  ) throw new Error(`${prepared.spec.key} terminal fidelity adjudication checkpoint/evidence가 다릅니다`);
+  return {
+    item,
+    evidence: problemTerminalFidelityAdjudicationEvidence(prepared, item, sha256),
+  };
+}
+
+async function completeProblemTerminalFidelityAdjudication(
+  prepared: PreparedProblemTerminalFidelityAdjudication,
+  existing: CompletedProblemTerminalFidelityAdjudication | null
+): Promise<CompletedProblemTerminalFidelityAdjudication> {
+  if (existing) return existing;
+  const {
+    spec,
+    current,
+    absolutePath: path,
+    sourceEvidencePath,
+    failedInput,
+  } = prepared;
+  if (existsSync(path)) {
+    throw new Error(`${spec.key} terminal fidelity adjudication artifact가 preflight 후 생겼습니다`);
+  }
+  const mapping = spec.parentKind === "manual"
+    ? `manual crop views bound in parent repair for original page ${spec.sourcePage}`
+    : `official problem PDF, original page ${spec.sourcePage}`;
+  const prompt = `${PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_RULES}\n\n${TRANSCRIPTION_GATE_RULES}\n\n` +
+    `${PROBLEM_TERMINAL_SCOPE_RULES}\n\n${CURRICULUM_RULES}\n\n` +
+    `Evidence mapping: ${mapping}.\n\nFinal question:\n${JSON.stringify([failedInput])}`;
+  const result = await withFullContextAi(() => getCodexProvider({
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+  }).complete({
+    operation: "problem-extract",
+    prompt,
+    file: { path: sourceEvidencePath, kind: "pdf" },
+    schema: PROBLEM_TERMINAL_FIDELITY_SCHEMA,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    lane: "bulk",
+  }));
+  const item = parseProblemTerminalFidelity(
+    schemaItems(result.text, "terminal fidelity adjudication 응답"),
+    [current]
+  )[0];
+  const checkpoint = problemTerminalFidelityAdjudicationCheckpoint(prepared, item);
+  await writeImmutableEvidence(path, checkpoint);
+  const expectedCheckpoint = problemTerminalFidelityAdjudicationCheckpoint(prepared, item);
+  if (
+    canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(expectedCheckpoint) || item.status !== "exact" ||
+    item.scopeDecision !== "accept" || item.scopeConfidence < 0.9
+  ) throw new Error(`${spec.key} terminal fidelity adjudication이 exact/accept가 아닙니다`);
+  const sha256 = await sha256File(path);
+  if (sha256 !== canonicalEvidenceHash(expectedCheckpoint)) {
+    throw new Error(`${spec.key} terminal fidelity adjudication hash가 다릅니다`);
+  }
+  return {
+    item,
+    evidence: problemTerminalFidelityAdjudicationEvidence(prepared, item, sha256),
+  };
+}
+
 async function assertProblemCropAdjudicationAuthority(
   stateDir: string,
   repairs: Iterable<ProblemRepairEvidence>
@@ -8970,7 +9511,10 @@ export async function assertProblemManualAdjudicationAuthority(
     const recovery = repair.revision?.recovery;
     const manualEvidence = recovery?.manualAdjudication;
     if (!recovery || !manualEvidence) continue;
-    const { revision: manualRevision, ...manual } = manualEvidence;
+    const {
+      revision: manualRevision,
+      ...manual
+    } = manualEvidence;
     const { manualAdjudication: _manualAdjudication, ...parentRecovery } = recovery;
     const matches = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((candidate) =>
       candidate.allowlistId === manual.allowlistId && candidate.key === manual.key &&
@@ -9395,6 +9939,65 @@ export async function assertProblemManualAdjudicationAuthority(
       `manual adjudication orphan/conflict: extra=${extras.join(",") || "-"}, missing=${missing.join(",") || "-"}`
     );
   }
+}
+
+export async function assertProblemTerminalFidelityAdjudicationAuthority(
+  stateDir: string,
+  entryId: string,
+  sourceHash: string,
+  solutionSourceHash: string,
+  repairs: Iterable<ProblemRepairEvidence>,
+  classified: ClassifiedQuestion[]
+): Promise<void> {
+  const repairList = [...repairs];
+  const adjudicatedRepairs = repairList.filter((repair) => repair.terminalAdjudication);
+  if (adjudicatedRepairs.length === 0) {
+    assertProblemTerminalFidelityAdjudicationInventory(stateDir, new Set(), true);
+    return;
+  }
+  await assertProblemManualAdjudicationAuthority(stateDir, repairList);
+  const declared = new Map<string, string>();
+  const problem = {
+    path: confinedStateFile(stateDir, "problem.pdf", "terminal fidelity adjudication problem source"),
+    sha256: sourceHash,
+  };
+  const solution = {
+    path: confinedStateFile(stateDir, "solution.pdf", "terminal fidelity adjudication solution source"),
+    sha256: solutionSourceHash,
+  };
+  for (const repair of adjudicatedRepairs) {
+    const adjudication = repair.terminalAdjudication;
+    if (!adjudication) throw new Error(`${repair.key} terminal fidelity adjudication evidence가 없습니다`);
+    const current = classified.find((candidate) => questionKey(candidate.question) === repair.key);
+    if (!current) throw new Error(`${repair.key} terminal fidelity adjudication question authority가 없습니다`);
+    const prepared = await prepareProblemTerminalFidelityAdjudication(
+      { id: entryId },
+      problem,
+      solution,
+      stateDir,
+      classified,
+      current,
+      repair,
+      adjudication.failedTerminalCheckpoint
+    );
+    const path = confinedStateFile(stateDir, prepared.relativePath, "terminal fidelity adjudication authority");
+    const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), prepared.relativePath);
+    const item = parseProblemTerminalFidelity(checkpoint.items, [current])[0];
+    const expectedCheckpoint = problemTerminalFidelityAdjudicationCheckpoint(prepared, item);
+    const expectedSha = canonicalEvidenceHash(expectedCheckpoint);
+    const expectedEvidence = problemTerminalFidelityAdjudicationEvidence(prepared, item, expectedSha);
+    if (
+      adjudication.adjudicationArtifact.path !== prepared.relativePath || await sha256File(path) !== expectedSha ||
+      canonicalEvidenceHash(checkpoint) !== expectedSha || item.status !== "exact" ||
+      item.scopeDecision !== "accept" || item.scopeConfidence < 0.9 ||
+      canonicalEvidenceHash(adjudication) !== canonicalEvidenceHash(expectedEvidence)
+    ) throw new Error(`${repair.key} terminal fidelity adjudication checkpoint/evidence가 다릅니다`);
+    if (declared.has(prepared.relativePath)) {
+      throw new Error(`terminal fidelity adjudication artifact가 중복 선언됐습니다`);
+    }
+    declared.set(prepared.relativePath, expectedSha);
+  }
+  assertProblemTerminalFidelityAdjudicationInventory(stateDir, new Set(declared.keys()), true);
 }
 
 function problemScopeAdjudicationSpec(
@@ -11832,6 +12435,73 @@ export async function repairAndAuditOfficialAnswers(
   for (;;) {
     officialSolutionsByNumber(entry, effective, solutions);
     finalProblemFidelity = await auditProblemTerminalFidelity(entry, problem, stateDir, effective);
+    const terminalAdjudicatedItems = new Map<string, ProblemTerminalFidelityItem>();
+    const effectiveCorpusHash = canonicalEvidenceHash(effective);
+    const terminalAdjudicationSpecs = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.filter((spec) =>
+      spec.entryId === entry.id && spec.sourceHash === problem.sha256 &&
+      spec.solutionSourceHash === solutionEvidence.sha256 && spec.failedEffectiveCorpusHash === effectiveCorpusHash
+    ).sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+    if (new Set(terminalAdjudicationSpecs.map((spec) => spec.key)).size !== terminalAdjudicationSpecs.length) {
+      throw new Error(`${entry.id} terminal fidelity adjudication allowlist key가 중복입니다`);
+    }
+    if (terminalAdjudicationSpecs.length > 0) {
+      await assertProblemManualAdjudicationAuthority(stateDir, repairs.values());
+    }
+    const preparedAdjudications: PreparedProblemTerminalFidelityAdjudication[] = [];
+    for (const spec of terminalAdjudicationSpecs) {
+      const item = finalProblemFidelity.items.find((candidate) => candidate.key === spec.key);
+      const current = effective.find((candidate) => questionKey(candidate.question) === spec.key);
+      const repair = repairs.get(spec.key);
+      const checkpoints = finalProblemFidelity.checkpoints.filter((checkpoint) =>
+        checkpoint.path === spec.failedTerminalPath && checkpoint.sha256 === spec.failedTerminalArtifactHash &&
+        checkpoint.inputHash === spec.failedInputHash
+      );
+      if (!item || !current || !repair || checkpoints.length !== 1) {
+        throw new Error(`${spec.key} terminal fidelity adjudication parent/checkpoint가 유일하지 않습니다`);
+      }
+      preparedAdjudications.push(await prepareProblemTerminalFidelityAdjudication(
+        entry,
+        problem,
+        solutionEvidence,
+        stateDir,
+        effective,
+        current,
+        repair,
+        checkpoints[0]
+      ));
+    }
+    if (preparedAdjudications.length > 0) {
+      assertProblemTerminalFidelityAdjudicationInventory(
+        stateDir,
+        new Set(preparedAdjudications.map((prepared) => prepared.relativePath)),
+        false
+      );
+    }
+    const existingAdjudications = new Map<string, CompletedProblemTerminalFidelityAdjudication | null>();
+    for (const prepared of preparedAdjudications) {
+      existingAdjudications.set(
+        prepared.relativePath,
+        await readProblemTerminalFidelityAdjudication(prepared)
+      );
+    }
+    for (const prepared of preparedAdjudications) {
+      const adjudicated = await completeProblemTerminalFidelityAdjudication(
+        prepared,
+        existingAdjudications.get(prepared.relativePath) ?? null
+      );
+      const repair = repairs.get(prepared.spec.key)!;
+      terminalAdjudicatedItems.set(prepared.spec.key, adjudicated.item);
+      repairs.set(prepared.spec.key, {
+        ...repair,
+        terminalAdjudication: adjudicated.evidence,
+      });
+    }
+    if (terminalAdjudicatedItems.size > 0) {
+      finalProblemFidelity = {
+        ...finalProblemFidelity,
+        items: finalProblemFidelity.items.map((item) => terminalAdjudicatedItems.get(item.key) ?? item),
+      };
+    }
     const terminalByKey = new Map(finalProblemFidelity.items.map((item) => [item.key, item]));
     const repairedKeys = new Set([...persistedRepairAttemptKeys, ...repairs.keys()]);
     const authorizedScopeRejects = new Set(effective.flatMap((current) => {
@@ -12034,6 +12704,14 @@ export async function repairAndAuditOfficialAnswers(
     );
     await assertProblemCropAdjudicationAuthority(stateDir, repairs.values());
     await assertProblemManualAdjudicationAuthority(stateDir, repairs.values());
+    await assertProblemTerminalFidelityAdjudicationAuthority(
+      stateDir,
+      entry.id,
+      problem.sha256,
+      solutionEvidence.sha256,
+      repairs.values(),
+      effective
+    );
     await assertProblemScopeAdjudicationAuthority(stateDir, repairs.values());
     await assertProblemRepairScopeAdjudicationAuthority(stateDir, repairs.values(), effective);
     await assertProblemRevisionScopeAdjudicationAuthority(stateDir, repairs.values());
@@ -12352,7 +13030,8 @@ async function assertProblemTerminalFidelityEvidence(
   problemHash: string,
   effectiveCorpusHash: string,
   checkpoints: ProblemTerminalFidelityCheckpoint[],
-  expectedItems: ProblemTerminalFidelityItem[]
+  expectedItems: ProblemTerminalFidelityItem[],
+  repairs: readonly ProblemRepairEvidence[] = []
 ): Promise<void> {
   const actualItems: ProblemTerminalFidelityItem[] = [];
   for (const pointer of checkpoints) {
@@ -12404,11 +13083,31 @@ async function assertProblemTerminalFidelityEvidence(
     ) throw new Error("problem terminal fidelity child key coverage가 다릅니다");
     actualItems.push(...childItems);
   }
+  const expectedByKey = new Map(expectedItems.map((item) => [item.key, item]));
+  const adjudicatedKeys = new Set<string>();
+  for (const repair of repairs) {
+    const adjudication = repair.terminalAdjudication;
+    if (!adjudication) continue;
+    const expected = expectedByKey.get(repair.key);
+    const path = confinedStateFile(
+      stateDir,
+      adjudication.adjudicationArtifact.path,
+      "problem terminal fidelity adjudication"
+    );
+    if (
+      !expected || adjudicatedKeys.has(repair.key) || await sha256File(path) !== adjudication.adjudicationArtifact.sha256 ||
+      canonicalEvidenceHash(expected) !== adjudication.adjudicationItemHash
+    ) throw new Error("problem terminal fidelity adjudication overlay가 다릅니다");
+    adjudicatedKeys.add(repair.key);
+  }
+  const overlaidItems = actualItems.map((item) =>
+    adjudicatedKeys.has(item.key) ? expectedByKey.get(item.key)! : item
+  );
   const sortItems = (items: ProblemTerminalFidelityItem[]) =>
     [...items].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
   if (
-    new Set(actualItems.map((item) => item.key)).size !== actualItems.length ||
-    canonicalEvidenceHash(sortItems(actualItems)) !== canonicalEvidenceHash(sortItems(expectedItems))
+    new Set(overlaidItems.map((item) => item.key)).size !== overlaidItems.length ||
+    canonicalEvidenceHash(sortItems(overlaidItems)) !== canonicalEvidenceHash(sortItems(expectedItems))
   ) throw new Error("problem terminal fidelity child coverage가 다릅니다");
 }
 
@@ -12447,6 +13146,14 @@ export async function writeAnswerAttestation(
     positiveRepairScopeAuthorityKeys(answerAudit.repairs)
   );
   await assertProblemManualAdjudicationAuthority(stateDir, answerAudit.repairs);
+  await assertProblemTerminalFidelityAdjudicationAuthority(
+    stateDir,
+    entryId,
+    problemHash,
+    solutionHash,
+    answerAudit.repairs,
+    answerAudit.classified
+  );
   await assertProblemScopeAdjudicationAuthority(stateDir, answerAudit.repairs);
   await assertProblemRepairScopeAdjudicationAuthority(stateDir, answerAudit.repairs, answerAudit.classified);
   await assertProblemRevisionScopeAdjudicationAuthority(stateDir, answerAudit.repairs);
@@ -12480,7 +13187,8 @@ export async function writeAnswerAttestation(
     problemHash,
     answerAudit.effectiveCorpusHash,
     answerAudit.problemTerminalFidelityCheckpoints,
-    answerAudit.problemTerminalFidelityItems
+    answerAudit.problemTerminalFidelityItems,
+    answerAudit.repairs
   );
   const basis = {
     entryId,
@@ -14439,7 +15147,10 @@ function hasCurrentAnswerEvidence(stateDir: string): boolean {
   return ["semantic-choice-checks", "answer-audit", "answer-attestation"].some((directory) => {
     const path = join(stateDir, directory);
     return existsSync(path) && readdirSync(path).some((name) => name.startsWith("v5-") && name.endsWith(".json"));
-  });
+  }) || (() => {
+    const path = join(stateDir, "problem-terminal-fidelity-adjudications");
+    return existsSync(path) && readdirSync(path).some((name) => /^v1-.*\.json$/u.test(name));
+  })();
 }
 
 export function assertNoCommittedReceiptForFilteredResult(stateDir: string): void {

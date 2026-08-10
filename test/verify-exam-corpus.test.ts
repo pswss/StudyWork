@@ -17,7 +17,13 @@ import {
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const providerMock = vi.hoisted(() => ({ complete: vi.fn() }));
+vi.mock("../src/codex-provider", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../src/codex-provider")>(),
+  getCodexProvider: () => ({ complete: providerMock.complete }),
+}));
 import {
   QUIZ_EXTRACT_SPEC,
   TARGETED_PROBLEM_BATCH_RULES,
@@ -53,6 +59,7 @@ import {
   runCli,
   solutionFidelityAdjudicationAllowlistFingerprint,
   solutionPromptUpgradeAllowlistFingerprint,
+  terminalFidelityAdjudicationAllowlistFingerprint,
   TARGET_SUBJECTS,
   verifyExamCorpus,
   verifyPersistedProblemRepairOverlapForTest,
@@ -61,8 +68,17 @@ import {
   applyAllowlistedProblemManualCorrection,
   applyAllowlistedProblemManualRevision,
   auditAcceptedSolutions,
+  baseDifficultyByQuestionKey,
+  buildCorpusReceipt,
+  CLASSIFIER_DIGEST,
+  CLASSIFIER_VERSION,
+  commitCorpusEntry,
   EXISTING_CORPUS_MIGRATION_ALLOWLIST,
   parseCorpusManifest,
+  parseDecisions,
+  PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST,
+  PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST,
+  PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION,
   PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST,
   PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST,
   PROBLEM_MANUAL_CORRECTION_DIGEST,
@@ -76,6 +92,8 @@ import {
   PROBLEM_REPAIR_POSITIVE_SCOPE_AUTHORITY_REASON_CODE,
   PROBLEM_REVISION_SCOPE_ADJUDICATION_ALLOWLIST,
   PROBLEM_REVISION_SCOPE_ADJUDICATION_PROMPT_DIGEST,
+  matchOfficialSolutions,
+  repairAndAuditOfficialAnswers,
   SOLUTION_PROMPT_UPGRADE_ALLOWLIST,
   SOLUTION_PROMPT_UPGRADE_FIDELITY_VERSION,
   SOLUTION_PROMPT_UPGRADE_VERSION,
@@ -84,7 +102,11 @@ import {
   SOLUTION_REVISION_FIDELITY_ADJUDICATION_VERSION,
   LEGACY_TARGETED_SOLUTION_REVISION_PROMPT_DIGEST,
   resolveOfficialAnswer,
+  writeAnswerAttestation,
+  type ClassifiedQuestion,
+  type PdfEvidence,
 } from "../scripts/import-exam-corpus";
+import type { QuizItemEx, SolutionItem } from "../src/claude";
 
 type Target = (typeof TARGET_SUBJECTS)[number];
 type Accepted = { canonical: string; target: Target; code: string };
@@ -220,6 +242,11 @@ const Q9_WRITING_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec)
 const Q43_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/4745f3573f575a93f6adcccb");
 const Q43_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5577054" && spec.key === "16:43")!;
+const Q8_TERMINAL_ADJUDICATION_STATE = join(
+  process.cwd(),
+  "data/import-exam-corpus/7755c70fefaa45f755086e2b",
+);
+const Q8_TERMINAL_ADJUDICATION_DB = join(process.cwd(), "data/studywork.db");
 const Q43_CORRECTED_SOLUTION =
   "(가)에서는 ‘여기 하나의 상심한 사람이 있다.’와 ‘여기 하나의 굳세게 살아온 인생이 있다.’와 " +
   "같이 변주함으로써 주제 의식을 강조하고 있고, (나)에서는 ‘더 추워야겠다’와 ‘한껏 " +
@@ -9252,6 +9279,200 @@ function rewriteProblemRepairAuthority(
   });
 }
 
+function terminalAdjudicationInputs(stateDir: string) {
+  const entry = parseCorpusManifest({
+    schemaVersion: 2,
+    entries: [JSON.parse(readFileSync(join(stateDir, "entry.json"), "utf8")).entry],
+  }).entries[0];
+  const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
+  const problem: PdfEvidence = {
+    ...downloads.problem,
+    path: join(stateDir, "problem.pdf"),
+    resolvedUrl: downloads.problem.requestedUrl,
+  };
+  const solution: PdfEvidence = {
+    ...downloads.solution,
+    path: join(stateDir, "solution.pdf"),
+    resolvedUrl: downloads.solution.requestedUrl,
+  };
+  const questions = JSON.parse(readFileSync(join(stateDir, "problem-chunks/v2-0000.json"), "utf8"))
+    .items as QuizItemEx[];
+  const decisions = parseDecisions(
+    JSON.parse(readFileSync(
+      join(stateDir, `classification-chunks/v${CLASSIFIER_VERSION}-0000-${CLASSIFIER_DIGEST}.json`),
+      "utf8",
+    )).items,
+    questions,
+    entry,
+  );
+  const byKey = new Map(decisions.map((decision) => [decision.key, decision]));
+  const classified: ClassifiedQuestion[] = questions.map((question) => ({
+    question,
+    classification: byKey.get(`${question.page}:${Number(question.number)}`)!,
+  }));
+  const solutions = readdirSync(join(stateDir, "solution-chunks"))
+    .filter((name) => /^v3-\d{4}\.json$/u.test(name))
+    .sort()
+    .flatMap((name) => JSON.parse(readFileSync(join(stateDir, "solution-chunks", name), "utf8")).items) as
+    SolutionItem[];
+  return { entry, problem, solution, classified, solutions };
+}
+
+async function terminalAdjudicationFixture() {
+  const root = mkdtempSync(join(tmpdir(), "verify-terminal-adjudication-"));
+  const dataDir = join(root, "data");
+  const dbPath = join(dataDir, "studywork.db");
+  const manifestPath = join(dataDir, "ebsi-exam-manifest.json");
+  mkdirSync(join(dataDir, "import-exam-corpus"), { recursive: true });
+  const entryValue = JSON.parse(readFileSync(join(Q8_TERMINAL_ADJUDICATION_STATE, "entry.json"), "utf8"));
+  const stateDir = join(dataDir, "import-exam-corpus", token(entryValue.entry.id, 24));
+  cpSync(Q8_TERMINAL_ADJUDICATION_STATE, stateDir, { recursive: true });
+  rmSync(join(stateDir, "receipt.json"), { force: true });
+  rmSync(join(stateDir, "problem-terminal-fidelity-adjudications"), { recursive: true, force: true });
+  for (const [directory, pattern] of [
+    ["answer-audit", /^v5-/u],
+    ["answer-attestation", /^v5-/u],
+  ] as const) {
+    const path = join(stateDir, directory);
+    if (!existsSync(path)) continue;
+    for (const name of readdirSync(path)) if (pattern.test(name)) rmSync(join(path, name));
+  }
+  writeJson(manifestPath, { schemaVersion: 2, entries: [entryValue.entry] });
+
+  const sourceDb = new Database(Q8_TERMINAL_ADJUDICATION_DB, { readonly: true, fileMustExist: true });
+  await sourceDb.backup(dbPath);
+  sourceDb.close();
+  const db = new Database(dbPath);
+  db.pragma("foreign_keys = OFF");
+  db.exec(`
+    DELETE FROM question_attempts;
+    DELETE FROM book_items;
+    DELETE FROM questions;
+    DELETE FROM book_extraction_chunks;
+    DELETE FROM book_files;
+    DELETE FROM books;
+  `);
+
+  const input = terminalAdjudicationInputs(stateDir);
+  const answerByNumber = new Map(input.solutions.map((item) => [String(Number(item.number)), item.answer]));
+  providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+    if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
+      const [item] = JSON.parse(request.prompt.split("Final question:\n")[1]) as Array<{ key: string }>;
+      return { text: JSON.stringify([{
+        key: item.key,
+        status: "exact",
+        evidence: `${item.key} 공식 문제 pixels와 최종 전사가 일치한다.`,
+        scopeDecision: "accept",
+        scopeConfidence: 0.99,
+        scopeEvidence: `${item.key} 수학 교육과정 범위 문항이다.`,
+      }]) };
+    }
+    if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
+      const items = JSON.parse(request.prompt.split("Accepted solutions:\n")[1]) as Array<{
+        key: string;
+        source_page: number;
+      }>;
+      return { text: JSON.stringify(items.map((item) => ({
+        key: item.key,
+        sourcePage: item.source_page,
+        answerStatus: "exact",
+        explanationStatus: "exact",
+        evidence: "공식 해설의 정답과 전체 풀이가 일치한다.",
+      }))) };
+    }
+    if (request.schema?.name === "studywork_exam_corpus_semantic_choice_check") {
+      const items = JSON.parse(request.prompt.split("Items:\n")[1]) as Array<{ key: string }>;
+      const markers = ["①", "②", "③", "④", "⑤"];
+      return { text: JSON.stringify(items.map((item) => ({
+        key: item.key,
+        status: "resolved",
+        choiceIndex: markers.indexOf(answerByNumber.get(item.key.split(":")[1])!) + 1,
+        evidence: "공식 해설 결론과 유일한 선택지가 일치한다.",
+      }))) };
+    }
+    throw new Error(`unexpected AI call: ${request.schema?.name ?? "unknown"}`);
+  });
+
+  const result = await repairAndAuditOfficialAnswers(
+    input.entry,
+    input.problem,
+    input.solution,
+    stateDir,
+    input.classified,
+    input.solutions,
+  );
+  const imported = matchOfficialSolutions(
+    input.entry,
+    result.classified,
+    result.solutions,
+    baseDifficultyByQuestionKey(input.classified),
+  );
+  const receipt = buildCorpusReceipt(
+    input.entry,
+    input.problem,
+    input.solution,
+    result.classified,
+    imported,
+  );
+  await commitCorpusEntry(db, join(dataDir, "files"), input.entry, input.problem, input.solution, imported);
+  db.close();
+  await writeAnswerAttestation(
+    stateDir,
+    input.entry.id,
+    input.problem.sha256,
+    input.solution.sha256,
+    receipt,
+    result,
+  );
+  providerMock.complete.mockReset();
+  return { root, dataDir, dbPath, manifestPath, stateDir, result, receipt };
+}
+
+function rewriteTerminalAdjudicationAuthority(
+  files: Awaited<ReturnType<typeof terminalAdjudicationFixture>>,
+  mutate: (audit: Record<string, any>) => void,
+): void {
+  const auditPath = join(files.stateDir, files.result.auditPath!);
+  const audit = JSON.parse(readFileSync(auditPath, "utf8"));
+  mutate(audit);
+  const { version: _version, auditDigest: _digest, ...auditBasis } = audit;
+  const nextAuditDigest = canonicalEvidenceHash(auditBasis);
+  const nextAuditRelativePath = `answer-audit/v5-${nextAuditDigest}.json`;
+  for (const name of readdirSync(join(files.stateDir, "answer-audit"))) {
+    if (/^v5-/u.test(name)) rmSync(join(files.stateDir, "answer-audit", name));
+  }
+  const nextAuditHash = writeEvidence(join(files.stateDir, nextAuditRelativePath), {
+    version: 5,
+    auditDigest: nextAuditDigest,
+    ...auditBasis,
+  });
+
+  const attestationDirectory = join(files.stateDir, "answer-attestation");
+  const attestationName = readdirSync(attestationDirectory).find((name) => /^v5-/u.test(name))!;
+  const attestation = JSON.parse(readFileSync(join(attestationDirectory, attestationName), "utf8"));
+  const {
+    version: _attestationVersion,
+    attestationDigest: _attestationDigest,
+    ...attestationBasis
+  } = attestation;
+  attestationBasis.answerAudit = {
+    path: nextAuditRelativePath,
+    sha256: nextAuditHash,
+    effectiveCorpusHash: audit.effectiveCorpusHash,
+    effectiveSolutionCorpusHash: audit.effectiveSolutionCorpusHash,
+  };
+  attestationBasis.repairs = audit.repairs;
+  attestationBasis.problemTerminalFidelityCheckpoints = audit.problemTerminalFidelityCheckpoints;
+  attestationBasis.problemTerminalFidelityItems = audit.problemTerminalFidelityItems;
+  const nextAttestationDigest = canonicalEvidenceHash(attestationBasis);
+  rmSync(join(attestationDirectory, attestationName));
+  writeEvidence(join(attestationDirectory, `v5-${nextAttestationDigest}.json`), {
+    version: 5,
+    attestationDigest: nextAttestationDigest,
+    ...attestationBasis,
+  });
+}
+
 describe("exam corpus verifier", () => {
   it("keeps the exact existing-corpus migration allowlist aligned with the importer", () => {
     expect(existingCorpusMigrationAllowlistFingerprint())
@@ -9286,6 +9507,169 @@ describe("exam corpus verifier", () => {
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.some((spec) => spec.entryId === "ebsi:5656592"))
       .toBe(false);
   });
+
+  it.skipIf(
+    !existsSync(join(Q8_TERMINAL_ADJUDICATION_STATE, "problem.pdf"))
+      || !existsSync(join(Q8_TERMINAL_ADJUDICATION_STATE, "solution.pdf"))
+      || !existsSync(Q8_TERMINAL_ADJUDICATION_DB),
+  )("reconstructs both Q8/Q20 terminal children and rejects missing, tampered, or orphan authority", async () => {
+    expect(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION).toBe(1);
+    expect(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST)
+      .toBe("e92ed29fdd979e63d56635b2f7c99284ad01f14893384e680acd150cb2a29728");
+    expect(terminalFidelityAdjudicationAllowlistFingerprint())
+      .toBe("692344c52ef38f43402275e0d6029a11af389d5d252b76ff22ea4cacb8ef3aee");
+    expect(terminalFidelityAdjudicationAllowlistFingerprint())
+      .toBe(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST));
+
+    const files = await terminalAdjudicationFixture();
+    try {
+      const report = verifyExamCorpus(files);
+      expect(report, JSON.stringify(report.failures, null, 2)).toMatchObject({
+        ok: true,
+        failureCount: 0,
+        questions: { expected: 13, actual: 13 },
+      });
+      expect(files.result.effectiveCorpusHash)
+        .toBe("1e076c1128fc58f956f12db80716af215f2cedf605c1816acc5e234d0c320021");
+      expect(files.result.problemTerminalFidelityItems).toHaveLength(30);
+      const audit = JSON.parse(readFileSync(join(files.stateDir, files.result.auditPath!), "utf8"));
+      const adjudicated = audit.repairs.filter((repair: Record<string, any>) => repair.terminalAdjudication);
+      expect(adjudicated.map((repair: { key: string }) => repair.key).sort()).toEqual(["3:8", "8:20"]);
+      for (const spec of PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST) {
+        const repair = adjudicated.find((value: { key: string }) => value.key === spec.key);
+        expect(repair.terminalAdjudication).toMatchObject({
+          allowlistId: spec.allowlistId,
+          key: spec.key,
+          parentKind: spec.parentKind,
+          failedTerminalCheckpoint: {
+            path: spec.failedTerminalPath,
+            sha256: spec.failedTerminalArtifactHash,
+          },
+        });
+        const current = files.result.classified.find((value) => value.classification.key === spec.key)!;
+        expect(canonicalEvidenceHash(current.question)).toBe(spec.parentQuestionHash);
+        expect(canonicalEvidenceHash(current.classification)).toBe(spec.parentClassificationHash);
+        expect(audit.problemTerminalFidelityItems.find((item: { key: string }) => item.key === spec.key))
+          .toMatchObject({ status: "exact", scopeDecision: "accept", scopeConfidence: 0.99 });
+      }
+      const failedTerminal = JSON.parse(readFileSync(join(
+        files.stateDir,
+        PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST[0].failedTerminalPath,
+      ), "utf8"));
+      expect(failedTerminal.inputs).toHaveLength(30);
+      expect(failedTerminal.items.filter((item: { key: string }) => item.key === "3:8" || item.key === "8:20"))
+        .toEqual([
+          expect.objectContaining({ key: "3:8", status: "mismatch", scopeDecision: "accept" }),
+          expect.objectContaining({ key: "8:20", status: "mismatch", scopeDecision: "accept" }),
+        ]);
+      expect(audit.solutionFidelityItems.find((item: { key: string }) => item.key === "3:8"))
+        .toMatchObject({ answerStatus: "exact", explanationStatus: "exact" });
+      expect(audit.semanticCheckpoint.path).toBe(
+        `semantic-choice-checks/v5-${audit.effectiveCorpusHash}-` +
+          `${audit.effectiveSolutionCorpusHash}-${audit.semanticCheckpoint.inputHash}.json`,
+      );
+      const db = new Database(files.dbPath, { readonly: true });
+      const q8 = db.prepare(
+        `SELECT s.name AS subject, q.answer, q.explanation
+         FROM questions q JOIN subjects s ON s.id = q.subject_id
+         WHERE q.printed_number = '8'`,
+      ).get() as { subject: string; answer: string; explanation: string };
+      db.close();
+      expect(q8).toMatchObject({ subject: "수학 - 수학Ⅱ·미적분Ⅰ" });
+      expect(q8.answer).not.toBe("");
+      expect(q8.explanation).not.toBe("");
+
+      const swapped = await terminalAdjudicationFixture();
+      try {
+        rewriteTerminalAdjudicationAuthority(swapped, (swappedAudit) => {
+          const byKey = new Map<string, Record<string, any>>(
+            swappedAudit.repairs.map((repair: Record<string, any>) => [repair.key, repair]),
+          );
+          const q8Repair = byKey.get("3:8")!;
+          const q20Repair = byKey.get("8:20")!;
+          const q8Path = join(
+            swapped.stateDir,
+            q8Repair.terminalAdjudication.adjudicationArtifact.path,
+          );
+          const q20Path = join(
+            swapped.stateDir,
+            q20Repair.terminalAdjudication.adjudicationArtifact.path,
+          );
+          const q8Checkpoint = JSON.parse(readFileSync(q8Path, "utf8"));
+          const q20Checkpoint = JSON.parse(readFileSync(q20Path, "utf8"));
+          q8Checkpoint.items[0].key = "8:20";
+          q20Checkpoint.items[0].key = "3:8";
+          q8Repair.terminalAdjudication.adjudicationArtifact.sha256 = writeEvidence(q8Path, q8Checkpoint);
+          q20Repair.terminalAdjudication.adjudicationArtifact.sha256 = writeEvidence(q20Path, q20Checkpoint);
+          q8Repair.terminalAdjudication.adjudicationItemHash = canonicalEvidenceHash(q8Checkpoint.items[0]);
+          q20Repair.terminalAdjudication.adjudicationItemHash = canonicalEvidenceHash(q20Checkpoint.items[0]);
+          swappedAudit.problemTerminalFidelityItems = swappedAudit.problemTerminalFidelityItems.map(
+            (item: { key: string }) => item.key === "3:8"
+              ? q20Checkpoint.items[0]
+              : item.key === "8:20" ? q8Checkpoint.items[0] : item,
+          );
+        });
+        const swappedReport = verifyExamCorpus(swapped);
+        expect(swappedReport.failures.some((failure) =>
+          failure.code === "ANSWER_AUDIT_INVALID"
+            && failure.message.includes("terminal fidelity adjudication checkpoint/evidence")),
+        JSON.stringify(swappedReport.failures, null, 2)).toBe(true);
+      } finally {
+        rmSync(swapped.root, { recursive: true, force: true });
+      }
+
+      const q8Child = join(files.stateDir, adjudicated.find(
+        (value: { key: string }) => value.key === "3:8",
+      ).terminalAdjudication.adjudicationArtifact.path);
+      const q20Child = join(files.stateDir, adjudicated.find(
+        (value: { key: string }) => value.key === "8:20",
+      ).terminalAdjudication.adjudicationArtifact.path);
+      const q8Bytes = readFileSync(q8Child);
+      const q20Bytes = readFileSync(q20Child);
+
+      writeFileSync(q8Child, Buffer.concat([q8Bytes, Buffer.from("tampered")]));
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+      writeFileSync(q8Child, q8Bytes);
+
+      rmSync(q20Child);
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("missing"))).toBe(true);
+      writeFileSync(q20Child, q20Bytes);
+
+      const orphan = join(
+        files.stateDir,
+        "problem-terminal-fidelity-adjudications",
+        `v1-0003-0008-${"1".repeat(64)}.json`,
+      );
+      writeJson(orphan, {});
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
+      rmSync(orphan);
+
+      const failedTerminalPath = join(
+        files.stateDir,
+        PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST[0].failedTerminalPath,
+      );
+      const failedTerminalBytes = readFileSync(failedTerminalPath);
+      writeFileSync(failedTerminalPath, Buffer.concat([failedTerminalBytes, Buffer.from("tampered")]));
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+      writeFileSync(failedTerminalPath, failedTerminalBytes);
+
+      const q8Fidelity = audit.solutionFidelityItems.find((item: { key: string }) => item.key === "3:8")
+        .fidelityArtifact.path;
+      const q8FidelityPath = join(files.stateDir, q8Fidelity);
+      const q8FidelityBytes = readFileSync(q8FidelityPath);
+      rmSync(q8FidelityPath);
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+      writeFileSync(q8FidelityPath, q8FidelityBytes);
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(files.root, { recursive: true, force: true });
+    }
+  }, 180_000);
 
   it("verifies one complete migration chain while tolerating post-import study state", async () => {
     const files = await migratedVerifierFixture();
