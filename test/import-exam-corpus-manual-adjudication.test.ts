@@ -125,6 +125,11 @@ const q30ManualProblemPath = join(
   "data/import-exam-corpus/f914a5cf8d2237d6c9319e23/" +
     "problem-manual-adjudications/v1-0012-0030-9160f0b6d43731cf2e42b1cfeb87067a4df0be2b12adae2946f12c560f1a9f64.json"
 );
+const q18ManualProblemPath = join(
+  process.cwd(),
+  "data/import-exam-corpus/714fd4581f778a9c559fd16e/" +
+    "problem-manual-adjudications/v1-0007-0018-6bb09f45c9c5e829fcbcf1f47111735af9ec8269951655ff73239abc5ac16e94.json"
+);
 
 const recoveryCases = [{
   index: 1,
@@ -143,6 +148,8 @@ const recoveryCases = [{
     "data/import-exam-corpus/f914a5cf8d2237d6c9319e23/" +
       "classification-manual-adjudications/v1-0012-0030-2415dd634f5b3bde1fa8113d4e6d2f6900a418dcc2d37da64067839a1ff2c9ae-7bb7cb863c8c4855.json"
   ),
+  manualRevisionBeforeAnchor: "그리고 단순 명제 ‘$p$’와 ‘$q$’를 ‘만약 …이면 …이다.’",
+  manualRevisionAfterAnchor: "그리고 단순 명제 ‘$p$’와 ‘$q$’는 ‘만약 …이면 …이다.’",
 }, {
   index: 2,
   stateDir: join(process.cwd(), "data/import-exam-corpus/7755c70fefaa45f755086e2b"),
@@ -167,6 +174,15 @@ const recoveryCases = [{
   pageCount: 12,
   finalAnchor: "읽는 순서는 단일, 단일, 복합, 복합",
   expectedDecision: "reject",
+  manualRevisionClassificationPath: join(
+    process.cwd(),
+    "data/import-exam-corpus/714fd4581f778a9c559fd16e/" +
+      "classification-manual-adjudications/v1-0007-0018-cab56b019c32271261bcb7389650c4d60fb52e22913de90a47412785e53752dc-7bb7cb863c8c4855.json"
+  ),
+  manualRevisionBeforeAnchor: "세 점 $L_1$, $M_1$, $N_1$이 각각 $\\overline{A_1B_1}$, " +
+    "$\\overline{B_1C_1}$, $\\overline{C_1A_1}$의 중점이고,",
+  manualRevisionAfterAnchor: "세 선분 $A_1B_1$, $B_1C_1$, $C_1A_1$의 중점을 각각 " +
+    "$L_1$, $M_1$, $N_1$이라 하고,",
 }, {
   index: 4,
   stateDir: join(process.cwd(), "data/import-exam-corpus/a915803b3da3a6ea056eecd6"),
@@ -261,6 +277,12 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
   ).items[0] as ClassificationDecision;
   const failedManualClassification = "manualRevisionClassificationPath" in testCase
     ? JSON.parse(readFileSync(testCase.manualRevisionClassificationPath, "utf8")).items[0] as ClassificationDecision
+    : null;
+  const manualRevisionBeforeAnchor = "manualRevisionBeforeAnchor" in testCase
+    ? testCase.manualRevisionBeforeAnchor
+    : null;
+  const manualRevisionAfterAnchor = "manualRevisionAfterAnchor" in testCase
+    ? testCase.manualRevisionAfterAnchor
     : null;
   const targetNumber = Number(exhausted.number);
   const targetKey = `${exhausted.page}:${targetNumber}`;
@@ -378,23 +400,23 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
       const inputs = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{ question: string }>;
       if (failedManualClassification && resumingManualRevision) {
         expect(inputs).toHaveLength(1);
-        expect(inputs[0].question).toContain("그리고 단순 명제 ‘$p$’와 ‘$q$’는 ‘만약 …이면 …이다.’");
+        expect(inputs[0].question).toContain(manualRevisionAfterAnchor);
         expect(request.prompt).not.toContain(failedManualClassification.transcription_evidence);
         return { text: JSON.stringify([targetDecision(
           exhausted,
           "exact",
-          "공식 11쪽 pixels와 조사 ‘는’을 포함해 전체 문항이 일치한다."
+          "공식 source pixels와 deterministic manual revision을 포함해 전체 문항이 일치한다."
         )]) };
       }
       if (calls.classification === 3) return { text: JSON.stringify([exhaustedClassification]) };
       if (failedManualClassification && calls.classification === 4) {
-        expect(inputs[0].question).toContain("그리고 단순 명제 ‘$p$’와 ‘$q$’를 ‘만약 …이면 …이다.’");
+        expect(inputs[0].question).toContain(manualRevisionBeforeAnchor);
         return { text: JSON.stringify([failedManualClassification]) };
       }
       if (failedManualClassification && calls.classification === 5) {
-        expect(inputs[0].question).toContain("그리고 단순 명제 ‘$p$’와 ‘$q$’는 ‘만약 …이면 …이다.’");
+        expect(inputs[0].question).toContain(manualRevisionAfterAnchor);
         expect(request.prompt).not.toContain(failedManualClassification.transcription_evidence);
-        throw new Error("seeded Q30 manual revision crash");
+        throw new Error("seeded manual revision crash");
       }
       return { text: JSON.stringify([targetDecision(
         exhausted,
@@ -410,7 +432,8 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
         key: string;
         figure_description: string | null;
       }>;
-      const targetScopeDecision = testCase.expectedDecision === "reject" && calls.terminal === 1
+      const targetScopeDecision = testCase.expectedDecision === "reject" && calls.terminal === 1 &&
+        !resumingManualRevision
         ? "accept"
         : testCase.expectedDecision;
       return { text: JSON.stringify(inputs.map((input) => ({
@@ -464,7 +487,7 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
 
   if (failedManualClassification) {
     await expect(repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions))
-      .rejects.toThrow("seeded Q30 manual revision crash");
+      .rejects.toThrow("seeded manual revision crash");
     expect(calls).toMatchObject({
       extraction: 3,
       classification: 5,
@@ -496,23 +519,31 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
     classificationArtifact: { path: expect.stringMatching(/^classification-manual-adjudications\/v1-/u) },
   });
   if (failedManualClassification) {
+    const revisionSpec = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((candidate) =>
+      candidate.entryId === entry.id && candidate.key === targetKey
+    )!;
     expect(manual.revision).toMatchObject({
-      allowlistId: "ebsi-5578421-q30-manual-revision-v1",
-      failedQuestionHash: "08ac10119b14fcad17f0d4f8f988198d8049d2d06d19b3b16cfd4d805e4ba010",
-      failedClassificationHash: "b9134b6b9fd3cd9e274bd4883f370dd794f1c5f0d2e7d573d1d2b949dcff9ff7",
-      failedClassificationEvidenceHash: "e96fd127cbadd152281d8bf436e2052d15863abdf208b06af9c650e68b3c6c13",
+      allowlistId: revisionSpec.allowlistId,
+      failedQuestionHash: revisionSpec.failedQuestionHash,
+      failedClassificationHash: revisionSpec.failedClassificationHash,
+      failedClassificationEvidenceHash: revisionSpec.failedClassificationEvidenceHash,
       problemArtifact: { path: expect.stringMatching(/^problem-manual-revisions\/v1-/u) },
       classificationArtifact: { path: expect.stringMatching(/^classification-manual-revisions\/v1-/u) },
     });
     expect(result.classified.find((item) => item.classification.key === targetKey)?.question.question)
-      .toContain("그리고 단순 명제 ‘$p$’와 ‘$q$’는 ‘만약 …이면 …이다.’");
-    expect(calls).toMatchObject({ extraction: 0, classification: 1, terminal: 1, solution: 1 });
+      .toContain(manualRevisionAfterAnchor);
+    expect(calls).toMatchObject({
+      extraction: 0,
+      classification: 1,
+      terminal: 1,
+      solution: testCase.expectedDecision === "accept" ? 1 : 0,
+    });
     const terminalKeys = result.problemTerminalFidelityItems.map((item) => item.key);
     expect(terminalKeys).toHaveLength(testCase.questionCount);
     expect(new Set(terminalKeys).size).toBe(testCase.questionCount);
     expect(result.problemTerminalFidelityItems.find((item) => item.key === targetKey)).toMatchObject({
       status: "exact",
-      scopeDecision: "accept",
+      scopeDecision: testCase.expectedDecision,
     });
     const persistedTerminalKeys = result.problemTerminalFidelityCheckpoints.flatMap((pointer) => {
       const checkpoint = JSON.parse(readFileSync(join(root, pointer.path), "utf8"));
@@ -682,7 +713,9 @@ describe("exact allowlisted problem manual adjudication", () => {
     }]);
   });
 
-  it.skipIf(!existsSync(q30ManualProblemPath))("pins and applies the one-character Q30 nested manual revision", () => {
+  it.skipIf(!existsSync(q30ManualProblemPath) || !existsSync(q18ManualProblemPath))(
+    "pins and applies the Q30/Q18 nested manual revisions",
+    () => {
     expect(PROBLEM_MANUAL_REVISION_ALLOWLIST).toEqual([expect.objectContaining({
       allowlistId: "ebsi-5578421-q30-manual-revision-v1",
       parentAllowlistId: "ebsi-5578421-q30-manual-v1",
@@ -695,6 +728,17 @@ describe("exact allowlisted problem manual adjudication", () => {
       failedClassificationEvidenceHash: "e96fd127cbadd152281d8bf436e2052d15863abdf208b06af9c650e68b3c6c13",
       expectedDecision: "accept",
       expectedCanonicalSubject: "korean_reading",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5656593-q18-manual-revision-v1",
+      parentAllowlistId: "ebsi-5656593-q18-manual-v1",
+      entryId: "ebsi:5656593",
+      key: "7:18",
+      sourcePage: 7,
+      sourceHash: cases[3].sourceHash,
+      failedQuestionHash: "2ee7a2fc3b6ac355c2e88de3cec5005d6f31b6caf1dd042019190d05dca06484",
+      failedClassificationHash: "cd8e788264d66fb0413604efbff3b1fdfef2c968d3f79fbb377df8bbaab67c26",
+      failedClassificationEvidenceHash: "1bdb0cdfbb305d5407cdb8d711efec1e2291cf2ef8a07026f2ee64781f8f8316",
+      expectedDecision: "reject",
     })]);
     const parent = JSON.parse(readFileSync(q30ManualProblemPath, "utf8")).item as QuizItemEx;
     expect(canonicalEvidenceHash(parent)).toBe(PROBLEM_MANUAL_REVISION_ALLOWLIST[0].failedQuestionHash);
@@ -713,6 +757,25 @@ describe("exact allowlisted problem manual adjudication", () => {
     });
     expect(revised.question.match(/‘\$p\$’와 ‘\$q\$’는 ‘만약/gu)).toHaveLength(1);
     expect(revised.question).not.toContain("‘$p$’와 ‘$q$’를 ‘만약");
+
+    const q18Parent = JSON.parse(readFileSync(q18ManualProblemPath, "utf8")).item as QuizItemEx;
+    expect(canonicalEvidenceHash(q18Parent)).toBe(PROBLEM_MANUAL_REVISION_ALLOWLIST[1].failedQuestionHash);
+    const q18Revised = applyAllowlistedProblemManualRevision(
+      "ebsi:5656593",
+      cases[3].sourceHash,
+      "ebsi-5656593-q18-manual-v1",
+      q18Parent
+    );
+    expect(q18Revised).toEqual({
+      ...q18Parent,
+      question: q18Parent.question.replace(
+        "세 점 $L_1$, $M_1$, $N_1$이 각각 $\\overline{A_1B_1}$, $\\overline{B_1C_1}$, " +
+          "$\\overline{C_1A_1}$의 중점이고,",
+        "세 선분 $A_1B_1$, $B_1C_1$, $C_1A_1$의 중점을 각각 $L_1$, $M_1$, $N_1$이라 하고,"
+      ),
+    });
+    expect(canonicalEvidenceHash(q18Revised))
+      .toBe("b67987dc571ad92d8c456cd7b6936a26e9434e42ce3dddb5f78057748e99717b");
   });
 
   it.skipIf(!available)("applies the exhaustive Q34 literal correction to the pinned crop child", () => {

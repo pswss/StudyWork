@@ -182,6 +182,11 @@ const Q30_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5578421" && spec.key === "12:30")!;
 const Q30_MANUAL_REVISION_SPEC = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5578421" && spec.key === "12:30")!;
+const Q18_MANUAL_REVISION_SPEC = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((spec) =>
+  spec.entryId === "ebsi:5656593" && spec.key === "7:18")!;
+const Q18_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/714fd4581f778a9c559fd16e");
+const Q18_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
+  spec.entryId === "ebsi:5656593" && spec.key === "7:18")!;
 const Q30_FAILED_PROBLEM_PATH = join(
   Q30_MANUAL_STATE,
   "problem-recoveries/v1-0012-0030-20741052441e79627764f61577085ececd18660f475b4a29a4860b98175ef1d7.json",
@@ -196,9 +201,16 @@ const Q30_PARENT_MANUAL_CLASSIFICATION_PATH = join(
     "v1-0012-0030-2415dd634f5b3bde1fa8113d4e6d2f6900a418dcc2d37da64067839a1ff2c9ae-" +
     "7bb7cb863c8c4855.json",
 );
-const Q18_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/714fd4581f778a9c559fd16e");
-const Q18_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
-  spec.entryId === "ebsi:5656593" && spec.key === "7:18")!;
+const Q18_PARENT_MANUAL_CLASSIFICATION_PATH = join(
+  Q18_MANUAL_STATE,
+  "classification-manual-adjudications/" +
+    "v1-0007-0018-cab56b019c32271261bcb7389650c4d60fb52e22913de90a47412785e53752dc-" +
+    "7bb7cb863c8c4855.json",
+);
+const MANUAL_REVISION_PARENT_CLASSIFICATIONS = new Map([
+  [Q30_MANUAL_REVISION_SPEC.allowlistId, Q30_PARENT_MANUAL_CLASSIFICATION_PATH],
+  [Q18_MANUAL_REVISION_SPEC.allowlistId, Q18_PARENT_MANUAL_CLASSIFICATION_PATH],
+]);
 const Q9_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/a915803b3da3a6ea056eecd6");
 const Q9_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5854871" && spec.key === "2:9")!;
@@ -2541,12 +2553,16 @@ function upgradeEntryToV3(
         spec.entryId === entry.id && spec.key === manualSpec?.key &&
         spec.parentAllowlistId === manualSpec?.allowlistId)
     : undefined;
+  const manualRevisionParentClassificationPath = manualRevisionSpec
+    ? MANUAL_REVISION_PARENT_CLASSIFICATIONS.get(manualRevisionSpec.allowlistId)
+    : undefined;
   const manualFailedArtifacts = manualSpec && MANUAL_FAILED_ARTIFACTS.get(manualSpec.allowlistId);
   if (options.manualAdjudication && (!manualSpec || !manualFailedArtifacts)) {
     throw new Error("manual adjudication fixture requires an exact supported entry");
   }
-  if (options.manualRevision && (!manualRevisionSpec || !existsSync(Q30_PARENT_MANUAL_CLASSIFICATION_PATH))) {
-    throw new Error("manual revision fixture requires the exact Q30 parent authority");
+  if (options.manualRevision && (!manualRevisionSpec || !manualRevisionParentClassificationPath
+    || !existsSync(manualRevisionParentClassificationPath))) {
+    throw new Error("manual revision fixture requires an exact parent authority");
   }
   if (options.manualSolutionRepair && manualSpec?.allowlistId !== Q43_MANUAL_SPEC.allowlistId) {
     throw new Error("manual solution repair fixture requires the exact Q43 allowlist");
@@ -3915,7 +3931,7 @@ function upgradeEntryToV3(
         };
         const finalClassification = manualRevisionSpec
           ? structuredClone(JSON.parse(
-              readFileSync(Q30_PARENT_MANUAL_CLASSIFICATION_PATH, "utf8"),
+              readFileSync(manualRevisionParentClassificationPath!, "utf8"),
             ).items[0])
           : generatedClassification;
         if (manualRevisionSpec) {
@@ -4049,14 +4065,23 @@ function upgradeEntryToV3(
           const revisionClassificationBasisDigest = canonicalEvidenceHash(revisionClassificationBasis);
           const revisionClassification = {
             ...finalClassification,
-            ...(options.manualRevisionInvalidDecision ? {
-              decision: "reject",
-              canonical_subject: null,
-              curriculum_course: null,
-              domain: null,
-              achievement_codes: [],
-              reason_codes: ["OUT_OF_SCOPE"],
-            } : {}),
+            ...(options.manualRevisionInvalidDecision
+              ? manualRevisionSpec.expectedDecision === "accept" ? {
+                  decision: "reject",
+                  canonical_subject: null,
+                  curriculum_course: null,
+                  domain: null,
+                  achievement_codes: [],
+                  reason_codes: ["OUT_OF_SCOPE"],
+                } : {
+                  decision: "accept",
+                  canonical_subject: "math_A",
+                  curriculum_course: "2015 수학Ⅱ",
+                  domain: "적분",
+                  achievement_codes: ["12수학Ⅱ03-04"],
+                  reason_codes: ["IN_SCOPE_RIEMANN_SUM_DEFINITION"],
+                }
+              : {}),
             transcription_status: "exact",
             transcription_evidence: "all source pixels match the count-checked nested manual revision exactly",
           };
@@ -4806,7 +4831,7 @@ function upgradeEntryToV3(
   const fidelityPointerByLegacyPath = new Map<string, Record<string, unknown>>();
   const fidelityInputByKey = new Map<string, Record<string, unknown>>();
   const officialSolutionContextTo = options.scopeAdjudication || options.manualSolutionRepair
-    || options.manualRevision ? 5
+    || manualRevisionSpec?.expectedDecision === "accept" ? 5
     : options.repairScopeAdjudication || options.promptUpgrade ? 4 : undefined;
   const solutionFidelityCheckpoints = legacyAudit.solutionFidelityCheckpoints.map(
     (pointer: Record<string, unknown>) => {
@@ -5203,7 +5228,9 @@ function upgradeEntryToV3(
     auditItems.sort((left, right) =>
       compareCorpusQuestionKeys(String(left.key), String(right.key)));
   }
-  const singleManualAcceptedProjection = Boolean(options.manualSolutionRepair || options.manualRevision);
+  const singleManualAcceptedProjection = Boolean(
+    options.manualSolutionRepair || manualRevisionSpec?.expectedDecision === "accept",
+  );
   const auditBasis = {
     entryId: entry.id,
     problemHash: downloads.problem.sha256,
@@ -10532,6 +10559,150 @@ describe("exam corpus verifier", () => {
     expect(verifyExamCorpus(invalid.files).failures.some((failure) =>
       failure.code === "ANSWER_AUDIT_INVALID"
         && failure.message.includes("manual adjudication is stale or non-exact"))).toBe(true);
+  });
+
+  it.skipIf(
+    !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q18_MANUAL_SPEC.allowlistId)!.problem)
+      || !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q18_MANUAL_SPEC.allowlistId)!.classification)
+      || !existsSync(Q18_PARENT_MANUAL_CLASSIFICATION_PATH)
+      || !existsSync(join(Q18_MANUAL_STATE, "problem.pdf")),
+  )("reconstructs the exact nested Q18 manual revision as a terminal rejection", () => {
+    expect(manualRevisionAllowlistFingerprint())
+      .toBe("9e728f6796dbb0ed32652ea84b97e6870fba0ff88a7354a0b406749c90a706c3");
+    expect(manualRevisionAllowlistFingerprint())
+      .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST));
+    const manualRevisionFixture = (manualRevisionInvalidDecision = false) => {
+      const files = fixture();
+      prepareManualFixture(files, "math", Q18_MANUAL_SPEC, Q18_MANUAL_STATE);
+      const artifacts = upgradeEntryToV3(files, "math", {
+        manualAdjudication: true,
+        manualRevision: true,
+        manualRevisionInvalidDecision,
+        terminalScope: "authorized-reject",
+        answerV5: true,
+      });
+      return { files, artifacts };
+    };
+
+    const valid = manualRevisionFixture();
+    const modifiedBefore = statSync(valid.files.dbPath).mtimeMs;
+    const report = verifyExamCorpus(valid.files);
+    expect(report, JSON.stringify(report.failures, null, 2)).toMatchObject({ ok: true });
+    expect(statSync(valid.files.dbPath).mtimeMs).toBe(modifiedBefore);
+    const audit = JSON.parse(readFileSync(valid.artifacts.auditArtifact, "utf8"));
+    const manual = audit.repairs.find((value: Record<string, any>) =>
+      value.revision?.recovery?.manualAdjudication?.revision)
+      .revision.recovery.manualAdjudication;
+    expect(manual.revision).toMatchObject({
+      allowlistId: Q18_MANUAL_REVISION_SPEC.allowlistId,
+      failedQuestionHash: Q18_MANUAL_REVISION_SPEC.failedQuestionHash,
+      failedClassificationHash: Q18_MANUAL_REVISION_SPEC.failedClassificationHash,
+      correctionSpecHash: "5ff886eb7e8fe190409bb81f4b9cc4e2235db0735b6fd73748d32a35acbd26e3",
+    });
+    const parentQuestion = JSON.parse(readFileSync(
+      valid.artifacts.problemManualAdjudicationArtifact!,
+      "utf8",
+    )).item.question;
+    const revisedQuestion = JSON.parse(readFileSync(
+      valid.artifacts.problemManualRevisionArtifact!,
+      "utf8",
+    )).item.question;
+    expect(parentQuestion).toContain(
+      "세 점 $L_1$, $M_1$, $N_1$이 각각 $\\overline{A_1B_1}$, $\\overline{B_1C_1}$, " +
+        "$\\overline{C_1A_1}$의 중점이고,",
+    );
+    expect(revisedQuestion).toContain(
+      "세 선분 $A_1B_1$, $B_1C_1$, $C_1A_1$의 중점을 각각 $L_1$, $M_1$, $N_1$이라 하고,",
+    );
+    expect(revisedQuestion).not.toContain("세 점 $L_1$, $M_1$, $N_1$이 각각");
+    const parentClassification = JSON.parse(readFileSync(
+      valid.artifacts.classificationManualAdjudicationArtifact!,
+      "utf8",
+    )).items[0];
+    const revisedClassification = JSON.parse(readFileSync(
+      valid.artifacts.classificationManualRevisionArtifact!,
+      "utf8",
+    )).items[0];
+    expect(parentClassification).toMatchObject({ decision: "reject", transcription_status: "mismatch" });
+    expect(revisedClassification).toMatchObject({
+      decision: "reject",
+      canonical_subject: null,
+      curriculum_course: null,
+      domain: null,
+      achievement_codes: [],
+      transcription_status: "exact",
+    });
+    const terminal = JSON.parse(readFileSync(valid.artifacts.terminalArtifact, "utf8"));
+    expect(terminal.inputs).toHaveLength(30);
+    expect(terminal.items).toHaveLength(30);
+    expect(terminal.items.find((item: { key: string }) => item.key === Q18_MANUAL_REVISION_SPEC.key))
+      .toMatchObject({ status: "exact", scopeDecision: "reject", scopeConfidence: 0.99 });
+    expect(audit.acceptedSolutionKeys).not.toContain(Q18_MANUAL_REVISION_SPEC.key);
+    const db = new Database(valid.files.dbPath, { readonly: true });
+    const storedCount = db.prepare(
+      "SELECT COUNT(*) AS count FROM questions WHERE printed_number = '18'",
+    ).get() as { count: number };
+    db.close();
+    expect(storedCount.count).toBe(0);
+
+    const invalidDecision = manualRevisionFixture(true);
+    expect(verifyExamCorpus(invalidDecision.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("manual revision"))).toBe(true);
+
+    const parentTamper = manualRevisionFixture();
+    rewriteCurrentV3Authority(parentTamper.files, (currentAudit) => {
+      currentAudit.repairs.find((value: Record<string, any>) =>
+        value.revision?.recovery?.manualAdjudication?.revision)
+        .revision.recovery.manualAdjudication.revision.parentManualEvidenceHash = "0".repeat(64);
+    }, "math");
+    expect(verifyExamCorpus(parentTamper.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("manual revision"))).toBe(true);
+
+    const childTamper = manualRevisionFixture();
+    writeFileSync(childTamper.artifacts.problemManualRevisionArtifact!, "{}");
+    expect(verifyExamCorpus(childTamper.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const missing = manualRevisionFixture();
+    rmSync(missing.artifacts.classificationManualRevisionArtifact!);
+    expect(verifyExamCorpus(missing.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("missing"))).toBe(true);
+
+    const repeated = manualRevisionFixture();
+    rewriteCurrentV3Authority(repeated.files, (currentAudit) => {
+      currentAudit.repairs.find((value: Record<string, any>) =>
+        value.revision?.recovery?.manualAdjudication?.revision)
+        .revision.recovery.manualAdjudication.revision.revision = {};
+    }, "math");
+    expect(verifyExamCorpus(repeated.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const staleTerminal = manualRevisionFixture();
+    rewriteCurrentV3Authority(staleTerminal.files, (currentAudit) => {
+      const pointer = currentAudit.problemTerminalFidelityCheckpoints[0];
+      const path = join(staleTerminal.files.stateDirs.math, pointer.path);
+      const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+      const item = checkpoint.items.find(
+        (value: { key: string }) => value.key === Q18_MANUAL_REVISION_SPEC.key,
+      );
+      item.scopeDecision = "accept";
+      item.scopeEvidence = "self-consistent stale terminal scope accepts the allowlisted final rejection";
+      pointer.sha256 = writeEvidence(path, checkpoint);
+      Object.assign(currentAudit.problemTerminalFidelityItems.find(
+        (value: { key: string }) => value.key === Q18_MANUAL_REVISION_SPEC.key,
+      ), item);
+    }, "math");
+    expect(verifyExamCorpus(staleTerminal.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("terminal"))).toBe(true);
+
+    const orphan = manualRevisionFixture();
+    writeJson(join(
+      orphan.files.stateDirs.math,
+      "problem-manual-revisions",
+      `v1-0007-0018-${"1".repeat(64)}.json`,
+    ), {});
+    expect(verifyExamCorpus(orphan.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
   });
 
   it.skipIf(

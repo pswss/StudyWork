@@ -1157,6 +1157,30 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_reading",
+}, {
+  allowlistId: "ebsi-5656593-q18-manual-revision-v1",
+  parentAllowlistId: "ebsi-5656593-q18-manual-v1",
+  entryId: "ebsi:5656593",
+  key: "7:18",
+  sourcePage: 7,
+  sourceHash: "e1b0ffd692634a4a2b1500877691cf0f4ff622fb85c6dd1dba4aff65dfd29e1d",
+  failedQuestionHash: "2ee7a2fc3b6ac355c2e88de3cec5005d6f31b6caf1dd042019190d05dca06484",
+  failedClassificationHash: "cd8e788264d66fb0413604efbff3b1fdfef2c968d3f79fbb377df8bbaab67c26",
+  failedClassificationEvidenceHash: "1bdb0cdfbb305d5407cdb8d711efec1e2291cf2ef8a07026f2ee64781f8f8316",
+  replacement: {
+    field: "question",
+    from: "세 점 $L_1$, $M_1$, $N_1$이 각각 $\\overline{A_1B_1}$, $\\overline{B_1C_1}$, " +
+      "$\\overline{C_1A_1}$의 중점이고,",
+    to: "세 선분 $A_1B_1$, $B_1C_1$, $C_1A_1$의 중점을 각각 $L_1$, $M_1$, $N_1$이라 하고,",
+    count: 1,
+  },
+  requiredTokens: [
+    "세 선분 $A_1B_1$, $B_1C_1$, $C_1A_1$의 중점을 각각 $L_1$, $M_1$, $N_1$이라 하고,",
+    "호 $\\overset{\\frown}{N_1L_1}$", "호 표기는 정확히 2회",
+    "읽는 순서는 단일, 단일, 복합, 복합", "$R_1$", "$R_2$", "$R_3$",
+    "① $\\dfrac{3(3\\sqrt{3}-\\pi)}{11}$", "⑤ $\\dfrac{4(3\\sqrt{3}-\\pi)}{11}$",
+  ],
+  expectedDecision: "reject",
 }] as const;
 
 export function manualAdjudicationAllowlistFingerprint(): string {
