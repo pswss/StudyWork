@@ -189,12 +189,15 @@ const Q18_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
 const Q9_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/a915803b3da3a6ea056eecd6");
 const Q9_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5854871" && spec.key === "2:9")!;
+const Q9_WRITING_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/4142baa37330a6d3d470294a");
+const Q9_WRITING_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
+  spec.entryId === "ebsi:5594499" && spec.key === "4:9")!;
 const MANUAL_FAILED_ARTIFACTS = new Map([
-  [Q30_MANUAL_SPEC.entryId, {
+  [Q30_MANUAL_SPEC.allowlistId, {
     problem: Q30_FAILED_PROBLEM_PATH,
     classification: Q30_FAILED_CLASSIFICATION_PATH,
   }],
-  [Q18_MANUAL_SPEC.entryId, {
+  [Q18_MANUAL_SPEC.allowlistId, {
     problem: join(
       Q18_MANUAL_STATE,
       "problem-recoveries/v1-0007-0018-8dc9e3101914ced2b5380528cdf56f5c607f0911f8a4f4460835260ae4cd6b3a.json",
@@ -204,7 +207,7 @@ const MANUAL_FAILED_ARTIFACTS = new Map([
       "classification-recoveries/v1-0007-0018-eadc507490e4723cf09f622b2231222ff5cb12db3609ab381b79951dc1de3144-7bb7cb863c8c4855.json",
     ),
   }],
-  [Q9_MANUAL_SPEC.entryId, {
+  [Q9_MANUAL_SPEC.allowlistId, {
     problem: join(
       Q9_MANUAL_STATE,
       "problem-recoveries/v1-0002-0009-ce5a6650673a79cd5cebf9a1d0593bcc75f9acd7fc5a57551ea1becf69e443d5.json",
@@ -212,6 +215,16 @@ const MANUAL_FAILED_ARTIFACTS = new Map([
     classification: join(
       Q9_MANUAL_STATE,
       "classification-recoveries/v1-0002-0009-284f685922e94c9eca6aef2dc7cb776f8ee4fc04601b32ecf959f840d264fc34-7bb7cb863c8c4855.json",
+    ),
+  }],
+  [Q9_WRITING_MANUAL_SPEC.allowlistId, {
+    problem: join(
+      Q9_WRITING_MANUAL_STATE,
+      "problem-recoveries/v1-0004-0009-bddde1723f11b47836bb403b1415e8663a05efb246e6d6d51157be0a9c1b5cf0.json",
+    ),
+    classification: join(
+      Q9_WRITING_MANUAL_STATE,
+      "classification-recoveries/v1-0004-0009-fecdbfac299fdcff5ae6e0aea267b5f41cdad60c684639b8d2e2160e937de6d2-7bb7cb863c8c4855.json",
     ),
   }],
 ]);
@@ -2404,6 +2417,7 @@ function upgradeEntryToV3(
     scopeAdjudication?: boolean;
     repairScopeAdjudication?: boolean;
     manualAdjudication?: boolean;
+    manualAdjudicationKey?: string;
     manualInvalidDecision?: boolean;
     difficultyRepair?: boolean;
     promptUpgrade?: boolean;
@@ -2455,10 +2469,13 @@ function upgradeEntryToV3(
   if (options.repairScopeAdjudication && !repairScopeSpec) {
     throw new Error("repair scope adjudication fixture requires an exact allowlisted entry");
   }
-  const manualSpec = options.manualAdjudication
-    ? PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) => spec.entryId === entry.id)
-    : undefined;
-  const manualFailedArtifacts = manualSpec && MANUAL_FAILED_ARTIFACTS.get(manualSpec.entryId);
+  const manualSpecs = options.manualAdjudication
+    ? PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
+        spec.entryId === entry.id
+          && (options.manualAdjudicationKey === undefined || spec.key === options.manualAdjudicationKey))
+    : [];
+  const manualSpec = manualSpecs.length === 1 ? manualSpecs[0] : undefined;
+  const manualFailedArtifacts = manualSpec && MANUAL_FAILED_ARTIFACTS.get(manualSpec.allowlistId);
   if (options.manualAdjudication && (!manualSpec || !manualFailedArtifacts)) {
     throw new Error("manual adjudication fixture requires an exact supported entry");
   }
@@ -3790,11 +3807,11 @@ function upgradeEntryToV3(
               reason_codes: ["OUT_OF_SCOPE"],
             } : {
               decision: "accept",
-              canonical_subject: "math_B",
-              curriculum_course: "2015 수학Ⅰ",
-              domain: "지수함수와 로그함수",
-              achievement_codes: ["12수학Ⅰ01-07"],
-              reason_codes: ["IN_SCOPE_LOGARITHMS"],
+              canonical_subject: entry.subject === "국어" ? "korean_reading" : "math_B",
+              curriculum_course: entry.subject === "국어" ? "독서와 작문" : "2015 수학Ⅰ",
+              domain: entry.subject === "국어" ? "작문" : "지수함수와 로그함수",
+              achievement_codes: entry.subject === "국어" ? ["12독작01-03"] : ["12수학Ⅰ01-07"],
+              reason_codes: entry.subject === "국어" ? ["IN_SCOPE_WRITING"] : ["IN_SCOPE_LOGARITHMS"],
             }),
           } : expectedAccept ? {
             decision: "accept",
@@ -9866,8 +9883,8 @@ describe("exam corpus verifier", () => {
   });
 
   it.skipIf(
-    !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q18_MANUAL_SPEC.entryId)!.problem)
-      || !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q18_MANUAL_SPEC.entryId)!.classification)
+    !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q18_MANUAL_SPEC.allowlistId)!.problem)
+      || !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q18_MANUAL_SPEC.allowlistId)!.classification)
       || !existsSync(join(Q18_MANUAL_STATE, "problem.pdf")),
   )("requires the exact Q18 manual child to remain an out-of-scope rejection", () => {
     const manualFixture = (manualInvalidDecision = false) => {
@@ -9911,8 +9928,8 @@ describe("exam corpus verifier", () => {
   });
 
   it.skipIf(
-    !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q9_MANUAL_SPEC.entryId)!.problem)
-      || !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q9_MANUAL_SPEC.entryId)!.classification)
+    !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q9_MANUAL_SPEC.allowlistId)!.problem)
+      || !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q9_MANUAL_SPEC.allowlistId)!.classification)
       || !existsSync(join(Q9_MANUAL_STATE, "problem.pdf")),
   )("reconstructs the 600dpi Q9 map correction and requires an integrated-social acceptance", () => {
     const manualFixture = (manualInvalidDecision = false) => {
@@ -9962,6 +9979,97 @@ describe("exam corpus verifier", () => {
     expect(verifyExamCorpus(invalid.files).failures.some((failure) =>
       failure.code === "ANSWER_AUDIT_INVALID"
         && failure.message.includes("manual adjudication is stale or non-exact"))).toBe(true);
+  });
+
+  it.skipIf(
+    !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q9_WRITING_MANUAL_SPEC.allowlistId)!.problem)
+      || !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q9_WRITING_MANUAL_SPEC.allowlistId)!.classification)
+      || !existsSync(join(Q9_WRITING_MANUAL_STATE, "problem.pdf")),
+  )("reconstructs the exact Q9 writing-plan correction and requires an out-of-scope rejection", () => {
+    const manualFixture = (manualInvalidDecision = false) => {
+      const files = fixture();
+      prepareManualFixture(files, "korean", Q9_WRITING_MANUAL_SPEC, Q9_WRITING_MANUAL_STATE);
+      const artifacts = upgradeEntryToV3(files, "korean", {
+        manualAdjudication: true,
+        manualAdjudicationKey: Q9_WRITING_MANUAL_SPEC.key,
+        manualInvalidDecision,
+        terminalScope: "authorized-reject",
+        answerV5: true,
+      });
+      return { files, artifacts };
+    };
+
+    const valid = manualFixture();
+    const modifiedBefore = statSync(valid.files.dbPath).mtimeMs;
+    const report = verifyExamCorpus(valid.files);
+    expect(report, JSON.stringify(report.failures)).toMatchObject({ ok: true });
+    expect(statSync(valid.files.dbPath).mtimeMs).toBe(modifiedBefore);
+    const audit = JSON.parse(readFileSync(valid.artifacts.auditArtifact, "utf8"));
+    const manual = audit.repairs.find((value: Record<string, any>) =>
+      value.revision?.recovery?.manualAdjudication?.allowlistId === Q9_WRITING_MANUAL_SPEC.allowlistId)
+      .revision.recovery.manualAdjudication;
+    expect(manual.correctionSpecHash).toBe(canonicalEvidenceHash({
+      allowlistId: Q9_WRITING_MANUAL_SPEC.allowlistId,
+      parentKind: Q9_WRITING_MANUAL_SPEC.parentKind,
+      views: Q9_WRITING_MANUAL_SPEC.views,
+      dpi: Q9_WRITING_MANUAL_SPEC.dpi,
+      requiredTokens: Q9_WRITING_MANUAL_SPEC.requiredTokens,
+      replacements: Q9_WRITING_MANUAL_SPEC.replacements,
+      figure: Q9_WRITING_MANUAL_SPEC.figure,
+      figureDescription: Q9_WRITING_MANUAL_SPEC.figureDescription,
+      expectedDecision: Q9_WRITING_MANUAL_SPEC.expectedDecision,
+    }));
+    expect(JSON.parse(readFileSync(valid.artifacts.manualEvidenceArtifact!, "utf8")))
+      .toMatchObject({ dpi: 600, basis: { dpi: 600, views: Q9_WRITING_MANUAL_SPEC.views } });
+    const corrected = JSON.parse(
+      readFileSync(valid.artifacts.problemManualAdjudicationArtifact!, "utf8"),
+    ).item;
+    expect(corrected.question).toContain("[9 ~ 10] 다음을 읽고 물음에 답하시오.");
+    expect(corrected.question).toContain("[글의 구상 도식]");
+    expect(corrected.question).toContain("ⓒ 강연 핵심 요약");
+    expect(corrected.question).toContain(
+      "그리고 노력하면 무엇이든 할 수 있다는 주변의 막연한 충고는 마음에 와 닿지 않았다.",
+    );
+    expect(corrected.question).not.toContain("- 중심 주제: 그릿(Grit)");
+    expect(corrected.question).not.toContain("ⓒ 강연 핵심 묘사");
+    expect(corrected.question).not.toContain("주변의 말에도 쉽사리 마음에 와 닿지 않았다.");
+    expect(corrected.figure_description).toBe(Q9_WRITING_MANUAL_SPEC.figureDescription);
+    const classification = JSON.parse(readFileSync(
+      valid.artifacts.classificationManualAdjudicationArtifact!,
+      "utf8",
+    )).items[0];
+    expect(classification).toMatchObject({
+      decision: "reject",
+      canonical_subject: null,
+      curriculum_course: null,
+      domain: null,
+      achievement_codes: [],
+      transcription_status: "exact",
+    });
+    expect(audit.problemTerminalFidelityItems.find(
+      (item: { key: string }) => item.key === Q9_WRITING_MANUAL_SPEC.key,
+    )).toMatchObject({ status: "exact", scopeDecision: "reject" });
+
+    const invalidDecision = manualFixture(true);
+    const invalidDecisionReport = verifyExamCorpus(invalidDecision.files);
+    expect(invalidDecisionReport.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+        && failure.message.includes("manual adjudication is stale or non-exact")),
+    JSON.stringify(invalidDecisionReport.failures, null, 2)).toBe(true);
+
+    const tampered = manualFixture();
+    writeFileSync(tampered.artifacts.problemManualAdjudicationArtifact!, "{}");
+    expect(verifyExamCorpus(tampered.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("hash mismatch"))).toBe(true);
+
+    const orphan = manualFixture();
+    writeJson(join(
+      orphan.files.stateDirs.korean,
+      "problem-manual-adjudications",
+      `v1-0004-0009-${"1".repeat(64)}.json`,
+    ), {});
+    expect(verifyExamCorpus(orphan.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
   });
 
   it("keeps the repair-scope allowlist byte-aligned with the importer", () => {

@@ -87,6 +87,14 @@ const cases = [{
     "data/import-exam-corpus/a915803b3da3a6ea056eecd6/" +
       "problem-recoveries/v1-0002-0009-ce5a6650673a79cd5cebf9a1d0593bcc75f9acd7fc5a57551ea1becf69e443d5.json"
   ),
+}, {
+  entryId: "ebsi:5594499",
+  sourceHash: "0ddccee92ce4e4ba3da53ed253e780cd7b41b5962f7e9761a920079619f81c31",
+  path: join(
+    process.cwd(),
+    "data/import-exam-corpus/4142baa37330a6d3d470294a/" +
+      "problem-recoveries/v1-0004-0009-bddde1723f11b47836bb403b1415e8663a05efb246e6d6d51157be0a9c1b5cf0.json"
+  ),
 }] as const;
 
 const available = cases.every((item) => existsSync(item.path));
@@ -141,6 +149,19 @@ const recoveryCases = [{
   finalAnchor: "A는 노르웨이",
   expectedDecision: "accept",
   expectedCanonicalSubject: "integrated_social",
+  expectedDpi: 600,
+}, {
+  index: 5,
+  stateDir: join(process.cwd(), "data/import-exam-corpus/4142baa37330a6d3d470294a"),
+  classificationPath: join(
+    process.cwd(),
+    "data/import-exam-corpus/4142baa37330a6d3d470294a/" +
+      "classification-recoveries/v1-0004-0009-fecdbfac299fdcff5ae6e0aea267b5f41cdad60c684639b8d2e2160e937de6d2-7bb7cb863c8c4855.json"
+  ),
+  questionCount: 45,
+  pageCount: 16,
+  finalAnchor: "ⓐ, ⓑ, ⓒ, ⓓ, ⓔ는 각각 정확히 한 번 보인다.",
+  expectedDecision: "reject",
   expectedDpi: 600,
 }] as const;
 
@@ -384,7 +405,7 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
 }
 
 describe("exact allowlisted problem manual adjudication", () => {
-  it("pins the five audited sources and exhausted child hashes", () => {
+  it("pins the six audited sources and exhausted child hashes", () => {
     expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.map((item) => ({
       entryId: item.entryId,
       key: item.key,
@@ -427,6 +448,13 @@ describe("exact allowlisted problem manual adjudication", () => {
       sourceHash: cases[4].sourceHash,
       parentKind: "recovery",
       failedQuestionHash: "3356445be5f6d28b112a307219a83cba0fefc3a8f88c30e01e2d2319498c81c1",
+    }, {
+      entryId: "ebsi:5594499",
+      key: "4:9",
+      sourcePage: 4,
+      sourceHash: cases[5].sourceHash,
+      parentKind: "recovery",
+      failedQuestionHash: "6b45bc49e5f0e87b14c8b93fc23e845b668bd8185af847c9929021235f6a8759",
     }]);
   });
 
@@ -478,6 +506,21 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(q9.figure_description).toContain("D는 아르헨티나");
     expect(q9.figure_description).toContain("E는 베네수엘라");
     expect(q9.figure_description).not.toMatch(/영국|필리핀|파나마/u);
+  });
+
+  it.skipIf(!available)("applies all nine source-exact Q9 writing-plan corrections", () => {
+    const q9 = applyAllowlistedProblemManualCorrection(cases[5].entryId, cases[5].sourceHash, itemAt(5));
+    expect(q9.question).toContain("[9 ~ 10] 다음을 읽고 물음에 답하시오.");
+    expect(q9.question).toContain("[글의 구상 도식]\n- 중앙: 그릿 / Grit");
+    expect(q9.question).toContain("- 강연: ⓒ 강연 핵심 요약, ⓓ 강연을 들은 후 변화된 생각");
+    expect(q9.question).toContain("천재들만 받는다는 맥아더 펠로상의 수상자");
+    expect(q9.question).toContain("주변의 막연한 충고는 마음에 와 닿지 않았다.");
+    for (const marker of ["㉠ 그릿", "㉡ 그릿", "㉢ 주목", "㉣ 그러나", "㉤ 떠올리고"]) {
+      expect(q9.question).toContain(marker);
+    }
+    expect(q9.question).not.toMatch(/중심 주제:|강연 핵심 묘사|‘맥아더 펠로상’|㉠그릿|㉡그릿|㉢주목|㉣그러나|㉤떠올리고/u);
+    expect(q9.figure_description).toContain("중앙에서 세 갈래 곡선이 뻗는다");
+    expect(q9.figure_description).toContain("ⓐ, ⓑ, ⓒ, ⓓ, ⓔ는 각각 정확히 한 번 보인다");
   });
 
   it.skipIf(!available)("rejects a changed parent item before applying any correction", () => {

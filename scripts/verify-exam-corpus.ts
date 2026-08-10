@@ -642,6 +642,13 @@ const Q18_MANUAL_FIGURE_DESCRIPTION =
   "같은 구조를 한 단계 반복하고, $R_3$은 더 작은 중앙 정삼각형 안에 다시 반복한다. 각 그림 " +
   "아래의 $R_1$, $R_2$, $R_3$ 표지와 $R_3$ 오른쪽의 줄임표는 단계와 계속되는 과정을 나타낸다.";
 
+const Q9_WRITING_PLAN_FIGURE_DESCRIPTION =
+  "공식 4쪽 왼쪽의 스프링 노트형 ‘작문 일지’ 도식이다. 중앙 원에는 위에서부터 ‘그릿’, " +
+  "‘Grit’이 적혀 있다. 중앙에서 세 갈래 곡선이 뻗는다. 왼쪽 위 ‘실천’ 가지에는 ⓐ ‘나의 경험 " +
+  "제시’와 ⓑ ‘실천 권유하기’, 오른쪽 ‘개념’ 가지에는 ⓔ ‘학자들의 견해 비교’, 왼쪽 아래 ‘강연’ " +
+  "가지에는 ⓒ ‘강연 핵심 요약’과 ⓓ ‘강연을 들은 후 변화된 생각’이 연결되어 있다. ⓐ, ⓑ, ⓒ, " +
+  "ⓓ, ⓔ는 각각 정확히 한 번 보인다.";
+
 const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationSpec[] = [
   {
     allowlistId: "ebsi-5594499-q34-manual-v1",
@@ -863,6 +870,71 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     figure: true,
     expectedDecision: "accept",
     expectedCanonicalSubject: "integrated_social",
+  },
+  {
+    allowlistId: "ebsi-5594499-q9-manual-v1",
+    entryId: "ebsi:5594499",
+    key: "4:9",
+    sourcePage: 4,
+    sourceHash: "0ddccee92ce4e4ba3da53ed253e780cd7b41b5962f7e9761a920079619f81c31",
+    parentKind: "recovery",
+    dpi: 600,
+    failedQuestionHash: "6b45bc49e5f0e87b14c8b93fc23e845b668bd8185af847c9929021235f6a8759",
+    failedClassificationHash: "edcc2b22f6c3f1eaadb0c655063e5f189fb63cd032b49384ae59eb0431c1303b",
+    failedClassificationEvidenceHash: "b561d9f0243616732324e197fb3bde8d2a19120e5988a003a4041389008077ce",
+    views: [
+      { sourcePage: 4, label: "p4 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 4, label: "p4 left full Q9-Q10", rect: [0.08, 0.08, 0.51, 0.98] },
+      { sourcePage: 4, label: "p4 writing-plan diagram", rect: [0.09, 0.13, 0.50, 0.49] },
+      { sourcePage: 4, label: "p4 draft passage", rect: [0.08, 0.47, 0.51, 0.89] },
+      { sourcePage: 4, label: "p4 Q9 prompt and choices", rect: [0.08, 0.88, 0.51, 0.98] },
+    ],
+    requiredTokens: [
+      "[9 ~ 10] 다음을 읽고 물음에 답하시오.", "[글의 구상 도식]", "그릿 / Grit",
+      "ⓐ 나의 경험 제시", "ⓑ 실천 권유하기", "ⓒ 강연 핵심 요약",
+      "ⓓ 강연을 들은 후 변화된 생각", "ⓔ 학자들의 견해 비교",
+      "천재들만 받는다는 맥아더 펠로상의 수상자",
+      "그리고 노력하면 무엇이든 할 수 있다는 주변의 막연한 충고는 마음에 와 닿지 않았다.",
+      "㉠ 그릿", "㉡ 그릿", "㉢ 주목", "㉣ 그러나", "㉤ 떠올리고",
+      "‘작문 일지’에 기록한 내용 중 초고에 반영되지 않은 것은?", "① ⓐ", "⑤ ⓔ",
+      "ⓐ, ⓑ, ⓒ, ⓓ, ⓔ는 각각 정확히 한 번 보인다.",
+    ],
+    replacements: [
+      {
+        field: "question",
+        from: "[작문 과제]",
+        to: "[9 ~ 10] 다음을 읽고 물음에 답하시오.\n\n[작문 과제]",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "- 중심 주제: 그릿(Grit)\n- 실천: ⓐ 나의 경험 제시, ⓑ 실천 권유하기\n" +
+          "- 개념: ⓔ 학자들의 견해 비교\n- 강연: ⓒ 강연 핵심 묘사, ⓓ 강연을 들은 후 변화된 생각",
+        to: "[글의 구상 도식]\n- 중앙: 그릿 / Grit\n- 실천: ⓐ 나의 경험 제시, ⓑ 실천 권유하기\n" +
+          "- 개념: ⓔ 학자들의 견해 비교\n- 강연: ⓒ 강연 핵심 요약, ⓓ 강연을 들은 후 변화된 생각",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "천재들만 받는다는 ‘맥아더 펠로상’의 수상자",
+        to: "천재들만 받는다는 맥아더 펠로상의 수상자",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "그리고 노력하면 무엇이든 할 수 있다는 주변의 말에도 쉽사리 마음에 와 닿지 않았다.",
+        to: "그리고 노력하면 무엇이든 할 수 있다는 주변의 막연한 충고는 마음에 와 닿지 않았다.",
+        count: 1,
+      },
+      { field: "question", from: "㉠그릿", to: "㉠ 그릿", count: 1 },
+      { field: "question", from: "㉡그릿", to: "㉡ 그릿", count: 1 },
+      { field: "question", from: "㉢주목", to: "㉢ 주목", count: 1 },
+      { field: "question", from: "㉣그러나", to: "㉣ 그러나", count: 1 },
+      { field: "question", from: "㉤떠올리고", to: "㉤ 떠올리고", count: 1 },
+    ],
+    figure: true,
+    figureDescription: Q9_WRITING_PLAN_FIGURE_DESCRIPTION,
+    expectedDecision: "reject",
   },
 ] as const;
 
