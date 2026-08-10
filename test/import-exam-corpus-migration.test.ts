@@ -205,10 +205,34 @@ describe("existing corpus migration v1", () => {
       "ebsi:5734412",
       "ebsi:5696440",
       "ebsi:5854175",
+      "ebsi:5525983",
+      "ebsi:5578422",
+      "ebsi:5853840",
+      "ebsi:5853841",
+      "ebsi:5642949",
+      "ebsi:5642950",
+      "ebsi:5734413",
     ]);
-    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.slice(1).every((spec) =>
+    expect(canonicalEvidenceHash(EXISTING_CORPUS_MIGRATION_ALLOWLIST))
+      .toBe("69eff851d2ed87d7a9f1b9873a630df0fb523417b66a326164e1c1949548be32");
+    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.filter((spec) =>
+      spec.entryId !== "ebsi:5695028" && spec.entryId !== "ebsi:5853841"
+    ).every((spec) =>
       spec.newKeys.length === 0 && spec.newQuestions.length === 0
     )).toBe(true);
+    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((spec) => spec.entryId === "ebsi:5853841"))
+      .toMatchObject({
+        newKeys: ["1:2"],
+        newQuestions: [{
+          key: "1:2",
+          targetSubject: "수학 - 수학Ⅰ·대수",
+          qtype: "mcq",
+          difficulty: "하",
+          question: "$\\sqrt{4}\\times\\sqrt[3]{8}$의 값은? [2점]",
+          answer: "①",
+          solutionPage: 1,
+        }],
+      });
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((spec) => spec.entryId === "ebsi:5656592"))
       .toBeUndefined();
     expect(() => selectExistingMigrationPlan([{
@@ -234,6 +258,15 @@ describe("existing corpus migration v1", () => {
       afterProjectionHash: "21e9dd2731d0ffbd97b595333e5367224e59f5ae108ead4914c83e76ea1507a7",
       stableAfterProjectionHash: "489d4d6831de6abc37cc052e3ef5db730821a4a3a270a955441bfd004fca243f",
       accepted: 7,
+    },
+    {
+      entryId: "ebsi:5734413",
+      entryToken: "b43e38e9dede643a532780cc",
+      oldReceiptSha256: "d73c2e712fbb9ccb9a4e6e1e8a7e903805b9bd98490822d67311dae50bf3f7e6",
+      beforeProjectionHash: "8f5e2071cc49d696ec04506774a702fcaf86c3b29bd7053a01c8c4a6a398c2aa",
+      afterProjectionHash: "cfc32af3a65c21749b53dc1ca1e8ac85233a9387bb5f5b607269e655ae39d425",
+      stableAfterProjectionHash: "26dc5162061716a98b85a3d22468a0c92c3d897d95eaa11b39c26cc2878acb1e",
+      accepted: 12,
     },
   ] satisfies SameKeyMigrationCase[])(
     "migrates $entryId from persisted authority without AI",
@@ -262,6 +295,60 @@ describe("existing corpus migration v1", () => {
       }
     }
   );
+
+  it("adds the one pinned 5853841 question and replays without AI", async () => {
+    const migration = {
+      entryId: "ebsi:5853841",
+      entryToken: "b9a5b631791efd3ac315db14",
+      oldReceiptSha256: "4e51de5bfa4c36dfbd492568ab74aec2fa299bc5c9963e9bfc4834b4ee667924",
+      beforeProjectionHash: "ab6c623c34c40c3b85ffe8d6b0ceeb66871d9c9ed9134b7a78e15af46f2285b7",
+      afterProjectionHash: "7587b029267f704451aa589b93571f063352a938402fde3b02e9d7905f4f6668",
+      stableAfterProjectionHash: "1f8a27732840bb54f25f177769f0837c73533156c58ce930d690946585e0fe53",
+      accepted: 9,
+    } satisfies SameKeyMigrationCase;
+    const root = mkdtempSync(join(tmpdir(), "studywork-count-change-migration-"));
+    try {
+      const stateDir = await prepareSameKeySnapshot(root, migration);
+      const first = await runSameKeyMigration(root, migration);
+      expect(first.stdout).toContain("existing ebsi:5853841 9");
+      const planName = readdirSync(join(stateDir, "migration-plans"))
+        .find((name) => /^v1-[a-f0-9]{64}\.json$/u.test(name))!;
+      const planPath = join(stateDir, "migration-plans", planName);
+      const plan = JSON.parse(readFileSync(planPath, "utf8"));
+      expect(plan.identity).toMatchObject({
+        beforeProjectionHash: migration.beforeProjectionHash,
+        afterProjectionHash: migration.afterProjectionHash,
+        stableAfterProjectionHash: migration.stableAfterProjectionHash,
+      });
+      expect(plan.identity.operations.questionUpdates).toHaveLength(8);
+      expect(plan.identity.operations.itemUpdates).toHaveLength(16);
+      expect(plan.identity.operations.questionInserts).toHaveLength(1);
+      expect(plan.identity.operations.itemInserts).toHaveLength(2);
+      expect(plan.identity.operations.questionInserts[0].after).toMatchObject({
+        id: 3529,
+        src_page: 1,
+        printed_number: "2",
+        question: "$\\sqrt{4}\\times\\sqrt[3]{8}$의 값은? [2점]",
+        answer: "①",
+      });
+      expect(plan.identity.operations.itemInserts.map((item: { after: { id: number } }) => item.after.id))
+        .toEqual([7588, 7589]);
+      const beforeReplay = {
+        db: sha256(join(root, "studywork.db")),
+        receipt: sha256(join(stateDir, "receipt.json")),
+        plan: sha256(planPath),
+      };
+      const replay = await runSameKeyMigration(root, migration);
+      expect(replay.stdout).toContain("existing ebsi:5853841 9");
+      expect({
+        db: sha256(join(root, "studywork.db")),
+        receipt: sha256(join(stateDir, "receipt.json")),
+        plan: sha256(planPath),
+      }).toEqual(beforeReplay);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
   it("requires the same MCQ ordinal and normalized selected choice", () => {
     const old = {

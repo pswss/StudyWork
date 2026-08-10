@@ -654,10 +654,8 @@ const execFileP = promisify(execFile);
 const migrationRepository = resolve(import.meta.dirname, "..");
 const migrationSourceData = join(migrationRepository, "data");
 const migrationEntryId = "ebsi:5695028";
-const migrationEntryToken = "bc66d0c1b35ffd8e12edd536";
-const migrationOldReceiptSha = "5e1fbea9c346a0e89fb21938176c21e00c19527e6369f5251a1f53e6446711a1";
 
-async function migratedVerifierFixture(): Promise<{
+async function migratedVerifierFixture(entryId = migrationEntryId): Promise<{
   root: string;
   dataDir: string;
   dbPath: string;
@@ -666,16 +664,20 @@ async function migratedVerifierFixture(): Promise<{
   planPath: string;
   plan: Record<string, any>;
 }> {
+  const migrationSpec = EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((candidate) => candidate.entryId === entryId);
+  if (!migrationSpec) throw new Error(`${entryId}: migration fixture has no allowlisted spec`);
+  const entryToken = migrationSpec.entryToken;
+  const oldReceiptSha256 = migrationSpec.oldReceiptSha256;
   const root = mkdtempSync(join(tmpdir(), "verify-exam-corpus-migration-"));
   const dataDir = join(root, "data");
-  const stateDir = join(dataDir, "import-exam-corpus", migrationEntryToken);
-  const sourceState = join(migrationSourceData, "import-exam-corpus", migrationEntryToken);
+  const stateDir = join(dataDir, "import-exam-corpus", entryToken);
+  const sourceState = join(migrationSourceData, "import-exam-corpus", entryToken);
   mkdirSync(join(dataDir, "import-exam-corpus"), { recursive: true });
   cpSync(sourceState, stateDir, { recursive: true });
   mkdirSync(join(dataDir, "files", "corpus"), { recursive: true });
   cpSync(
-    join(migrationSourceData, "files", "corpus", migrationEntryToken),
-    join(dataDir, "files", "corpus", migrationEntryToken),
+    join(migrationSourceData, "files", "corpus", entryToken),
+    join(dataDir, "files", "corpus", entryToken),
     { recursive: true },
   );
   const sourcePlanDir = join(stateDir, "migration-plans");
@@ -690,7 +692,7 @@ async function migratedVerifierFixture(): Promise<{
     cpSync(sourceBackup, targetBackup);
     cpSync(sourceBackup, join(dataDir, "studywork.db"));
     const history = JSON.parse(readFileSync(
-      join(stateDir, "receipt-history", `v1-${migrationOldReceiptSha}.json`), "utf8",
+      join(stateDir, "receipt-history", `v1-${oldReceiptSha256}.json`), "utf8",
     ));
     writeEvidence(join(stateDir, "receipt.json"), history.receipt.value);
     rmSync(join(stateDir, "migration-commits"), { recursive: true, force: true });
@@ -702,23 +704,27 @@ async function migratedVerifierFixture(): Promise<{
     } finally {
       source.close();
     }
-    expect(hash(readFileSync(join(stateDir, "receipt.json")))).toBe(migrationOldReceiptSha);
+    expect(hash(readFileSync(join(stateDir, "receipt.json")))).toBe(oldReceiptSha256);
   }
   await execFileP(process.execPath, [
     "--import", "tsx", "scripts/import-exam-corpus.ts",
     "--manifest", "data/ebsi-exam-manifest.json",
     "--data-dir", dataDir,
     "--commit",
-    "--migrate-existing", migrationEntryId,
-    "--expect-receipt-sha256", migrationOldReceiptSha,
-  ], { cwd: migrationRepository, timeout: 60_000 });
+    "--migrate-existing", entryId,
+    "--expect-receipt-sha256", oldReceiptSha256,
+  ], {
+    cwd: migrationRepository,
+    timeout: 60_000,
+    env: { ...process.env, STUDYWORK_CODEX_BIN: "/usr/bin/false" },
+  });
 
   const dbPath = join(dataDir, "studywork.db");
   const db = new Database(dbPath);
   try {
-    db.prepare(
-      "DELETE FROM book_files WHERE r2_key LIKE 'corpus/%' AND id NOT IN (148, 149, 150, 151)",
-    ).run();
+    const placeholders = migrationSpec.fileIds.map(() => "?").join(", ");
+    db.prepare(`DELETE FROM book_files WHERE r2_key LIKE 'corpus/%' AND id NOT IN (${placeholders})`)
+      .run(...migrationSpec.fileIds);
   } finally {
     db.close();
   }
@@ -726,7 +732,7 @@ async function migratedVerifierFixture(): Promise<{
   const manifestPath = join(dataDir, "single-migration-manifest.json");
   writeEvidence(manifestPath, {
     schemaVersion: 2,
-    entries: sourceManifest.entries.filter((entry: { id: string }) => entry.id === migrationEntryId),
+    entries: sourceManifest.entries.filter((entry: { id: string }) => entry.id === entryId),
   });
   const planName = readdirSync(join(stateDir, "migration-plans"))
     .find((name) => /^v1-[a-f0-9]{64}\.json$/u.test(name))!;
@@ -8770,7 +8776,7 @@ function rewriteProblemRepairAuthority(
 describe("exam corpus verifier", () => {
   it("keeps the exact existing-corpus migration allowlist aligned with the importer", () => {
     expect(existingCorpusMigrationAllowlistFingerprint())
-      .toBe("0abbd09ef538608e0fab27420f07281d7d29a8c88fff6a7148ce28222561a98f");
+      .toBe("69eff851d2ed87d7a9f1b9873a630df0fb523417b66a326164e1c1949548be32");
     expect(existingCorpusMigrationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(EXISTING_CORPUS_MIGRATION_ALLOWLIST));
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.map((spec) => spec.entryId)).toEqual([
@@ -8778,9 +8784,26 @@ describe("exam corpus verifier", () => {
       "ebsi:5734412",
       "ebsi:5696440",
       "ebsi:5854175",
+      "ebsi:5525983",
+      "ebsi:5578422",
+      "ebsi:5853840",
+      "ebsi:5853841",
+      "ebsi:5642949",
+      "ebsi:5642950",
+      "ebsi:5734413",
     ]);
-    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.slice(1).every((spec) =>
-      spec.newKeys.length === 0 && spec.newQuestions.length === 0)).toBe(true);
+    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.filter((spec) =>
+      spec.entryId !== "ebsi:5695028" && spec.entryId !== "ebsi:5853841"
+    ).every((spec) => spec.newKeys.length === 0 && spec.newQuestions.length === 0)).toBe(true);
+    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((spec) => spec.entryId === "ebsi:5853841"))
+      .toMatchObject({
+        newKeys: ["1:2"],
+        newQuestions: [expect.objectContaining({
+          key: "1:2",
+          targetSubject: "수학 - 수학Ⅰ·대수",
+          answer: "①",
+        })],
+      });
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.some((spec) => spec.entryId === "ebsi:5656592"))
       .toBe(false);
   });
@@ -8895,6 +8918,130 @@ describe("exam corpus verifier", () => {
           message: expect.stringContaining("stable projection"),
         }),
       ]));
+    } finally {
+      rmSync(files.root, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("verifies the completed 5853841 count-changing migration and stable replay", async () => {
+    const entryId = "ebsi:5853841";
+    const spec = EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((candidate) => candidate.entryId === entryId)!;
+    const files = await migratedVerifierFixture(entryId);
+    const verify = () => verifyExamCorpus({
+      manifestPath: files.manifestPath,
+      dbPath: files.dbPath,
+      dataDir: files.dataDir,
+    });
+    try {
+      expect(files.plan.identity).toMatchObject({
+        beforeProjectionHash: spec.beforeProjectionHash,
+        afterProjectionHash: spec.afterProjectionHash,
+        stableAfterProjectionHash: "1f8a27732840bb54f25f177769f0837c73533156c58ce930d690946585e0fe53",
+        afterSequences: { questions: 3529, bookItems: 7589 },
+      });
+      expect(files.plan.identity.operations.questionUpdates).toHaveLength(8);
+      expect(files.plan.identity.operations.itemUpdates).toHaveLength(16);
+      expect(files.plan.identity.operations.questionInserts).toHaveLength(1);
+      expect(files.plan.identity.operations.itemInserts).toHaveLength(2);
+      expect(files.plan.identity.operations.questionInserts[0].after).toMatchObject({
+        id: 3529,
+        src_page: 1,
+        printed_number: "2",
+        question: "$\\sqrt{4}\\times\\sqrt[3]{8}$의 값은? [2점]",
+        answer: "①",
+      });
+      expect(files.plan.identity.operations.itemInserts.map(
+        (item: { after: { id: number } }) => item.after.id,
+      )).toEqual([7588, 7589]);
+      expect(verify(), JSON.stringify(verify().failures, null, 2))
+        .toMatchObject({ ok: true, failureCount: 0, questions: { expected: 9, actual: 9 } });
+
+      let db = new Database(files.dbPath);
+      try {
+        expect(db.prepare(
+          "SELECT id, printed_number, src_page, answer FROM questions WHERE id = 3529",
+        ).get()).toEqual({ id: 3529, printed_number: "2", src_page: 1, answer: "①" });
+        expect((db.prepare("SELECT id FROM book_items WHERE id IN (7588, 7589) ORDER BY id")
+          .all() as Array<{ id: number }>).map((row) => row.id)).toEqual([7588, 7589]);
+        db.prepare(
+          "UPDATE questions SET correct_count = 4, wrong_count = 3, from_wrong_note = 1 WHERE id = 3529",
+        ).run();
+        db.prepare(
+          "INSERT INTO question_attempts (question_id, attempt_id, correct) VALUES (3529, 'verify-5853841', 1)",
+        ).run();
+      } finally {
+        db.close();
+      }
+
+      const explicit = await execFileP(process.execPath, [
+        "--import", "tsx", "scripts/import-exam-corpus.ts",
+        "--manifest", "data/ebsi-exam-manifest.json",
+        "--data-dir", files.dataDir,
+        "--commit",
+        "--migrate-existing", entryId,
+        "--expect-receipt-sha256", spec.oldReceiptSha256,
+      ], {
+        cwd: migrationRepository,
+        timeout: 60_000,
+        env: { ...process.env, STUDYWORK_CODEX_BIN: "/usr/bin/false" },
+      });
+      expect(explicit.stdout).toContain("existing ebsi:5853841 9");
+      const normal = await execFileP(process.execPath, [
+        "--import", "tsx", "scripts/import-exam-corpus.ts",
+        "--manifest", files.manifestPath,
+        "--data-dir", files.dataDir,
+        "--commit",
+      ], {
+        cwd: migrationRepository,
+        timeout: 60_000,
+        env: { ...process.env, STUDYWORK_CODEX_BIN: "/usr/bin/false" },
+      });
+      expect(normal.stdout).toContain("existing ebsi:5853841 9");
+      expect(verify()).toMatchObject({ ok: true, failureCount: 0 });
+      db = new Database(files.dbPath, { readonly: true });
+      try {
+        expect(db.prepare(
+          "SELECT correct_count, wrong_count, from_wrong_note FROM questions WHERE id = 3529",
+        ).get()).toEqual({ correct_count: 4, wrong_count: 3, from_wrong_note: 1 });
+        expect((db.prepare(
+          "SELECT COUNT(*) AS count FROM question_attempts WHERE attempt_id = 'verify-5853841'",
+        ).get() as { count: number }).count).toBe(1);
+      } finally {
+        db.close();
+      }
+
+      const originalPlan = readFileSync(files.planPath);
+      const tamperedPlan = structuredClone(files.plan);
+      tamperedPlan.identity.operations.questionInserts[0].after.question = "tampered inserted question";
+      writeEvidence(files.planPath, tamperedPlan);
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "MIGRATION_INVALID" }),
+      ]));
+      writeFileSync(files.planPath, originalPlan);
+    } finally {
+      rmSync(files.root, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("verifies one completed same-key migration from the expanded allowlist", async () => {
+    const files = await migratedVerifierFixture("ebsi:5734413");
+    try {
+      expect(files.plan.identity.operations.questionUpdates).toHaveLength(12);
+      expect(files.plan.identity.operations.itemUpdates).toHaveLength(24);
+      expect(files.plan.identity.operations.questionInserts).toHaveLength(0);
+      expect(files.plan.identity.operations.itemInserts).toHaveLength(0);
+      expect(files.plan.identity).toMatchObject({
+        beforeProjectionHash: "8f5e2071cc49d696ec04506774a702fcaf86c3b29bd7053a01c8c4a6a398c2aa",
+        afterProjectionHash: "cfc32af3a65c21749b53dc1ca1e8ac85233a9387bb5f5b607269e655ae39d425",
+        stableAfterProjectionHash: "26dc5162061716a98b85a3d22468a0c92c3d897d95eaa11b39c26cc2878acb1e",
+      });
+      const report = verifyExamCorpus({
+        manifestPath: files.manifestPath,
+        dbPath: files.dbPath,
+        dataDir: files.dataDir,
+      });
+      expect(report, JSON.stringify(report.failures, null, 2))
+        .toMatchObject({ ok: true, failureCount: 0, questions: { expected: 12, actual: 12 } });
     } finally {
       rmSync(files.root, { recursive: true, force: true });
     }
