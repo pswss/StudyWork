@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   unlinkSync,
   writeFileSync,
@@ -24,9 +25,12 @@ import {
   CLASSIFIER_DIGEST,
   CLASSIFIER_VERSION,
   PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST,
+  PROBLEM_MANUAL_REVISION_ALLOWLIST,
   TRANSCRIPTION_GATE_VERSION,
   TRANSCRIPTION_PROMPT_DIGEST,
   applyAllowlistedProblemManualCorrection,
+  applyAllowlistedProblemManualRevision,
+  assertProblemManualAdjudicationAuthority,
   canonicalEvidenceHash,
   parseCorpusManifest,
   repairAndAuditOfficialAnswers,
@@ -116,6 +120,11 @@ const cases = [{
 
 const available = cases.every((item) => existsSync(item.path));
 const itemAt = (index: number): QuizItemEx => JSON.parse(readFileSync(cases[index].path, "utf8")).item;
+const q30ManualProblemPath = join(
+  process.cwd(),
+  "data/import-exam-corpus/f914a5cf8d2237d6c9319e23/" +
+    "problem-manual-adjudications/v1-0012-0030-9160f0b6d43731cf2e42b1cfeb87067a4df0be2b12adae2946f12c560f1a9f64.json"
+);
 
 const recoveryCases = [{
   index: 1,
@@ -129,6 +138,11 @@ const recoveryCases = [{
   pageCount: 16,
   finalAnchor: "가로선은 총 2개",
   expectedDecision: "accept",
+  manualRevisionClassificationPath: join(
+    process.cwd(),
+    "data/import-exam-corpus/f914a5cf8d2237d6c9319e23/" +
+      "classification-manual-adjudications/v1-0012-0030-2415dd634f5b3bde1fa8113d4e6d2f6900a418dcc2d37da64067839a1ff2c9ae-7bb7cb863c8c4855.json"
+  ),
 }, {
   index: 2,
   stateDir: join(process.cwd(), "data/import-exam-corpus/7755c70fefaa45f755086e2b"),
@@ -199,7 +213,8 @@ const recoveryCases = [{
 
 const recoveryCasesAvailable = recoveryCases.every((item) =>
   existsSync(join(item.stateDir, "problem.pdf")) && existsSync(join(item.stateDir, "entry.json")) &&
-  existsSync(item.classificationPath) && existsSync(cases[item.index].path)
+  existsSync(item.classificationPath) && existsSync(cases[item.index].path) &&
+  (!("manualRevisionClassificationPath" in item) || existsSync(item.manualRevisionClassificationPath))
 );
 
 async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
@@ -244,6 +259,9 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
   const exhaustedClassification = JSON.parse(
     readFileSync(testCase.classificationPath, "utf8")
   ).items[0] as ClassificationDecision;
+  const failedManualClassification = "manualRevisionClassificationPath" in testCase
+    ? JSON.parse(readFileSync(testCase.manualRevisionClassificationPath, "utf8")).items[0] as ClassificationDecision
+    : null;
   const targetNumber = Number(exhausted.number);
   const targetKey = `${exhausted.page}:${targetNumber}`;
   const questions: QuizItemEx[] = Array.from({ length: testCase.questionCount }, (_, index) => {
@@ -346,6 +364,7 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
   });
 
   const calls = { extraction: 0, classification: 0, terminal: 0, solution: 0, solutionRepair: 0, semantic: 0 };
+  let resumingManualRevision = false;
   providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
     if (request.schema?.name === "studywork_file_quiz_items") {
       calls.extraction++;
@@ -357,7 +376,26 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
     if (request.schema?.name === "studywork_exam_corpus_classification") {
       calls.classification++;
       const inputs = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{ question: string }>;
+      if (failedManualClassification && resumingManualRevision) {
+        expect(inputs).toHaveLength(1);
+        expect(inputs[0].question).toContain("그리고 단순 명제 ‘$p$’와 ‘$q$’는 ‘만약 …이면 …이다.’");
+        expect(request.prompt).not.toContain(failedManualClassification.transcription_evidence);
+        return { text: JSON.stringify([targetDecision(
+          exhausted,
+          "exact",
+          "공식 11쪽 pixels와 조사 ‘는’을 포함해 전체 문항이 일치한다."
+        )]) };
+      }
       if (calls.classification === 3) return { text: JSON.stringify([exhaustedClassification]) };
+      if (failedManualClassification && calls.classification === 4) {
+        expect(inputs[0].question).toContain("그리고 단순 명제 ‘$p$’와 ‘$q$’를 ‘만약 …이면 …이다.’");
+        return { text: JSON.stringify([failedManualClassification]) };
+      }
+      if (failedManualClassification && calls.classification === 5) {
+        expect(inputs[0].question).toContain("그리고 단순 명제 ‘$p$’와 ‘$q$’는 ‘만약 …이면 …이다.’");
+        expect(request.prompt).not.toContain(failedManualClassification.transcription_evidence);
+        throw new Error("seeded Q30 manual revision crash");
+      }
       return { text: JSON.stringify([targetDecision(
         exhausted,
         calls.classification === 1 ? "mismatch" : "exact",
@@ -424,6 +462,29 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
     throw new Error(`unexpected schema ${request.schema?.name}`);
   });
 
+  if (failedManualClassification) {
+    await expect(repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions))
+      .rejects.toThrow("seeded Q30 manual revision crash");
+    expect(calls).toMatchObject({
+      extraction: 3,
+      classification: 5,
+      solution: 0,
+      solutionRepair: 0,
+      semantic: 0,
+    });
+    expect(calls.terminal).toBeGreaterThan(0);
+    expect(readdirSync(join(root, "problem-manual-revisions"))).toHaveLength(1);
+    expect(existsSync(join(root, "classification-manual-revisions"))).toBe(false);
+    resumingManualRevision = true;
+    Object.assign(calls, {
+      extraction: 0,
+      classification: 0,
+      terminal: 0,
+      solution: 0,
+      solutionRepair: 0,
+      semantic: 0,
+    });
+  }
   const result = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
   const repair = result.repairs.find((item) => item.key === targetKey)!;
   const manual = repair.revision!.recovery!.manualAdjudication!;
@@ -434,6 +495,32 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
     problemArtifact: { path: expect.stringMatching(/^problem-manual-adjudications\/v1-/u) },
     classificationArtifact: { path: expect.stringMatching(/^classification-manual-adjudications\/v1-/u) },
   });
+  if (failedManualClassification) {
+    expect(manual.revision).toMatchObject({
+      allowlistId: "ebsi-5578421-q30-manual-revision-v1",
+      failedQuestionHash: "08ac10119b14fcad17f0d4f8f988198d8049d2d06d19b3b16cfd4d805e4ba010",
+      failedClassificationHash: "b9134b6b9fd3cd9e274bd4883f370dd794f1c5f0d2e7d573d1d2b949dcff9ff7",
+      failedClassificationEvidenceHash: "e96fd127cbadd152281d8bf436e2052d15863abdf208b06af9c650e68b3c6c13",
+      problemArtifact: { path: expect.stringMatching(/^problem-manual-revisions\/v1-/u) },
+      classificationArtifact: { path: expect.stringMatching(/^classification-manual-revisions\/v1-/u) },
+    });
+    expect(result.classified.find((item) => item.classification.key === targetKey)?.question.question)
+      .toContain("그리고 단순 명제 ‘$p$’와 ‘$q$’는 ‘만약 …이면 …이다.’");
+    expect(calls).toMatchObject({ extraction: 0, classification: 1, terminal: 1, solution: 1 });
+    const terminalKeys = result.problemTerminalFidelityItems.map((item) => item.key);
+    expect(terminalKeys).toHaveLength(testCase.questionCount);
+    expect(new Set(terminalKeys).size).toBe(testCase.questionCount);
+    expect(result.problemTerminalFidelityItems.find((item) => item.key === targetKey)).toMatchObject({
+      status: "exact",
+      scopeDecision: "accept",
+    });
+    const persistedTerminalKeys = result.problemTerminalFidelityCheckpoints.flatMap((pointer) => {
+      const checkpoint = JSON.parse(readFileSync(join(root, pointer.path), "utf8"));
+      expect(checkpoint.inputs).toHaveLength(checkpoint.items.length);
+      return checkpoint.items.map((item: { key: string }) => item.key) as string[];
+    });
+    expect(new Set(persistedTerminalKeys).size).toBe(testCase.questionCount);
+  }
   expect(result.classified.find((item) => item.classification.key === targetKey)).toMatchObject({
     question: { figure_description: expect.stringContaining(testCase.finalAnchor) },
     classification: {
@@ -479,6 +566,38 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
   const replay = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
   expect(calls).toEqual(beforeReplay);
   expect(replay.auditHash).toBe(result.auditHash);
+
+  if (manual.revision) {
+    const revisionClassificationPath = join(root, manual.revision.classificationArtifact.path);
+    const revisionClassificationBytes = readFileSync(revisionClassificationPath);
+    unlinkSync(revisionClassificationPath);
+    const beforeRevisionResume = { ...calls };
+    const revisionResumed = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
+    expect(calls).toEqual({ ...beforeRevisionResume, classification: beforeRevisionResume.classification + 1 });
+    expect(readFileSync(revisionClassificationPath)).toEqual(revisionClassificationBytes);
+    expect(revisionResumed.auditHash).toBe(result.auditHash);
+
+    const tamperedRevision = JSON.parse(revisionClassificationBytes.toString("utf8"));
+    tamperedRevision.unexpected = true;
+    writeJson(revisionClassificationPath, tamperedRevision);
+    const beforeRevisionTamper = { ...calls };
+    await expect(repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions))
+      .rejects.toThrow(/classification manual revision|exact envelope|manual revision classification/u);
+    expect(calls).toEqual(beforeRevisionTamper);
+    writeFileSync(revisionClassificationPath, revisionClassificationBytes);
+
+    const extraChildRepairs = structuredClone(result.repairs);
+    const extraChild = extraChildRepairs.find((item) => item.key === targetKey)!
+      .revision!.recovery!.manualAdjudication!.revision! as unknown as Record<string, unknown>;
+    extraChild.revision = {
+      problemArtifact: manual.revision.problemArtifact,
+      classificationArtifact: manual.revision.classificationArtifact,
+    };
+    const beforeExtraChild = { ...calls };
+    await expect(assertProblemManualAdjudicationAuthority(root, extraChildRepairs))
+      .rejects.toThrow(/classification manual revision checkpoint/u);
+    expect(calls).toEqual(beforeExtraChild);
+  }
 
   const checkpointPath = join(root, manual.cropEvidenceArtifact.path);
   const checkpointBytes = readFileSync(checkpointPath);
@@ -561,6 +680,39 @@ describe("exact allowlisted problem manual adjudication", () => {
       parentKind: "recovery",
       failedQuestionHash: "59b3c10380338bed7ed9fcdcdf746d30cccddff38cce54d0c98c7b9fa4722bfb",
     }]);
+  });
+
+  it.skipIf(!existsSync(q30ManualProblemPath))("pins and applies the one-character Q30 nested manual revision", () => {
+    expect(PROBLEM_MANUAL_REVISION_ALLOWLIST).toEqual([expect.objectContaining({
+      allowlistId: "ebsi-5578421-q30-manual-revision-v1",
+      parentAllowlistId: "ebsi-5578421-q30-manual-v1",
+      entryId: "ebsi:5578421",
+      key: "12:30",
+      sourcePage: 12,
+      sourceHash: cases[1].sourceHash,
+      failedQuestionHash: "08ac10119b14fcad17f0d4f8f988198d8049d2d06d19b3b16cfd4d805e4ba010",
+      failedClassificationHash: "b9134b6b9fd3cd9e274bd4883f370dd794f1c5f0d2e7d573d1d2b949dcff9ff7",
+      failedClassificationEvidenceHash: "e96fd127cbadd152281d8bf436e2052d15863abdf208b06af9c650e68b3c6c13",
+      expectedDecision: "accept",
+      expectedCanonicalSubject: "korean_reading",
+    })]);
+    const parent = JSON.parse(readFileSync(q30ManualProblemPath, "utf8")).item as QuizItemEx;
+    expect(canonicalEvidenceHash(parent)).toBe(PROBLEM_MANUAL_REVISION_ALLOWLIST[0].failedQuestionHash);
+    const revised = applyAllowlistedProblemManualRevision(
+      "ebsi:5578421",
+      cases[1].sourceHash,
+      "ebsi-5578421-q30-manual-v1",
+      parent
+    );
+    expect(revised).toEqual({
+      ...parent,
+      question: parent.question.replace(
+        "그리고 단순 명제 ‘$p$’와 ‘$q$’를 ‘만약 …이면 …이다.’에 해당하는 논리적 연결사",
+        "그리고 단순 명제 ‘$p$’와 ‘$q$’는 ‘만약 …이면 …이다.’에 해당하는 논리적 연결사"
+      ),
+    });
+    expect(revised.question.match(/‘\$p\$’와 ‘\$q\$’는 ‘만약/gu)).toHaveLength(1);
+    expect(revised.question).not.toContain("‘$p$’와 ‘$q$’를 ‘만약");
   });
 
   it.skipIf(!available)("applies the exhaustive Q34 literal correction to the pinned crop child", () => {
@@ -671,4 +823,5 @@ describe("exact allowlisted problem manual adjudication", () => {
       90_000
     );
   }
+
 });

@@ -45,6 +45,7 @@ import {
   compareCorpusQuestionKeys,
   existingCorpusMigrationAllowlistFingerprint,
   manualAdjudicationAllowlistFingerprint,
+  manualRevisionAllowlistFingerprint,
   officialAnswerForDb,
   positiveRepairScopeAdjudicationAllowlistFingerprint,
   repairScopeAdjudicationAllowlistFingerprint,
@@ -58,12 +59,16 @@ import {
 } from "../scripts/verify-exam-corpus";
 import {
   applyAllowlistedProblemManualCorrection,
+  applyAllowlistedProblemManualRevision,
   auditAcceptedSolutions,
   EXISTING_CORPUS_MIGRATION_ALLOWLIST,
   parseCorpusManifest,
   PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST,
   PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST,
   PROBLEM_MANUAL_CORRECTION_DIGEST,
+  PROBLEM_MANUAL_REVISION_ALLOWLIST,
+  PROBLEM_MANUAL_REVISION_CORRECTION_DIGEST,
+  PROBLEM_MANUAL_REVISION_PROMPT_DIGEST,
   PROBLEM_REPAIR_SCOPE_ADJUDICATION_ALLOWLIST,
   PROBLEM_REPAIR_SCOPE_ADJUDICATION_PROMPT_DIGEST,
   PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_ALLOWLIST,
@@ -175,6 +180,8 @@ const Q29_OFFICIAL_PROBLEM_PATH = join(
 const Q30_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/f914a5cf8d2237d6c9319e23");
 const Q30_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5578421" && spec.key === "12:30")!;
+const Q30_MANUAL_REVISION_SPEC = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((spec) =>
+  spec.entryId === "ebsi:5578421" && spec.key === "12:30")!;
 const Q30_FAILED_PROBLEM_PATH = join(
   Q30_MANUAL_STATE,
   "problem-recoveries/v1-0012-0030-20741052441e79627764f61577085ececd18660f475b4a29a4860b98175ef1d7.json",
@@ -182,6 +189,12 @@ const Q30_FAILED_PROBLEM_PATH = join(
 const Q30_FAILED_CLASSIFICATION_PATH = join(
   Q30_MANUAL_STATE,
   "classification-recoveries/v1-0012-0030-7cc21907e44db72c61eb6a182cdd540f771bbc0efab4cae799c5bd681b53819c-7bb7cb863c8c4855.json",
+);
+const Q30_PARENT_MANUAL_CLASSIFICATION_PATH = join(
+  Q30_MANUAL_STATE,
+  "classification-manual-adjudications/" +
+    "v1-0012-0030-2415dd634f5b3bde1fa8113d4e6d2f6900a418dcc2d37da64067839a1ff2c9ae-" +
+    "7bb7cb863c8c4855.json",
 );
 const Q18_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/714fd4581f778a9c559fd16e");
 const Q18_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
@@ -1778,8 +1791,8 @@ function prepareManualFixture(
   writeJson(receiptPath, receipt);
 }
 
-function prepareQ30ManualFixture(files: ReturnType<typeof fixture>): void {
-  prepareManualFixture(files, "korean", Q30_MANUAL_SPEC, Q30_MANUAL_STATE);
+function prepareQ30ManualFixture(files: ReturnType<typeof fixture>, copyOfficialSolution = false): void {
+  prepareManualFixture(files, "korean", Q30_MANUAL_SPEC, Q30_MANUAL_STATE, copyOfficialSolution);
 }
 
 function targetForCanonical(canonical: string): Target {
@@ -2458,6 +2471,8 @@ function upgradeEntryToV3(
     repairScopeAdjudication?: boolean;
     manualAdjudication?: boolean;
     manualAdjudicationKey?: string;
+    manualRevision?: boolean;
+    manualRevisionInvalidDecision?: boolean;
     manualInvalidDecision?: boolean;
     manualSolutionRepair?: boolean;
     difficultyRepair?: boolean;
@@ -2489,6 +2504,8 @@ function upgradeEntryToV3(
   manualViewArtifacts?: string[];
   problemManualAdjudicationArtifact?: string;
   classificationManualAdjudicationArtifact?: string;
+  problemManualRevisionArtifact?: string;
+  classificationManualRevisionArtifact?: string;
   solutionRepairArtifact?: string;
   solutionRepairFidelityArtifact?: string;
   semanticArtifact?: string;
@@ -2519,9 +2536,17 @@ function upgradeEntryToV3(
           && (options.manualAdjudicationKey === undefined || spec.key === options.manualAdjudicationKey))
     : [];
   const manualSpec = manualSpecs.length === 1 ? manualSpecs[0] : undefined;
+  const manualRevisionSpec = options.manualRevision
+    ? PROBLEM_MANUAL_REVISION_ALLOWLIST.find((spec) =>
+        spec.entryId === entry.id && spec.key === manualSpec?.key &&
+        spec.parentAllowlistId === manualSpec?.allowlistId)
+    : undefined;
   const manualFailedArtifacts = manualSpec && MANUAL_FAILED_ARTIFACTS.get(manualSpec.allowlistId);
   if (options.manualAdjudication && (!manualSpec || !manualFailedArtifacts)) {
     throw new Error("manual adjudication fixture requires an exact supported entry");
+  }
+  if (options.manualRevision && (!manualRevisionSpec || !existsSync(Q30_PARENT_MANUAL_CLASSIFICATION_PATH))) {
+    throw new Error("manual revision fixture requires the exact Q30 parent authority");
   }
   if (options.manualSolutionRepair && manualSpec?.allowlistId !== Q43_MANUAL_SPEC.allowlistId) {
     throw new Error("manual solution repair fixture requires the exact Q43 allowlist");
@@ -2612,9 +2637,12 @@ function upgradeEntryToV3(
       confidence: 0.99,
     });
   }
-  if (manualSpec?.expectedDecision === "accept") {
+  if ((manualRevisionSpec?.expectedDecision ?? manualSpec?.expectedDecision) === "accept") {
     for (const [index, item] of classification.items.entries()) {
-      if ((!options.manualSolutionRepair && index !== 0) || index === recoveryTargetNumber - 1) continue;
+      const preserve = options.manualRevision
+        ? index === recoveryTargetNumber - 1
+        : (!options.manualSolutionRepair && index !== 0) || index === recoveryTargetNumber - 1;
+      if (preserve) continue;
       Object.assign(item, {
         decision: "reject",
         canonical_subject: null,
@@ -2626,7 +2654,7 @@ function upgradeEntryToV3(
         transcription_evidence: "the literal source transcription is exact and outside the selected scope",
       });
     }
-    if (!options.manualSolutionRepair) {
+    if (!options.manualSolutionRepair && !options.manualRevision) {
       const solutionPath = join(stateDir, "solution-chunks", "v3-0000.json");
       const solutionCheckpoint = JSON.parse(readFileSync(solutionPath, "utf8"));
       solutionCheckpoint.items[recoveryTargetNumber - 1] = {
@@ -2697,6 +2725,8 @@ function upgradeEntryToV3(
   let manualViewArtifacts: string[] | undefined;
   let problemManualAdjudicationArtifact: string | undefined;
   let classificationManualAdjudicationArtifact: string | undefined;
+  let problemManualRevisionArtifact: string | undefined;
+  let classificationManualRevisionArtifact: string | undefined;
   if (repairNumbers.length > 0) {
     const baseProblemCheckpoint = {
       path: `problem-chunks/${problemName}`,
@@ -3847,7 +3877,7 @@ function upgradeEntryToV3(
         };
         const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
         const expectedAccept = manualSpec.expectedDecision === "accept";
-        const finalClassification = {
+        const generatedClassification = {
           ...recoveredClassification,
           ...(options.manualInvalidDecision ? {
             ...(expectedAccept ? {
@@ -3883,6 +3913,17 @@ function upgradeEntryToV3(
           transcription_status: "exact",
           transcription_evidence: "all ordered manual evidence views match the corrected literal item exactly",
         };
+        const finalClassification = manualRevisionSpec
+          ? structuredClone(JSON.parse(
+              readFileSync(Q30_PARENT_MANUAL_CLASSIFICATION_PATH, "utf8"),
+            ).items[0])
+          : generatedClassification;
+        if (manualRevisionSpec) {
+          expect(canonicalEvidenceHash(correctedQuestion)).toBe(manualRevisionSpec.failedQuestionHash);
+          expect(canonicalEvidenceHash(finalClassification)).toBe(manualRevisionSpec.failedClassificationHash);
+          expect(hash(finalClassification.transcription_evidence))
+            .toBe(manualRevisionSpec.failedClassificationEvidenceHash);
+        }
         const finalClassificationHash = canonicalEvidenceHash(finalClassification);
         const classificationRelativePath = `classification-manual-adjudications/v1-` +
           `${String(recoveryTargetPage).padStart(4, "0")}-` +
@@ -3939,8 +3980,156 @@ function upgradeEntryToV3(
           baseClassificationHash: manualSpec.failedClassificationHash,
           effectiveClassificationHash: finalClassificationHash,
         };
-        terminalQuestion = correctedQuestion;
-        terminalClassification = finalClassification;
+        if (manualRevisionSpec) {
+          const parentManual = parentRecovery.manualAdjudication as Record<string, any>;
+          const revisionCorrectionSpecHash = canonicalEvidenceHash({
+            allowlistId: manualRevisionSpec.allowlistId,
+            parentAllowlistId: manualRevisionSpec.parentAllowlistId,
+            replacement: manualRevisionSpec.replacement,
+            requiredTokens: manualRevisionSpec.requiredTokens,
+            expectedDecision: manualRevisionSpec.expectedDecision,
+            expectedCanonicalSubject: manualRevisionSpec.expectedCanonicalSubject,
+          });
+          const revisionCommonBasis = {
+            allowlistId: manualRevisionSpec.allowlistId,
+            parentAllowlistId: manualRevisionSpec.parentAllowlistId,
+            entryId: entry.id,
+            key: targetKey,
+            printedNumber: String(recoveryTargetNumber),
+            sourcePage: recoveryTargetPage,
+            sourceHash: downloads.problem.sha256,
+            parentManual,
+            parentManualEvidenceHash: canonicalEvidenceHash(parentManual),
+            parentProblemArtifact: problemPointer,
+            parentProblemArtifactItemHash: correctedQuestionHash,
+            parentClassificationArtifact: {
+              path: classificationRelativePath,
+              sha256: classificationHash,
+            },
+            parentClassificationArtifactItemHash: finalClassificationHash,
+            failedQuestionHash: manualRevisionSpec.failedQuestionHash,
+            failedClassificationHash: manualRevisionSpec.failedClassificationHash,
+            failedClassificationEvidenceHash: manualRevisionSpec.failedClassificationEvidenceHash,
+            correctionSpecHash: revisionCorrectionSpecHash,
+            cropEvidenceArtifact: evidencePointer,
+            cropEvidencePdf: pdfPointer,
+            cropViews,
+          };
+          const revisionBasisDigest = canonicalEvidenceHash(revisionCommonBasis);
+          const revisionStem = `v1-${String(recoveryTargetPage).padStart(4, "0")}-` +
+            `${String(recoveryTargetNumber).padStart(4, "0")}-${revisionBasisDigest}`;
+          const revisionQuestion = applyAllowlistedProblemManualRevision(
+            entry.id,
+            downloads.problem.sha256,
+            manualSpec.allowlistId,
+            correctedQuestion,
+          );
+          const revisionQuestionHash = canonicalEvidenceHash(revisionQuestion);
+          const revisionProblemRelativePath = `problem-manual-revisions/${revisionStem}.json`;
+          problemManualRevisionArtifact = join(stateDir, revisionProblemRelativePath);
+          const revisionProblemHash = writeEvidence(problemManualRevisionArtifact, {
+            version: 1,
+            entryId: entry.id,
+            basisDigest: revisionBasisDigest,
+            basis: revisionCommonBasis,
+            correctionVersion: 1,
+            correctionDigest: PROBLEM_MANUAL_REVISION_CORRECTION_DIGEST,
+            item: revisionQuestion,
+          });
+          const revisionProblemPointer = {
+            path: revisionProblemRelativePath,
+            sha256: revisionProblemHash,
+          };
+          const revisionClassificationBasis = {
+            ...revisionCommonBasis,
+            problemArtifact: revisionProblemPointer,
+            problemArtifactItemHash: revisionQuestionHash,
+            effectiveQuestionHash: revisionQuestionHash,
+          };
+          const revisionClassificationBasisDigest = canonicalEvidenceHash(revisionClassificationBasis);
+          const revisionClassification = {
+            ...finalClassification,
+            ...(options.manualRevisionInvalidDecision ? {
+              decision: "reject",
+              canonical_subject: null,
+              curriculum_course: null,
+              domain: null,
+              achievement_codes: [],
+              reason_codes: ["OUT_OF_SCOPE"],
+            } : {}),
+            transcription_status: "exact",
+            transcription_evidence: "all source pixels match the count-checked nested manual revision exactly",
+          };
+          const revisionClassificationHash = canonicalEvidenceHash(revisionClassification);
+          const revisionClassificationRelativePath = `classification-manual-revisions/` +
+            `v1-${String(recoveryTargetPage).padStart(4, "0")}-` +
+            `${String(recoveryTargetNumber).padStart(4, "0")}-` +
+            `${revisionClassificationBasisDigest}-${DIGEST}.json`;
+          classificationManualRevisionArtifact = join(stateDir, revisionClassificationRelativePath);
+          const revisionClassificationCheckpointHash = writeEvidence(
+            classificationManualRevisionArtifact,
+            {
+              version: 1,
+              entryId: entry.id,
+              basisDigest: revisionClassificationBasisDigest,
+              basis: revisionClassificationBasis,
+              classifierVersion: 5,
+              rulesDigest: DIGEST,
+              transcriptionGateVersion: 2,
+              transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+              revisionVersion: 1,
+              revisionPromptDigest: PROBLEM_MANUAL_REVISION_PROMPT_DIGEST,
+              model: "gpt-5.6-sol",
+              reasoningEffort: "high",
+              items: [revisionClassification],
+            },
+          );
+          parentManual.revision = {
+            allowlistId: manualRevisionSpec.allowlistId,
+            key: targetKey,
+            printedNumber: String(recoveryTargetNumber),
+            sourcePage: recoveryTargetPage,
+            sourceHash: downloads.problem.sha256,
+            parentManualEvidenceHash: canonicalEvidenceHash(parentManual),
+            parentProblemArtifact: problemPointer,
+            parentProblemArtifactItemHash: correctedQuestionHash,
+            parentClassificationArtifact: {
+              path: classificationRelativePath,
+              sha256: classificationHash,
+            },
+            parentClassificationArtifactItemHash: finalClassificationHash,
+            failedQuestionHash: manualRevisionSpec.failedQuestionHash,
+            failedClassificationHash: manualRevisionSpec.failedClassificationHash,
+            failedClassificationEvidenceHash: manualRevisionSpec.failedClassificationEvidenceHash,
+            correctionSpecHash: revisionCorrectionSpecHash,
+            problemArtifact: {
+              ...revisionProblemPointer,
+              correctionVersion: 1,
+              correctionDigest: PROBLEM_MANUAL_REVISION_CORRECTION_DIGEST,
+            },
+            problemArtifactItemHash: revisionQuestionHash,
+            classificationArtifact: {
+              path: revisionClassificationRelativePath,
+              sha256: revisionClassificationCheckpointHash,
+              rulesDigest: DIGEST,
+              transcriptionGateVersion: 2,
+              transcriptionPromptDigest: CURRENT_TRANSCRIPTION_PROMPT_DIGEST,
+              revisionVersion: 1,
+              revisionPromptDigest: PROBLEM_MANUAL_REVISION_PROMPT_DIGEST,
+            },
+            classificationArtifactItemHash: revisionClassificationHash,
+            baseQuestionHash: manualRevisionSpec.failedQuestionHash,
+            effectiveQuestionHash: revisionQuestionHash,
+            baseClassificationHash: manualRevisionSpec.failedClassificationHash,
+            effectiveClassificationHash: revisionClassificationHash,
+          };
+          terminalQuestion = revisionQuestion;
+          terminalClassification = revisionClassification;
+        }
+        if (!manualRevisionSpec) {
+          terminalQuestion = correctedQuestion;
+          terminalClassification = finalClassification;
+        }
       }
       if (options.scopeAdjudication) {
         const parentRecovery = (targetRepair.revision as Record<string, unknown>).recovery as Record<string, unknown>;
@@ -4533,7 +4722,10 @@ function upgradeEntryToV3(
     inputHash: terminalInputHash,
   }];
 
-  const manualAcceptedSolution = manualSpec?.expectedDecision === "accept" ? (() => {
+  const manualExpectedDecision = manualRevisionSpec?.expectedDecision ?? manualSpec?.expectedDecision;
+  const manualExpectedCanonicalSubject = manualRevisionSpec?.expectedCanonicalSubject
+    ?? manualSpec?.expectedCanonicalSubject;
+  const manualAcceptedSolution = manualExpectedDecision === "accept" ? (() => {
     const key = `${recoveryTargetPage}:${recoveryTargetNumber}`;
     const relativePath = "solution-chunks/v3-0000.json";
     const absolutePath = join(stateDir, relativePath);
@@ -4549,7 +4741,7 @@ function upgradeEntryToV3(
       key,
       printedNumber: String(recoveryTargetNumber),
       qtype: "mcq",
-      allowDerivedMarkerAnswer: Boolean(options.manualSolutionRepair && /^[①-⑩]$/u.test(solution.answer)),
+      allowDerivedMarkerAnswer: /^[①-⑩]$/u.test(solution.answer),
       sourcePage: solution.page,
       rawAnswer: solution.answer,
       explanation: solution.explanation,
@@ -4613,7 +4805,8 @@ function upgradeEntryToV3(
   const legacyAudit = JSON.parse(readFileSync(join(stateDir, "answer-audit", legacyAuditName), "utf8"));
   const fidelityPointerByLegacyPath = new Map<string, Record<string, unknown>>();
   const fidelityInputByKey = new Map<string, Record<string, unknown>>();
-  const officialSolutionContextTo = options.scopeAdjudication || options.manualSolutionRepair ? 5
+  const officialSolutionContextTo = options.scopeAdjudication || options.manualSolutionRepair
+    || options.manualRevision ? 5
     : options.repairScopeAdjudication || options.promptUpgrade ? 4 : undefined;
   const solutionFidelityCheckpoints = legacyAudit.solutionFidelityCheckpoints.map(
     (pointer: Record<string, unknown>) => {
@@ -4893,9 +5086,14 @@ function upgradeEntryToV3(
     }),
   ).sort((left: { key: string }, right: { key: string }) =>
     compareCorpusQuestionKeys(left.key, right.key)));
+  const manualMarkerMode = manualAcceptedSolution !== null
+    && /^[①-⑩]$/u.test(manualAcceptedSolution.solution.answer);
+  const manualSemanticEvidence = options.manualSolutionRepair
+    ? "both poems vary similar closing lines to emphasize their themes"
+    : "the official explanation establishes that choice 3 is the one inconsistent statement";
   const semanticCheckpoint = (() => {
-    if (legacyAudit.semanticCheckpoint === null && !positiveAcceptedSolution && !manualSolutionRepair) return null;
-    const child = manualSolutionRepair && manualAcceptedSolution !== null ? (() => {
+    if (legacyAudit.semanticCheckpoint === null && !positiveAcceptedSolution && !manualMarkerMode) return null;
+    const child = manualMarkerMode && manualAcceptedSolution !== null ? (() => {
       const inputs = [{
         key: manualAcceptedSolution.key,
         choices: effectiveProblems[recoveryTargetNumber - 1].choices,
@@ -4907,7 +5105,7 @@ function upgradeEntryToV3(
           key: manualAcceptedSolution.key,
           status: "resolved",
           choiceIndex: 3,
-          evidence: "both poems vary similar closing lines to emphasize their themes",
+          evidence: manualSemanticEvidence,
         }],
         inputHash: canonicalEvidenceHash(inputs),
       };
@@ -4979,12 +5177,12 @@ function upgradeEntryToV3(
       sourcePage: recoveryTargetPage,
       officialRawAnswerHash: hash(manualAcceptedSolution.solution.answer),
       storedAnswerHash: hash(manualAcceptedSolution.effectiveSolution.answer),
-      mode: manualSolutionRepair ? "choice-marker" : "choice-content",
+      mode: manualMarkerMode ? "choice-marker" : "choice-content",
       choiceIndex: 3,
-      semantic: manualSolutionRepair ? {
+      semantic: manualMarkerMode ? {
         status: "resolved",
         choiceIndex: 3,
-        evidence: "both poems vary similar closing lines to emphasize their themes",
+        evidence: manualSemanticEvidence,
       } : null,
     }]) as Array<Record<string, unknown>>;
   if (positiveAcceptedSolution) {
@@ -5005,6 +5203,7 @@ function upgradeEntryToV3(
     auditItems.sort((left, right) =>
       compareCorpusQuestionKeys(String(left.key), String(right.key)));
   }
+  const singleManualAcceptedProjection = Boolean(options.manualSolutionRepair || options.manualRevision);
   const auditBasis = {
     entryId: entry.id,
     problemHash: downloads.problem.sha256,
@@ -5022,14 +5221,14 @@ function upgradeEntryToV3(
     semanticChoiceVersion: options.answerV5 ? 5 : 4,
     semanticPromptDigest: options.answerV5 ? V5_SEMANTIC_PROMPT_DIGEST : CURRENT_SEMANTIC_PROMPT_DIGEST,
     sourceQuestionCount: legacyAudit.sourceQuestionCount,
-    acceptedQuestionCount: options.manualSolutionRepair
+    acceptedQuestionCount: singleManualAcceptedProjection
       ? 1 : legacyAudit.acceptedQuestionCount + (positiveAcceptedSolution ? 1 : 0),
-    rejectedQuestionCount: options.manualSolutionRepair
+    rejectedQuestionCount: singleManualAcceptedProjection
       ? legacyAudit.sourceQuestionCount - 1
       : legacyAudit.rejectedQuestionCount - (positiveAcceptedSolution ? 1 : 0),
     reviewQuestionCount: 0,
-    targetQuestionCounts: options.manualSolutionRepair ? {
-      [targetForCanonical(Q43_MANUAL_SPEC.expectedCanonicalSubject!)]: 1,
+    targetQuestionCounts: singleManualAcceptedProjection ? {
+      [targetForCanonical(manualExpectedCanonicalSubject!)]: 1,
     } : positiveAcceptedSolution ? {
       ...legacyAudit.targetQuestionCounts,
       "수학 - 수학Ⅱ·미적분Ⅰ": legacyAudit.targetQuestionCounts["수학 - 수학Ⅱ·미적분Ⅰ"] + 1,
@@ -5059,8 +5258,8 @@ function upgradeEntryToV3(
     ...auditBasis,
   });
   const receipt = JSON.parse(readFileSync(join(stateDir, "receipt.json"), "utf8"));
-  if (options.manualSolutionRepair && manualSpec?.expectedCanonicalSubject) {
-    const expectedTarget = targetForCanonical(manualSpec.expectedCanonicalSubject);
+  if ((options.manualSolutionRepair || options.manualRevision) && manualExpectedCanonicalSubject) {
+    const expectedTarget = targetForCanonical(manualExpectedCanonicalSubject);
     const selectedTarget = receipt.targetBooks.find(
       (value: { subject: string }) => value.subject === expectedTarget,
     ) as { subject: string; expectedQuestionCount: number; problemR2Key: string; solutionR2Key: string };
@@ -5153,8 +5352,8 @@ function upgradeEntryToV3(
     writeEvidence(join(stateDir, "receipt.json"), receipt);
   }
   if (manualAcceptedSolution !== null) {
-    const expectedTarget = manualSpec?.expectedCanonicalSubject
-      ? targetForCanonical(manualSpec.expectedCanonicalSubject)
+    const expectedTarget = manualExpectedCanonicalSubject
+      ? targetForCanonical(manualExpectedCanonicalSubject)
       : receipt.targetBooks[0].subject;
     const target = receipt.targetBooks.find(
       (value: { subject: string }) => value.subject === expectedTarget,
@@ -5174,7 +5373,9 @@ function upgradeEntryToV3(
       JSON.stringify(question.choices),
       manualAcceptedSolution.effectiveSolution.answer,
       manualAcceptedSolution.effectiveSolution.explanation,
-      question.difficulty,
+      options.manualRevision
+        ? problemCheckpoint.items[recoveryTargetNumber - 1].difficulty
+        : question.difficulty,
       String(recoveryTargetNumber),
       String(recoveryTargetNumber),
       problemFile.id,
@@ -5266,6 +5467,8 @@ function upgradeEntryToV3(
     manualViewArtifacts,
     problemManualAdjudicationArtifact,
     classificationManualAdjudicationArtifact,
+    problemManualRevisionArtifact,
+    classificationManualRevisionArtifact,
     solutionRepairArtifact: manualSolutionRepair
       ? join(stateDir, manualSolutionRepair.repairArtifact.path) : undefined,
     solutionRepairFidelityArtifact: manualSolutionRepair
@@ -10112,6 +10315,178 @@ describe("exam corpus verifier", () => {
     writeFileSync(`${residue.artifacts.problemManualAdjudicationArtifact}.123.tmp`, "partial");
     expect(verifyExamCorpus(residue.files), "regular immutable-write residue should be ignored")
       .toMatchObject({ ok: true });
+  });
+
+  it.skipIf(
+    !existsSync(Q30_FAILED_PROBLEM_PATH)
+      || !existsSync(Q30_FAILED_CLASSIFICATION_PATH)
+      || !existsSync(Q30_PARENT_MANUAL_CLASSIFICATION_PATH)
+      || !existsSync(join(Q30_MANUAL_STATE, "problem.pdf")),
+  )("reconstructs the exact nested Q30 manual revision and rejects missing, tampered, or repeated children", () => {
+    expect(manualRevisionAllowlistFingerprint())
+      .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST));
+    const manualRevisionFixture = (manualRevisionInvalidDecision = false) => {
+      const files = fixture();
+      prepareQ30ManualFixture(files, true);
+      const artifacts = upgradeEntryToV3(files, "korean", {
+        manualAdjudication: true,
+        manualRevision: true,
+        manualRevisionInvalidDecision,
+        terminalScope: "authorized-reject",
+        answerV5: true,
+      });
+      return { files, artifacts };
+    };
+
+    const valid = manualRevisionFixture();
+    const modifiedBefore = statSync(valid.files.dbPath).mtimeMs;
+    const preparedAudit = JSON.parse(readFileSync(valid.artifacts.auditArtifact, "utf8"));
+    expect(preparedAudit.solutionFidelityCheckpoints.map((pointer: { path: string }) => ({
+      path: pointer.path,
+      exists: existsSync(join(valid.files.stateDirs.korean, pointer.path)),
+    }))).toEqual(preparedAudit.solutionFidelityCheckpoints.map((pointer: { path: string }) => ({
+      path: pointer.path,
+      exists: true,
+    })));
+    const report = verifyExamCorpus(valid.files);
+    expect(report, JSON.stringify(report.failures, null, 2)).toMatchObject({ ok: true });
+    expect(statSync(valid.files.dbPath).mtimeMs).toBe(modifiedBefore);
+    const audit = preparedAudit;
+    const manual = audit.repairs.find((value: Record<string, any>) =>
+      value.revision?.recovery?.manualAdjudication?.revision)
+      .revision.recovery.manualAdjudication;
+    expect(manual.revision).toMatchObject({
+      allowlistId: Q30_MANUAL_REVISION_SPEC.allowlistId,
+      parentManualEvidenceHash: canonicalEvidenceHash((({ revision: _revision, ...parent }) => parent)(manual)),
+      failedQuestionHash: Q30_MANUAL_REVISION_SPEC.failedQuestionHash,
+      failedClassificationHash: Q30_MANUAL_REVISION_SPEC.failedClassificationHash,
+      correctionSpecHash: canonicalEvidenceHash({
+        allowlistId: Q30_MANUAL_REVISION_SPEC.allowlistId,
+        parentAllowlistId: Q30_MANUAL_REVISION_SPEC.parentAllowlistId,
+        replacement: Q30_MANUAL_REVISION_SPEC.replacement,
+        requiredTokens: Q30_MANUAL_REVISION_SPEC.requiredTokens,
+        expectedDecision: Q30_MANUAL_REVISION_SPEC.expectedDecision,
+        expectedCanonicalSubject: Q30_MANUAL_REVISION_SPEC.expectedCanonicalSubject,
+      }),
+    });
+    const parentQuestion = JSON.parse(
+      readFileSync(valid.artifacts.problemManualAdjudicationArtifact!, "utf8"),
+    ).item.question;
+    const revisedQuestion = JSON.parse(
+      readFileSync(valid.artifacts.problemManualRevisionArtifact!, "utf8"),
+    ).item.question;
+    expect(parentQuestion).toContain("‘$p$’와 ‘$q$’를 ‘만약 …이면 …이다.’");
+    expect(revisedQuestion).toContain("‘$p$’와 ‘$q$’는 ‘만약 …이면 …이다.’");
+    expect(revisedQuestion).not.toContain("‘$p$’와 ‘$q$’를 ‘만약 …이면 …이다.’");
+    const parentClassification = JSON.parse(readFileSync(
+      valid.artifacts.classificationManualAdjudicationArtifact!,
+      "utf8",
+    )).items[0];
+    const revisedClassification = JSON.parse(readFileSync(
+      valid.artifacts.classificationManualRevisionArtifact!,
+      "utf8",
+    )).items[0];
+    expect(parentClassification).toMatchObject({ transcription_status: "mismatch" });
+    expect(revisedClassification).toMatchObject({
+      decision: "accept",
+      canonical_subject: "korean_reading",
+      transcription_status: "exact",
+    });
+    const terminal = JSON.parse(readFileSync(valid.artifacts.terminalArtifact, "utf8"));
+    expect(terminal.inputs).toHaveLength(45);
+    expect(terminal.items).toHaveLength(45);
+    expect(terminal.items.find((item: { key: string }) => item.key === Q30_MANUAL_REVISION_SPEC.key))
+      .toMatchObject({ status: "exact", scopeDecision: "accept", scopeConfidence: 0.99 });
+    expect(audit.solutionFidelityItems).toEqual([expect.objectContaining({
+      key: Q30_MANUAL_REVISION_SPEC.key,
+      answerStatus: "exact",
+      explanationStatus: "exact",
+    })]);
+    expect(audit.semanticCheckpoint.path).toBe(
+      `semantic-choice-checks/v5-${audit.effectiveCorpusHash}-` +
+        `${audit.effectiveSolutionCorpusHash}-${audit.semanticCheckpoint.inputHash}.json`,
+    );
+    const db = new Database(valid.files.dbPath, { readonly: true });
+    const stored = db.prepare(
+      "SELECT question, answer FROM questions WHERE printed_number = '30'",
+    ).get() as { question: string; answer: string };
+    db.close();
+    expect(stored.answer).toBe("③");
+    expect(stored.question).toContain("‘$p$’와 ‘$q$’는 ‘만약 …이면 …이다.’");
+
+    const invalidDecision = manualRevisionFixture(true);
+    const invalidDecisionReport = verifyExamCorpus(invalidDecision.files);
+    expect(invalidDecisionReport.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("manual revision")),
+    JSON.stringify(invalidDecisionReport.failures, null, 2)).toBe(true);
+
+    const tampered = manualRevisionFixture();
+    writeFileSync(tampered.artifacts.problemManualRevisionArtifact!, "{}");
+    expect(verifyExamCorpus(tampered.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const missing = manualRevisionFixture();
+    rmSync(missing.artifacts.classificationManualRevisionArtifact!);
+    expect(verifyExamCorpus(missing.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("missing"))).toBe(true);
+
+    const parentTamper = manualRevisionFixture();
+    rewriteCurrentV3Authority(parentTamper.files, (currentAudit) => {
+      currentAudit.repairs.find((value: Record<string, any>) =>
+        value.revision?.recovery?.manualAdjudication?.revision)
+        .revision.recovery.manualAdjudication.revision.parentManualEvidenceHash = "0".repeat(64);
+    }, "korean");
+    expect(verifyExamCorpus(parentTamper.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("manual revision"))).toBe(true);
+
+    const terminalTamper = manualRevisionFixture();
+    rewriteCurrentV3Authority(terminalTamper.files, (currentAudit) => {
+      const pointer = currentAudit.problemTerminalFidelityCheckpoints[0];
+      const path = join(terminalTamper.files.stateDirs.korean, pointer.path);
+      const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+      const item = checkpoint.items.find(
+        (value: { key: string }) => value.key === Q30_MANUAL_REVISION_SPEC.key,
+      );
+      item.scopeDecision = "reject";
+      item.scopeEvidence = "self-consistent stale terminal scope rejects the allowlisted final acceptance";
+      pointer.sha256 = writeEvidence(path, checkpoint);
+      Object.assign(currentAudit.problemTerminalFidelityItems.find(
+        (value: { key: string }) => value.key === Q30_MANUAL_REVISION_SPEC.key,
+      ), item);
+    }, "korean");
+    expect(verifyExamCorpus(terminalTamper.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("terminal"))).toBe(true);
+
+    const missingSolutionFidelity = manualRevisionFixture();
+    const missingSolutionAudit = JSON.parse(readFileSync(
+      missingSolutionFidelity.artifacts.auditArtifact,
+      "utf8",
+    ));
+    rmSync(join(
+      missingSolutionFidelity.files.stateDirs.korean,
+      missingSolutionAudit.solutionFidelityCheckpoints[0].path,
+    ));
+    expect(verifyExamCorpus(missingSolutionFidelity.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const repeated = manualRevisionFixture();
+    rewriteCurrentV3Authority(repeated.files, (currentAudit) => {
+      const nested = currentAudit.repairs.find((value: Record<string, any>) =>
+        value.revision?.recovery?.manualAdjudication?.revision)
+        .revision.recovery.manualAdjudication.revision;
+      nested.revision = {};
+    }, "korean");
+    expect(verifyExamCorpus(repeated.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const orphan = manualRevisionFixture();
+    writeJson(join(
+      orphan.files.stateDirs.korean,
+      "problem-manual-revisions",
+      `v1-0012-0030-${"1".repeat(64)}.json`,
+    ), {});
+    expect(verifyExamCorpus(orphan.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
   });
 
   it.skipIf(

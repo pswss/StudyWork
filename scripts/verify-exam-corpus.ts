@@ -283,10 +283,16 @@ const PROBLEM_CROP_ADJUDICATION_VERSION = 1;
 const CLASSIFICATION_CROP_ADJUDICATION_VERSION = 1;
 const PROBLEM_MANUAL_ADJUDICATION_VERSION = 1;
 const CLASSIFICATION_MANUAL_ADJUDICATION_VERSION = 1;
+const PROBLEM_MANUAL_REVISION_VERSION = 1;
+const CLASSIFICATION_MANUAL_REVISION_VERSION = 1;
 const PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST =
   "28434a9872d33e0ef364b6030c6f32b4a51cab9182a9d6c372f225884794d7e9";
 const PROBLEM_MANUAL_CORRECTION_DIGEST =
   "a116ca7dd3fb35028db717aac3aa09e78d7c7671ab5ca9ecdaa3364bdb397b46";
+const PROBLEM_MANUAL_REVISION_PROMPT_DIGEST =
+  "28434a9872d33e0ef364b6030c6f32b4a51cab9182a9d6c372f225884794d7e9";
+const PROBLEM_MANUAL_REVISION_CORRECTION_DIGEST =
+  "c186099e5b8e70f7fbcf44cbbd1e4c869036a66c4eea6f28f9d51864cac38526";
 const PROBLEM_SCOPE_ADJUDICATION_VERSION = 1;
 const PROBLEM_REPAIR_SCOPE_ADJUDICATION_VERSION = 1;
 const PROBLEM_REPAIR_POSITIVE_SCOPE_ADJUDICATION_VERSION = 1;
@@ -492,6 +498,22 @@ type ProblemManualAdjudicationSpec = ProblemCropAdjudicationSpec & {
   figure?: boolean;
   figureDescription?: string;
   expectedDecision?: "accept" | "reject";
+  expectedCanonicalSubject?: CanonicalSubject;
+};
+
+type ProblemManualRevisionSpec = {
+  allowlistId: string;
+  parentAllowlistId: string;
+  entryId: string;
+  key: string;
+  sourcePage: number;
+  sourceHash: string;
+  failedQuestionHash: string;
+  failedClassificationHash: string;
+  failedClassificationEvidenceHash: string;
+  replacement: ProblemManualReplacement;
+  requiredTokens: readonly string[];
+  expectedDecision: "accept" | "reject";
   expectedCanonicalSubject?: CanonicalSubject;
 };
 
@@ -1113,8 +1135,36 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
   },
 ] as const;
 
+const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
+  allowlistId: "ebsi-5578421-q30-manual-revision-v1",
+  parentAllowlistId: "ebsi-5578421-q30-manual-v1",
+  entryId: "ebsi:5578421",
+  key: "12:30",
+  sourcePage: 12,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "08ac10119b14fcad17f0d4f8f988198d8049d2d06d19b3b16cfd4d805e4ba010",
+  failedClassificationHash: "b9134b6b9fd3cd9e274bd4883f370dd794f1c5f0d2e7d573d1d2b949dcff9ff7",
+  failedClassificationEvidenceHash: "e96fd127cbadd152281d8bf436e2052d15863abdf208b06af9c650e68b3c6c13",
+  replacement: {
+    field: "question",
+    from: "그리고 단순 명제 ‘$p$’와 ‘$q$’를 ‘만약 …이면 …이다.’에 해당하는 논리적 연결사",
+    to: "그리고 단순 명제 ‘$p$’와 ‘$q$’는 ‘만약 …이면 …이다.’에 해당하는 논리적 연결사",
+    count: 1,
+  },
+  requiredTokens: [
+    "그리고 단순 명제 ‘$p$’와 ‘$q$’는 ‘만약 …이면 …이다.’에 해당하는 논리적 연결사",
+    "(4′) $p \\to q$", "⇒", "가로선은 총 2개", "30. 윗글의 내용과 일치하지 않는 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_reading",
+}] as const;
+
 export function manualAdjudicationAllowlistFingerprint(): string {
   return canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
+}
+
+export function manualRevisionAllowlistFingerprint(): string {
+  return canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST);
 }
 
 export function repairScopeAdjudicationAllowlistFingerprint(): string {
@@ -4002,6 +4052,16 @@ function verifyProblemRecoveryCoverage(
           false,
         ]);
       }
+      if (manual.revision !== undefined) {
+        const manualRevision = object(
+          manual.revision,
+          `answer audit repairs[${index}].revision.recovery.manualAdjudication.revision`,
+        );
+        manualPointers.push(
+          ["problem manual revision", manualRevision.problemArtifact, true],
+          ["classification manual revision", manualRevision.classificationArtifact, true],
+        );
+      }
       for (const [label, raw, alwaysManual] of manualPointers) {
         const envelope = object(raw, `${label} artifact`);
         const pointer = evidencePointer(
@@ -4171,6 +4231,12 @@ function verifyProblemRecoveryCoverage(
       /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
     ]],
     ["classification-manual-adjudications", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u,
+    ]],
+    ["problem-manual-revisions", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
+    ]],
+    ["classification-manual-revisions", [
       /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u,
     ]],
   ] as const) {
@@ -4387,6 +4453,25 @@ function problemManualAdjudicationSpec(
   return matches[0];
 }
 
+function problemManualRevisionSpec(
+  entry: ManifestEntry,
+  key: string,
+  sourcePage: number,
+  sourceHash: string,
+  parentAllowlistId: string,
+): ProblemManualRevisionSpec {
+  const matches = PROBLEM_MANUAL_REVISION_ALLOWLIST.filter((spec) =>
+    spec.entryId === entry.id && spec.key === key && spec.sourcePage === sourcePage
+      && spec.parentAllowlistId === parentAllowlistId);
+  if (matches.length !== 1) {
+    throw new Error(`${entry.id} ${key}: manual revision is not uniquely allowlisted`);
+  }
+  if (matches[0].sourceHash !== sourceHash) {
+    throw new Error(`${entry.id} ${key}: official manual revision source hash does not match the allowlist`);
+  }
+  return matches[0];
+}
+
 function exactOccurrenceCount(source: string, target: string): number {
   if (!target) throw new Error("manual adjudication replacement target is empty");
   let count = 0;
@@ -4416,8 +4501,19 @@ function problemManualCorrectionSpecHash(spec: ProblemManualAdjudicationSpec): s
   });
 }
 
+function problemManualRevisionCorrectionSpecHash(spec: ProblemManualRevisionSpec): string {
+  return canonicalEvidenceHash({
+    allowlistId: spec.allowlistId,
+    parentAllowlistId: spec.parentAllowlistId,
+    replacement: spec.replacement,
+    requiredTokens: spec.requiredTokens,
+    expectedDecision: spec.expectedDecision,
+    expectedCanonicalSubject: spec.expectedCanonicalSubject,
+  });
+}
+
 function matchesProblemManualExpectedDecision(
-  spec: ProblemManualAdjudicationSpec,
+  spec: Pick<ProblemManualAdjudicationSpec, "expectedDecision" | "expectedCanonicalSubject">,
   classification: Pick<ClassificationEvidence,
     "decision" | "canonical_subject" | "curriculum_course" | "domain" | "achievement_codes">,
 ): boolean {
@@ -4431,6 +4527,32 @@ function matchesProblemManualExpectedDecision(
     && classification.canonical_subject === spec.expectedCanonicalSubject
     && classification.curriculum_course !== null && classification.domain !== null
     && classification.achievement_codes.length > 0;
+}
+
+function applyProblemManualRevision(
+  failed: ProblemQuestion,
+  spec: ProblemManualRevisionSpec,
+): ProblemQuestion {
+  if (canonicalEvidenceHash(failed.evidence) !== spec.failedQuestionHash) {
+    throw new Error(`${failed.key}: manual revision failed question hash is stale`);
+  }
+  const corrected = structuredClone(failed.evidence);
+  const replacement = spec.replacement;
+  const current = replacement.field === "question"
+    ? exactString(corrected.question, `${failed.key}.manualRevision.question`)
+    : corrected.figure_description === null
+      ? ""
+      : exactString(corrected.figure_description, `${failed.key}.manualRevision.figure_description`);
+  if (exactOccurrenceCount(current, replacement.from) !== replacement.count) {
+    throw new Error(`${failed.key}: manual revision replacement occurrence is stale`);
+  }
+  corrected[replacement.field] = current.split(replacement.from).join(replacement.to);
+  const question = parseProblem(corrected, `${failed.key} allowlisted manual revision`);
+  if (question.key !== failed.key || question.page !== spec.sourcePage) {
+    throw new Error(`${failed.key}: manual revision changed the immutable identity`);
+  }
+  assertProblemCropTokens(question, spec);
+  return question;
 }
 
 function applyProblemManualCorrection(
@@ -4483,7 +4605,10 @@ function cropPngDimensions(path: string, label: string): { width: number; height
   return { width, height };
 }
 
-function assertProblemCropTokens(question: ProblemQuestion, spec: ProblemCropAdjudicationSpec): void {
+function assertProblemCropTokens(
+  question: ProblemQuestion,
+  spec: Pick<ProblemCropAdjudicationSpec, "requiredTokens">,
+): void {
   const figureDescription = question.evidence.figure_description;
   const source = [
     question.question,
@@ -4495,6 +4620,237 @@ function assertProblemCropTokens(question: ProblemQuestion, spec: ProblemCropAdj
   if (missing.length > 0) {
     throw new Error(`${question.key}: crop adjudication is missing required source tokens: ${missing.join(", ")}`);
   }
+}
+
+function verifyProblemManualRevision(
+  value: unknown,
+  parentManual: Record<string, unknown>,
+  failedQuestion: ProblemQuestion,
+  failedClassification: ClassificationEvidence,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  rulesDigest: string,
+  cache: EvidenceCache,
+  contract: VerificationContract,
+): { question: ProblemQuestion; classification: ClassificationEvidence; evidence: Record<string, unknown> } {
+  const key = failedQuestion.key;
+  if (contract.auditVersion !== 5 || failedClassification.transcription_status === "exact") {
+    throw new Error(`${key}: manual revision requires a current non-exact manual parent`);
+  }
+  const revision = object(value, `${key}.revision.recovery.manualAdjudication.revision`);
+  const spec = problemManualRevisionSpec(
+    entry,
+    key,
+    failedQuestion.page,
+    problemEvidence.sha256,
+    exactString(parentManual.allowlistId, `${key}.manualAdjudication.allowlistId`),
+  );
+  const parentProblemEnvelope = object(
+    parentManual.problemArtifact,
+    `${key}.manualAdjudication.problemArtifact`,
+  );
+  const parentClassificationEnvelope = object(
+    parentManual.classificationArtifact,
+    `${key}.manualAdjudication.classificationArtifact`,
+  );
+  const parentProblemArtifact = evidencePointer({
+    path: parentProblemEnvelope.path,
+    sha256: parentProblemEnvelope.sha256,
+  }, `${key}.manualRevision.parentProblemArtifact`);
+  const parentClassificationArtifact = evidencePointer({
+    path: parentClassificationEnvelope.path,
+    sha256: parentClassificationEnvelope.sha256,
+  }, `${key}.manualRevision.parentClassificationArtifact`);
+  const parentProblemArtifactItemHash = canonicalEvidenceHash(failedQuestion.evidence);
+  const parentClassificationArtifactItemHash = canonicalEvidenceHash(failedClassification);
+  const parentManualEvidenceHash = canonicalEvidenceHash(parentManual);
+  const correctionSpecHash = problemManualRevisionCorrectionSpecHash(spec);
+  if (spec.failedQuestionHash !== parentProblemArtifactItemHash
+    || spec.failedClassificationHash !== parentClassificationArtifactItemHash
+    || spec.failedClassificationEvidenceHash !== sha256(failedClassification.transcription_evidence)) {
+    throw new Error(`${key}: manual revision parent hashes are stale`);
+  }
+  const cropEvidenceArtifact = evidencePointer(
+    parentManual.cropEvidenceArtifact,
+    `${key}.manualRevision.cropEvidenceArtifact`,
+  );
+  const cropEvidencePdf = evidencePointer(
+    parentManual.cropEvidencePdf,
+    `${key}.manualRevision.cropEvidencePdf`,
+  );
+  if (!Array.isArray(parentManual.cropViews)) {
+    throw new Error(`${key}: manual revision parent crop views are missing`);
+  }
+  const cropViews = parentManual.cropViews;
+  const printedNumber = exactString(parentManual.printedNumber, `${key}.manualAdjudication.printedNumber`);
+  const commonBasis = {
+    allowlistId: spec.allowlistId,
+    parentAllowlistId: spec.parentAllowlistId,
+    entryId: entry.id,
+    key,
+    printedNumber,
+    sourcePage: spec.sourcePage,
+    sourceHash: problemEvidence.sha256,
+    parentManual,
+    parentManualEvidenceHash,
+    parentProblemArtifact,
+    parentProblemArtifactItemHash,
+    parentClassificationArtifact,
+    parentClassificationArtifactItemHash,
+    failedQuestionHash: spec.failedQuestionHash,
+    failedClassificationHash: spec.failedClassificationHash,
+    failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
+    correctionSpecHash,
+    cropEvidenceArtifact,
+    cropEvidencePdf,
+    cropViews,
+  };
+  const basisDigest = canonicalEvidenceHash(commonBasis);
+  const stem = `v${PROBLEM_MANUAL_REVISION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+    `${printedNumber.padStart(4, "0")}-${basisDigest}`;
+  const problemEnvelope = object(revision.problemArtifact, `${key}.manualRevision.problemArtifact`);
+  if (Object.keys(problemEnvelope).sort().join(",") !== "correctionDigest,correctionVersion,path,sha256"
+    || problemEnvelope.correctionVersion !== PROBLEM_MANUAL_REVISION_VERSION
+    || problemEnvelope.correctionDigest !== PROBLEM_MANUAL_REVISION_CORRECTION_DIGEST) {
+    throw new Error(`${key}: problem manual revision envelope is stale`);
+  }
+  const problemArtifact = evidencePointer({
+    path: problemEnvelope.path,
+    sha256: problemEnvelope.sha256,
+  }, `${key}.manualRevision.problemArtifact`);
+  const expectedProblemPath = `problem-manual-revisions/${stem}.json`;
+  if (problemArtifact.path !== expectedProblemPath) {
+    throw new Error(`${key}: problem manual revision path is stale`);
+  }
+  const problemCheckpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    problemArtifact,
+    `${key} problem manual revision`,
+  );
+  const question = parseProblem(problemCheckpoint.item, `${key} problem manual revision.item`);
+  const expectedQuestion = applyProblemManualRevision(failedQuestion, spec);
+  const problemArtifactItemHash = canonicalEvidenceHash(question.evidence);
+  const expectedProblemCheckpoint = {
+    version: PROBLEM_MANUAL_REVISION_VERSION,
+    entryId: entry.id,
+    basisDigest,
+    basis: commonBasis,
+    correctionVersion: PROBLEM_MANUAL_REVISION_VERSION,
+    correctionDigest: PROBLEM_MANUAL_REVISION_CORRECTION_DIGEST,
+    item: expectedQuestion.evidence,
+  };
+  if (!isDeepStrictEqual(question.evidence, expectedQuestion.evidence)
+    || !isDeepStrictEqual(problemCheckpoint, expectedProblemCheckpoint)) {
+    throw new Error(`${key}: problem manual revision metadata/content is stale`);
+  }
+
+  const classificationBasis = {
+    ...commonBasis,
+    problemArtifact,
+    problemArtifactItemHash,
+    effectiveQuestionHash: problemArtifactItemHash,
+  };
+  const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+  const classificationEnvelope = object(
+    revision.classificationArtifact,
+    `${key}.manualRevision.classificationArtifact`,
+  );
+  if (Object.keys(classificationEnvelope).sort().join(",") !==
+      "path,revisionPromptDigest,revisionVersion,rulesDigest,sha256,transcriptionGateVersion,transcriptionPromptDigest"
+    || classificationEnvelope.rulesDigest !== rulesDigest
+    || classificationEnvelope.transcriptionGateVersion !== contract.transcriptionGateVersion
+    || classificationEnvelope.transcriptionPromptDigest !== contract.transcriptionPromptDigest
+    || classificationEnvelope.revisionVersion !== PROBLEM_MANUAL_REVISION_VERSION
+    || classificationEnvelope.revisionPromptDigest !== PROBLEM_MANUAL_REVISION_PROMPT_DIGEST) {
+    throw new Error(`${key}: classification manual revision envelope is stale`);
+  }
+  const classificationArtifact = evidencePointer({
+    path: classificationEnvelope.path,
+    sha256: classificationEnvelope.sha256,
+  }, `${key}.manualRevision.classificationArtifact`);
+  const expectedClassificationPath = `classification-manual-revisions/` +
+    `v${CLASSIFICATION_MANUAL_REVISION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+    `${printedNumber.padStart(4, "0")}-${classificationBasisDigest}-${rulesDigest}.json`;
+  if (classificationArtifact.path !== expectedClassificationPath) {
+    throw new Error(`${key}: classification manual revision path is stale`);
+  }
+  const classificationCheckpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    classificationArtifact,
+    `${key} classification manual revision`,
+  );
+  if (!Array.isArray(classificationCheckpoint.items) || classificationCheckpoint.items.length !== 1) {
+    throw new Error(`${key}: classification manual revision must contain exactly one decision`);
+  }
+  const classification = parseClassificationEvidence(
+    classificationCheckpoint.items[0],
+    question,
+    entry,
+    `${key} classification manual revision.items[0]`,
+  );
+  const classificationArtifactItemHash = canonicalEvidenceHash(classification);
+  const expectedClassificationCheckpoint = {
+    version: CLASSIFICATION_MANUAL_REVISION_VERSION,
+    entryId: entry.id,
+    basisDigest: classificationBasisDigest,
+    basis: classificationBasis,
+    classifierVersion: contract.classifierVersion,
+    rulesDigest,
+    transcriptionGateVersion: contract.transcriptionGateVersion,
+    transcriptionPromptDigest: contract.transcriptionPromptDigest,
+    revisionVersion: PROBLEM_MANUAL_REVISION_VERSION,
+    revisionPromptDigest: PROBLEM_MANUAL_REVISION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    items: [classification],
+  };
+  if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)
+    || classification.transcription_status !== "exact"
+    || !matchesProblemManualExpectedDecision(spec, classification)) {
+    throw new Error(`${key}: classification manual revision is stale or non-exact`);
+  }
+  const evidence = {
+    allowlistId: spec.allowlistId,
+    key,
+    printedNumber,
+    sourcePage: spec.sourcePage,
+    sourceHash: problemEvidence.sha256,
+    parentManualEvidenceHash,
+    parentProblemArtifact,
+    parentProblemArtifactItemHash,
+    parentClassificationArtifact,
+    parentClassificationArtifactItemHash,
+    failedQuestionHash: spec.failedQuestionHash,
+    failedClassificationHash: spec.failedClassificationHash,
+    failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
+    correctionSpecHash,
+    problemArtifact: {
+      ...problemArtifact,
+      correctionVersion: PROBLEM_MANUAL_REVISION_VERSION,
+      correctionDigest: PROBLEM_MANUAL_REVISION_CORRECTION_DIGEST,
+    },
+    problemArtifactItemHash,
+    classificationArtifact: {
+      ...classificationArtifact,
+      rulesDigest,
+      transcriptionGateVersion: contract.transcriptionGateVersion,
+      transcriptionPromptDigest: contract.transcriptionPromptDigest,
+      revisionVersion: PROBLEM_MANUAL_REVISION_VERSION,
+      revisionPromptDigest: PROBLEM_MANUAL_REVISION_PROMPT_DIGEST,
+    },
+    classificationArtifactItemHash,
+    baseQuestionHash: spec.failedQuestionHash,
+    effectiveQuestionHash: problemArtifactItemHash,
+    baseClassificationHash: spec.failedClassificationHash,
+    effectiveClassificationHash: classificationArtifactItemHash,
+  };
+  if (!isDeepStrictEqual(revision, evidence)) {
+    throw new Error(`${key}: manual revision evidence envelope does not match its exact chain`);
+  }
+  return { question, classification, evidence };
 }
 
 function verifyProblemCropAdjudication(
@@ -4808,7 +5164,8 @@ function verifyProblemManualAdjudication(
     throw new Error(`${key}: manual adjudication requires a current non-exact exhausted recovery`);
   }
   const spec = problemManualAdjudicationSpec(entry, key, failedQuestion.page, problemEvidence.sha256);
-  const manual = object(value, `${key}.revision.recovery.manualAdjudication`);
+  const manualEnvelope = object(value, `${key}.revision.recovery.manualAdjudication`);
+  const { revision: manualRevision, ...manual } = manualEnvelope;
   const parentCrop = parentRecovery.adjudication === undefined
     ? null
     : object(parentRecovery.adjudication, `${key}.manual parent crop adjudication`);
@@ -5089,9 +5446,10 @@ function verifyProblemManualAdjudication(
     reasoningEffort: "high",
     items: [classification],
   };
+  const parentClassificationTerminal = classification.transcription_status === "exact"
+    && matchesProblemManualExpectedDecision(spec, classification);
   if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)
-    || classification.transcription_status !== "exact"
-    || !matchesProblemManualExpectedDecision(spec, classification)
+    || (manualRevision === undefined ? !parentClassificationTerminal : parentClassificationTerminal)
     || manual.classificationArtifactItemHash !== classificationArtifactItemHash
     || manual.baseClassificationHash !== spec.failedClassificationHash
     || manual.effectiveClassificationHash !== classificationArtifactItemHash) {
@@ -5135,6 +5493,25 @@ function verifyProblemManualAdjudication(
   };
   if (!isDeepStrictEqual(manual, evidence)) {
     throw new Error(`${key}: manual adjudication evidence envelope does not match its exact chain`);
+  }
+  if (manualRevision !== undefined) {
+    const revised = verifyProblemManualRevision(
+      manualRevision,
+      evidence,
+      question,
+      classification,
+      stateDir,
+      entry,
+      problemEvidence,
+      rulesDigest,
+      cache,
+      contract,
+    );
+    return {
+      question: revised.question,
+      classification: revised.classification,
+      evidence: { ...evidence, revision: revised.evidence },
+    };
   }
   return { question, classification, evidence };
 }
@@ -9888,6 +10265,8 @@ function selectVerificationContract(
     "problem-manual-evidence",
     "problem-manual-adjudications",
     "classification-manual-adjudications",
+    "problem-manual-revisions",
+    "classification-manual-revisions",
   ].some((directory) => {
     const absolute = join(stateDir, directory);
     return existsSync(absolute) && readdirSync(absolute, { withFileTypes: true }).some((entry) =>
