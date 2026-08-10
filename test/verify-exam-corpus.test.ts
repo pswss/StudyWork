@@ -59,6 +59,7 @@ import {
   runCli,
   solutionFidelityAdjudicationAllowlistFingerprint,
   solutionPromptUpgradeAllowlistFingerprint,
+  scopeBoxRevisionAllowlistFingerprint,
   terminalFidelityAdjudicationAllowlistFingerprint,
   TARGET_SUBJECTS,
   verifyExamCorpus,
@@ -92,7 +93,12 @@ import {
   PROBLEM_REPAIR_POSITIVE_SCOPE_AUTHORITY_REASON_CODE,
   PROBLEM_REVISION_SCOPE_ADJUDICATION_ALLOWLIST,
   PROBLEM_REVISION_SCOPE_ADJUDICATION_PROMPT_DIGEST,
+  applyAllowlistedProblemScopeBoxRevision,
   matchOfficialSolutions,
+  PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST,
+  PROBLEM_SCOPE_BOX_REVISION_CORRECTION_DIGEST,
+  PROBLEM_SCOPE_BOX_REVISION_PROMPT_DIGEST,
+  PROBLEM_SCOPE_BOX_REVISION_VERSION,
   repairAndAuditOfficialAnswers,
   SOLUTION_PROMPT_UPGRADE_ALLOWLIST,
   SOLUTION_PROMPT_UPGRADE_FIDELITY_VERSION,
@@ -9473,6 +9479,155 @@ function rewriteTerminalAdjudicationAuthority(
   });
 }
 
+async function scopeBoxRevisionFixture() {
+  const root = mkdtempSync(join(tmpdir(), "verify-scope-box-revision-"));
+  const dataDir = join(root, "data");
+  const dbPath = join(dataDir, "studywork.db");
+  const manifestPath = join(dataDir, "ebsi-exam-manifest.json");
+  mkdirSync(join(dataDir, "import-exam-corpus"), { recursive: true });
+  const entryValue = JSON.parse(readFileSync(join(Q11_SCOPE_STATE, "entry.json"), "utf8"));
+  const stateDir = join(dataDir, "import-exam-corpus", token(entryValue.entry.id, 24));
+  cpSync(Q11_SCOPE_STATE, stateDir, { recursive: true });
+  rmSync(join(stateDir, "receipt.json"), { force: true });
+  for (const directory of [
+    "problem-scope-box-evidence",
+    "problem-scope-box-revisions",
+    "classification-scope-box-revisions",
+    "solution-repairs",
+    "solution-fidelity-repairs",
+  ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
+  for (const [directory, pattern] of [
+    ["answer-audit", /^v5-/u],
+    ["answer-attestation", /^v5-/u],
+    ["semantic-choice-checks", /^v5-/u],
+  ] as const) {
+    const path = join(stateDir, directory);
+    if (!existsSync(path)) continue;
+    for (const name of readdirSync(path)) if (pattern.test(name)) rmSync(join(path, name));
+  }
+  writeJson(manifestPath, { schemaVersion: 2, entries: [entryValue.entry] });
+  const sourceDb = new Database(Q8_TERMINAL_ADJUDICATION_DB, { readonly: true, fileMustExist: true });
+  await sourceDb.backup(dbPath);
+  sourceDb.close();
+  const db = new Database(dbPath);
+  db.pragma("foreign_keys = OFF");
+  db.exec(`
+    DELETE FROM question_attempts;
+    DELETE FROM book_items;
+    DELETE FROM questions;
+    DELETE FROM book_extraction_chunks;
+    DELETE FROM book_files;
+    DELETE FROM books;
+  `);
+
+  const input = terminalAdjudicationInputs(stateDir);
+  const terminalTemplate = JSON.parse(readFileSync(join(
+    stateDir,
+    PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST[0].triggerTerminalPath,
+  ), "utf8"));
+  const scopeByKey = new Map<string, Record<string, any>>(
+    terminalTemplate.items.map((item: Record<string, any>) => [item.key, item]),
+  );
+  const solutionByNumber = new Map(input.solutions.map((item) => [String(Number(item.number)), item]));
+  let solutionFidelityCalls = 0;
+  providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+    if (request.schema?.name === "studywork_exam_corpus_classification") {
+      expect(request.prompt).toContain('"box":[0.12,0.36]');
+      return { text: JSON.stringify([{
+        key: "4:11",
+        decision: "reject",
+        canonical_subject: null,
+        curriculum_course: null,
+        domain: null,
+        achievement_codes: [],
+        confidence: 0.99,
+        reason_codes: [
+          "LOGARITHMIC_FUNCTION_REQUIRED",
+          "EXCLUDED_COORDINATE_GEOMETRY_REQUIRED",
+          "ONE_EXCLUDED_DEPENDENCY_REJECTS_WHOLE",
+        ],
+        transcription_status: "exact",
+        transcription_evidence: "공식 4쪽 crop은 stem, 전체 로그 그래프와 다섯 선택지를 모두 포함한다.",
+      }]) };
+    }
+    if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
+      const items = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{ key: string }>;
+      return { text: JSON.stringify(items.map((item) => {
+        const scope = scopeByKey.get(item.key)!;
+        return {
+          key: item.key,
+          status: "exact",
+          evidence: item.key === "4:11"
+            ? "공식 4쪽의 stem, graph, labels, choices와 확장 box가 모두 일치한다."
+            : "공식 source pixels와 일치한다.",
+          scopeDecision: scope.scopeDecision,
+          scopeConfidence: scope.scopeConfidence,
+          scopeEvidence: scope.scopeEvidence,
+        };
+      })) };
+    }
+    if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
+      solutionFidelityCalls++;
+      const items = JSON.parse(request.prompt.split("Accepted solutions:\n")[1]) as Array<{
+        key: string;
+        source_page: number;
+      }>;
+      return { text: JSON.stringify(items.map((item) => ({
+        key: item.key,
+        sourcePage: item.source_page,
+        answerStatus: item.key === "2:5" && solutionFidelityCalls === 1 ? "mismatch" : "exact",
+        explanationStatus: "exact",
+        evidence: item.key === "2:5" && solutionFidelityCalls === 1
+          ? "공식 1쪽은 a=세제곱근 2인데 base raw answer는 제곱근 2다."
+          : "공식 해설의 답과 전체 설명이 일치한다.",
+      }))) };
+    }
+    if (request.schema?.name === "studywork_solution_file_items") {
+      return { text: JSON.stringify([{ ...solutionByNumber.get("5")!, answer: "$\\sqrt[3]{2}$" }]) };
+    }
+    if (request.schema?.name === "studywork_exam_corpus_semantic_choice_check") {
+      const items = JSON.parse(request.prompt.split("Items:\n")[1]) as Array<{ key: string; choices: string[] }>;
+      return { text: JSON.stringify(items.map((item) => ({
+        key: item.key,
+        status: "resolved",
+        choiceIndex: resolveOfficialAnswer(
+          { qtype: "mcq", choices: item.choices } as QuizItemEx,
+          solutionByNumber.get(item.key.split(":")[1])!.answer,
+        ).choiceIndex! + 1,
+        evidence: "공식 해설 결론과 한 선택지가 유일하게 일치한다.",
+      }))) };
+    }
+    throw new Error(`unexpected AI call: ${request.schema?.name ?? "unknown"}`);
+  });
+  const result = await repairAndAuditOfficialAnswers(
+    input.entry,
+    input.problem,
+    input.solution,
+    stateDir,
+    input.classified,
+    input.solutions,
+  );
+  const imported = matchOfficialSolutions(
+    input.entry,
+    result.classified,
+    result.solutions,
+    baseDifficultyByQuestionKey(input.classified),
+  );
+  const receipt = buildCorpusReceipt(input.entry, input.problem, input.solution, result.classified, imported);
+  await commitCorpusEntry(db, join(dataDir, "files"), input.entry, input.problem, input.solution, imported);
+  db.close();
+  await writeAnswerAttestation(
+    stateDir,
+    input.entry.id,
+    input.problem.sha256,
+    input.solution.sha256,
+    receipt,
+    result,
+  );
+  providerMock.complete.mockReset();
+  return { root, dataDir, dbPath, manifestPath, stateDir, result, receipt };
+}
+
 describe("exam corpus verifier", () => {
   it("keeps the exact existing-corpus migration allowlist aligned with the importer", () => {
     expect(existingCorpusMigrationAllowlistFingerprint())
@@ -11812,6 +11967,270 @@ describe("exam corpus verifier", () => {
     expect(verifyExamCorpus(staleFallback).failures.some((failure) =>
       failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
   });
+
+  it.skipIf(!existsSync(Q11_OFFICIAL_PROBLEM_PATH) || !existsSync(Q11_OFFICIAL_SOLUTION_PATH))(
+  "reconstructs the exact Q11 scope box revision and honest Q5 solution chain",
+  async () => {
+    expect(PROBLEM_SCOPE_BOX_REVISION_VERSION).toBe(1);
+    expect(PROBLEM_SCOPE_BOX_REVISION_PROMPT_DIGEST)
+      .toBe("067eea7c5d44f2e15a6f979ba016eb01c13b8aa8268c17aa33a902cf705ba04c");
+    expect(PROBLEM_SCOPE_BOX_REVISION_CORRECTION_DIGEST)
+      .toBe("d9d2ddedb51a82d107e3a0d66f2263a92483a09cce20d5fde531ee9083bf88a4");
+    expect(scopeBoxRevisionAllowlistFingerprint())
+      .toBe("6006e177f56f72c29cac9f5051ebbfd0b397c7309e1d0f8e059a3a78eaf181ec");
+    expect(scopeBoxRevisionAllowlistFingerprint())
+      .toBe(canonicalEvidenceHash(PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST));
+    const parentQuestion = JSON.parse(readFileSync(join(
+      Q11_SCOPE_STATE,
+      PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST[0].parentRecoveryProblemArtifactPath,
+    ), "utf8")).item as QuizItemEx;
+    expect(applyAllowlistedProblemScopeBoxRevision(
+      Q11_SCOPE_SPEC.entryId,
+      Q11_SCOPE_SPEC.sourceHash,
+      parentQuestion,
+    )).toEqual({ ...parentQuestion, box: [0.12, 0.36] });
+
+    const files = await scopeBoxRevisionFixture();
+    try {
+      const report = verifyExamCorpus(files);
+      expect(report, JSON.stringify(report.failures, null, 2)).toMatchObject({
+        ok: true,
+        failureCount: 0,
+        questions: { expected: 6, actual: 6 },
+      });
+      const audit = JSON.parse(readFileSync(join(files.stateDir, files.result.auditPath!), "utf8"));
+      const q11Repair = audit.repairs.find((repair: { key: string }) => repair.key === "4:11");
+      const boxRevision = q11Repair.revision.recovery.scopeAdjudication.boxRevision;
+      expect(boxRevision).toMatchObject({
+        allowlistId: PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST[0].allowlistId,
+        key: "4:11",
+        effectiveQuestionHash: PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST[0].correctedQuestionHash,
+        baseClassificationHash: PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST[0].failedClassificationHash,
+      });
+      const problemCheckpoint = JSON.parse(readFileSync(
+        join(files.stateDir, boxRevision.problemArtifact.path),
+        "utf8",
+      ));
+      expect(problemCheckpoint.item.box).toEqual([0.12, 0.36]);
+      expect(canonicalEvidenceHash(problemCheckpoint.item))
+        .toBe(PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST[0].correctedQuestionHash);
+      const cropCheckpoint = JSON.parse(readFileSync(
+        join(files.stateDir, boxRevision.cropEvidenceArtifact.path),
+        "utf8",
+      ));
+      expect(cropCheckpoint.views).toEqual([expect.objectContaining({
+        rect: [0.07, 0.12, 0.50, 0.36],
+        pixelWidth: 3017,
+        pixelHeight: 2382,
+      })]);
+      expect(audit.problemTerminalFidelityItems).toHaveLength(30);
+      expect(audit.problemTerminalFidelityItems.find((item: { key: string }) => item.key === "4:11"))
+        .toMatchObject({ status: "exact", scopeDecision: "reject" });
+      const q5Repair = audit.solutionRepairs.find((repair: { key: string }) => repair.key === "2:5");
+      expect(q5Repair).toMatchObject({
+        baseSolutionItemHash: "b674ac8edb4c2dece403bdd09c28e5e4ab11832c024468e72964f90136b805a7",
+        effectiveSolutionItemHash: "6fd09d50cd90a6e59e7a39a7fa298d3df7b330826138f2b295c26bdcaae087b6",
+        baseRawAnswerHash: "1b65c648e3566876e3af03395e859b3c4d2ff8768568d590f7cf76172b2d5839",
+        effectiveRawAnswerHash: "18eb660efcd50dde8e19c9c890afe1d9b15fb7a53f6746488c65e9468ecc9cf9",
+        repairArtifact: {
+          path: "solution-repairs/v1-0001-0005-0827ec5e583fdcf147a8faeef01aa0657d3000783b2db663a746bca67a783717.json",
+          sha256: "6c691b4032540848bdd5a2e0f88b9ec136b14558dbed04f8a0afd56ab2f8665f",
+        },
+        fidelityArtifact: {
+          path: "solution-fidelity-repairs/v1-0001-0005-0827ec5e583fdcf147a8faeef01aa0657d3000783b2db663a746bca67a783717-" +
+            "6fd09d50cd90a6e59e7a39a7fa298d3df7b330826138f2b295c26bdcaae087b6.json",
+          sha256: "6517e8dceae274c66119f16119590411adb7b02705ef2524cd0fac72405a4c45",
+        },
+      });
+      expect(audit.solutionFidelityItems.find((item: { key: string }) => item.key === "2:5"))
+        .toMatchObject({ answerStatus: "exact", explanationStatus: "exact" });
+      expect(audit.semanticCheckpoint).toBeNull();
+      const db = new Database(files.dbPath, { readonly: true });
+      expect(db.prepare("SELECT COUNT(*) AS count FROM questions WHERE printed_number = '11'").get())
+        .toEqual({ count: 0 });
+      expect(db.prepare("SELECT answer FROM questions WHERE printed_number = '5'").get())
+        .toEqual({ answer: "④ $\\sqrt[3]{2}$" });
+      db.close();
+
+      const classificationPath = join(files.stateDir, boxRevision.classificationArtifact.path);
+      const classificationBytes = readFileSync(classificationPath);
+      writeFileSync(classificationPath, Buffer.concat([classificationBytes, Buffer.from("tampered")]));
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+      writeFileSync(classificationPath, classificationBytes);
+
+      const cropViewPath = join(files.stateDir, boxRevision.cropViews[0].artifact.path);
+      const cropViewBytes = readFileSync(cropViewPath);
+      writeFileSync(cropViewPath, Buffer.concat([cropViewBytes, Buffer.from("tampered")]));
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+      writeFileSync(cropViewPath, cropViewBytes);
+
+      const cropPdfPath = join(files.stateDir, boxRevision.cropEvidencePdf.path);
+      const cropPdfBytes = readFileSync(cropPdfPath);
+      writeFileSync(cropPdfPath, Buffer.concat([cropPdfBytes, Buffer.from("tampered")]));
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+      writeFileSync(cropPdfPath, cropPdfBytes);
+
+      const problemPath = join(files.stateDir, boxRevision.problemArtifact.path);
+      const problemBytes = readFileSync(problemPath);
+      rmSync(problemPath);
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("missing"))).toBe(true);
+      writeFileSync(problemPath, problemBytes);
+
+      const orphan = join(
+        files.stateDir,
+        "problem-scope-box-revisions",
+        `v1-0004-0011-${"1".repeat(64)}.json`,
+      );
+      writeJson(orphan, {});
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
+      rmSync(orphan);
+
+      const malformed = join(files.stateDir, "problem-scope-box-revisions", "malformed.json");
+      writeJson(malformed, {});
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("malformed"))).toBe(true);
+      rmSync(malformed);
+
+      const triggerPath = join(files.stateDir, PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST[0].triggerTerminalPath);
+      const triggerBytes = readFileSync(triggerPath);
+      writeFileSync(triggerPath, Buffer.concat([triggerBytes, Buffer.from("tampered")]));
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+      writeFileSync(triggerPath, triggerBytes);
+
+      const fidelityPath = join(files.stateDir, q5Repair.fidelityArtifact.path);
+      const fidelityBytes = readFileSync(fidelityPath);
+      rmSync(fidelityPath);
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+      writeFileSync(fidelityPath, fidelityBytes);
+
+      const auditPath = join(files.stateDir, files.result.auditPath!);
+      const auditBytes = readFileSync(auditPath);
+      rmSync(auditPath);
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_ATTESTATION_INVALID" || failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+      writeFileSync(auditPath, auditBytes);
+
+      const attestationDirectory = join(files.stateDir, "answer-attestation");
+      const attestationPath = join(
+        attestationDirectory,
+        readdirSync(attestationDirectory).find((name) => /^v5-/u.test(name))!,
+      );
+      const attestationBytes = readFileSync(attestationPath);
+      writeFileSync(attestationPath, Buffer.concat([attestationBytes, Buffer.from("tampered")]));
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_ATTESTATION_INVALID")).toBe(true);
+      writeFileSync(attestationPath, attestationBytes);
+      rmSync(attestationPath);
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
+      writeFileSync(attestationPath, attestationBytes);
+
+      const problemDirectory = join(files.stateDir, "problem-scope-box-revisions");
+      rmSync(problemDirectory, { recursive: true });
+      const outside = mkdtempSync(join(tmpdir(), "verify-scope-box-outside-"));
+      symlinkSync(outside, problemDirectory);
+      const symlinkReport = verifyExamCorpus(files);
+      expect(symlinkReport.failures.some((failure) => failure.code === "ANSWER_AUDIT_INVALID"),
+        JSON.stringify(symlinkReport.failures, null, 2)).toBe(true);
+      rmSync(problemDirectory);
+      rmSync(outside, { recursive: true, force: true });
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(files.root, { recursive: true, force: true });
+    }
+
+    const parentTamper = await scopeBoxRevisionFixture();
+    try {
+      rewriteTerminalAdjudicationAuthority(parentTamper, (currentAudit) => {
+        currentAudit.repairs.find((repair: { key: string }) => repair.key === "4:11")
+          .revision.recovery.scopeAdjudication.boxRevision.parentScopeAdjudicationHash = "0".repeat(64);
+      });
+      expect(verifyExamCorpus(parentTamper).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("scope box"))).toBe(true);
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(parentTamper.root, { recursive: true, force: true });
+    }
+
+    const pathAlias = await scopeBoxRevisionFixture();
+    try {
+      const audit = JSON.parse(readFileSync(join(pathAlias.stateDir, pathAlias.result.auditPath!), "utf8"));
+      const boxRevision = audit.repairs.find((repair: { key: string }) => repair.key === "4:11")
+        .revision.recovery.scopeAdjudication.boxRevision;
+      const aliasRelativePath = "scope-box-alias/crop.json";
+      const aliasPath = join(pathAlias.stateDir, aliasRelativePath);
+      mkdirSync(join(aliasPath, ".."), { recursive: true });
+      cpSync(join(pathAlias.stateDir, boxRevision.cropEvidenceArtifact.path), aliasPath);
+      rewriteTerminalAdjudicationAuthority(pathAlias, (currentAudit) => {
+        currentAudit.repairs.find((repair: { key: string }) => repair.key === "4:11")
+          .revision.recovery.scopeAdjudication.boxRevision.cropEvidenceArtifact.path = aliasRelativePath;
+      });
+      expect(verifyExamCorpus(pathAlias).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("scope box"))).toBe(true);
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(pathAlias.root, { recursive: true, force: true });
+    }
+
+    const finalTerminalTamper = await scopeBoxRevisionFixture();
+    try {
+      rewriteTerminalAdjudicationAuthority(finalTerminalTamper, (currentAudit) => {
+        const pointer = currentAudit.problemTerminalFidelityCheckpoints[0];
+        const checkpointPath = join(finalTerminalTamper.stateDir, pointer.path);
+        const checkpoint = JSON.parse(readFileSync(checkpointPath, "utf8"));
+        const item = checkpoint.items.find((value: { key: string }) => value.key === "4:11");
+        item.scopeDecision = "accept";
+        item.scopeEvidence = "self-consistent stale final scope acceptance";
+        pointer.sha256 = writeEvidence(checkpointPath, checkpoint);
+        Object.assign(currentAudit.problemTerminalFidelityItems.find(
+          (value: { key: string }) => value.key === "4:11",
+        ), item);
+      });
+      expect(verifyExamCorpus(finalTerminalTamper).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("terminal"))).toBe(true);
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(finalTerminalTamper.root, { recursive: true, force: true });
+    }
+
+    const repeated = await scopeBoxRevisionFixture();
+    try {
+      rewriteTerminalAdjudicationAuthority(repeated, (currentAudit) => {
+        currentAudit.repairs.find((repair: { key: string }) => repair.key === "4:11")
+          .revision.recovery.scopeAdjudication.boxRevision.boxRevision = {};
+      });
+      expect(verifyExamCorpus(repeated).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("scope box"))).toBe(true);
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(repeated.root, { recursive: true, force: true });
+    }
+
+    const staleFallback = fixture();
+    writeJson(join(
+      staleFallback.stateDirs.math,
+      "problem-scope-box-revisions",
+      `v1-0004-0011-${"1".repeat(64)}.json`,
+    ), {});
+    expect(verifyExamCorpus(staleFallback).failures.some((failure) =>
+      failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
+
+    const emptySymlinkFallback = fixture();
+    const outside = mkdtempSync(join(tmpdir(), "verify-scope-box-empty-signal-"));
+    const signalPath = join(emptySymlinkFallback.stateDirs.math, "problem-scope-box-revisions");
+    symlinkSync(outside, signalPath);
+    expect(verifyExamCorpus(emptySymlinkFallback).failures.some((failure) =>
+      failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
+    rmSync(signalPath);
+    rmSync(outside, { recursive: true, force: true });
+  }, 180_000);
 
   it("reconstructs a mixed same-pass first repair plus terminal revision generation", () => {
     const files = fixture();

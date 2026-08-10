@@ -285,6 +285,12 @@ const PROBLEM_MANUAL_ADJUDICATION_VERSION = 1;
 const CLASSIFICATION_MANUAL_ADJUDICATION_VERSION = 1;
 const PROBLEM_MANUAL_REVISION_VERSION = 1;
 const CLASSIFICATION_MANUAL_REVISION_VERSION = 1;
+const PROBLEM_SCOPE_BOX_REVISION_VERSION = 1;
+const CLASSIFICATION_SCOPE_BOX_REVISION_VERSION = 1;
+const PROBLEM_SCOPE_BOX_REVISION_PROMPT_DIGEST =
+  "067eea7c5d44f2e15a6f979ba016eb01c13b8aa8268c17aa33a902cf705ba04c";
+const PROBLEM_SCOPE_BOX_REVISION_CORRECTION_DIGEST =
+  "d9d2ddedb51a82d107e3a0d66f2263a92483a09cce20d5fde531ee9083bf88a4";
 const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION = 1;
 const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST =
   "e92ed29fdd979e63d56635b2f7c99284ad01f14893384e680acd150cb2a29728";
@@ -518,6 +524,43 @@ type ProblemManualRevisionSpec = {
   requiredTokens: readonly string[];
   expectedDecision: "accept" | "reject";
   expectedCanonicalSubject?: CanonicalSubject;
+};
+
+type ProblemScopeBoxRevisionSpec = ProblemCropAdjudicationSpec & {
+  solutionSourceHash: string;
+  dpi: number;
+  parentScopeAllowlistId: string;
+  problemContextFrom: number;
+  problemContextTo: number;
+  solutionContextFrom: number;
+  solutionContextTo: number;
+  parentRecoveryProblemArtifactPath: string;
+  parentRecoveryProblemArtifactHash: string;
+  parentRecoveryClassificationArtifactPath: string;
+  parentRecoveryClassificationArtifactHash: string;
+  parentRecoveryClassificationHash: string;
+  parentRecoveryEvidenceHash: string;
+  failedScopeArtifactPath: string;
+  failedScopeArtifactHash: string;
+  failedScopeBasisDigest: string;
+  failedScopeItemHash: string;
+  failedScopeEvidenceHash: string;
+  triggerTerminalPath: string;
+  triggerTerminalArtifactHash: string;
+  triggerEffectiveCorpusHash: string;
+  triggerInputHash: string;
+  triggerQuestionInputHash: string;
+  triggerItemHash: string;
+  triggerEvidenceHash: string;
+  triggerScopeEvidenceHash: string;
+  baseSolutionCheckpointPath: string;
+  baseSolutionCheckpointHash: string;
+  baseSolutionItemHash: string;
+  failedQuestionHash: string;
+  failedClassificationHash: string;
+  beforeBox: readonly [number, number];
+  afterBox: readonly [number, number];
+  correctedQuestionHash: string;
 };
 
 type ProblemTerminalFidelityAdjudicationSpec = {
@@ -1221,6 +1264,60 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
   expectedDecision: "reject",
 }] as const;
 
+const PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST: readonly ProblemScopeBoxRevisionSpec[] = [{
+  allowlistId: "ebsi-5577055-q11-scope-box-v1",
+  entryId: "ebsi:5577055",
+  key: "4:11",
+  sourcePage: 4,
+  sourceHash: "b4381bc3b831323375b2c4a25319d308185c930be5d2e3b07dfc28e7646a5fde",
+  solutionSourceHash: "1753328f4b4360a9d81312d0d1610c7a11063bbefeeb1e1fd286d54c601ec5fa",
+  dpi: 600,
+  parentScopeAllowlistId: "ebsi-5577055-q11-scope-v1",
+  problemContextFrom: 1,
+  problemContextTo: 12,
+  solutionContextFrom: 1,
+  solutionContextTo: 5,
+  views: [{ sourcePage: 4, label: "p4 Q11 full stem, graph, and choices", rect: [0.07, 0.12, 0.50, 0.36] }],
+  requiredTokens: [
+    "그림과 같이", "$y=\\log_a x$", "$y=\\log_b x$", "$A_1$", "$B_1$", "$A_2$", "$B_2$",
+    "① $4$", "② $3\\sqrt{2}$", "③ $5$", "④ $4\\sqrt{2}$", "⑤ $6$",
+  ],
+  parentRecoveryProblemArtifactPath:
+    "problem-recoveries/v1-0004-0011-ef16b79daa0092271e08115134f3abed299876f92e55c3de40b5cd6e9f8abaa3.json",
+  parentRecoveryProblemArtifactHash: "d7d890e88390a92cf57e889fa25ae5535e3f5d6a5ddbaf57297f17f1cf60ed22",
+  parentRecoveryClassificationArtifactPath:
+    "classification-recoveries/v1-0004-0011-725fe18532c9778f0f46f2c2feef23915ad5fcca6145d4118eefb422c7f5c98f-" +
+    "7bb7cb863c8c4855.json",
+  parentRecoveryClassificationArtifactHash: "a1f29437b63ad5ea709f9cd0f14bc0730f537093c66ee2d357f2c32b41385f5c",
+  parentRecoveryClassificationHash: "a58607bd037bd721cc39fb2b7cf83bdc3e58bafdc9f22e21d85aff524f4dc416",
+  parentRecoveryEvidenceHash: "9ccbf2036e9e1c538880595fd4ded9a874fd8765659237b65bd20384d93394ac",
+  failedScopeArtifactPath:
+    "classification-scope-adjudications/v1-0004-0011-421c3b33da14ad95179d2580f1576c0f5a2857484dc4f479433f87f563cb4a2a-" +
+    "7bb7cb863c8c4855.json",
+  failedScopeArtifactHash: "a91d5a64c9dc71d6ea1b3521d031000c9f20b6c1f9c7ce189ea208b7bb901cc4",
+  failedScopeBasisDigest: "421c3b33da14ad95179d2580f1576c0f5a2857484dc4f479433f87f563cb4a2a",
+  failedScopeItemHash: "696b03bb458b06aee5067cfded58c8ee6dbebfb43fc2d8a54c3e1371d1a0a50b",
+  failedScopeEvidenceHash: "60bc4fbec6a51134bbb064139bc935bf171e63f061dfa0be10e5993752593145",
+  triggerTerminalPath:
+    "problem-terminal-fidelity/v2-0000-d985797bd348f4389b1b0c12eea3cbea40089022d0afc9f044c9fa8625ec4725-" +
+    "214b88235eda18eb60cf4519d3b302f734e4bc0df0781e7a82f8d9801789c900.json",
+  triggerTerminalArtifactHash: "21ffd24df607447fa062090d8fd7c075f334473060ab75b6b7072f6632004900",
+  triggerEffectiveCorpusHash: "d985797bd348f4389b1b0c12eea3cbea40089022d0afc9f044c9fa8625ec4725",
+  triggerInputHash: "214b88235eda18eb60cf4519d3b302f734e4bc0df0781e7a82f8d9801789c900",
+  triggerQuestionInputHash: "13d9bb06b911604a684a1c0bf2bdae0622fc648825b871d54979ce89ab0bffe6",
+  triggerItemHash: "1d89d848aaa442ae313dcc6772fd0d42300bddaf8f5e2185798c21a3235c6f9f",
+  triggerEvidenceHash: "e4ccdc2cf4881f3607a6402b43783add4e60399c19e90259261dbec0aea445fc",
+  triggerScopeEvidenceHash: "ebf198e49c21941c865b5d7b7e7c4e1ef92d366ba695ad108b0ee1c43b061996",
+  baseSolutionCheckpointPath: "solution-chunks/v3-0000.json",
+  baseSolutionCheckpointHash: "7e463c412565efc1a07c56dc3324da478426ad98822b31c95d586fee87391339",
+  baseSolutionItemHash: "ccf1b5bb896164a0466f3b1cd7d3a32463b07b0e640f952c05d14fb04dd74646",
+  failedQuestionHash: "a23bd8426e4a628a5a8265bd6f479ab5687cd53f96532ca2c496d72796724201",
+  failedClassificationHash: "696b03bb458b06aee5067cfded58c8ee6dbebfb43fc2d8a54c3e1371d1a0a50b",
+  beforeBox: [0.12, 0.27],
+  afterBox: [0.12, 0.36],
+  correctedQuestionHash: "35937a22d01677588672139e66a4e55a58a1711fa2b5ba7541d3181d009518d0",
+}] as const;
+
 const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST:
 readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   allowlistId: "ebsi-5525984-q8-terminal-fidelity-v1",
@@ -1295,6 +1392,10 @@ export function manualAdjudicationAllowlistFingerprint(): string {
 
 export function manualRevisionAllowlistFingerprint(): string {
   return canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST);
+}
+
+export function scopeBoxRevisionAllowlistFingerprint(): string {
+  return canonicalEvidenceHash(PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST);
 }
 
 export function terminalFidelityAdjudicationAllowlistFingerprint(): string {
@@ -4379,6 +4480,7 @@ function verifyProblemRecoveryCoverage(
   const declaredPositiveRepairScope = new Set<string>();
   const declaredRevisionScope = new Set<string>();
   const declaredManual = new Set<string>();
+  const declaredScopeBox = new Set<string>();
   const declaredTerminalAdjudication = new Set<string>();
   for (const [index, value] of values.entries()) {
     const repair = object(value, `answer audit repairs[${index}]`);
@@ -4479,6 +4581,38 @@ function verifyProblemRecoveryCoverage(
         throw new Error(`${pointer.path}: duplicate scope adjudication authority`);
       }
       declaredScope.add(pointer.path);
+      if (adjudication.boxRevision !== undefined) {
+        const boxRevision = object(
+          adjudication.boxRevision,
+          `answer audit repairs[${index}].revision.recovery.scopeAdjudication.boxRevision`,
+        );
+        const scopeBoxPointers: Array<[string, unknown]> = [
+          ["scope box crop evidence", boxRevision.cropEvidenceArtifact],
+          ["scope box crop PDF", boxRevision.cropEvidencePdf],
+          ["scope box problem revision", boxRevision.problemArtifact],
+          ["scope box classification revision", boxRevision.classificationArtifact],
+        ];
+        if (!Array.isArray(boxRevision.cropViews)) {
+          throw new Error(`answer audit repairs[${index}] scope box crop views are missing`);
+        }
+        for (const [viewIndex, raw] of boxRevision.cropViews.entries()) {
+          scopeBoxPointers.push([
+            `scope box crop view ${viewIndex + 1}`,
+            object(raw, `answer audit repairs[${index}] scope box cropViews[${viewIndex}]`).artifact,
+          ]);
+        }
+        for (const [label, raw] of scopeBoxPointers) {
+          const envelope = object(raw, `${label} artifact`);
+          const childPointer = evidencePointer(
+            { path: envelope.path, sha256: envelope.sha256 },
+            `${label} artifact`,
+          );
+          if (declaredScopeBox.has(childPointer.path)) {
+            throw new Error(`${childPointer.path}: duplicate scope box revision authority`);
+          }
+          declaredScopeBox.add(childPointer.path);
+        }
+      }
     }
     if (recovery.manualAdjudication !== undefined) {
       if (contract.auditVersion !== 5) throw new Error("problem manual adjudication requires answer audit v5");
@@ -4669,6 +4803,46 @@ function verifyProblemRecoveryCoverage(
   for (const path of declaredRevisionScope) {
     if (!existsSync(join(stateDir, path))) {
       throw new Error(`${path}: declared revision scope adjudication artifact is missing`);
+    }
+  }
+  for (const [directory, patterns] of [
+    ["problem-scope-box-evidence", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.pdf$/u,
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}-view-\d{2}\.png$/u,
+    ]],
+    ["problem-scope-box-revisions", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
+    ]],
+    ["classification-scope-box-revisions", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u,
+    ]],
+  ] as const) {
+    const absolute = join(stateDir, directory);
+    if (!existsSync(absolute)) continue;
+    const expectedDirectory = resolve(realpathSync(stateDir), directory);
+    if (lstatSync(absolute).isSymbolicLink() || !lstatSync(absolute).isDirectory()
+      || realpathSync(absolute) !== expectedDirectory) {
+      throw new Error(`${directory}: scope box artifact directory must be a confined regular directory`);
+    }
+    for (const entry of readdirSync(absolute, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name))) {
+      if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
+      if (!entry.isFile() || entry.isSymbolicLink()) {
+        throw new Error(`${directory}/${entry.name}: scope box artifact must be a regular file`);
+      }
+      if (!patterns.some((pattern) => pattern.test(entry.name))) {
+        throw new Error(`${directory}/${entry.name}: malformed scope box artifact name`);
+      }
+      const path = `${directory}/${entry.name}`;
+      if (!declaredScopeBox.has(path)) {
+        throw new Error(`${path}: scope box artifact is not declared by the terminal audit`);
+      }
+    }
+  }
+  for (const path of declaredScopeBox) {
+    if (!existsSync(join(stateDir, path))) {
+      throw new Error(`${path}: declared scope box artifact is missing`);
     }
   }
   for (const [directory, patterns] of [
@@ -6081,6 +6255,461 @@ function problemRevisionScopeAdjudicationSpec(
   return matches[0];
 }
 
+function problemScopeBoxRevisionSpec(
+  entry: ManifestEntry,
+  key: string,
+  sourcePage: number,
+  sourceHash: string,
+  solutionSourceHash: string,
+): ProblemScopeBoxRevisionSpec | null {
+  const matches = PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST.filter((spec) =>
+    spec.entryId === entry.id && spec.key === key && spec.sourcePage === sourcePage);
+  if (matches.length > 1) throw new Error(`${entry.id} ${key}: scope box revision allowlist is duplicated`);
+  const spec = matches[0];
+  if (spec && (spec.sourceHash !== sourceHash || spec.solutionSourceHash !== solutionSourceHash)) {
+    throw new Error(`${entry.id} ${key}: official scope box sources do not match the allowlist`);
+  }
+  return spec ?? null;
+}
+
+function applyProblemScopeBoxRevision(
+  question: ProblemQuestion,
+  spec: ProblemScopeBoxRevisionSpec,
+): ProblemQuestion {
+  if (canonicalEvidenceHash(question.evidence) !== spec.failedQuestionHash
+    || !isDeepStrictEqual(question.evidence.box, [...spec.beforeBox])) {
+    throw new Error(`${question.key}: scope box revision failed question is stale`);
+  }
+  const correctedEvidence = structuredClone(question.evidence);
+  correctedEvidence.box = [...spec.afterBox];
+  const { box: _beforeBox, ...before } = question.evidence;
+  const { box: _afterBox, ...after } = correctedEvidence;
+  const corrected = parseProblem(correctedEvidence, `${question.key} scope box revision`);
+  if (!isDeepStrictEqual(before, after)
+    || canonicalEvidenceHash(corrected.evidence) !== spec.correctedQuestionHash) {
+    throw new Error(`${question.key}: scope box revision changed more than the exact box`);
+  }
+  return corrected;
+}
+
+function verifyProblemScopeBoxRevision(
+  value: unknown,
+  parentRecovery: Record<string, unknown>,
+  parentScope: Record<string, unknown>,
+  failedQuestion: ProblemQuestion,
+  failedClassification: ClassificationEvidence,
+  row: V3RevisionRow,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  solutionEvidence: DownloadEvidence,
+  rulesDigest: string,
+  cache: EvidenceCache,
+  contract: VerificationContract,
+): { question: ProblemQuestion; classification: ClassificationEvidence; evidence: Record<string, unknown> } {
+  const key = failedQuestion.key;
+  const spec = problemScopeBoxRevisionSpec(
+    entry,
+    key,
+    failedQuestion.page,
+    problemEvidence.sha256,
+    solutionEvidence.sha256,
+  );
+  if (!spec || contract.auditVersion !== 5 || parentScope.boxRevision !== undefined
+    || parentRecovery.adjudication !== undefined || parentRecovery.manualAdjudication !== undefined
+    || canonicalEvidenceHash(parentRecovery) !== spec.parentRecoveryEvidenceHash
+    || parentRecovery.key !== key || parentRecovery.printedNumber !== failedQuestion.printedNumber
+    || parentRecovery.sourcePage !== spec.sourcePage || parentRecovery.sourceHash !== spec.sourceHash
+    || parentRecovery.contextFrom !== spec.problemContextFrom || parentRecovery.contextTo !== spec.problemContextTo
+    || canonicalEvidenceHash(failedQuestion.evidence) !== spec.failedQuestionHash
+    || canonicalEvidenceHash(failedClassification) !== spec.failedClassificationHash
+    || sha256(failedClassification.transcription_evidence) !== spec.failedScopeEvidenceHash
+    || failedClassification.transcription_status !== "mismatch"
+    || failedClassification.decision !== "reject" || failedClassification.canonical_subject !== null
+    || failedClassification.curriculum_course !== null || failedClassification.domain !== null
+    || failedClassification.achievement_codes.length !== 0 || failedClassification.confidence < 0.9) {
+    throw new Error(`${key}: scope box revision parent/allowlist is stale`);
+  }
+  const recoveryProblem = evidencePointer(parentRecovery.problemArtifact, `${key}.scopeBox.parentRecoveryProblem`);
+  const recoveryClassificationEnvelope = object(
+    parentRecovery.classificationArtifact,
+    `${key}.scopeBox.parentRecoveryClassification`,
+  );
+  const recoveryClassification = evidencePointer({
+    path: recoveryClassificationEnvelope.path,
+    sha256: recoveryClassificationEnvelope.sha256,
+  }, `${key}.scopeBox.parentRecoveryClassification`);
+  if (recoveryProblem.path !== spec.parentRecoveryProblemArtifactPath
+    || recoveryProblem.sha256 !== spec.parentRecoveryProblemArtifactHash
+    || recoveryClassification.path !== spec.parentRecoveryClassificationArtifactPath
+    || recoveryClassification.sha256 !== spec.parentRecoveryClassificationArtifactHash
+    || parentRecovery.problemArtifactItemHash !== spec.failedQuestionHash
+    || parentRecovery.effectiveQuestionHash !== spec.failedQuestionHash
+    || parentRecovery.classificationArtifactItemHash !== spec.parentRecoveryClassificationHash
+    || parentRecovery.effectiveClassificationHash !== spec.parentRecoveryClassificationHash) {
+    throw new Error(`${key}: scope box revision recovery authority is stale`);
+  }
+  readBoundEvidenceCached(cache, stateDir, recoveryProblem, `${key} scope box recovery problem`);
+  const recoveryClassificationCheckpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    recoveryClassification,
+    `${key} scope box recovery classification`,
+  );
+  if (!Array.isArray(recoveryClassificationCheckpoint.items)
+    || recoveryClassificationCheckpoint.items.length !== 1) {
+    throw new Error(`${key}: scope box recovery classification coverage is stale`);
+  }
+  const preScopeClassification = parseClassificationEvidence(
+    recoveryClassificationCheckpoint.items[0],
+    failedQuestion,
+    entry,
+    `${key}.scopeBox.recoveryClassification.items[0]`,
+  );
+  if (canonicalEvidenceHash(preScopeClassification) !== spec.parentRecoveryClassificationHash) {
+    throw new Error(`${key}: scope box recovery classification item is stale`);
+  }
+
+  const parentScopeAdjudicationHash = canonicalEvidenceHash(parentScope);
+  const trigger = object(parentScope.trigger, `${key}.scopeBox.parentScope.trigger`);
+  const triggerCheckpoint = problemTerminalFidelityCheckpoint(
+    trigger.terminalCheckpoint,
+    `${key}.scopeBox.parentScope.trigger.terminalCheckpoint`,
+  );
+  const baseSolutionCheckpoint = evidencePointer(
+    parentScope.baseSolutionCheckpoint,
+    `${key}.scopeBox.parentScope.baseSolutionCheckpoint`,
+  );
+  const failedScopeEnvelope = object(
+    parentScope.classificationArtifact,
+    `${key}.scopeBox.parentScope.classificationArtifact`,
+  );
+  const failedScopeArtifact = evidencePointer({
+    path: failedScopeEnvelope.path,
+    sha256: failedScopeEnvelope.sha256,
+  }, `${key}.scopeBox.parentScope.classificationArtifact`);
+  if (parentScope.allowlistId !== spec.parentScopeAllowlistId || parentScope.key !== key
+    || parentScope.printedNumber !== failedQuestion.printedNumber || parentScope.sourcePage !== spec.sourcePage
+    || parentScope.sourceHash !== spec.sourceHash || parentScope.solutionSourceHash !== spec.solutionSourceHash
+    || parentScope.problemContextFrom !== spec.problemContextFrom
+    || parentScope.problemContextTo !== spec.problemContextTo
+    || parentScope.solutionContextFrom !== spec.solutionContextFrom
+    || parentScope.solutionContextTo !== spec.solutionContextTo
+    || parentScope.parentRecoveryEvidenceHash !== spec.parentRecoveryEvidenceHash
+    || failedScopeArtifact.path !== spec.failedScopeArtifactPath
+    || failedScopeArtifact.sha256 !== spec.failedScopeArtifactHash
+    || parentScope.classificationArtifactItemHash !== spec.failedScopeItemHash
+    || parentScope.baseQuestionHash !== spec.failedQuestionHash
+    || parentScope.effectiveQuestionHash !== spec.failedQuestionHash
+    || parentScope.baseClassificationHash !== spec.parentRecoveryClassificationHash
+    || parentScope.effectiveClassificationHash !== spec.failedClassificationHash
+    || triggerCheckpoint.path !== spec.triggerTerminalPath
+    || triggerCheckpoint.sha256 !== spec.triggerTerminalArtifactHash
+    || triggerCheckpoint.inputHash !== spec.triggerInputHash
+    || trigger.preAdjudicationEffectiveCorpusHash !== spec.triggerEffectiveCorpusHash
+    || trigger.terminalItemHash !== spec.triggerItemHash
+    || trigger.evidenceHash !== spec.triggerEvidenceHash
+    || trigger.scopeEvidenceHash !== spec.triggerScopeEvidenceHash
+    || baseSolutionCheckpoint.path !== spec.baseSolutionCheckpointPath
+    || baseSolutionCheckpoint.sha256 !== spec.baseSolutionCheckpointHash
+    || parentScope.baseSolutionItemHash !== spec.baseSolutionItemHash) {
+    throw new Error(`${key}: scope box revision parent scope authority is stale`);
+  }
+  const failedScopeCheckpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    failedScopeArtifact,
+    `${key} failed scope child`,
+  );
+  if (!Array.isArray(failedScopeCheckpoint.items) || failedScopeCheckpoint.items.length !== 1
+    || failedScopeCheckpoint.version !== PROBLEM_SCOPE_ADJUDICATION_VERSION
+    || failedScopeCheckpoint.entryId !== entry.id
+    || failedScopeCheckpoint.basisDigest !== spec.failedScopeBasisDigest
+    || canonicalEvidenceHash(failedScopeCheckpoint.basis) !== spec.failedScopeBasisDigest) {
+    throw new Error(`${key}: scope box revision failed scope checkpoint is stale`);
+  }
+  const failedScopeItem = parseClassificationEvidence(
+    failedScopeCheckpoint.items[0],
+    failedQuestion,
+    entry,
+    `${key}.scopeBox.failedScope.items[0]`,
+  );
+  if (!isDeepStrictEqual(failedScopeItem, failedClassification)
+    || canonicalEvidenceHash(failedScopeItem) !== spec.failedScopeItemHash
+    || sha256(failedScopeItem.transcription_evidence) !== spec.failedScopeEvidenceHash) {
+    throw new Error(`${key}: scope box revision failed scope item is stale`);
+  }
+  const terminalItem = parseProblemTerminalFidelityItem(
+    trigger.terminalItem,
+    `${key}.scopeBox.parentScope.trigger.terminalItem`,
+    contract,
+  );
+  if (terminalItem.key !== key || canonicalEvidenceHash(terminalItem) !== spec.triggerItemHash
+    || sha256(terminalItem.evidence) !== spec.triggerEvidenceHash
+    || terminalItem.scopeEvidence === undefined
+    || sha256(terminalItem.scopeEvidence) !== spec.triggerScopeEvidenceHash
+    || terminalItem.status !== "exact" || terminalItem.scopeDecision !== "reject"
+    || terminalItem.scopeConfidence < 0.9
+    || canonicalEvidenceHash(problemTerminalInput({
+      question: failedQuestion,
+      classification: preScopeClassification,
+      problemCheckpoint: row.first.row.base.problemCheckpoint,
+      classificationCheckpoint: row.first.row.base.classificationCheckpoint,
+      contextFrom: row.first.row.contextFrom,
+      contextTo: row.first.row.contextTo,
+    })) !== spec.triggerQuestionInputHash) {
+    throw new Error(`${key}: scope box revision terminal item/input is stale`);
+  }
+  readBoundEvidenceCached(cache, stateDir, triggerCheckpoint, `${key} scope box trigger terminal`);
+  readBoundEvidenceCached(cache, stateDir, baseSolutionCheckpoint, `${key} scope box base solution`);
+
+  const boxRevision = object(value, `${key}.revision.recovery.scopeAdjudication.boxRevision`);
+  const sourcePages = [...new Set(spec.views.map((view) => view.sourcePage))].sort((left, right) => left - right);
+  const cropBasis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key,
+    sourcePage: spec.sourcePage,
+    sourcePages,
+    sourceHash: problemEvidence.sha256,
+    dpi: spec.dpi,
+    views: spec.views,
+    requiredTokens: spec.requiredTokens,
+  };
+  const cropBasisDigest = canonicalEvidenceHash(cropBasis);
+  const cropStem = `v${PROBLEM_SCOPE_BOX_REVISION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+    `${failedQuestion.printedNumber.padStart(4, "0")}-${cropBasisDigest}`;
+  const cropEvidenceArtifact = evidencePointer(
+    boxRevision.cropEvidenceArtifact,
+    `${key}.scopeBox.cropEvidenceArtifact`,
+  );
+  const cropEvidencePdf = evidencePointer(boxRevision.cropEvidencePdf, `${key}.scopeBox.cropEvidencePdf`);
+  if (cropEvidenceArtifact.path !== `problem-scope-box-evidence/${cropStem}.json`
+    || cropEvidencePdf.path !== `problem-scope-box-evidence/${cropStem}.pdf`) {
+    throw new Error(`${key}: scope box crop canonical paths are stale`);
+  }
+  const cropCheckpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    cropEvidenceArtifact,
+    `${key} scope box crop checkpoint`,
+  );
+  if (!Array.isArray(cropCheckpoint.views) || cropCheckpoint.views.length !== spec.views.length) {
+    throw new Error(`${key}: scope box crop view coverage is not exact`);
+  }
+  const cropViews = cropCheckpoint.views.map((raw, index) => {
+    const view = object(raw, `${key}.scopeBox.cropViews[${index}]`);
+    const expected = spec.views[index];
+    const artifact = evidencePointer(view.artifact, `${key}.scopeBox.cropViews[${index}].artifact`);
+    const pixelWidth = integer(view.pixelWidth, `${key}.scopeBox.cropViews[${index}].pixelWidth`, 1);
+    const pixelHeight = integer(view.pixelHeight, `${key}.scopeBox.cropViews[${index}].pixelHeight`, 1);
+    const pixelSha256 = digest(view.pixelSha256, `${key}.scopeBox.cropViews[${index}].pixelSha256`);
+    const expectedPath = `problem-scope-box-evidence/${cropStem}-view-${String(index).padStart(2, "0")}.png`;
+    if (view.sourcePage !== expected.sourcePage || view.label !== expected.label
+      || !isDeepStrictEqual(view.rect, [...expected.rect])
+      || artifact.path !== expectedPath || artifact.sha256 !== pixelSha256) {
+      throw new Error(`${key}: scope box crop view ${index} is stale`);
+    }
+    const absolute = confinedEvidencePath(stateDir, artifact, `${key} scope box crop view ${index}`);
+    const dimensions = cropPngDimensions(absolute, `${key} scope box crop view ${index}`);
+    if (hashFile(absolute) !== pixelSha256
+      || dimensions.width !== pixelWidth || dimensions.height !== pixelHeight) {
+      throw new Error(`${key}: scope box crop view ${index} bytes/dimensions are stale`);
+    }
+    return {
+      sourcePage: expected.sourcePage,
+      label: expected.label,
+      rect: [...expected.rect],
+      pixelWidth,
+      pixelHeight,
+      pixelSha256,
+      artifact,
+    };
+  });
+  const cropPdfPath = confinedEvidencePath(stateDir, cropEvidencePdf, `${key} scope box crop PDF`);
+  if (hashFile(cropPdfPath) !== cropEvidencePdf.sha256) {
+    throw new Error(`${key}: scope box crop PDF hash is stale`);
+  }
+  const expectedCropCheckpoint = {
+    version: PROBLEM_SCOPE_BOX_REVISION_VERSION,
+    entryId: entry.id,
+    basisDigest: cropBasisDigest,
+    basis: cropBasis,
+    renderer: "pdftocairo-png+pdf-lib",
+    dpi: spec.dpi,
+    evidencePdf: cropEvidencePdf,
+    views: cropViews,
+  };
+  if (!isDeepStrictEqual(cropCheckpoint, expectedCropCheckpoint)
+    || !isDeepStrictEqual(boxRevision.cropViews, cropViews)) {
+    throw new Error(`${key}: scope box crop checkpoint/envelope is stale`);
+  }
+
+  const correctionSpecHash = canonicalEvidenceHash(spec);
+  const commonBasis = {
+    allowlistId: spec.allowlistId,
+    entryId: entry.id,
+    key,
+    printedNumber: failedQuestion.printedNumber,
+    sourcePage: spec.sourcePage,
+    sourceHash: problemEvidence.sha256,
+    solutionSourceHash: solutionEvidence.sha256,
+    parentRecovery,
+    parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash,
+    parentScopeAdjudication: parentScope,
+    parentScopeAdjudicationHash,
+    failedScopeArtifact,
+    failedScopeBasisDigest: spec.failedScopeBasisDigest,
+    failedScopeItem,
+    failedScopeItemHash: spec.failedScopeItemHash,
+    failedScopeEvidenceHash: spec.failedScopeEvidenceHash,
+    trigger: parentScope.trigger,
+    baseSolutionCheckpoint,
+    baseSolutionItemHash: spec.baseSolutionItemHash,
+    correctionSpecHash,
+    cropEvidenceArtifact,
+    cropEvidencePdf,
+    cropViews,
+    baseQuestionHash: spec.failedQuestionHash,
+    baseClassificationHash: spec.failedClassificationHash,
+  };
+  const basisDigest = canonicalEvidenceHash(commonBasis);
+  const stem = `v${PROBLEM_SCOPE_BOX_REVISION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+    `${failedQuestion.printedNumber.padStart(4, "0")}-${basisDigest}`;
+  const problemEnvelope = object(boxRevision.problemArtifact, `${key}.scopeBox.problemArtifact`);
+  const problemArtifact = evidencePointer({ path: problemEnvelope.path, sha256: problemEnvelope.sha256 },
+    `${key}.scopeBox.problemArtifact`);
+  if (problemEnvelope.correctionVersion !== PROBLEM_SCOPE_BOX_REVISION_VERSION
+    || problemEnvelope.correctionDigest !== PROBLEM_SCOPE_BOX_REVISION_CORRECTION_DIGEST
+    || problemArtifact.path !== `problem-scope-box-revisions/${stem}.json`) {
+    throw new Error(`${key}: scope box problem artifact envelope/path is stale`);
+  }
+  const problemCheckpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    problemArtifact,
+    `${key} scope box problem revision`,
+  );
+  const corrected = applyProblemScopeBoxRevision(failedQuestion, spec);
+  const expectedProblemCheckpoint = {
+    version: PROBLEM_SCOPE_BOX_REVISION_VERSION,
+    entryId: entry.id,
+    basisDigest,
+    basis: commonBasis,
+    correctionVersion: PROBLEM_SCOPE_BOX_REVISION_VERSION,
+    correctionDigest: PROBLEM_SCOPE_BOX_REVISION_CORRECTION_DIGEST,
+    item: corrected.evidence,
+  };
+  if (!isDeepStrictEqual(problemCheckpoint, expectedProblemCheckpoint)
+    || boxRevision.problemArtifactItemHash !== spec.correctedQuestionHash) {
+    throw new Error(`${key}: scope box problem revision checkpoint is stale`);
+  }
+
+  const classificationBasis = {
+    ...commonBasis,
+    problemArtifact,
+    problemArtifactItemHash: spec.correctedQuestionHash,
+    effectiveQuestionHash: spec.correctedQuestionHash,
+  };
+  const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+  const classificationEnvelope = object(
+    boxRevision.classificationArtifact,
+    `${key}.scopeBox.classificationArtifact`,
+  );
+  const classificationArtifact = evidencePointer({
+    path: classificationEnvelope.path,
+    sha256: classificationEnvelope.sha256,
+  }, `${key}.scopeBox.classificationArtifact`);
+  const expectedClassificationPath = `classification-scope-box-revisions/` +
+    `v${CLASSIFICATION_SCOPE_BOX_REVISION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+    `${failedQuestion.printedNumber.padStart(4, "0")}-${classificationBasisDigest}-${rulesDigest}.json`;
+  if (classificationArtifact.path !== expectedClassificationPath
+    || classificationEnvelope.rulesDigest !== rulesDigest
+    || classificationEnvelope.transcriptionGateVersion !== contract.transcriptionGateVersion
+    || classificationEnvelope.transcriptionPromptDigest !== contract.transcriptionPromptDigest
+    || classificationEnvelope.revisionVersion !== PROBLEM_SCOPE_BOX_REVISION_VERSION
+    || classificationEnvelope.revisionPromptDigest !== PROBLEM_SCOPE_BOX_REVISION_PROMPT_DIGEST) {
+    throw new Error(`${key}: scope box classification artifact envelope/path is stale`);
+  }
+  const classificationCheckpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    classificationArtifact,
+    `${key} scope box classification revision`,
+  );
+  if (!Array.isArray(classificationCheckpoint.items) || classificationCheckpoint.items.length !== 1) {
+    throw new Error(`${key}: scope box classification revision must contain one decision`);
+  }
+  const classification = parseClassificationEvidence(
+    classificationCheckpoint.items[0],
+    corrected,
+    entry,
+    `${key}.scopeBox.classification.items[0]`,
+  );
+  const expectedClassificationCheckpoint = {
+    version: CLASSIFICATION_SCOPE_BOX_REVISION_VERSION,
+    entryId: entry.id,
+    basisDigest: classificationBasisDigest,
+    basis: classificationBasis,
+    classifierVersion: contract.classifierVersion,
+    rulesDigest,
+    transcriptionGateVersion: contract.transcriptionGateVersion,
+    transcriptionPromptDigest: contract.transcriptionPromptDigest,
+    revisionVersion: PROBLEM_SCOPE_BOX_REVISION_VERSION,
+    revisionPromptDigest: PROBLEM_SCOPE_BOX_REVISION_PROMPT_DIGEST,
+    model: "gpt-5.6-sol",
+    reasoningEffort: "high",
+    items: [classification],
+  };
+  const classificationArtifactItemHash = canonicalEvidenceHash(classification);
+  const evidence = {
+    allowlistId: spec.allowlistId,
+    key,
+    printedNumber: failedQuestion.printedNumber,
+    sourcePage: spec.sourcePage,
+    sourceHash: problemEvidence.sha256,
+    solutionSourceHash: solutionEvidence.sha256,
+    parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash,
+    parentScopeAdjudicationHash,
+    failedScopeArtifact,
+    failedScopeBasisDigest: spec.failedScopeBasisDigest,
+    failedScopeItemHash: spec.failedScopeItemHash,
+    failedScopeEvidenceHash: spec.failedScopeEvidenceHash,
+    correctionSpecHash,
+    cropEvidenceArtifact,
+    cropEvidencePdf,
+    cropViews,
+    problemArtifact: {
+      ...problemArtifact,
+      correctionVersion: PROBLEM_SCOPE_BOX_REVISION_VERSION,
+      correctionDigest: PROBLEM_SCOPE_BOX_REVISION_CORRECTION_DIGEST,
+    },
+    problemArtifactItemHash: spec.correctedQuestionHash,
+    classificationArtifact: {
+      ...classificationArtifact,
+      rulesDigest,
+      transcriptionGateVersion: contract.transcriptionGateVersion,
+      transcriptionPromptDigest: contract.transcriptionPromptDigest,
+      revisionVersion: PROBLEM_SCOPE_BOX_REVISION_VERSION,
+      revisionPromptDigest: PROBLEM_SCOPE_BOX_REVISION_PROMPT_DIGEST,
+    },
+    classificationArtifactItemHash,
+    baseQuestionHash: spec.failedQuestionHash,
+    effectiveQuestionHash: spec.correctedQuestionHash,
+    baseClassificationHash: spec.failedClassificationHash,
+    effectiveClassificationHash: classificationArtifactItemHash,
+  };
+  if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)
+    || !isDeepStrictEqual(boxRevision, evidence)
+    || classification.transcription_status !== "exact" || classification.decision !== "reject"
+    || classification.canonical_subject !== null || classification.curriculum_course !== null
+    || classification.domain !== null || classification.achievement_codes.length !== 0
+    || classification.confidence < 0.9) {
+    throw new Error(`${key}: scope box classification/evidence is not exact reject/null`);
+  }
+  return { question: corrected, classification, evidence };
+}
+
 function verifyProblemScopeAdjudication(
   value: unknown,
   parentRecovery: Record<string, unknown>,
@@ -6095,6 +6724,7 @@ function verifyProblemScopeAdjudication(
   cache: EvidenceCache,
   contract: VerificationContract,
 ): {
+  question: ProblemQuestion;
   classification: ClassificationEvidence;
   evidence: Record<string, unknown>;
   generation: {
@@ -6122,6 +6752,7 @@ function verifyProblemScopeAdjudication(
     throw new Error(`${key}: scope adjudication problem context is not the exact bounded source`);
   }
   const adjudication = object(value, `${key}.revision.recovery.scopeAdjudication`);
+  const { boxRevision: rawBoxRevision, ...parentAdjudication } = adjudication;
   if (parentRecovery.key !== key || parentRecovery.printedNumber !== recoveredQuestion.printedNumber
     || parentRecovery.sourcePage !== recoveredQuestion.page || parentRecovery.sourceHash !== problemEvidence.sha256
     || parentRecovery.effectiveQuestionHash !== canonicalEvidenceHash(recoveredQuestion.evidence)
@@ -6323,11 +6954,26 @@ function verifyProblemScopeAdjudication(
     items: [classification],
   };
   const classificationArtifactItemHash = canonicalEvidenceHash(classification);
+  const boxRevisionSpec = problemScopeBoxRevisionSpec(
+    entry,
+    key,
+    recoveredQuestion.page,
+    problemEvidence.sha256,
+    solutionEvidence.sha256,
+  );
+  const allowBoxRevisionMismatch = rawBoxRevision !== undefined && boxRevisionSpec !== null
+    && classificationArtifact.path === boxRevisionSpec.failedScopeArtifactPath
+    && classificationArtifact.sha256 === boxRevisionSpec.failedScopeArtifactHash
+    && basisDigest === boxRevisionSpec.failedScopeBasisDigest
+    && classificationArtifactItemHash === boxRevisionSpec.failedScopeItemHash
+    && sha256(classification.transcription_evidence) === boxRevisionSpec.failedScopeEvidenceHash
+    && canonicalEvidenceHash(recoveredQuestion.evidence) === boxRevisionSpec.failedQuestionHash
+    && classification.transcription_status === "mismatch";
   if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)
     || classification.decision !== "reject" || classification.canonical_subject !== null
     || classification.curriculum_course !== null || classification.domain !== null
     || classification.achievement_codes.length !== 0 || classification.confidence < 0.9
-    || classification.transcription_status !== "exact"
+    || classification.transcription_status !== "exact" && !allowBoxRevisionMismatch
     || adjudication.classificationArtifactItemHash !== classificationArtifactItemHash) {
     throw new Error(`${key}: scope adjudication output is not exact high-confidence reject/null`);
   }
@@ -6360,12 +7006,40 @@ function verifyProblemScopeAdjudication(
     baseClassificationHash: canonicalEvidenceHash(recoveredClassification),
     effectiveClassificationHash: classificationArtifactItemHash,
   };
-  if (!isDeepStrictEqual(adjudication, evidence)) {
+  if (!isDeepStrictEqual(parentAdjudication, evidence)) {
     throw new Error(`${key}: scope adjudication evidence envelope does not match its exact chain`);
   }
+  const final = classification.transcription_status === "exact"
+    ? (() => {
+        if (rawBoxRevision !== undefined) {
+          throw new Error(`${key}: exact scope adjudication must not declare a box revision`);
+        }
+        return { question: recoveredQuestion, classification, evidence };
+      })()
+    : (() => {
+        const revised = verifyProblemScopeBoxRevision(
+          rawBoxRevision,
+          parentRecovery,
+          evidence,
+          recoveredQuestion,
+          classification,
+          row,
+          stateDir,
+          entry,
+          problemEvidence,
+          solutionEvidence,
+          rulesDigest,
+          cache,
+          contract,
+        );
+        const nestedEvidence = { ...evidence, boxRevision: revised.evidence };
+        if (!isDeepStrictEqual(adjudication, nestedEvidence)) {
+          throw new Error(`${key}: scope box revision envelope does not match its exact chain`);
+        }
+        return { question: revised.question, classification: revised.classification, evidence: nestedEvidence };
+      })();
   return {
-    classification,
-    evidence,
+    ...final,
     generation: {
       key,
       current: {
@@ -7088,7 +7762,7 @@ function verifyProblemRecovery(
       }
       return {
         classified: {
-          question: recoveredQuestion,
+          question: scope.question,
           classification: scope.classification,
           problemCheckpoint: row.first.row.base.problemCheckpoint,
           classificationCheckpoint: row.first.row.base.classificationCheckpoint,
@@ -10746,9 +11420,21 @@ function selectVerificationContract(
     "classification-manual-adjudications",
     "problem-manual-revisions",
     "classification-manual-revisions",
+    "problem-scope-box-evidence",
+    "problem-scope-box-revisions",
+    "classification-scope-box-revisions",
     "problem-terminal-fidelity-adjudications",
   ].some((directory) => {
     const absolute = join(stateDir, directory);
+    if (directory.startsWith("problem-scope-box-") || directory === "classification-scope-box-revisions") {
+      try {
+        const info = lstatSync(absolute);
+        if (info.isSymbolicLink() || !info.isDirectory()
+          || realpathSync(absolute) !== resolve(realpathSync(stateDir), directory)) return true;
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code !== "ENOENT";
+      }
+    }
     return existsSync(absolute) && readdirSync(absolute, { withFileTypes: true }).some((entry) =>
       !(entry.isFile() && entry.name.endsWith(".tmp")));
   });

@@ -18,27 +18,10 @@ import type { QuizItemEx, SolutionItem } from "../src/claude";
 import {
   CLASSIFIER_DIGEST,
   CLASSIFIER_VERSION,
-  CLASSIFICATION_RECOVERY_VERSION,
-  CLASSIFICATION_REVISION_VERSION,
-  PROBLEM_RECOVERY_VERSION,
-  PROBLEM_REPAIR_VERSION,
-  PROBLEM_REVISION_VERSION,
-  PROBLEM_SCOPE_ADJUDICATION_PROMPT_DIGEST,
-  PROBLEM_SCOPE_ADJUDICATION_VERSION,
-  SOLUTION_FIDELITY_VERSION,
-  SOLUTION_FIDELITY_PROMPT_DIGEST,
   TRANSCRIPTION_GATE_VERSION,
   TRANSCRIPTION_PROMPT_DIGEST,
-  TARGETED_PROBLEM_REVISION_PROMPT_DIGEST,
-  TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
-  assertNoCommittedReceiptForFilteredResult,
-  assertNoReceiptResultConflict,
-  baseDifficultyByQuestionKey,
-  canonicalEvidenceHash,
-  matchOfficialSolutions,
   parseCorpusManifest,
   repairAndAuditOfficialAnswers,
-  writeAnswerAttestation,
   type ClassificationDecision,
   type PdfEvidence,
 } from "../scripts/import-exam-corpus";
@@ -55,14 +38,6 @@ const writeJson = (path: string, value: unknown) => {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 };
-const canonicalize = (value: unknown): unknown => Array.isArray(value)
-  ? value.map(canonicalize)
-  : value && typeof value === "object"
-    ? Object.fromEntries(Object.entries(value).sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => [key, canonicalize(item)]))
-    : value;
-const writeCanonicalJson = (path: string, value: unknown) =>
-  writeFileSync(path, `${JSON.stringify(canonicalize(value), null, 2)}\n`);
 
 describe("exam corpus targeted problem repair", () => {
   const officialFixtureDir = join(
@@ -73,7 +48,7 @@ describe("exam corpus targeted problem repair", () => {
   const officialSolutionPath = join(officialFixtureDir, "solution.pdf");
 
   it.runIf(existsSync(officialProblemPath) && existsSync(officialSolutionPath))(
-    "recovers only Q11 after a failed revision and resumes immutable evidence",
+    "fails closed when alternate Q11 recovery lacks the pinned scope parent",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-corpus-repair-"));
     const problemBytes = readFileSync(officialProblemPath);
@@ -458,359 +433,46 @@ describe("exam corpus targeted problem repair", () => {
     expect(() => readdirSync(join(root, "classification-repair-batches"))).toThrow();
 
     crashClassification = false;
-    const repaired = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
+    await expect(repairAndAuditOfficialAnswers(
+      entry, problem, solution, root, classified, solutions
+    )).rejects.toThrow("scope box pinned failed scope이 regular file이 아닙니다");
     expect(calls).toEqual({
-      target: 3, classification: 4, scopeAdjudication: 1,
-      terminalFidelity: 4, solutionFidelity: 1, semantic: 1,
+      target: 3, classification: 4, scopeAdjudication: 0,
+      terminalFidelity: 3, solutionFidelity: 0, semantic: 0,
     });
-    expect(repaired.repairs).toHaveLength(1);
-    expect(PROBLEM_REPAIR_VERSION).toBe(2);
-    expect(PROBLEM_REVISION_VERSION).toBe(1);
-    expect(CLASSIFICATION_REVISION_VERSION).toBe(2);
-    expect(PROBLEM_RECOVERY_VERSION).toBe(1);
-    expect(CLASSIFICATION_RECOVERY_VERSION).toBe(1);
-    expect(PROBLEM_SCOPE_ADJUDICATION_VERSION).toBe(1);
-    expect(PROBLEM_SCOPE_ADJUDICATION_PROMPT_DIGEST).toMatch(/^[a-f0-9]{64}$/u);
-    expect(TARGETED_PROBLEM_REVISION_PROMPT_DIGEST).toMatch(/^[a-f0-9]{64}$/u);
-    expect(TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST).toMatch(/^[a-f0-9]{64}$/u);
-    expect(repaired.repairs[0]).toMatchObject({
-      key: "4:11",
-      printedNumber: "11",
-      sourcePage: 4,
-      contextFrom: 1,
-      contextTo: 12,
-      problemArtifact: { path: expect.stringMatching(/^problem-repair-batches\/v2-/u) },
-      revision: {
-        problemArtifact: { path: expect.stringMatching(/^problem-revision-batches\/v1-/u) },
-        classificationArtifact: { path: expect.stringMatching(/^classification-revision-batches\/v1-/u) },
-        recovery: {
-          problemArtifact: { path: expect.stringMatching(/^problem-recoveries\/v1-/u) },
-          classificationArtifact: { path: expect.stringMatching(/^classification-recoveries\/v1-/u) },
-          baseProblemRepairItemHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
-          baseClassificationRepairItemHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
-          baseProblemRevisionItemHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
-          baseClassificationRevisionItemHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        },
-      },
-    });
-    expect(repaired.repairs[0].classificationArtifact.path).toMatch(/^classification-repair-batches\/v1-/u);
-    expect(JSON.parse(readFileSync(join(root, repaired.repairs[0].problemArtifact.path), "utf8")))
-      .toMatchObject({
-        contextFrom: 1,
-        contextTo: 12,
-        targetsDigest: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        diagnosticEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        members: [{ sourcePage: 4, baseTranscriptionEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u) }],
-        items: [{ question: expect.stringContaining("만나게") }],
-      });
-    expect(JSON.parse(readFileSync(join(root, repaired.repairs[0].classificationArtifact.path), "utf8")))
-      .toMatchObject({
-        contextFrom: 1,
-        contextTo: 12,
-        items: [{
-          transcription_status: "mismatch",
-          transcription_evidence: expect.stringContaining("원문은 '만나는 점'"),
-        }],
-      });
-    const revision = repaired.repairs[0].revision!;
-    expect(JSON.parse(readFileSync(join(root, revision.problemArtifact.path), "utf8"))).toMatchObject({
-      contextFrom: 1,
-      contextTo: 12,
-      items: [{ question: expect.stringContaining("만나는 점") }],
-    });
-    expect(JSON.parse(readFileSync(join(root, revision.classificationArtifact.path), "utf8"))).toMatchObject({
-      contextFrom: 1,
-      contextTo: 12,
-      items: [{
-        transcription_status: "mismatch",
-        transcription_evidence: expect.stringContaining("x축 눈금 1"),
-      }],
-    });
-    const recovery = revision.recovery!;
-    expect(JSON.parse(readFileSync(join(root, recovery.problemArtifact.path), "utf8"))).toMatchObject({
+    for (const directory of [
+      "problem-repair-batches",
+      "classification-repair-batches",
+      "problem-revision-batches",
+      "classification-revision-batches",
+      "problem-recoveries",
+      "classification-recoveries",
+    ]) expect(readdirSync(join(root, directory))).toHaveLength(1);
+    expect(existsSync(join(root, "classification-scope-adjudications"))).toBe(false);
+
+    const recoveryCheckpoint = JSON.parse(readFileSync(join(
+      root,
+      "problem-recoveries",
+      readdirSync(join(root, "problem-recoveries"))[0]
+    ), "utf8"));
+    expect(recoveryCheckpoint).toMatchObject({
       basis: {
         key: "4:11",
         sourcePage: 4,
         contextFrom: 1,
         contextTo: 12,
-        baseProblemRepairArtifact: repaired.repairs[0].problemArtifact,
-        baseProblemRevisionArtifact: revision.problemArtifact,
         failedClassificationEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
       },
       item: { figure_description: expect.stringContaining("x축 눈금 1") },
     });
-    expect(JSON.parse(readFileSync(join(root, recovery.classificationArtifact.path), "utf8"))).toMatchObject({
-      basis: {
-        baseClassificationRevisionArtifact: {
-          path: revision.classificationArtifact.path,
-          sha256: revision.classificationArtifact.sha256,
-        },
-      },
-      items: [{
-        decision: "accept",
-        canonical_subject: "math_B",
-        transcription_status: "exact",
-      }],
-    });
-    const scopeAdjudication = recovery.scopeAdjudication!;
-    expect(scopeAdjudication).toMatchObject({
-      allowlistId: "ebsi-5577055-q11-scope-v1",
-      key: "4:11",
-      sourcePage: 4,
-      sourceHash: problem.sha256,
-      solutionSourceHash: solution.sha256,
-      problemContextFrom: 1,
-      problemContextTo: 12,
-      solutionContextFrom: 1,
-      solutionContextTo: 5,
-      parentRecoveryEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
-      trigger: {
-        terminalCheckpoint: { path: expect.stringMatching(/^problem-terminal-fidelity\/v2-/u) },
-        terminalItem: { key: "4:11", status: "exact", scopeDecision: "reject", scopeConfidence: 0.99 },
-        terminalItemHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        scopeEvidenceHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
-      },
-      classificationArtifact: {
-        path: expect.stringMatching(/^classification-scope-adjudications\/v1-/u),
-        adjudicationPromptVersion: PROBLEM_SCOPE_ADJUDICATION_VERSION,
-        adjudicationPromptDigest: PROBLEM_SCOPE_ADJUDICATION_PROMPT_DIGEST,
-      },
-    });
-    expect(JSON.parse(readFileSync(join(root, scopeAdjudication.classificationArtifact.path), "utf8")))
-      .toMatchObject({
-        version: PROBLEM_SCOPE_ADJUDICATION_VERSION,
-        basis: {
-          parentRecoveryEvidenceHash: scopeAdjudication.parentRecoveryEvidenceHash,
-          baseSolutionCheckpoint: scopeAdjudication.baseSolutionCheckpoint,
-          trigger: scopeAdjudication.trigger,
-        },
-        adjudicationPromptDigest: PROBLEM_SCOPE_ADJUDICATION_PROMPT_DIGEST,
-        items: [{
-          decision: "reject",
-          canonical_subject: null,
-          curriculum_course: null,
-          domain: null,
-          achievement_codes: [],
-          transcription_status: "exact",
-        }],
-      });
-    expect(repaired.auditPath).toMatch(/^answer-audit\/v5-[a-f0-9]{64}\.json$/u);
-    expect(repaired.auditHash).toMatch(/^[a-f0-9]{64}$/u);
-    const changedKeys = repaired.classified.flatMap((item, index) =>
-      canonicalEvidenceHash(item) === canonicalEvidenceHash(classified[index]) ? [] : [item.classification.key]
-    );
-    expect(changedKeys).toEqual(["4:11"]);
-    expect(repaired.classified[10]).toMatchObject({
-      question: {
-        number: "11",
-        page: 4,
-        question: expect.stringContaining("중점의 좌표는 $(2,1)$"),
-        choices: expect.arrayContaining(["① $4$"]),
-      },
-      classification: { decision: "reject", canonical_subject: null },
-    });
-    expect(repaired.classified[10].question.question).toContain("y=\\log_a x");
-    expect(repaired.classified[10].question.question).toContain("$[3점]$");
-    expect(repaired.classified[10].question.question).not.toContain("만나게");
-    expect(repaired.classified[10].question.figure_description).toContain("x축 눈금 1");
-    const imported = matchOfficialSolutions(
-      entry,
-      repaired.classified,
-      repaired.solutions,
-      baseDifficultyByQuestionKey(classified)
-    );
-    expect(imported.some((item) => item.printedNumber === "11")).toBe(false);
-    expect(imported).toHaveLength(1);
-    expect(readdirSync(join(root, "semantic-choice-checks"))[0]).toMatch(/^v5-/u);
 
-    expect(() => assertNoCommittedReceiptForFilteredResult(root)).not.toThrow();
-    const receipt = { version: 2, status: "committed", entryId: entry.id };
-    const attestation = await writeAnswerAttestation(
-      root,
-      entry.id,
-      problem.sha256,
-      solution.sha256,
-      receipt,
-      repaired
-    );
-    expect(attestation.path).toMatch(/^answer-attestation\/v5-[a-f0-9]{64}\.json$/u);
-    expect(attestation.sha256).toMatch(/^[a-f0-9]{64}$/u);
-    const auditCheckpoint = JSON.parse(readFileSync(join(root, repaired.auditPath!), "utf8"));
-    expect(auditCheckpoint).toMatchObject({
-      classifierVersion: 5,
-      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
-      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
-      solutionFidelityVersion: SOLUTION_FIDELITY_VERSION,
-      solutionFidelityPromptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
-      effectiveSolutionCorpusHash: repaired.effectiveSolutionCorpusHash,
-      derivedAnswerKeys: ["4:12"],
-    });
-    const attestationCheckpoint = JSON.parse(readFileSync(join(root, attestation.path), "utf8"));
-    expect(attestationCheckpoint).toMatchObject({
-      classifierVersion: 5,
-      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
-      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
-      receipt: { path: "receipt.json" },
-      answerAudit: {
-        path: repaired.auditPath,
-        sha256: repaired.auditHash,
-        effectiveCorpusHash: repaired.effectiveCorpusHash,
-        effectiveSolutionCorpusHash: repaired.effectiveSolutionCorpusHash,
-      },
-      solutionFidelityCheckpoints: [{ path: expect.stringMatching(/^solution-fidelity\/v1-/u) }],
-      repairs: [{
-        key: "4:11",
-        contextFrom: 1,
-        contextTo: 12,
-        revision: {
-          problemArtifact: { path: expect.stringMatching(/^problem-revision-batches\/v1-/u) },
-          recovery: {
-            problemArtifact: { path: expect.stringMatching(/^problem-recoveries\/v1-/u) },
-            classificationArtifact: { path: expect.stringMatching(/^classification-recoveries\/v1-/u) },
-            scopeAdjudication: {
-              allowlistId: "ebsi-5577055-q11-scope-v1",
-              classificationArtifact: {
-                path: expect.stringMatching(/^classification-scope-adjudications\/v1-/u),
-              },
-            },
-          },
-        },
-      }],
-    });
-    expect(() => assertNoCommittedReceiptForFilteredResult(root)).toThrow("명시적 migration");
-
-    writeFileSync(join(root, "result.json"), "{}\n");
-    expect(() => assertNoReceiptResultConflict(root)).toThrow("terminal conflict");
-    rmSync(join(root, "result.json"));
-
-    forceBaseQ11ScopeAccept = false;
-    const baseCorpusHash = canonicalEvidenceHash(classified);
-    const baseTerminalCheckpoint = readdirSync(join(root, "problem-terminal-fidelity"))
-      .map((name) => ({ name, value: JSON.parse(readFileSync(join(root, "problem-terminal-fidelity", name), "utf8")) }))
-      .find(({ value }) => value.effectiveCorpusHash === baseCorpusHash);
-    expect(baseTerminalCheckpoint).toBeDefined();
-    rmSync(join(root, "problem-terminal-fidelity", baseTerminalCheckpoint!.name));
-
-    const replay = await repairAndAuditOfficialAnswers(entry, problem, solution, root, classified, solutions);
-    expect(calls).toEqual({
-      target: 3, classification: 4, scopeAdjudication: 1,
-      terminalFidelity: 4, solutionFidelity: 1, semantic: 1,
-    });
-    expect(replay.auditHash).toBe(repaired.auditHash);
-    await expect(writeAnswerAttestation(
-      root,
-      entry.id,
-      problem.sha256,
-      solution.sha256,
-      receipt,
-      replay
-    )).resolves.toEqual(attestation);
-    expect(canonicalEvidenceHash(replay.classified)).toBe(canonicalEvidenceHash(repaired.classified));
-    expect(canonicalEvidenceHash(replay.repairs)).toBe(canonicalEvidenceHash(repaired.repairs));
-    expect(readdirSync(join(root, "problem-recoveries"))).toHaveLength(1);
-    expect(readdirSync(join(root, "classification-recoveries"))).toHaveLength(1);
-
-    const beforeSourceTamper = { ...calls };
-    writeFileSync(problemPath, Buffer.concat([problemBytes, Buffer.from("\n") ]));
+    const beforeReplayFiles = readdirSync(root, { recursive: true }).map(String).sort();
+    providerMock.complete.mockReset().mockRejectedValue(new Error("AI must not run"));
     await expect(repairAndAuditOfficialAnswers(
       entry, problem, solution, root, classified, solutions
-    )).rejects.toThrow("공식 source bytes hash가 다릅니다");
-    expect(calls).toEqual(beforeSourceTamper);
-    writeFileSync(problemPath, problemBytes);
-
-    writeFileSync(solutionPath, Buffer.concat([solutionBytes, Buffer.from("\n") ]));
-    await expect(repairAndAuditOfficialAnswers(
-      entry, problem, solution, root, classified, solutions
-    )).rejects.toThrow("공식 source bytes hash가 다릅니다");
-    expect(calls).toEqual(beforeSourceTamper);
-    writeFileSync(solutionPath, solutionBytes);
-
-    const scopePath = join(root, scopeAdjudication.classificationArtifact.path);
-    const originalScopeBytes = readFileSync(scopePath);
-    const invalidScope = JSON.parse(originalScopeBytes.toString("utf8"));
-    invalidScope.items[0].decision = "review";
-    invalidScope.items[0].canonical_subject = null;
-    invalidScope.items[0].curriculum_course = null;
-    invalidScope.items[0].domain = null;
-    invalidScope.items[0].achievement_codes = [];
-    writeCanonicalJson(scopePath, invalidScope);
-    await expect(repairAndAuditOfficialAnswers(
-      entry, problem, solution, root, classified, solutions
-    )).rejects.toThrow("reject/null exact에 합의하지 않았습니다");
-    expect(calls).toEqual(beforeSourceTamper);
-    writeFileSync(scopePath, originalScopeBytes);
-
-    const orphanScopePath = join(root, "classification-scope-adjudications", "orphan.json");
-    writeFileSync(orphanScopePath, originalScopeBytes);
-    await expect(repairAndAuditOfficialAnswers(
-      entry, problem, solution, root, classified, solutions
-    )).rejects.toThrow("problem scope adjudication orphan/conflict");
-    expect(calls).toEqual(beforeSourceTamper);
-    rmSync(orphanScopePath);
-
-    const finalTerminal = repaired.problemTerminalFidelityCheckpoints[0];
-    const finalTerminalPath = join(root, finalTerminal.path);
-    const originalFinalTerminalBytes = readFileSync(finalTerminalPath);
-    rmSync(finalTerminalPath);
-    forceFinalQ11ScopeAccept = true;
-    const beforeFinalDisagreement = { ...calls };
-    await expect(repairAndAuditOfficialAnswers(
-      entry, problem, solution, root, classified, solutions
-    )).rejects.toThrow("terminal 문제 fidelity가 최종 정책을 만족하지 않습니다");
-    expect(calls.scopeAdjudication).toBe(beforeFinalDisagreement.scopeAdjudication);
-    expect(calls.terminalFidelity).toBe(beforeFinalDisagreement.terminalFidelity + 1);
-    forceFinalQ11ScopeAccept = false;
-    writeFileSync(finalTerminalPath, originalFinalTerminalBytes);
-
-    const semanticPath = join(root, auditCheckpoint.semanticCheckpoint.path);
-    const semanticCheckpoint = JSON.parse(readFileSync(semanticPath, "utf8"));
-    semanticCheckpoint.effectiveCorpusHash = "0".repeat(64);
-    writeCanonicalJson(semanticPath, semanticCheckpoint);
-    const beforeSemanticTamperReplay = { ...calls };
-    await expect(repairAndAuditOfficialAnswers(
-      entry,
-      problem,
-      solution,
-      root,
-      classified,
-      solutions
-    )).rejects.toThrow("semantic choice 체크포인트 메타데이터가 다릅니다");
-    expect(calls).toEqual(beforeSemanticTamperReplay);
-    semanticCheckpoint.effectiveCorpusHash = repaired.effectiveCorpusHash;
-    writeCanonicalJson(semanticPath, semanticCheckpoint);
-
-    const recoveryClassificationPath = join(root, recovery.classificationArtifact.path);
-    const recoveryClassification = JSON.parse(readFileSync(recoveryClassificationPath, "utf8"));
-    recoveryClassification.items[0].transcription_status = "mismatch";
-    recoveryClassification.items[0].transcription_evidence = "x축 눈금 1을 여전히 확인할 수 없다.";
-    writeCanonicalJson(recoveryClassificationPath, recoveryClassification);
-    const beforeFailedRecoveryReplay = { ...calls };
-    await expect(repairAndAuditOfficialAnswers(
-      entry,
-      problem,
-      solution,
-      root,
-      classified,
-      solutions
-    )).rejects.toThrow("final source-grounded recovery도 exact가 아닙니다");
-    expect(calls).toEqual(beforeFailedRecoveryReplay);
-    recoveryClassification.items[0].transcription_status = "exact";
-    recoveryClassification.items[0].transcription_evidence =
-      "원본 4쪽의 '만나는 점', x축 눈금 1, 식, 다섯 보기가 모두 일치한다.";
-    writeCanonicalJson(recoveryClassificationPath, recoveryClassification);
-
-    const classificationArtifact = join(root, repaired.repairs[0].classificationArtifact.path);
-    const stale = JSON.parse(readFileSync(classificationArtifact, "utf8"));
-    stale.rulesDigest = "stale";
-    writeFileSync(classificationArtifact, `${JSON.stringify(stale, null, 2)}\n`);
-    await expect(repairAndAuditOfficialAnswers(
-      entry,
-      problem,
-      solution,
-      root,
-      classified,
-      solutions
-    )).rejects.toThrow("classification repair graph가 유효하지 않습니다");
+    )).rejects.toThrow("scope box pinned failed scope이 regular file이 아닙니다");
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(readdirSync(root, { recursive: true }).map(String).sort()).toEqual(beforeReplayFiles);
     }
   );
 });
