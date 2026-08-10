@@ -563,6 +563,35 @@ type ProblemScopeBoxRevisionSpec = ProblemCropAdjudicationSpec & {
   correctedQuestionHash: string;
 };
 
+type PersistedTerminalRecoveryGenerationSpec = {
+  problemArtifact: EvidencePointer & { basisDigest: string; itemHash: string };
+  classificationArtifact: EvidencePointer & { basisDigest: string; itemHash: string };
+  questionText: string;
+  terminalCheckpoint: ProblemTerminalFidelityCheckpoint;
+  terminalItemHash: string;
+  evidenceHash: string;
+  preRecoveryEffectiveCorpusHash: string;
+};
+
+type PersistedTerminalRecoveryHydrationSpec = {
+  allowlistId: string;
+  entryId: string;
+  key: string;
+  sourcePage: number;
+  sourceHash: string;
+  contextFrom: number;
+  contextTo: number;
+  baseProblemRepairArtifact: EvidencePointer & { itemHash: string };
+  baseClassificationRepairArtifact: EvidencePointer & { itemHash: string };
+  revisionProblemArtifact: EvidencePointer & { itemHash: string };
+  revisionClassificationArtifact: EvidencePointer & { itemHash: string };
+  revisionBaseQuestionHash: string;
+  revisionBaseClassificationHash: string;
+  revisionTriggerEvidenceHash: string;
+  selected: PersistedTerminalRecoveryGenerationSpec;
+  historical: readonly PersistedTerminalRecoveryGenerationSpec[];
+};
+
 type ProblemTerminalFidelityAdjudicationSpec = {
   allowlistId: string;
   parentKind: "manual" | "repair";
@@ -1318,6 +1347,109 @@ const PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST: readonly ProblemScopeBoxRevisionSpec
   correctedQuestionHash: "35937a22d01677588672139e66a4e55a58a1711fa2b5ba7541d3181d009518d0",
 }] as const;
 
+const PERSISTED_TERMINAL_RECOVERY_HYDRATION_ALLOWLIST:
+readonly PersistedTerminalRecoveryHydrationSpec[] = [{
+  allowlistId: "ebsi-5656592-q11-terminal-recovery-hydration-v1",
+  entryId: "ebsi:5656592",
+  key: "4:11",
+  sourcePage: 4,
+  sourceHash: "b7c932cdae76d06eb9d2efd1dc52f4f48faa378c47a0c1bf573fe90bf3b88ee1",
+  contextFrom: 1,
+  contextTo: 12,
+  baseProblemRepairArtifact: {
+    path: "problem-repairs/v2-0004-0011.json",
+    sha256: "1c5edf374765105550fd97352e9a7c04e2cddf9d71fa7d75de9e33cae5c55480",
+    itemHash: "b0f55f67c2a8f726986b1504a1d7a3de533e698d62a2797f48f04476503aa1c9",
+  },
+  baseClassificationRepairArtifact: {
+    path: "classification-repair-batches/" +
+      "v1-0001-0012-82ff6de743dbf11fb3eb87f9462d216aa303d6324c2136f69f024cf63a72dcd7-" +
+      "7bb7cb863c8c4855.json",
+    sha256: "0413f739e10882f4487b8f4eff808dbf7e70b314aa84d68a6d761f15fefd8ae8",
+    itemHash: "8221120aca4a3a26cbaf8d9dc2394ea9afd626c23f975e4a3ca96f5974cc51cd",
+  },
+  revisionProblemArtifact: {
+    path: "problem-revision-batches/" +
+      "v1-0001-0012-0004-d75af2aacce6cd1be02091e1bf0855a8245287d6dc0258a23e891013a28ccddb.json",
+    sha256: "86ae697758f4fabcda8250d7842c0e223cd7b2da9ee2f08aa04e57fd04dc4963",
+    itemHash: "37dca9aef2e093f137a4a3665dd593623ef574811e5f45b0c3b196b7669253a8",
+  },
+  revisionClassificationArtifact: {
+    path: "classification-revision-batches/" +
+      "v1-0001-0012-76226ae91e56c033c83850e7ff8695d82791e12cd905b30139c13e5c229af11b-" +
+      "7bb7cb863c8c4855.json",
+    sha256: "fb28835db1c7a541d4af501a6209eb313759926601d8c7acb421047d9303d8af",
+    itemHash: "8fae41af9ee4d58aeca05118eabec6a8c65531870397c46f16cf1d28d1ee1980",
+  },
+  revisionBaseQuestionHash: "b0f55f67c2a8f726986b1504a1d7a3de533e698d62a2797f48f04476503aa1c9",
+  revisionBaseClassificationHash: "8221120aca4a3a26cbaf8d9dc2394ea9afd626c23f975e4a3ca96f5974cc51cd",
+  revisionTriggerEvidenceHash: "4ca695f2b7eb383a00320b6049b3ab161fb103f05761ab71852dbb780971c322",
+  selected: {
+    problemArtifact: {
+      path: "problem-recoveries/" +
+        "v2-0004-0011-a16c7f3c13454e8f23d75f4e7b53480212e5d06c4125af6c09e7e7c8f68783d8.json",
+      sha256: "9c8e2891bd642e9ce9c4652d6615ee0bfcf03b9fd011b2b5ff81cc8dc10e8106",
+      basisDigest: "a16c7f3c13454e8f23d75f4e7b53480212e5d06c4125af6c09e7e7c8f68783d8",
+      itemHash: "e4e042f87f3264447db8177ec81c6e98958ecbb478dd572b8a233a3243d35480",
+    },
+    classificationArtifact: {
+      path: "classification-recoveries/" +
+        "v2-0004-0011-3a56ded3e11de92f106ce8d5e0690e4c8bbb495cc796a4bcec8eed9886a043a9-" +
+        "7bb7cb863c8c4855.json",
+      sha256: "708aa538a4192c03cb9fc56d6b362301a80c4ffd24abaf7c3865f25b99cade27",
+      basisDigest: "3a56ded3e11de92f106ce8d5e0690e4c8bbb495cc796a4bcec8eed9886a043a9",
+      itemHash: "3ad72ec2018e03078c46246ea17aa018a60eefd8d24b6462b62ccc05f5d18602",
+    },
+    questionText: "$0\\le x\\le \\pi$일 때, 방정식 $(\\sin x+\\cos x)^2=\\sqrt{3}\\sin x+1$의 모든 실근의 합은? [3점]",
+    terminalCheckpoint: {
+      path: "problem-terminal-fidelity/" +
+        "v2-0000-b9f1d1f6130bfb155e8e1a9c6b9c399d3b763a669e7a40537f6455da7bd941bd-" +
+        "c0fd4e92c73adf737bea28b839e815dddfefd6206fc79be440527e508b18eb43.json",
+      sha256: "db4ab968b169a2202c510af97cf1905d7fab6d92eedcec26f04922b1312bd53d",
+      from: 1,
+      to: 12,
+      ownedFrom: 1,
+      ownedTo: 12,
+      inputHash: "c0fd4e92c73adf737bea28b839e815dddfefd6206fc79be440527e508b18eb43",
+    },
+    terminalItemHash: "19efe1512c565231fa7664d5800fbb8f4c8ddbbcaaef8ece46c94a892924073b",
+    evidenceHash: "83bc6af724504f9a513fffa9d542439c22b81a1d06edbae6ad73fd227da8f9ad",
+    preRecoveryEffectiveCorpusHash: "b9f1d1f6130bfb155e8e1a9c6b9c399d3b763a669e7a40537f6455da7bd941bd",
+  },
+  historical: [{
+    problemArtifact: {
+      path: "problem-recoveries/" +
+        "v2-0004-0011-189d47abd4090fb221f78c7cc9dc94df7530e47ea1b09c2d22d0c2155c93c090.json",
+      sha256: "9af3842bdbee358c0786a755a72e5ac9d43e2e106ca72c8c020a5af144b91eaf",
+      basisDigest: "189d47abd4090fb221f78c7cc9dc94df7530e47ea1b09c2d22d0c2155c93c090",
+      itemHash: "a8367bc1a452e46c9b37a637f00d8e25059e5f92a69f69c8dddac2dd4d2d1bb2",
+    },
+    classificationArtifact: {
+      path: "classification-recoveries/" +
+        "v2-0004-0011-af846d70c50441e4974d709bd5e4dfdeccd14b622b2d9d6c2592fd97b26c2b3d-" +
+        "7bb7cb863c8c4855.json",
+      sha256: "277e07024cba026306206cd81ae479e8de5eca24a26556bfa4a1299bc5a66cd1",
+      basisDigest: "af846d70c50441e4974d709bd5e4dfdeccd14b622b2d9d6c2592fd97b26c2b3d",
+      itemHash: "3427b09c3dd15c9f66e6cd74f87fbd4879dac7918939863166e92ddd96bba9a3",
+    },
+    questionText: "$0<x\\leq\\pi$일 때, 방정식 $(\\sin x+\\cos x)^2=\\sqrt{3}\\sin x+1$의 모든 실근의 합은? [3점]",
+    terminalCheckpoint: {
+      path: "problem-terminal-fidelity/" +
+        "v2-0000-7b68c83270ea7333159a52e8847430a33ce1b39c51a015e37498b0d7d2fa0925-" +
+        "feb3e18ffe27340aec82ca553c221b8a9ff1a7417d57a73aa9a15fe81c717d05.json",
+      sha256: "7372f085903399dd22bdfcb8399c0c42f854a8d805991a4d64a3dac78e538c9c",
+      from: 1,
+      to: 12,
+      ownedFrom: 1,
+      ownedTo: 12,
+      inputHash: "feb3e18ffe27340aec82ca553c221b8a9ff1a7417d57a73aa9a15fe81c717d05",
+    },
+    terminalItemHash: "bf88a931ea40031ab17a5cc82e2ddfe84a676107740e7a56352f723866da50d2",
+    evidenceHash: "9b8654885dfc899fd1f1ad87803089375c6da7d9a6bd2435afe8aa3b2968ddae",
+    preRecoveryEffectiveCorpusHash: "7b68c83270ea7333159a52e8847430a33ce1b39c51a015e37498b0d7d2fa0925",
+  }],
+}] as const;
+
 const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST:
 readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   allowlistId: "ebsi-5525984-q8-terminal-fidelity-v1",
@@ -1396,6 +1528,10 @@ export function manualRevisionAllowlistFingerprint(): string {
 
 export function scopeBoxRevisionAllowlistFingerprint(): string {
   return canonicalEvidenceHash(PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST);
+}
+
+export function persistedTerminalRecoveryHydrationAllowlistFingerprint(): string {
+  return canonicalEvidenceHash(PERSISTED_TERMINAL_RECOVERY_HYDRATION_ALLOWLIST);
 }
 
 export function terminalFidelityAdjudicationAllowlistFingerprint(): string {
@@ -4468,11 +4604,118 @@ type V3RevisionRow = {
   classificationArtifactItemHash: string;
 };
 
+type PersistedTerminalRecoverySelection = {
+  spec: PersistedTerminalRecoveryHydrationSpec;
+  historicalPaths: Set<string>;
+  expectedPaths: Set<string>;
+};
+
+function persistedTerminalRecoverySelection(
+  values: unknown[],
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+): PersistedTerminalRecoverySelection | null {
+  const matches = PERSISTED_TERMINAL_RECOVERY_HYDRATION_ALLOWLIST.filter((spec) => spec.entryId === entry.id);
+  if (matches.length > 1) throw new Error(`${entry.id}: persisted terminal recovery allowlist is duplicated`);
+  const spec = matches[0];
+  if (!spec) return null;
+  if (problemEvidence.sha256 !== spec.sourceHash) {
+    throw new Error(`${entry.id}: persisted terminal recovery source hash is stale`);
+  }
+  const repairRows = values.map((value, index) => object(value, `answer audit repairs[${index}]`));
+  const targetRows = repairRows.filter((repair) => repair.key === spec.key);
+  if (targetRows.length !== 1) {
+    throw new Error(`${spec.key}: persisted terminal recovery audit row is not unique`);
+  }
+  const repair = targetRows[0];
+  const revision = object(repair.revision, `${spec.key}.revision`);
+  const recovery = object(revision.recovery, `${spec.key}.revision.recovery`);
+  const recoveryProblem = evidencePointer(recovery.problemArtifact, `${spec.key}.recovery.problemArtifact`);
+  const recoveryClassificationEnvelope = object(
+    recovery.classificationArtifact,
+    `${spec.key}.recovery.classificationArtifact`,
+  );
+  const recoveryClassification = evidencePointer({
+    path: recoveryClassificationEnvelope.path,
+    sha256: recoveryClassificationEnvelope.sha256,
+  }, `${spec.key}.recovery.classificationArtifact`);
+  const revisionProblem = evidencePointer(revision.problemArtifact, `${spec.key}.revision.problemArtifact`);
+  const revisionClassificationEnvelope = object(
+    revision.classificationArtifact,
+    `${spec.key}.revision.classificationArtifact`,
+  );
+  const revisionClassification = evidencePointer({
+    path: revisionClassificationEnvelope.path,
+    sha256: revisionClassificationEnvelope.sha256,
+  }, `${spec.key}.revision.classificationArtifact`);
+  const repairProblem = evidencePointer(repair.problemArtifact, `${spec.key}.problemArtifact`);
+  const repairClassificationEnvelope = object(repair.classificationArtifact, `${spec.key}.classificationArtifact`);
+  const repairClassification = evidencePointer({
+    path: repairClassificationEnvelope.path,
+    sha256: repairClassificationEnvelope.sha256,
+  }, `${spec.key}.classificationArtifact`);
+  const revisionTrigger = object(revision.trigger, `${spec.key}.revision.trigger`);
+  if (repair.sourcePage !== spec.sourcePage || repair.contextFrom !== spec.contextFrom
+    || repair.contextTo !== spec.contextTo
+    || !isDeepStrictEqual(repairProblem, {
+      path: spec.baseProblemRepairArtifact.path,
+      sha256: spec.baseProblemRepairArtifact.sha256,
+    })
+    || repair.problemArtifactItemHash !== spec.baseProblemRepairArtifact.itemHash
+    || !isDeepStrictEqual(repairClassification, {
+      path: spec.baseClassificationRepairArtifact.path,
+      sha256: spec.baseClassificationRepairArtifact.sha256,
+    })
+    || repair.classificationArtifactItemHash !== spec.baseClassificationRepairArtifact.itemHash
+    || !isDeepStrictEqual(revisionProblem, {
+      path: spec.revisionProblemArtifact.path,
+      sha256: spec.revisionProblemArtifact.sha256,
+    })
+    || revision.problemArtifactItemHash !== spec.revisionProblemArtifact.itemHash
+    || !isDeepStrictEqual(revisionClassification, {
+      path: spec.revisionClassificationArtifact.path,
+      sha256: spec.revisionClassificationArtifact.sha256,
+    })
+    || revision.classificationArtifactItemHash !== spec.revisionClassificationArtifact.itemHash
+    || revision.baseQuestionHash !== spec.revisionBaseQuestionHash
+    || revision.baseClassificationHash !== spec.revisionBaseClassificationHash
+    || revision.diagnosticEvidenceHash !== spec.revisionTriggerEvidenceHash
+    || !isDeepStrictEqual(revisionTrigger, {
+      kind: "classification",
+      evidenceHash: spec.revisionTriggerEvidenceHash,
+    })
+    || !isDeepStrictEqual(recoveryProblem, {
+      path: spec.selected.problemArtifact.path,
+      sha256: spec.selected.problemArtifact.sha256,
+    })
+    || recovery.problemArtifactItemHash !== spec.selected.problemArtifact.itemHash
+    || !isDeepStrictEqual(recoveryClassification, {
+      path: spec.selected.classificationArtifact.path,
+      sha256: spec.selected.classificationArtifact.sha256,
+    })
+    || recovery.classificationArtifactItemHash !== spec.selected.classificationArtifact.itemHash) {
+    throw new Error(`${spec.key}: current audit does not select the source-authorized terminal recovery`);
+  }
+  return {
+    spec,
+    historicalPaths: new Set(spec.historical.flatMap((generation) => [
+      generation.problemArtifact.path,
+      generation.classificationArtifact.path,
+    ])),
+    expectedPaths: new Set([spec.selected, ...spec.historical].flatMap((generation) => [
+      generation.problemArtifact.path,
+      generation.classificationArtifact.path,
+    ])),
+  };
+}
+
 function verifyProblemRecoveryCoverage(
   values: unknown[],
   stateDir: string,
   contract: VerificationContract,
+  persistedTerminalRecovery: PersistedTerminalRecoverySelection | null = null,
 ): void {
+  const historicalRecoveryPaths = persistedTerminalRecovery?.historicalPaths ?? new Set<string>();
   const declared = new Set<string>();
   const declaredCrop = new Set<string>();
   const declaredScope = new Set<string>();
@@ -4694,11 +4937,27 @@ function verifyProblemRecoveryCoverage(
     ["problem-recoveries", /^v[12]-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u],
     ["classification-recoveries", /^v[12]-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u],
   ] as const) {
-    for (const name of listJson(join(stateDir, directory), /\.json$/u)) {
+    const names = persistedTerminalRecovery
+      ? strictRepairGraphNames(
+          stateDir,
+          directory,
+          "persisted terminal recovery",
+          (name) => pattern.test(name),
+        )
+      : listJson(join(stateDir, directory), /\.json$/u);
+    for (const name of names) {
       if (!pattern.test(name)) throw new Error(`${directory}/${name}: malformed problem recovery artifact name`);
       const path = `${directory}/${name}`;
-      if (!declared.has(path)) throw new Error(`${path}: problem recovery artifact is not declared by the terminal audit`);
+      if (persistedTerminalRecovery && !persistedTerminalRecovery.expectedPaths.has(path)) {
+        throw new Error(`${path}: persisted terminal recovery artifact is an unexpected third generation`);
+      }
+      if (!declared.has(path) && !historicalRecoveryPaths.has(path)) {
+        throw new Error(`${path}: problem recovery artifact is not declared by the terminal audit`);
+      }
     }
+  }
+  for (const path of persistedTerminalRecovery?.expectedPaths ?? historicalRecoveryPaths) {
+    if (!existsSync(join(stateDir, path))) throw new Error(`${path}: persisted terminal recovery artifact is missing`);
   }
   for (const [directory, patterns] of [
     ["problem-crop-evidence", [
@@ -7864,6 +8123,161 @@ function verifyProblemRecovery(
   };
 }
 
+function verifyPersistedTerminalRecoveryHistory(
+  selection: PersistedTerminalRecoverySelection,
+  row: V3RevisionRow,
+  selectedVerification: V3RevisionVerification,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  solutionEvidence: DownloadEvidence,
+  rulesDigest: string,
+  cache: EvidenceCache,
+  contract: VerificationContract,
+): Array<{ key: string; current: ClassifiedEvidence; checkpoint: ProblemTerminalFidelityCheckpoint }> {
+  const { spec } = selection;
+  const revised = selectedVerification.preRecoveryClassified;
+  if (!revised || row.first.row.key !== spec.key
+    || row.first.row.sourcePage !== spec.sourcePage
+    || row.first.row.contextFrom !== spec.contextFrom || row.first.row.contextTo !== spec.contextTo
+    || !isDeepStrictEqual(row.first.row.problemArtifact, {
+      path: spec.baseProblemRepairArtifact.path,
+      sha256: spec.baseProblemRepairArtifact.sha256,
+    })
+    || row.first.row.problemArtifactItemHash !== spec.baseProblemRepairArtifact.itemHash
+    || !isDeepStrictEqual(row.first.row.classificationArtifact, {
+      path: spec.baseClassificationRepairArtifact.path,
+      sha256: spec.baseClassificationRepairArtifact.sha256,
+    })
+    || row.first.row.classificationArtifactItemHash !== spec.baseClassificationRepairArtifact.itemHash
+    || !isDeepStrictEqual(row.problemArtifact, {
+      path: spec.revisionProblemArtifact.path,
+      sha256: spec.revisionProblemArtifact.sha256,
+    })
+    || row.problemArtifactItemHash !== spec.revisionProblemArtifact.itemHash
+    || !isDeepStrictEqual(row.classificationArtifact, {
+      path: spec.revisionClassificationArtifact.path,
+      sha256: spec.revisionClassificationArtifact.sha256,
+    })
+    || row.classificationArtifactItemHash !== spec.revisionClassificationArtifact.itemHash
+    || canonicalEvidenceHash(revised.question.evidence) !== spec.revisionProblemArtifact.itemHash
+    || canonicalEvidenceHash(revised.classification) !== spec.revisionClassificationArtifact.itemHash
+    || row.trigger.evidenceHash !== spec.revisionTriggerEvidenceHash
+    || canonicalEvidenceHash(selectedVerification.classified.question.evidence)
+      !== spec.selected.problemArtifact.itemHash
+    || selectedVerification.classified.question.question !== spec.selected.questionText
+    || canonicalEvidenceHash(selectedVerification.classified.classification)
+      !== spec.selected.classificationArtifact.itemHash
+    || selectedVerification.classified.classification.transcription_status !== "exact"
+    || selectedVerification.classified.classification.decision !== "accept"
+    || selectedVerification.classified.classification.canonical_subject !== "math_B"
+    || selectedVerification.classified.classification.confidence < 0.9) {
+    throw new Error(`${spec.key}: persisted terminal recovery selected authority is stale`);
+  }
+
+  return spec.historical.map((generation) => {
+    const terminalCheckpointValue = readBoundEvidenceCached(
+      cache,
+      stateDir,
+      generation.terminalCheckpoint,
+      `${spec.key} historical terminal recovery checkpoint`,
+    );
+    if (!Array.isArray(terminalCheckpointValue.items)) {
+      throw new Error(`${spec.key}: historical terminal recovery items are missing`);
+    }
+    const terminalItems = terminalCheckpointValue.items.map((value, index) =>
+      parseProblemTerminalFidelityItem(
+        value,
+        `${spec.key} historical terminal recovery items[${index}]`,
+        contract,
+      ));
+    const matches = terminalItems.filter((item) => item.key === spec.key);
+    if (matches.length !== 1 || matches[0].status === "exact"
+      || canonicalEvidenceHash(matches[0]) !== generation.terminalItemHash
+      || sha256(matches[0].evidence) !== generation.evidenceHash
+      || terminalCheckpointValue.effectiveCorpusHash !== generation.preRecoveryEffectiveCorpusHash
+      || terminalCheckpointValue.inputHash !== generation.terminalCheckpoint.inputHash) {
+      throw new Error(`${spec.key}: historical terminal recovery diagnostic authority is stale`);
+    }
+    const terminalItem = matches[0];
+    const trigger = {
+      kind: "terminal",
+      evidenceHash: generation.evidenceHash,
+      terminalCheckpoint: generation.terminalCheckpoint,
+      terminalItemHash: generation.terminalItemHash,
+      terminalItem,
+      preRecoveryEffectiveCorpusHash: generation.preRecoveryEffectiveCorpusHash,
+    };
+    const recovery = {
+      key: spec.key,
+      printedNumber: row.first.row.printedNumber,
+      sourcePage: spec.sourcePage,
+      sourceHash: spec.sourceHash,
+      contextFrom: spec.contextFrom,
+      contextTo: spec.contextTo,
+      baseProblemRepairArtifact: row.first.row.problemArtifact,
+      baseProblemRepairItemHash: spec.baseProblemRepairArtifact.itemHash,
+      baseClassificationRepairArtifact: row.first.row.classificationArtifact,
+      baseClassificationRepairItemHash: spec.baseClassificationRepairArtifact.itemHash,
+      baseProblemRevisionArtifact: row.problemArtifact,
+      baseProblemRevisionItemHash: spec.revisionProblemArtifact.itemHash,
+      baseClassificationRevisionArtifact: row.classificationArtifact,
+      baseClassificationRevisionItemHash: spec.revisionClassificationArtifact.itemHash,
+      problemArtifact: {
+        path: generation.problemArtifact.path,
+        sha256: generation.problemArtifact.sha256,
+      },
+      problemArtifactItemHash: generation.problemArtifact.itemHash,
+      classificationArtifact: {
+        path: generation.classificationArtifact.path,
+        sha256: generation.classificationArtifact.sha256,
+        rulesDigest,
+        transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+        transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+        recoveryPromptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+        recoveryPromptDigest: TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
+      },
+      classificationArtifactItemHash: generation.classificationArtifact.itemHash,
+      trigger,
+      baseQuestionHash: spec.revisionProblemArtifact.itemHash,
+      effectiveQuestionHash: generation.problemArtifact.itemHash,
+      baseClassificationHash: spec.revisionClassificationArtifact.itemHash,
+      effectiveClassificationHash: generation.classificationArtifact.itemHash,
+    };
+    const verified = verifyProblemRecovery(
+      { ...row, raw: { ...row.raw, recovery } },
+      revised.question,
+      revised.classification,
+      stateDir,
+      entry,
+      problemEvidence,
+      solutionEvidence,
+      rulesDigest,
+      cache,
+      contract,
+    );
+    const problemMatch = new RegExp(
+      `^problem-recoveries/v${PROBLEM_TERMINAL_RECOVERY_VERSION}-\\d{4}-\\d{4}-([a-f0-9]{64})\\.json$`,
+      "u",
+    ).exec(generation.problemArtifact.path);
+    const classificationMatch = new RegExp(
+      `^classification-recoveries/v${CLASSIFICATION_TERMINAL_RECOVERY_VERSION}-\\d{4}-\\d{4}-` +
+        "([a-f0-9]{64})-[a-f0-9]{16}\\.json$",
+      "u",
+    ).exec(generation.classificationArtifact.path);
+    if (!problemMatch || problemMatch[1] !== generation.problemArtifact.basisDigest
+      || !classificationMatch || classificationMatch[1] !== generation.classificationArtifact.basisDigest
+      || verified.classified.question.question !== generation.questionText
+      || canonicalEvidenceHash(verified.classified.question.evidence) !== generation.problemArtifact.itemHash
+      || canonicalEvidenceHash(verified.classified.classification) !== generation.classificationArtifact.itemHash
+      || verified.classified.classification.transcription_status !== "exact"
+      || !verified.terminalGeneration) {
+      throw new Error(`${spec.key}: historical terminal recovery exact authority is stale`);
+    }
+    return verified.terminalGeneration;
+  });
+}
+
 type V3RevisionVerification = {
   classified: ClassifiedEvidence;
   evidence: Record<string, unknown>;
@@ -8254,6 +8668,11 @@ function verifyV3TerminalRecoveryGenerations(
   stateDir: string,
   cache: EvidenceCache,
   contract: VerificationContract,
+  historicalGenerations: ReadonlyArray<{
+    key: string;
+    current: ClassifiedEvidence;
+    checkpoint: ProblemTerminalFidelityCheckpoint;
+  }> = [],
 ): void {
   const generations = [
     ...[...first.values()].flatMap((value) =>
@@ -8263,6 +8682,7 @@ function verifyV3TerminalRecoveryGenerations(
       ...(value.terminalRecoveryGeneration ? [value.terminalRecoveryGeneration] : []),
       ...(value.scopeAdjudicationGeneration ? [value.scopeAdjudicationGeneration] : []),
     ]),
+    ...historicalGenerations,
   ];
   const groups = groupByArtifact(generations, (generation) => generation.checkpoint);
   for (const [path, triggerGenerations] of groups) {
@@ -8361,7 +8781,16 @@ function applyDeclaredRepairsV3(
   cache: EvidenceCache,
   contract: VerificationContract,
 ): Map<string, ClassifiedEvidence> {
-  verifyProblemRecoveryCoverage(values, stateDir, contract);
+  const persistedTerminalRecovery = persistedTerminalRecoverySelection(values, entry, problemEvidence);
+  if (persistedTerminalRecovery && contract.auditVersion !== 5) {
+    throw new Error("persisted terminal recovery hydration requires answer audit v5");
+  }
+  verifyProblemRecoveryCoverage(
+    values,
+    stateDir,
+    contract,
+    persistedTerminalRecovery,
+  );
   const rows = prepareV3RepairRows(values, stateDir, base, solutions);
   const persistedGraphSelection = verifyPersistedV2RepairGraphSelection(
     rows,
@@ -8424,6 +8853,11 @@ function applyDeclaredRepairsV3(
     throw new Error(`${nonExactWithoutRevision[0].row.key}: non-exact first repair has no attested revision`);
   }
   let classificationRevisionResults = new Map<string, V3RevisionVerification>();
+  let historicalTerminalRecoveryGenerations: Array<{
+    key: string;
+    current: ClassifiedEvidence;
+    checkpoint: ProblemTerminalFidelityCheckpoint;
+  }> = [];
   if (classificationRevisions.length > 0) {
     const prepared = prepareV3RevisionRows(
       classificationRevisions,
@@ -8446,7 +8880,28 @@ function applyDeclaredRepairsV3(
       cache,
       contract,
     );
+    if (persistedTerminalRecovery) {
+      const row = prepared.find((candidate) => candidate.first.row.key === persistedTerminalRecovery.spec.key);
+      const selected = classificationRevisionResults.get(persistedTerminalRecovery.spec.key);
+      if (!row || !selected) {
+        throw new Error(`${persistedTerminalRecovery.spec.key}: persisted terminal recovery revision is missing`);
+      }
+      historicalTerminalRecoveryGenerations = verifyPersistedTerminalRecoveryHistory(
+        persistedTerminalRecovery,
+        row,
+        selected,
+        stateDir,
+        entry,
+        problemEvidence,
+        solutionEvidence,
+        rulesDigest,
+        cache,
+        contract,
+      );
+    }
     for (const [key, value] of classificationRevisionResults) records.set(key, value.classified);
+  } else if (persistedTerminalRecovery) {
+    throw new Error(`${persistedTerminalRecovery.spec.key}: persisted terminal recovery revision is missing`);
   }
 
   const terminalRevisions = [...first.values()].filter((value) => {
@@ -8524,6 +8979,7 @@ function applyDeclaredRepairsV3(
     stateDir,
     cache,
     contract,
+    historicalTerminalRecoveryGenerations,
   );
 
   for (const value of first.values()) {
@@ -11380,6 +11836,16 @@ function hasPersistedSolutionGenerationSignal(stateDir: string): boolean {
   return false;
 }
 
+function hasPersistedTerminalRecoveryHydrationSignal(stateDir: string): boolean {
+  try {
+    const state = object(json(join(stateDir, "entry.json")), "persisted terminal recovery entry state");
+    const entry = object(state.entry, "persisted terminal recovery entry");
+    return PERSISTED_TERMINAL_RECOVERY_HYDRATION_ALLOWLIST.some((spec) => spec.entryId === entry.id);
+  } catch {
+    return false;
+  }
+}
+
 type VerifiedAnswerAudit = {
   decisions: DecisionSummary;
   solutions: Map<string, OfficialSolution>;
@@ -11447,6 +11913,7 @@ function selectVerificationContract(
     || positiveRepairScopeAdjudicationSignal
     || revisionScopeAdjudicationSignal
     || manualAdjudicationSignal
+    || hasPersistedTerminalRecoveryHydrationSignal(stateDir)
     || hasPersistedSolutionGenerationSignal(stateDir)
   );
   if (v5GenerationSignal) return CURRENT_CONTRACT;
@@ -11473,6 +11940,10 @@ function selectVerificationContract(
   if (v3GenerationSignal) return V3_CONTRACT;
   if (!receipt) return LEGACY_CONTRACT;
   return LEGACY_CONTRACT;
+}
+
+export function verificationContractAuditVersionForTest(stateDir: string): number {
+  return selectVerificationContract(stateDir, null, null).auditVersion;
 }
 
 function verifyAnswerAudit(

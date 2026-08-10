@@ -2,8 +2,10 @@ import { createHash } from "node:crypto";
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   readdirSync,
   rmSync,
   symlinkSync,
@@ -26,6 +28,7 @@ import {
   parseCorpusManifest,
   parseDecisions,
   repairAndAuditOfficialAnswers,
+  writeAnswerAttestation,
   type ClassifiedQuestion,
 } from "../scripts/import-exam-corpus";
 
@@ -84,7 +87,15 @@ const regroupingCases = [
 ] as const;
 const legacyV1ContextCase = { entryId: "ebsi:5525984", token: "7755c70fefaa45f755086e2b" } as const;
 const legacySinglePreflightCase = { entryId: "ebsi:5643100", token: "194298dd83aaf47b6f3218fe" } as const;
-const available = [...cases, ...regroupingCases, deferredTerminalCase, legacyV1ContextCase, legacySinglePreflightCase]
+const terminalRecoveryCase = { entryId: "ebsi:5656592", token: "c83035d36ef8d2b8f1bfe856" } as const;
+const available = [
+  ...cases,
+  ...regroupingCases,
+  deferredTerminalCase,
+  legacyV1ContextCase,
+  legacySinglePreflightCase,
+  terminalRecoveryCase,
+]
   .every(({ token }) => existsSync(join(liveRoot, token, "problem.pdf")));
 let roots: string[] = [];
 
@@ -104,7 +115,9 @@ function files(root: string, path = root): string[] {
 function snapshot(root: string): Record<string, string> {
   return Object.fromEntries(files(root).map((path) => [
     path,
-    createHash("sha256").update(readFileSync(join(root, path))).digest("hex"),
+    createHash("sha256").update(lstatSync(join(root, path)).isSymbolicLink()
+      ? `symlink:${readlinkSync(join(root, path))}`
+      : readFileSync(join(root, path))).digest("hex"),
   ]));
 }
 
@@ -221,6 +234,240 @@ function addTerminalFixture(
 }
 
 describe.skipIf(!available)("persisted v2 repair graph hydration", () => {
+  it("hydrates the source-authorized ebsi:5656592 Q11 recovery before one fresh terminal call", async () => {
+    const root = mkdtempSync(join(tmpdir(), "studywork-persisted-terminal-recovery-"));
+    roots.push(root);
+    cpSync(join(liveRoot, terminalRecoveryCase.token), root, { recursive: true });
+    const before = snapshot(root);
+    providerMock.complete.mockRejectedValue(new Error("expected fresh terminal call"));
+    const input = replayInputs(root);
+
+    await expect(repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions
+    )).rejects.toThrow("expected fresh terminal call");
+    expect(providerMock.complete).toHaveBeenCalledTimes(1);
+    const request = providerMock.complete.mock.calls[0][0] as { schema?: { name?: string }; prompt: string };
+    expect(request.schema?.name).toBe("studywork_exam_corpus_problem_terminal_fidelity");
+    expect(request.prompt).toContain(
+      '"key":"4:11","printed_number":"11","source_page":4,"qtype":"mcq",' +
+      '"question":"$0\\\\le x\\\\le \\\\pi$일 때, 방정식'
+    );
+    expect(request.prompt).not.toContain('"question":"$0<x\\\\leq\\\\pi$일 때');
+    expect(snapshot(root)).toEqual(before);
+  });
+
+  it("resumes a fresh selected-recovery terminal into the selected audit and AI0 replay", async () => {
+    const root = mkdtempSync(join(tmpdir(), "studywork-persisted-terminal-recovery-resume-"));
+    roots.push(root);
+    cpSync(join(liveRoot, terminalRecoveryCase.token), root, { recursive: true });
+    const terminalDirectory = join(root, "problem-terminal-fidelity");
+    const templateName = readdirSync(terminalDirectory)
+      .find((name) => name.includes("81ad29d66ee49f14253d3efa535303af279b723696e17f1e85b5cdd7ea7ac9ed"))!;
+    const terminalItems = JSON.parse(readFileSync(join(terminalDirectory, templateName), "utf8")).items
+      .map((item: { key: string; evidence: string }) => item.key === "4:11" ? {
+        ...item,
+        evidence: "공식 4쪽의 범위 0≤x≤π와 최종 전사 범위가 일치하고 식·배점·선택지도 정확하다.",
+      } : item);
+    const solutionFidelityName = readdirSync(join(root, "solution-fidelity"))
+      .find((name) => name.includes("81ad29d66ee49f14253d3efa535303af279b723696e17f1e85b5cdd7ea7ac9ed"))!;
+    const solutionFidelityItems = JSON.parse(readFileSync(
+      join(root, "solution-fidelity", solutionFidelityName),
+      "utf8"
+    )).items;
+    providerMock.complete.mockImplementation((request: { schema?: { name?: string } }) => {
+      if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
+        return Promise.resolve({ text: JSON.stringify(terminalItems) });
+      }
+      return Promise.reject(new Error(`expected downstream crash: ${request.schema?.name ?? "unknown"}`));
+    });
+    const input = replayInputs(root);
+    const beforeNames = new Set(readdirSync(terminalDirectory));
+
+    await expect(repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions
+    )).rejects.toThrow("expected downstream crash: studywork_exam_corpus_solution_fidelity");
+    expect(providerMock.complete.mock.calls.map(([request]) => request.schema?.name)).toEqual([
+      "studywork_exam_corpus_problem_terminal_fidelity",
+      "studywork_exam_corpus_solution_fidelity",
+    ]);
+    const newTerminalNames = readdirSync(terminalDirectory).filter((name) => !beforeNames.has(name));
+    expect(newTerminalNames).toHaveLength(1);
+    const freshTerminal = JSON.parse(readFileSync(join(terminalDirectory, newTerminalNames[0]), "utf8"));
+    expect(freshTerminal.inputs.find((item: { key: string }) => item.key === "4:11").question)
+      .toContain("$0\\le x\\le \\pi$");
+    expect(freshTerminal.items.find((item: { key: string }) => item.key === "4:11")).toMatchObject({
+      status: "exact",
+      scopeDecision: "accept",
+      evidence: expect.stringContaining("0≤x≤π"),
+    });
+    const afterTerminal = snapshot(root);
+
+    providerMock.complete.mockReset();
+    providerMock.complete.mockImplementation((request: { schema?: { name?: string } }) => {
+      if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
+        return Promise.resolve({ text: JSON.stringify(solutionFidelityItems) });
+      }
+      return Promise.reject(new Error(`unexpected resumed AI call: ${request.schema?.name ?? "unknown"}`));
+    });
+    const result = await repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions
+    );
+    expect(providerMock.complete).toHaveBeenCalledTimes(1);
+    expect(providerMock.complete.mock.calls[0][0].schema?.name)
+      .toBe("studywork_exam_corpus_solution_fidelity");
+    const selectedRecovery = result.repairs.find((repair) => repair.key === "4:11")?.revision?.recovery;
+    expect(selectedRecovery).toMatchObject({
+      problemArtifact: {
+        path: expect.stringContaining("a16c7f3c13454e8f23d75f4e7b53480212e5d06c4125af6c09e7e7c8f68783d8"),
+      },
+      classificationArtifact: {
+        path: expect.stringContaining("3a56ded3e11de92f106ce8d5e0690e4c8bbb495cc796a4bcec8eed9886a043a9"),
+      },
+    });
+    expect(selectedRecovery?.problemArtifact.path).not.toContain("189d47abd4090");
+    const audit = JSON.parse(readFileSync(join(root, result.auditPath!), "utf8"));
+    const auditRecovery = audit.repairs.find((repair: { key: string }) => repair.key === "4:11")
+      .revision.recovery;
+    expect(auditRecovery.problemArtifact.path).toBe(selectedRecovery?.problemArtifact.path);
+    expect(auditRecovery.classificationArtifact.path).toBe(selectedRecovery?.classificationArtifact.path);
+    const receipt = JSON.parse(readFileSync(join(root, "receipt.json"), "utf8"));
+    await writeAnswerAttestation(
+      root,
+      input.entry.id,
+      input.problem.sha256,
+      input.solution.sha256,
+      receipt,
+      result
+    );
+    expect(snapshot(root)).not.toEqual(afterTerminal);
+    const afterSuccess = snapshot(root);
+
+    providerMock.complete.mockReset();
+    providerMock.complete.mockRejectedValue(new Error("unexpected replay AI call"));
+    const replay = await repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions
+    );
+    expect(replay.auditHash).toBe(result.auditHash);
+    expect(canonicalEvidenceHash(replay.repairs)).toBe(canonicalEvidenceHash(result.repairs));
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(snapshot(root)).toEqual(afterSuccess);
+  });
+
+  it.each([
+    "selected-problem",
+    "selected-classification",
+    "historical-problem",
+    "child-swap",
+    "trigger",
+    "upstream",
+    "missing",
+    "orphan",
+    "symlink",
+    "directory-symlink",
+    "source-symlink",
+  ] as const)("rejects %s persisted terminal recovery corruption before AI/write", async (mode) => {
+    const root = mkdtempSync(join(tmpdir(), `studywork-persisted-terminal-recovery-${mode}-`));
+    roots.push(root);
+    cpSync(join(liveRoot, terminalRecoveryCase.token), root, { recursive: true });
+    const selectedProblem = join(
+      root,
+      "problem-recoveries",
+      "v2-0004-0011-a16c7f3c13454e8f23d75f4e7b53480212e5d06c4125af6c09e7e7c8f68783d8.json"
+    );
+    const selectedClassification = join(
+      root,
+      "classification-recoveries",
+      "v2-0004-0011-3a56ded3e11de92f106ce8d5e0690e4c8bbb495cc796a4bcec8eed9886a043a9-" +
+      `${CLASSIFIER_DIGEST}.json`
+    );
+    const historicalProblem = join(
+      root,
+      "problem-recoveries",
+      "v2-0004-0011-189d47abd4090fb221f78c7cc9dc94df7530e47ea1b09c2d22d0c2155c93c090.json"
+    );
+    const tamper = (path: string) => {
+      const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+      checkpoint.unexpected = true;
+      writeCanonical(path, checkpoint);
+    };
+    if (mode === "selected-problem") tamper(selectedProblem);
+    else if (mode === "selected-classification") tamper(selectedClassification);
+    else if (mode === "historical-problem") tamper(historicalProblem);
+    else if (mode === "child-swap") {
+      const historicalClassification = join(
+        root,
+        "classification-recoveries",
+        "v2-0004-0011-af846d70c50441e4974d709bd5e4dfdeccd14b622b2d9d6c2592fd97b26c2b3d-" +
+        `${CLASSIFIER_DIGEST}.json`
+      );
+      cpSync(historicalClassification, selectedClassification);
+    }
+    else if (mode === "trigger") {
+      tamper(join(
+        root,
+        "problem-terminal-fidelity",
+        "v2-0000-b9f1d1f6130bfb155e8e1a9c6b9c399d3b763a669e7a40537f6455da7bd941bd-" +
+        "c0fd4e92c73adf737bea28b839e815dddfefd6206fc79be440527e508b18eb43.json"
+      ));
+    } else if (mode === "upstream") {
+      tamper(join(root, "problem-revision-batches",
+        "v1-0001-0012-0004-d75af2aacce6cd1be02091e1bf0855a8245287d6dc0258a23e891013a28ccddb.json"));
+    } else if (mode === "missing") rmSync(selectedClassification);
+    else if (mode === "orphan") {
+      cpSync(selectedProblem, join(root, "problem-recoveries", `v2-0004-0011-${"0".repeat(64)}.json`));
+    } else if (mode === "symlink") {
+      const target = join(root, "classification-recovery-copy.json");
+      cpSync(selectedClassification, target);
+      rmSync(selectedClassification);
+      symlinkSync(target, selectedClassification);
+    } else if (mode === "directory-symlink") {
+      const directory = join(root, "classification-recoveries");
+      const target = join(root, "classification-recoveries-copy");
+      cpSync(directory, target, { recursive: true });
+      rmSync(directory, { recursive: true });
+      symlinkSync(target, directory);
+    } else {
+      const source = join(root, "problem.pdf");
+      const target = join(root, "problem-copy.pdf");
+      cpSync(source, target);
+      rmSync(source);
+      symlinkSync(target, source);
+    }
+    const before = snapshot(root);
+    providerMock.complete.mockRejectedValue(new Error("unexpected AI call"));
+    const input = replayInputs(root);
+    await expect(repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions
+    )).rejects.toThrow(/persisted terminal/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(snapshot(root)).toEqual(before);
+  });
+
   it.each(regroupingCases)("selects the unique terminal-backed regrouping cover for $entryId", async (testCase) => {
     const { token, terminalBackedCorpusHash, finalCorpusHash, nextSchema } = testCase;
     const root = mkdtempSync(join(tmpdir(), `studywork-regrouping-${token}-`));

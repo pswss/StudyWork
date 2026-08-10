@@ -1900,6 +1900,35 @@ type ProblemScopeBoxRevisionSpec = ProblemCropAdjudicationSpec & {
   correctedQuestionHash: string;
 };
 
+type PersistedTerminalRecoveryGenerationSpec = {
+  problemArtifact: EvidencePointer & { basisDigest: string; itemHash: string };
+  classificationArtifact: EvidencePointer & { basisDigest: string; itemHash: string };
+  questionText: string;
+  terminalCheckpoint: ProblemTerminalFidelityCheckpoint;
+  terminalItemHash: string;
+  evidenceHash: string;
+  preRecoveryEffectiveCorpusHash: string;
+};
+
+type PersistedTerminalRecoveryHydrationSpec = {
+  allowlistId: string;
+  entryId: string;
+  key: string;
+  sourcePage: number;
+  sourceHash: string;
+  contextFrom: number;
+  contextTo: number;
+  baseProblemRepairArtifact: EvidencePointer & { itemHash: string };
+  baseClassificationRepairArtifact: EvidencePointer & { itemHash: string };
+  revisionProblemArtifact: EvidencePointer & { itemHash: string };
+  revisionClassificationArtifact: EvidencePointer & { itemHash: string };
+  revisionBaseQuestionHash: string;
+  revisionBaseClassificationHash: string;
+  revisionTriggerEvidenceHash: string;
+  selected: PersistedTerminalRecoveryGenerationSpec;
+  historical: readonly PersistedTerminalRecoveryGenerationSpec[];
+};
+
 type ProblemTerminalFidelityAdjudicationSpec = {
   allowlistId: string;
   parentKind: "manual" | "repair";
@@ -2548,6 +2577,109 @@ export const PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST: readonly ProblemScopeBoxRevis
   beforeBox: [0.12, 0.27],
   afterBox: [0.12, 0.36],
   correctedQuestionHash: "35937a22d01677588672139e66a4e55a58a1711fa2b5ba7541d3181d009518d0",
+}] as const;
+
+export const PERSISTED_TERMINAL_RECOVERY_HYDRATION_ALLOWLIST:
+readonly PersistedTerminalRecoveryHydrationSpec[] = [{
+  allowlistId: "ebsi-5656592-q11-terminal-recovery-hydration-v1",
+  entryId: "ebsi:5656592",
+  key: "4:11",
+  sourcePage: 4,
+  sourceHash: "b7c932cdae76d06eb9d2efd1dc52f4f48faa378c47a0c1bf573fe90bf3b88ee1",
+  contextFrom: 1,
+  contextTo: 12,
+  baseProblemRepairArtifact: {
+    path: "problem-repairs/v2-0004-0011.json",
+    sha256: "1c5edf374765105550fd97352e9a7c04e2cddf9d71fa7d75de9e33cae5c55480",
+    itemHash: "b0f55f67c2a8f726986b1504a1d7a3de533e698d62a2797f48f04476503aa1c9",
+  },
+  baseClassificationRepairArtifact: {
+    path: "classification-repair-batches/" +
+      "v1-0001-0012-82ff6de743dbf11fb3eb87f9462d216aa303d6324c2136f69f024cf63a72dcd7-" +
+      "7bb7cb863c8c4855.json",
+    sha256: "0413f739e10882f4487b8f4eff808dbf7e70b314aa84d68a6d761f15fefd8ae8",
+    itemHash: "8221120aca4a3a26cbaf8d9dc2394ea9afd626c23f975e4a3ca96f5974cc51cd",
+  },
+  revisionProblemArtifact: {
+    path: "problem-revision-batches/" +
+      "v1-0001-0012-0004-d75af2aacce6cd1be02091e1bf0855a8245287d6dc0258a23e891013a28ccddb.json",
+    sha256: "86ae697758f4fabcda8250d7842c0e223cd7b2da9ee2f08aa04e57fd04dc4963",
+    itemHash: "37dca9aef2e093f137a4a3665dd593623ef574811e5f45b0c3b196b7669253a8",
+  },
+  revisionClassificationArtifact: {
+    path: "classification-revision-batches/" +
+      "v1-0001-0012-76226ae91e56c033c83850e7ff8695d82791e12cd905b30139c13e5c229af11b-" +
+      "7bb7cb863c8c4855.json",
+    sha256: "fb28835db1c7a541d4af501a6209eb313759926601d8c7acb421047d9303d8af",
+    itemHash: "8fae41af9ee4d58aeca05118eabec6a8c65531870397c46f16cf1d28d1ee1980",
+  },
+  revisionBaseQuestionHash: "b0f55f67c2a8f726986b1504a1d7a3de533e698d62a2797f48f04476503aa1c9",
+  revisionBaseClassificationHash: "8221120aca4a3a26cbaf8d9dc2394ea9afd626c23f975e4a3ca96f5974cc51cd",
+  revisionTriggerEvidenceHash: "4ca695f2b7eb383a00320b6049b3ab161fb103f05761ab71852dbb780971c322",
+  selected: {
+    problemArtifact: {
+      path: "problem-recoveries/" +
+        "v2-0004-0011-a16c7f3c13454e8f23d75f4e7b53480212e5d06c4125af6c09e7e7c8f68783d8.json",
+      sha256: "9c8e2891bd642e9ce9c4652d6615ee0bfcf03b9fd011b2b5ff81cc8dc10e8106",
+      basisDigest: "a16c7f3c13454e8f23d75f4e7b53480212e5d06c4125af6c09e7e7c8f68783d8",
+      itemHash: "e4e042f87f3264447db8177ec81c6e98958ecbb478dd572b8a233a3243d35480",
+    },
+    classificationArtifact: {
+      path: "classification-recoveries/" +
+        "v2-0004-0011-3a56ded3e11de92f106ce8d5e0690e4c8bbb495cc796a4bcec8eed9886a043a9-" +
+        "7bb7cb863c8c4855.json",
+      sha256: "708aa538a4192c03cb9fc56d6b362301a80c4ffd24abaf7c3865f25b99cade27",
+      basisDigest: "3a56ded3e11de92f106ce8d5e0690e4c8bbb495cc796a4bcec8eed9886a043a9",
+      itemHash: "3ad72ec2018e03078c46246ea17aa018a60eefd8d24b6462b62ccc05f5d18602",
+    },
+    questionText: "$0\\le x\\le \\pi$일 때, 방정식 $(\\sin x+\\cos x)^2=\\sqrt{3}\\sin x+1$의 모든 실근의 합은? [3점]",
+    terminalCheckpoint: {
+      path: "problem-terminal-fidelity/" +
+        "v2-0000-b9f1d1f6130bfb155e8e1a9c6b9c399d3b763a669e7a40537f6455da7bd941bd-" +
+        "c0fd4e92c73adf737bea28b839e815dddfefd6206fc79be440527e508b18eb43.json",
+      sha256: "db4ab968b169a2202c510af97cf1905d7fab6d92eedcec26f04922b1312bd53d",
+      from: 1,
+      to: 12,
+      ownedFrom: 1,
+      ownedTo: 12,
+      inputHash: "c0fd4e92c73adf737bea28b839e815dddfefd6206fc79be440527e508b18eb43",
+    },
+    terminalItemHash: "19efe1512c565231fa7664d5800fbb8f4c8ddbbcaaef8ece46c94a892924073b",
+    evidenceHash: "83bc6af724504f9a513fffa9d542439c22b81a1d06edbae6ad73fd227da8f9ad",
+    preRecoveryEffectiveCorpusHash: "b9f1d1f6130bfb155e8e1a9c6b9c399d3b763a669e7a40537f6455da7bd941bd",
+  },
+  historical: [{
+    problemArtifact: {
+      path: "problem-recoveries/" +
+        "v2-0004-0011-189d47abd4090fb221f78c7cc9dc94df7530e47ea1b09c2d22d0c2155c93c090.json",
+      sha256: "9af3842bdbee358c0786a755a72e5ac9d43e2e106ca72c8c020a5af144b91eaf",
+      basisDigest: "189d47abd4090fb221f78c7cc9dc94df7530e47ea1b09c2d22d0c2155c93c090",
+      itemHash: "a8367bc1a452e46c9b37a637f00d8e25059e5f92a69f69c8dddac2dd4d2d1bb2",
+    },
+    classificationArtifact: {
+      path: "classification-recoveries/" +
+        "v2-0004-0011-af846d70c50441e4974d709bd5e4dfdeccd14b622b2d9d6c2592fd97b26c2b3d-" +
+        "7bb7cb863c8c4855.json",
+      sha256: "277e07024cba026306206cd81ae479e8de5eca24a26556bfa4a1299bc5a66cd1",
+      basisDigest: "af846d70c50441e4974d709bd5e4dfdeccd14b622b2d9d6c2592fd97b26c2b3d",
+      itemHash: "3427b09c3dd15c9f66e6cd74f87fbd4879dac7918939863166e92ddd96bba9a3",
+    },
+    questionText: "$0<x\\leq\\pi$일 때, 방정식 $(\\sin x+\\cos x)^2=\\sqrt{3}\\sin x+1$의 모든 실근의 합은? [3점]",
+    terminalCheckpoint: {
+      path: "problem-terminal-fidelity/" +
+        "v2-0000-7b68c83270ea7333159a52e8847430a33ce1b39c51a015e37498b0d7d2fa0925-" +
+        "feb3e18ffe27340aec82ca553c221b8a9ff1a7417d57a73aa9a15fe81c717d05.json",
+      sha256: "7372f085903399dd22bdfcb8399c0c42f854a8d805991a4d64a3dac78e538c9c",
+      from: 1,
+      to: 12,
+      ownedFrom: 1,
+      ownedTo: 12,
+      inputHash: "feb3e18ffe27340aec82ca553c221b8a9ff1a7417d57a73aa9a15fe81c717d05",
+    },
+    terminalItemHash: "bf88a931ea40031ab17a5cc82e2ddfe84a676107740e7a56352f723866da50d2",
+    evidenceHash: "9b8654885dfc899fd1f1ad87803089375c6da7d9a6bd2435afe8aa3b2968ddae",
+    preRecoveryEffectiveCorpusHash: "7b68c83270ea7333159a52e8847430a33ce1b39c51a015e37498b0d7d2fa0925",
+  }],
 }] as const;
 
 export const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST:
@@ -7378,6 +7510,519 @@ async function persistedProblemRepairAttemptKeys(
     for (const key of memberKeys) keys.add(key);
   }
   return keys;
+}
+
+type PreparedPersistedTerminalRecoveryHydration = {
+  spec: PersistedTerminalRecoveryHydrationSpec;
+  revision: ProblemRevisionEvidence;
+  selected: { classified: ClassifiedQuestion; evidence: ProblemRecoveryEvidence };
+};
+
+async function pinnedCanonicalCheckpoint(
+  stateDir: string,
+  pointer: EvidencePointer,
+  label: string
+): Promise<Record<string, unknown>> {
+  const path = confinedStateFile(stateDir, pointer.path, label);
+  const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), label);
+  if (
+    await sha256File(path) !== pointer.sha256 ||
+    canonicalEvidenceHash(checkpoint) !== pointer.sha256
+  ) throw new Error(`${label} exact hash/envelope가 다릅니다`);
+  return checkpoint;
+}
+
+function pinnedTerminalRecoveryItem(
+  value: unknown,
+  expectedKey: string,
+  label: string
+): ProblemTerminalFidelityItem {
+  const row = object(value, label);
+  if (Object.keys(row).sort().join(",") !== [
+    "evidence",
+    "key",
+    "scopeConfidence",
+    "scopeDecision",
+    "scopeEvidence",
+    "status",
+  ].join(",")) throw new Error(`${label} exact key 집합이 다릅니다`);
+  const key = exactString(row.key, `${label}.key`, 100);
+  if (key !== expectedKey || !( ["exact", "mismatch", "unverifiable"] as unknown[]).includes(row.status) ||
+      !( ["accept", "reject", "review"] as unknown[]).includes(row.scopeDecision) ||
+      typeof row.scopeConfidence !== "number" || !Number.isFinite(row.scopeConfidence) ||
+      row.scopeConfidence < 0 || row.scopeConfidence > 1) {
+    throw new Error(`${label} 값이 유효하지 않습니다`);
+  }
+  return {
+    key,
+    status: row.status as ProblemTerminalFidelityItem["status"],
+    evidence: exactString(row.evidence, `${label}.evidence`, 2000),
+    scopeDecision: row.scopeDecision as ProblemTerminalFidelityItem["scopeDecision"],
+    scopeConfidence: row.scopeConfidence,
+    scopeEvidence: exactString(row.scopeEvidence, `${label}.scopeEvidence`, 2000),
+  };
+}
+
+async function preflightPersistedTerminalRecoveryHydration(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  stateDir: string
+): Promise<PreparedPersistedTerminalRecoveryHydration | null> {
+  const matches = PERSISTED_TERMINAL_RECOVERY_HYDRATION_ALLOWLIST.filter((spec) => spec.entryId === entry.id);
+  if (matches.length > 1) throw new Error(`${entry.id} persisted terminal recovery allowlist가 중복입니다`);
+  const spec = matches[0];
+  if (!spec) return null;
+  const pinnedProblemPath = confinedStateFile(stateDir, "problem.pdf", "persisted terminal recovery source");
+  if (problem.sha256 !== spec.sourceHash || await sha256File(pinnedProblemPath) !== spec.sourceHash) {
+    throw new Error(`${entry.id} persisted terminal recovery source bytes가 다릅니다`);
+  }
+
+  const generations = [spec.selected, ...spec.historical];
+  const expectedProblems = new Set(generations.map((generation) => generation.problemArtifact.path));
+  const expectedClassifications = new Set(generations.map((generation) => generation.classificationArtifact.path));
+  if (expectedProblems.size !== generations.length || expectedClassifications.size !== generations.length) {
+    throw new Error(`${entry.id} persisted terminal recovery allowlist generation이 중복입니다`);
+  }
+  const actualProblems = new Set(strictArtifactNames(
+    join(stateDir, "problem-recoveries"),
+    "persisted terminal problem recovery",
+    (name) => /^v2-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
+  ).map((name) => `problem-recoveries/${name}`));
+  const actualClassifications = new Set(strictArtifactNames(
+    join(stateDir, "classification-recoveries"),
+    "persisted terminal classification recovery",
+    (name) => /^v2-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
+  ).map((name) => `classification-recoveries/${name}`));
+  const problemExtras = [...actualProblems].filter((path) => !expectedProblems.has(path));
+  const problemMissing = [...expectedProblems].filter((path) => !actualProblems.has(path));
+  const classificationExtras = [...actualClassifications].filter((path) => !expectedClassifications.has(path));
+  const classificationMissing = [...expectedClassifications].filter((path) => !actualClassifications.has(path));
+  if (
+    problemExtras.length > 0 || problemMissing.length > 0 ||
+    classificationExtras.length > 0 || classificationMissing.length > 0
+  ) throw new Error(
+    `persisted terminal recovery orphan/conflict: ` +
+    `problem-extra=${problemExtras.join(",") || "-"}, problem-missing=${problemMissing.join(",") || "-"}, ` +
+    `classification-extra=${classificationExtras.join(",") || "-"}, ` +
+    `classification-missing=${classificationMissing.join(",") || "-"}`
+  );
+
+  const baseProblemCheckpoint = await pinnedCanonicalCheckpoint(
+    stateDir,
+    spec.baseProblemRepairArtifact,
+    "persisted terminal base problem repair"
+  );
+  const baseQuestion = restoredQuizItems([baseProblemCheckpoint.item])[0];
+  if (
+    baseProblemCheckpoint.version !== PROBLEM_REPAIR_VERSION || baseProblemCheckpoint.entryId !== entry.id ||
+    baseProblemCheckpoint.key !== spec.key || baseProblemCheckpoint.sourcePage !== spec.sourcePage ||
+    baseProblemCheckpoint.sourceHash !== spec.sourceHash ||
+    canonicalEvidenceHash(baseQuestion) !== spec.baseProblemRepairArtifact.itemHash
+  ) throw new Error(`${spec.key} persisted terminal base problem repair가 다릅니다`);
+
+  const baseClassificationCheckpoint = await pinnedCanonicalCheckpoint(
+    stateDir,
+    spec.baseClassificationRepairArtifact,
+    "persisted terminal base classification repair"
+  );
+  const baseClassificationRows = Array.isArray(baseClassificationCheckpoint.items)
+    ? baseClassificationCheckpoint.items.filter((value) => object(value, "base classification repair item").key === spec.key)
+    : [];
+  const baseClassificationMembers = Array.isArray(baseClassificationCheckpoint.members)
+    ? baseClassificationCheckpoint.members.filter((value) =>
+        object(value, "base classification repair member").key === spec.key)
+    : [];
+  if (baseClassificationRows.length !== 1) {
+    throw new Error(`${spec.key} persisted terminal base classification item이 유일하지 않습니다`);
+  }
+  const baseClassification = parseHistoricalDecision(
+    baseClassificationRows[0],
+    spec.key,
+    "persisted terminal base classification item"
+  );
+  const baseClassificationMember = baseClassificationMembers.length === 1
+    ? object(baseClassificationMembers[0], "persisted terminal base classification member")
+    : null;
+  const baseProblemAuthority = baseClassificationMember
+    ? object(baseClassificationMember.problemAuthority, "persisted terminal base problem authority")
+    : null;
+  if (
+    baseClassificationCheckpoint.version !== CLASSIFICATION_REPAIR_BATCH_VERSION ||
+    baseClassificationCheckpoint.entryId !== entry.id || baseClassificationCheckpoint.sourceHash !== spec.sourceHash ||
+    !baseClassificationMember || !baseProblemAuthority ||
+    baseProblemAuthority.path !== spec.baseProblemRepairArtifact.path ||
+    baseProblemAuthority.sha256 !== spec.baseProblemRepairArtifact.sha256 ||
+    baseProblemAuthority.itemHash !== spec.baseProblemRepairArtifact.itemHash ||
+    baseClassificationMember.effectiveQuestionHash !== spec.baseProblemRepairArtifact.itemHash ||
+    canonicalEvidenceHash(baseClassification) !== spec.baseClassificationRepairArtifact.itemHash ||
+    baseClassification.transcription_status === "exact" ||
+    sha256Text(baseClassification.transcription_evidence) !== spec.revisionTriggerEvidenceHash
+  ) throw new Error(`${spec.key} persisted terminal base classification repair가 다릅니다`);
+
+  const revisionProblemCheckpoint = await pinnedCanonicalCheckpoint(
+    stateDir,
+    spec.revisionProblemArtifact,
+    "persisted terminal problem revision"
+  );
+  const revisionQuestions = restoredSparseQuizItems(revisionProblemCheckpoint.items);
+  if (revisionQuestions.length !== 1 || questionKey(revisionQuestions[0]) !== spec.key) {
+    throw new Error(`${spec.key} persisted terminal problem revision item이 유일하지 않습니다`);
+  }
+  const revisedQuestion = revisionQuestions[0];
+  const revisionMember = {
+    key: spec.key,
+    printedNumber: spec.key.split(":")[1],
+    sourcePage: spec.sourcePage,
+    baseProblemRepairArtifact: {
+      path: spec.baseProblemRepairArtifact.path,
+      sha256: spec.baseProblemRepairArtifact.sha256,
+    },
+    baseProblemRepairItemHash: spec.baseProblemRepairArtifact.itemHash,
+    baseClassificationRepairArtifact: {
+      path: spec.baseClassificationRepairArtifact.path,
+      sha256: spec.baseClassificationRepairArtifact.sha256,
+    },
+    baseClassificationRepairItemHash: spec.baseClassificationRepairArtifact.itemHash,
+    baseQuestionHash: spec.revisionBaseQuestionHash,
+    baseClassificationHash: spec.revisionBaseClassificationHash,
+    trigger: { kind: "classification", evidenceHash: spec.revisionTriggerEvidenceHash },
+  };
+  const revisionMembersDigest = canonicalEvidenceHash([revisionMember]);
+  const expectedRevisionProblemPath = `problem-revision-batches/v${PROBLEM_REVISION_BATCH_VERSION}-` +
+    `${String(spec.contextFrom).padStart(4, "0")}-${String(spec.contextTo).padStart(4, "0")}-` +
+    `${String(spec.sourcePage).padStart(4, "0")}-${revisionMembersDigest}.json`;
+  const expectedRevisionProblemCheckpoint = {
+    version: PROBLEM_REVISION_BATCH_VERSION,
+    entryId: entry.id,
+    sourceHash: spec.sourceHash,
+    contextFrom: spec.contextFrom,
+    contextTo: spec.contextTo,
+    sourcePage: spec.sourcePage,
+    membersDigest: revisionMembersDigest,
+    members: [revisionMember],
+    batchPromptVersion: TARGETED_PROBLEM_BATCH_VERSION,
+    batchPromptDigest: TARGETED_PROBLEM_BATCH_PROMPT_DIGEST,
+    revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+    revisionPromptDigest: TARGETED_PROBLEM_BATCH_REVISION_PROMPT_DIGEST,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    items: [revisedQuestion],
+  };
+  if (
+    spec.revisionProblemArtifact.path !== expectedRevisionProblemPath ||
+    canonicalEvidenceHash(revisedQuestion) !== spec.revisionProblemArtifact.itemHash ||
+    canonicalEvidenceHash(revisionProblemCheckpoint) !== canonicalEvidenceHash(expectedRevisionProblemCheckpoint)
+  ) throw new Error(`${spec.key} persisted terminal problem revision basis가 다릅니다`);
+
+  const revisionClassificationCheckpoint = await pinnedCanonicalCheckpoint(
+    stateDir,
+    spec.revisionClassificationArtifact,
+    "persisted terminal classification revision"
+  );
+  const revisionClassificationRows = Array.isArray(revisionClassificationCheckpoint.items)
+    ? revisionClassificationCheckpoint.items
+    : [];
+  if (revisionClassificationRows.length !== 1) {
+    throw new Error(`${spec.key} persisted terminal classification revision item이 유일하지 않습니다`);
+  }
+  const revisedClassification = parseHistoricalDecision(
+    revisionClassificationRows[0],
+    spec.key,
+    "persisted terminal classification revision item"
+  );
+  const revisionClassificationMember = {
+    key: spec.key,
+    problemAuthority: {
+      key: spec.key,
+      path: spec.revisionProblemArtifact.path,
+      sha256: spec.revisionProblemArtifact.sha256,
+      itemHash: spec.revisionProblemArtifact.itemHash,
+    },
+    effectiveQuestionHash: spec.revisionProblemArtifact.itemHash,
+    baseClassificationRepairArtifact: {
+      path: spec.baseClassificationRepairArtifact.path,
+      sha256: spec.baseClassificationRepairArtifact.sha256,
+    },
+    baseClassificationRepairItemHash: spec.baseClassificationRepairArtifact.itemHash,
+    triggerHash: canonicalEvidenceHash({
+      kind: "classification",
+      evidenceHash: spec.revisionTriggerEvidenceHash,
+    }),
+  };
+  const revisionOverlayDigest = canonicalEvidenceHash([revisionClassificationMember]);
+  const expectedRevisionClassificationPath = `classification-revision-batches/` +
+    `v${CLASSIFICATION_REVISION_BATCH_VERSION}-${String(spec.contextFrom).padStart(4, "0")}-` +
+    `${String(spec.contextTo).padStart(4, "0")}-${revisionOverlayDigest}-${CLASSIFIER_DIGEST}.json`;
+  const expectedRevisionClassificationCheckpoint = {
+    version: CLASSIFICATION_REVISION_BATCH_VERSION,
+    entryId: entry.id,
+    sourceHash: spec.sourceHash,
+    contextFrom: spec.contextFrom,
+    contextTo: spec.contextTo,
+    overlayDigest: revisionOverlayDigest,
+    classifierVersion: CLASSIFIER_VERSION,
+    rulesDigest: CLASSIFIER_DIGEST,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    members: [revisionClassificationMember],
+    items: [revisedClassification],
+  };
+  if (
+    spec.revisionClassificationArtifact.path !== expectedRevisionClassificationPath ||
+    canonicalEvidenceHash(revisedClassification) !== spec.revisionClassificationArtifact.itemHash ||
+    revisedClassification.transcription_status !== "exact" ||
+    canonicalEvidenceHash(revisionClassificationCheckpoint) !==
+      canonicalEvidenceHash(expectedRevisionClassificationCheckpoint)
+  ) throw new Error(`${spec.key} persisted terminal classification revision basis가 다릅니다`);
+
+  const revision: ProblemRevisionEvidence = {
+    baseProblemRepairArtifact: {
+      path: spec.baseProblemRepairArtifact.path,
+      sha256: spec.baseProblemRepairArtifact.sha256,
+    },
+    baseClassificationRepairArtifact: {
+      path: spec.baseClassificationRepairArtifact.path,
+      sha256: spec.baseClassificationRepairArtifact.sha256,
+    },
+    problemArtifact: {
+      path: spec.revisionProblemArtifact.path,
+      sha256: spec.revisionProblemArtifact.sha256,
+    },
+    problemArtifactItemHash: spec.revisionProblemArtifact.itemHash,
+    classificationArtifact: {
+      path: spec.revisionClassificationArtifact.path,
+      sha256: spec.revisionClassificationArtifact.sha256,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    },
+    classificationArtifactItemHash: spec.revisionClassificationArtifact.itemHash,
+    diagnosticEvidenceHash: spec.revisionTriggerEvidenceHash,
+    baseQuestionHash: spec.revisionBaseQuestionHash,
+    effectiveQuestionHash: spec.revisionProblemArtifact.itemHash,
+    baseClassificationHash: spec.revisionBaseClassificationHash,
+    effectiveClassificationHash: spec.revisionClassificationArtifact.itemHash,
+    trigger: { kind: "classification", evidenceHash: spec.revisionTriggerEvidenceHash },
+  };
+
+  const preparedGenerations = await Promise.all(generations.map(async (generation) => {
+    const terminalCheckpoint = await pinnedCanonicalCheckpoint(
+      stateDir,
+      generation.terminalCheckpoint,
+      "persisted terminal recovery trigger"
+    );
+    const terminalInputs = Array.isArray(terminalCheckpoint.inputs)
+      ? terminalCheckpoint.inputs.map((value, index) => object(value, `persisted terminal input ${index + 1}`))
+      : [];
+    const terminalRawItems = Array.isArray(terminalCheckpoint.items) ? terminalCheckpoint.items : [];
+    const terminalItems = terminalRawItems.map((value, index) => {
+      const key = exactString(object(value, `persisted terminal item ${index + 1}`).key,
+        `persisted terminal item ${index + 1}.key`, 100);
+      return pinnedTerminalRecoveryItem(value, key, `persisted terminal item ${key}`);
+    });
+    const inputKeys = terminalInputs.map((value, index) =>
+      exactString(value.key, `persisted terminal input ${index + 1}.key`, 100));
+    const itemKeys = terminalItems.map((item) => item.key);
+    const terminalItemMatches = terminalItems.filter((item) => item.key === spec.key);
+    const terminalInputMatches = terminalInputs.filter((input) => input.key === spec.key);
+    const terminalItem = terminalItemMatches[0];
+    const expectedTerminalPath = `problem-terminal-fidelity/v${PROBLEM_TERMINAL_FIDELITY_VERSION}-0000-` +
+      `${generation.preRecoveryEffectiveCorpusHash}-${generation.terminalCheckpoint.inputHash}.json`;
+    const expectedTerminalCheckpoint = {
+      version: PROBLEM_TERMINAL_FIDELITY_VERSION,
+      entryId: entry.id,
+      sourceHash: spec.sourceHash,
+      from: generation.terminalCheckpoint.from,
+      to: generation.terminalCheckpoint.to,
+      ownedFrom: generation.terminalCheckpoint.ownedFrom,
+      ownedTo: generation.terminalCheckpoint.ownedTo,
+      effectiveCorpusHash: generation.preRecoveryEffectiveCorpusHash,
+      inputHash: generation.terminalCheckpoint.inputHash,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      rulesDigest: CLASSIFIER_DIGEST,
+      scopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      inputs: terminalInputs,
+      items: terminalItems,
+    };
+    if (
+      generation.terminalCheckpoint.path !== expectedTerminalPath ||
+      terminalCheckpoint.inputHash !== canonicalEvidenceHash(terminalInputs) ||
+      terminalInputs.length === 0 || terminalInputs.length !== terminalItems.length ||
+      new Set(inputKeys).size !== inputKeys.length || new Set(itemKeys).size !== itemKeys.length ||
+      inputKeys.some((key) => !itemKeys.includes(key)) ||
+      terminalItemMatches.length !== 1 || terminalInputMatches.length !== 1 ||
+      Number(terminalInputMatches[0].source_page) !== spec.sourcePage ||
+      String(terminalInputMatches[0].printed_number) !== spec.key.split(":")[1] ||
+      canonicalEvidenceHash(terminalInputMatches[0]) !== canonicalEvidenceHash(problemTerminalInput(revisedQuestion)) ||
+      canonicalEvidenceHash(terminalItem) !== generation.terminalItemHash || terminalItem.status === "exact" ||
+      sha256Text(terminalItem.evidence) !== generation.evidenceHash ||
+      canonicalEvidenceHash(terminalCheckpoint) !== canonicalEvidenceHash(expectedTerminalCheckpoint)
+    ) throw new Error(`${spec.key} persisted terminal recovery trigger가 다릅니다`);
+
+    const recoveryTrigger = {
+      kind: "terminal" as const,
+      evidenceHash: generation.evidenceHash,
+      terminalCheckpoint: generation.terminalCheckpoint,
+      terminalItemHash: generation.terminalItemHash,
+      terminalItem,
+      preRecoveryEffectiveCorpusHash: generation.preRecoveryEffectiveCorpusHash,
+    };
+    const problemBasis = {
+      key: spec.key,
+      printedNumber: spec.key.split(":")[1],
+      sourcePage: spec.sourcePage,
+      sourceHash: spec.sourceHash,
+      contextFrom: spec.contextFrom,
+      contextTo: spec.contextTo,
+      baseProblemRepairArtifact: revision.baseProblemRepairArtifact,
+      baseProblemRepairItemHash: spec.baseProblemRepairArtifact.itemHash,
+      baseClassificationRepairArtifact: revision.baseClassificationRepairArtifact,
+      baseClassificationRepairItemHash: spec.baseClassificationRepairArtifact.itemHash,
+      baseProblemRevisionArtifact: revision.problemArtifact,
+      baseProblemRevisionItemHash: spec.revisionProblemArtifact.itemHash,
+      baseClassificationRevisionArtifact: {
+        path: spec.revisionClassificationArtifact.path,
+        sha256: spec.revisionClassificationArtifact.sha256,
+      },
+      baseClassificationRevisionItemHash: spec.revisionClassificationArtifact.itemHash,
+      baseQuestionHash: spec.revisionProblemArtifact.itemHash,
+      baseClassificationHash: spec.revisionClassificationArtifact.itemHash,
+      trigger: recoveryTrigger,
+    };
+    const problemBasisDigest = canonicalEvidenceHash(problemBasis);
+    const expectedProblemPath = `problem-recoveries/v${PROBLEM_TERMINAL_RECOVERY_VERSION}-` +
+      `${String(spec.sourcePage).padStart(4, "0")}-${spec.key.split(":")[1].padStart(4, "0")}-` +
+      `${problemBasisDigest}.json`;
+    const problemCheckpoint = await pinnedCanonicalCheckpoint(
+      stateDir,
+      generation.problemArtifact,
+      "persisted terminal problem recovery"
+    );
+    const question = restoredQuizItems([problemCheckpoint.item])[0];
+    const expectedProblemCheckpoint = {
+      version: PROBLEM_TERMINAL_RECOVERY_VERSION,
+      entryId: entry.id,
+      basisDigest: problemBasisDigest,
+      basis: problemBasis,
+      promptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+      promptDigest: TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      item: question,
+    };
+    if (
+      generation.problemArtifact.path !== expectedProblemPath ||
+      generation.problemArtifact.basisDigest !== problemBasisDigest ||
+      questionKey(question) !== spec.key || question.page !== spec.sourcePage ||
+      question.question !== generation.questionText ||
+      canonicalEvidenceHash(question) !== generation.problemArtifact.itemHash ||
+      canonicalEvidenceHash(problemCheckpoint) !== canonicalEvidenceHash(expectedProblemCheckpoint)
+    ) throw new Error(`${spec.key} persisted terminal problem recovery basis가 다릅니다`);
+
+    const classificationBasis = {
+      ...problemBasis,
+      problemArtifact: {
+        path: generation.problemArtifact.path,
+        sha256: generation.problemArtifact.sha256,
+      },
+      problemArtifactItemHash: generation.problemArtifact.itemHash,
+      effectiveQuestionHash: generation.problemArtifact.itemHash,
+    };
+    const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+    const expectedClassificationPath = `classification-recoveries/v${CLASSIFICATION_TERMINAL_RECOVERY_VERSION}-` +
+      `${String(spec.sourcePage).padStart(4, "0")}-${spec.key.split(":")[1].padStart(4, "0")}-` +
+      `${classificationBasisDigest}-${CLASSIFIER_DIGEST}.json`;
+    const classificationCheckpoint = await pinnedCanonicalCheckpoint(
+      stateDir,
+      generation.classificationArtifact,
+      "persisted terminal classification recovery"
+    );
+    const classificationRows = Array.isArray(classificationCheckpoint.items) ? classificationCheckpoint.items : [];
+    if (classificationRows.length !== 1) {
+      throw new Error(`${spec.key} persisted terminal classification recovery item이 유일하지 않습니다`);
+    }
+    const classification = parseHistoricalDecision(
+      classificationRows[0],
+      spec.key,
+      "persisted terminal classification recovery item"
+    );
+    const expectedClassificationCheckpoint = {
+      version: CLASSIFICATION_TERMINAL_RECOVERY_VERSION,
+      entryId: entry.id,
+      basisDigest: classificationBasisDigest,
+      basis: classificationBasis,
+      classifierVersion: CLASSIFIER_VERSION,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      recoveryPromptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+      recoveryPromptDigest: TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      items: [classification],
+    };
+    if (
+      generation.classificationArtifact.path !== expectedClassificationPath ||
+      generation.classificationArtifact.basisDigest !== classificationBasisDigest ||
+      canonicalEvidenceHash(classification) !== generation.classificationArtifact.itemHash ||
+      classification.transcription_status !== "exact" ||
+      canonicalEvidenceHash(classificationCheckpoint) !== canonicalEvidenceHash(expectedClassificationCheckpoint)
+    ) throw new Error(`${spec.key} persisted terminal classification recovery basis가 다릅니다`);
+
+    const evidence: ProblemRecoveryEvidence = {
+      key: spec.key,
+      printedNumber: spec.key.split(":")[1],
+      sourcePage: spec.sourcePage,
+      sourceHash: spec.sourceHash,
+      contextFrom: spec.contextFrom,
+      contextTo: spec.contextTo,
+      baseProblemRepairArtifact: revision.baseProblemRepairArtifact,
+      baseProblemRepairItemHash: spec.baseProblemRepairArtifact.itemHash,
+      baseClassificationRepairArtifact: revision.baseClassificationRepairArtifact,
+      baseClassificationRepairItemHash: spec.baseClassificationRepairArtifact.itemHash,
+      baseProblemRevisionArtifact: revision.problemArtifact,
+      baseProblemRevisionItemHash: spec.revisionProblemArtifact.itemHash,
+      baseClassificationRevisionArtifact: {
+        path: spec.revisionClassificationArtifact.path,
+        sha256: spec.revisionClassificationArtifact.sha256,
+      },
+      baseClassificationRevisionItemHash: spec.revisionClassificationArtifact.itemHash,
+      problemArtifact: {
+        path: generation.problemArtifact.path,
+        sha256: generation.problemArtifact.sha256,
+      },
+      problemArtifactItemHash: generation.problemArtifact.itemHash,
+      classificationArtifact: {
+        path: generation.classificationArtifact.path,
+        sha256: generation.classificationArtifact.sha256,
+        rulesDigest: CLASSIFIER_DIGEST,
+        transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+        transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+        recoveryPromptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+        recoveryPromptDigest: TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
+      },
+      classificationArtifactItemHash: generation.classificationArtifact.itemHash,
+      trigger: recoveryTrigger,
+      baseQuestionHash: spec.revisionProblemArtifact.itemHash,
+      effectiveQuestionHash: generation.problemArtifact.itemHash,
+      baseClassificationHash: spec.revisionClassificationArtifact.itemHash,
+      effectiveClassificationHash: generation.classificationArtifact.itemHash,
+    };
+    return { generation, classified: { question, classification }, evidence };
+  }));
+
+  const selected = preparedGenerations.find(({ generation }) => generation === spec.selected);
+  if (
+    !selected || selected.classified.classification.decision !== "accept" ||
+    selected.classified.classification.canonical_subject !== "math_B" ||
+    selected.classified.classification.confidence < 0.9
+  ) throw new Error(`${spec.key} persisted terminal selected recovery source authority가 다릅니다`);
+  return { spec, revision, selected: { classified: selected.classified, evidence: selected.evidence } };
 }
 
 async function hydratePersistedProblemRepairBatches(
@@ -13319,6 +13964,11 @@ export async function repairAndAuditOfficialAnswers(
   const baseByKey = new Map(initial.map((item) => [questionKey(item.question), item]));
   if (baseByKey.size !== initial.length) throw new Error("base 문제 key가 중복입니다");
   const baseSolutionsByNumber = officialSolutionsByNumber(entry, initial, solutions);
+  const persistedTerminalRecovery = await preflightPersistedTerminalRecoveryHydration(
+    entry,
+    problem,
+    stateDir
+  );
   const persistedRepairAttemptKeys = await persistedProblemRepairAttemptKeys(
     entry,
     problem,
@@ -13343,6 +13993,29 @@ export async function repairAndAuditOfficialAnswers(
     if (index < 0 || repairs.has(key)) throw new Error(`${key} persisted problem repair hydration이 중복되었습니다`);
     effective[index] = repaired.classified;
     repairs.set(key, repaired.evidence);
+  }
+  if (persistedTerminalRecovery) {
+    const { spec, revision, selected } = persistedTerminalRecovery;
+    const repair = repairs.get(spec.key);
+    const index = effective.findIndex((item) => questionKey(item.question) === spec.key);
+    if (
+      !repair || index < 0 || repair.revision ||
+      repair.problemArtifact.path !== spec.baseProblemRepairArtifact.path ||
+      repair.problemArtifact.sha256 !== spec.baseProblemRepairArtifact.sha256 ||
+      repair.problemArtifactItemHash !== spec.baseProblemRepairArtifact.itemHash ||
+      repair.effectiveQuestionHash !== spec.baseProblemRepairArtifact.itemHash ||
+      repair.classificationArtifact.path !== spec.baseClassificationRepairArtifact.path ||
+      repair.classificationArtifact.sha256 !== spec.baseClassificationRepairArtifact.sha256 ||
+      repair.classificationArtifactItemHash !== spec.baseClassificationRepairArtifact.itemHash ||
+      repair.effectiveClassificationHash !== spec.baseClassificationRepairArtifact.itemHash ||
+      canonicalEvidenceHash(effective[index].question) !== spec.baseProblemRepairArtifact.itemHash ||
+      canonicalEvidenceHash(effective[index].classification) !== spec.baseClassificationRepairArtifact.itemHash
+    ) throw new Error(`${spec.key} persisted terminal recovery base hydration authority가 다릅니다`);
+    effective[index] = selected.classified;
+    repairs.set(spec.key, {
+      ...repair,
+      revision: { ...revision, recovery: selected.evidence },
+    });
   }
   const solutionRevisionTriggers = new Map<
     string,
