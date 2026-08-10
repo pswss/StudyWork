@@ -192,6 +192,17 @@ const Q9_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
 const Q9_WRITING_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/4142baa37330a6d3d470294a");
 const Q9_WRITING_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5594499" && spec.key === "4:9")!;
+const Q43_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/4745f3573f575a93f6adcccb");
+const Q43_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
+  spec.entryId === "ebsi:5577054" && spec.key === "16:43")!;
+const Q43_CORRECTED_SOLUTION =
+  "(가)에서는 ‘여기 하나의 상심한 사람이 있다.’와 ‘여기 하나의 굳세게 살아온 인생이 있다.’와 " +
+  "같이 변주함으로써 주제 의식을 강조하고 있고, (나)에서는 ‘더 추워야겠다’와 ‘한껏 " +
+  "가난해져야겠다’와 같이 유사한 시구를 변주함으로써 주제 의식을 강조하고 있다. [오답풀이] " +
+  "① (가)에서는 마지막 부분에서 유사한 시구가 반복되기는 하지만 역동적 측면을 부각하는 것은 " +
+  "아니며, (나)에서는 점층적 부분이 드러난다고 보기 어렵다. ② (가)에서는 의성어의 활용이 " +
+  "드러나지 않고, (나)에서는 ‘카랑카랑’을 통해 새들의 목소리를 표현하고 있다. ④ 반어적 표현은 " +
+  "(가)와 (나) 모두 찾기 어렵다. ⑤ 여정에 따른 공간 이동은 (가)와 (나) 모두 나타나지 않는다.";
 const MANUAL_FAILED_ARTIFACTS = new Map([
   [Q30_MANUAL_SPEC.allowlistId, {
     problem: Q30_FAILED_PROBLEM_PATH,
@@ -225,6 +236,16 @@ const MANUAL_FAILED_ARTIFACTS = new Map([
     classification: join(
       Q9_WRITING_MANUAL_STATE,
       "classification-recoveries/v1-0004-0009-fecdbfac299fdcff5ae6e0aea267b5f41cdad60c684639b8d2e2160e937de6d2-7bb7cb863c8c4855.json",
+    ),
+  }],
+  [Q43_MANUAL_SPEC.allowlistId, {
+    problem: join(
+      Q43_MANUAL_STATE,
+      "problem-recoveries/v1-0016-0043-9f785a5c7a2c2ae2813ddce7acae5e846c5b29d63a7f37def793f9fd05e8a4d1.json",
+    ),
+    classification: join(
+      Q43_MANUAL_STATE,
+      "classification-recoveries/v1-0016-0043-921b9df51f48b859874f6130f78341df54117e62171d973f74c7f115d64f36a7-7bb7cb863c8c4855.json",
     ),
   }],
 ]);
@@ -1681,6 +1702,7 @@ function prepareManualFixture(
   id: keyof ReturnType<typeof fixture>["stateDirs"],
   spec: typeof Q30_MANUAL_SPEC,
   officialState: string,
+  copyOfficialSolution = false,
 ): void {
   const oldStateDir = files.stateDirs[id];
   const entryState = JSON.parse(readFileSync(join(oldStateDir, "entry.json"), "utf8"));
@@ -1692,6 +1714,7 @@ function prepareManualFixture(
     paperId: officialEntry.paperId,
     sourcePageUrl: officialEntry.sourcePageUrl,
     problemPdfUrl: officialDownloads.problem.requestedUrl,
+    ...(copyOfficialSolution ? { solutionPdfUrl: officialDownloads.solution.requestedUrl } : {}),
   });
   const stateDir = join(files.dataDir, "import-exam-corpus", token(spec.entryId, 24));
   renameSync(oldStateDir, stateDir);
@@ -1706,15 +1729,26 @@ function prepareManualFixture(
   const problemBytes = readFileSync(join(officialState, "problem.pdf"));
   expect(hash(problemBytes)).toBe(spec.sourceHash);
   writeFileSync(join(stateDir, "problem.pdf"), problemBytes);
+  const solutionBytes = copyOfficialSolution
+    ? readFileSync(join(officialState, "solution.pdf"))
+    : readFileSync(join(stateDir, "solution.pdf"));
+  if (copyOfficialSolution) {
+    writeFileSync(join(stateDir, "solution.pdf"), solutionBytes);
+    const officialSolutionChunk = join(officialState, "solution-chunks", "v3-0000.json");
+    const solutionChunkDir = join(stateDir, "solution-chunks");
+    for (const name of readdirSync(solutionChunkDir)) rmSync(join(solutionChunkDir, name));
+    writeFileSync(join(solutionChunkDir, "v3-0000.json"), readFileSync(officialSolutionChunk));
+  }
   const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
   downloads.problem = { ...officialDownloads.problem, path: "problem.pdf" };
+  if (copyOfficialSolution) downloads.solution = { ...officialDownloads.solution, path: "solution.pdf" };
   writeJson(join(stateDir, "downloads.json"), downloads);
 
   const receiptPath = join(stateDir, "receipt.json");
   const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
   receipt.entryId = spec.entryId;
   receipt.problemHash = spec.sourceHash;
-  const solutionBytes = readFileSync(join(stateDir, "solution.pdf"));
+  if (copyOfficialSolution) receipt.solutionHash = officialDownloads.solution.sha256;
   const db = new Database(files.dbPath);
   for (const target of receipt.targetBooks as Array<{
     subject: Target;
@@ -1729,8 +1763,14 @@ function prepareManualFixture(
     writeFileSync(join(files.dataDir, "files", solutionR2Key), solutionBytes);
     db.prepare("UPDATE book_files SET r2_key = ?, content_hash = ?, page_count = ? WHERE r2_key = ?")
       .run(problemR2Key, spec.sourceHash, officialDownloads.problem.pageCount, target.problemR2Key);
-    db.prepare("UPDATE book_files SET r2_key = ? WHERE r2_key = ?")
-      .run(solutionR2Key, target.solutionR2Key);
+    if (copyOfficialSolution) {
+      db.prepare("UPDATE book_files SET r2_key = ?, content_hash = ?, page_count = ? WHERE r2_key = ?")
+        .run(solutionR2Key, officialDownloads.solution.sha256, officialDownloads.solution.pageCount,
+          target.solutionR2Key);
+    } else {
+      db.prepare("UPDATE book_files SET r2_key = ? WHERE r2_key = ?")
+        .run(solutionR2Key, target.solutionR2Key);
+    }
     target.problemR2Key = problemR2Key;
     target.solutionR2Key = solutionR2Key;
   }
@@ -2419,6 +2459,7 @@ function upgradeEntryToV3(
     manualAdjudication?: boolean;
     manualAdjudicationKey?: string;
     manualInvalidDecision?: boolean;
+    manualSolutionRepair?: boolean;
     difficultyRepair?: boolean;
     promptUpgrade?: boolean;
     terminalRecovery?: boolean;
@@ -2448,6 +2489,9 @@ function upgradeEntryToV3(
   manualViewArtifacts?: string[];
   problemManualAdjudicationArtifact?: string;
   classificationManualAdjudicationArtifact?: string;
+  solutionRepairArtifact?: string;
+  solutionRepairFidelityArtifact?: string;
+  semanticArtifact?: string;
 } {
   const stateDir = files.stateDirs[id];
   const entryStatePath = join(stateDir, "entry.json");
@@ -2478,6 +2522,9 @@ function upgradeEntryToV3(
   const manualFailedArtifacts = manualSpec && MANUAL_FAILED_ARTIFACTS.get(manualSpec.allowlistId);
   if (options.manualAdjudication && (!manualSpec || !manualFailedArtifacts)) {
     throw new Error("manual adjudication fixture requires an exact supported entry");
+  }
+  if (options.manualSolutionRepair && manualSpec?.allowlistId !== Q43_MANUAL_SPEC.allowlistId) {
+    throw new Error("manual solution repair fixture requires the exact Q43 allowlist");
   }
   if (options.cropAdjudication) {
     if (entry.id !== "ebsi:5578421") throw new Error("crop adjudication fixture requires Q29 entry");
@@ -2566,26 +2613,31 @@ function upgradeEntryToV3(
     });
   }
   if (manualSpec?.expectedDecision === "accept") {
-    Object.assign(classification.items[0], {
-      decision: "reject",
-      canonical_subject: null,
-      curriculum_course: null,
-      domain: null,
-      achievement_codes: [],
-      reason_codes: ["OUT_OF_SCOPE"],
-      transcription_status: "exact",
-      transcription_evidence: "the literal source transcription is exact and outside the selected scope",
-    });
-    const solutionPath = join(stateDir, "solution-chunks", "v3-0000.json");
-    const solutionCheckpoint = JSON.parse(readFileSync(solutionPath, "utf8"));
-    solutionCheckpoint.items[recoveryTargetNumber - 1] = {
-      ...solutionCheckpoint.items[recoveryTargetNumber - 1],
-      answer: "③ C",
-      explanation: "서울보다 여름이 덥지 않고 시차가 작은 C 뉴질랜드가 조건에 맞는다.",
-      page: 1,
-      complete: true,
-    };
-    writeJson(solutionPath, solutionCheckpoint);
+    for (const [index, item] of classification.items.entries()) {
+      if ((!options.manualSolutionRepair && index !== 0) || index === recoveryTargetNumber - 1) continue;
+      Object.assign(item, {
+        decision: "reject",
+        canonical_subject: null,
+        curriculum_course: null,
+        domain: null,
+        achievement_codes: [],
+        reason_codes: ["OUT_OF_SCOPE"],
+        transcription_status: "exact",
+        transcription_evidence: "the literal source transcription is exact and outside the selected scope",
+      });
+    }
+    if (!options.manualSolutionRepair) {
+      const solutionPath = join(stateDir, "solution-chunks", "v3-0000.json");
+      const solutionCheckpoint = JSON.parse(readFileSync(solutionPath, "utf8"));
+      solutionCheckpoint.items[recoveryTargetNumber - 1] = {
+        ...solutionCheckpoint.items[recoveryTargetNumber - 1],
+        answer: "③ C",
+        explanation: "서울보다 여름이 덥지 않고 시차가 작은 C 뉴질랜드가 조건에 맞는다.",
+        page: 1,
+        complete: true,
+      };
+      writeJson(solutionPath, solutionCheckpoint);
+    }
   }
   const mixedTerminal = options.mixedTerminal || options.staleTriggerBase;
   const repairNumbers = options.cropAdjudication || options.scopeAdjudication
@@ -4486,13 +4538,18 @@ function upgradeEntryToV3(
     const relativePath = "solution-chunks/v3-0000.json";
     const absolutePath = join(stateDir, relativePath);
     const checkpoint = JSON.parse(readFileSync(absolutePath, "utf8"));
-    const solution = checkpoint.items[recoveryTargetNumber - 1];
+    const solution = checkpoint.items.find(
+      (item: { number: string }) => Number(item.number) === recoveryTargetNumber,
+    );
+    const effectiveSolution = options.manualSolutionRepair
+      ? { ...solution, explanation: Q43_CORRECTED_SOLUTION }
+      : solution;
     const baseSolutionCheckpoint = { path: relativePath, sha256: hash(readFileSync(absolutePath)) };
     const input = {
       key,
       printedNumber: String(recoveryTargetNumber),
       qtype: "mcq",
-      allowDerivedMarkerAnswer: false,
+      allowDerivedMarkerAnswer: Boolean(options.manualSolutionRepair && /^[①-⑩]$/u.test(solution.answer)),
       sourcePage: solution.page,
       rawAnswer: solution.answer,
       explanation: solution.explanation,
@@ -4508,10 +4565,12 @@ function upgradeEntryToV3(
       key,
       sourcePage: solution.page,
       answerStatus: "exact",
-      explanationStatus: "exact",
-      evidence: "the explicit answer and complete explanation match the official solution pixels",
+      explanationStatus: options.manualSolutionRepair ? "mismatch" : "exact",
+      evidence: options.manualSolutionRepair
+        ? "the official p5 explanation says 굳세게, 더 추워야겠다, 의성어, and 카랑카랑"
+        : "the explicit answer and complete explanation match the official solution pixels",
     };
-    return { key, solution, input, decision };
+    return { key, solution, effectiveSolution, input, decision };
   })() : null;
   const positiveAcceptedSolution = positiveRepairScopeSpec ? (() => {
     const key = positiveRepairScopeSpec.key;
@@ -4554,7 +4613,7 @@ function upgradeEntryToV3(
   const legacyAudit = JSON.parse(readFileSync(join(stateDir, "answer-audit", legacyAuditName), "utf8"));
   const fidelityPointerByLegacyPath = new Map<string, Record<string, unknown>>();
   const fidelityInputByKey = new Map<string, Record<string, unknown>>();
-  const officialSolutionContextTo = options.scopeAdjudication ? 5
+  const officialSolutionContextTo = options.scopeAdjudication || options.manualSolutionRepair ? 5
     : options.repairScopeAdjudication || options.promptUpgrade ? 4 : undefined;
   const solutionFidelityCheckpoints = legacyAudit.solutionFidelityCheckpoints.map(
     (pointer: Record<string, unknown>) => {
@@ -4623,6 +4682,12 @@ function upgradeEntryToV3(
         }));
         child.inputHash = canonicalEvidenceHash(child.inputs);
       }
+      if (officialSolutionContextTo !== undefined) {
+        child.from = 1;
+        child.to = officialSolutionContextTo;
+        child.ownedFrom = 1;
+        child.ownedTo = officialSolutionContextTo;
+      }
       const index = /^solution-fidelity\/v1-(\d{4})-/u.exec(String(pointer.path))![1];
       const relativePath = `solution-fidelity/v1-${index}-${effectiveCorpusHash}-${child.inputHash}.json`;
       const sha256 = writeEvidence(join(stateDir, relativePath), child);
@@ -4643,6 +4708,106 @@ function upgradeEntryToV3(
       return current;
     },
   );
+  const manualSolutionRepair = options.manualSolutionRepair && manualAcceptedSolution !== null ? (() => {
+    const input = manualAcceptedSolution.input;
+    const effectiveSolution = manualAcceptedSolution.effectiveSolution;
+    const baseFidelityCheckpoint = {
+      path: String(solutionFidelityCheckpoints[0].path),
+      sha256: String(solutionFidelityCheckpoints[0].sha256),
+    };
+    const repairRelativePath = `solution-repairs/v1-${String(input.sourcePage).padStart(4, "0")}-` +
+      `${String(recoveryTargetNumber).padStart(4, "0")}-${baseFidelityCheckpoint.sha256}.json`;
+    const repairCheckpoint = {
+      version: 1,
+      entryId: entry.id,
+      key: manualAcceptedSolution.key,
+      printedNumber: String(recoveryTargetNumber),
+      basePage: input.sourcePage,
+      contextFrom: input.baseContextFrom,
+      contextTo: input.baseContextTo,
+      baseOwnedFrom: input.baseOwnedFrom,
+      baseOwnedTo: input.baseOwnedTo,
+      sourceHash: downloads.solution.sha256,
+      effectiveProblemCorpusHash: effectiveCorpusHash,
+      baseSolutionCheckpoint: input.baseSolutionCheckpoint,
+      baseFidelityCheckpoint,
+      baseSolutionItemHash: input.baseSolutionItemHash,
+      baseRawAnswerHash: hash(input.rawAnswer),
+      baseExplanationHash: hash(input.explanation),
+      promptVersion: TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
+      promptDigest: TARGETED_SOLUTION_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      effectivePage: effectiveSolution.page,
+      item: effectiveSolution,
+    };
+    const repairSha256 = writeEvidence(join(stateDir, repairRelativePath), repairCheckpoint);
+    const repairArtifact = { path: repairRelativePath, sha256: repairSha256 };
+    const effectiveSolutionItemHash = canonicalEvidenceHash(effectiveSolution);
+    const repairedInput = {
+      ...input,
+      sourcePage: effectiveSolution.page,
+      rawAnswer: effectiveSolution.answer,
+      explanation: effectiveSolution.explanation,
+    };
+    const repairedInputHash = canonicalEvidenceHash(repairedInput);
+    const fidelityRelativePath = `solution-fidelity-repairs/v1-` +
+      `${String(input.sourcePage).padStart(4, "0")}-${String(recoveryTargetNumber).padStart(4, "0")}-` +
+      `${baseFidelityCheckpoint.sha256}-${effectiveSolutionItemHash}.json`;
+    const fidelityDecision = {
+      key: manualAcceptedSolution.key,
+      sourcePage: effectiveSolution.page,
+      answerStatus: "exact",
+      explanationStatus: "exact",
+      evidence: "official p5 exactly matches 굳세게, 더 추워야겠다, 의성어, and 카랑카랑",
+    };
+    const fidelityCheckpoint = {
+      version: 1,
+      entryId: entry.id,
+      key: manualAcceptedSolution.key,
+      sourceHash: downloads.solution.sha256,
+      from: input.baseContextFrom,
+      to: input.baseContextTo,
+      basePage: input.sourcePage,
+      effectivePage: effectiveSolution.page,
+      baseOwnedFrom: input.baseOwnedFrom,
+      baseOwnedTo: input.baseOwnedTo,
+      effectiveProblemCorpusHash: effectiveCorpusHash,
+      baseSolutionCheckpoint: input.baseSolutionCheckpoint,
+      baseFidelityCheckpoint,
+      repairArtifact,
+      effectiveSolutionItemHash,
+      inputHash: repairedInputHash,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      model: "gpt-5.6-sol",
+      reasoningEffort: "high",
+      input: repairedInput,
+      item: fidelityDecision,
+    };
+    const fidelitySha256 = writeEvidence(join(stateDir, fidelityRelativePath), fidelityCheckpoint);
+    const fidelityArtifact = { path: fidelityRelativePath, sha256: fidelitySha256 };
+    const evidence = {
+      key: manualAcceptedSolution.key,
+      printedNumber: String(recoveryTargetNumber),
+      basePage: input.sourcePage,
+      effectivePage: effectiveSolution.page,
+      contextFrom: input.baseContextFrom,
+      contextTo: input.baseContextTo,
+      baseOwnedFrom: input.baseOwnedFrom,
+      baseOwnedTo: input.baseOwnedTo,
+      baseSolutionCheckpoint: input.baseSolutionCheckpoint,
+      baseFidelityCheckpoint,
+      repairArtifact,
+      fidelityArtifact: { ...fidelityArtifact, promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST },
+      baseSolutionItemHash: input.baseSolutionItemHash,
+      effectiveSolutionItemHash,
+      baseRawAnswerHash: hash(input.rawAnswer),
+      effectiveRawAnswerHash: hash(effectiveSolution.answer),
+      baseExplanationHash: hash(input.explanation),
+      effectiveExplanationHash: hash(effectiveSolution.explanation),
+    };
+    return { evidence, repairArtifact, fidelityArtifact, fidelityDecision, effectiveSolutionItemHash };
+  })() : null;
   const solutionFidelityItems = manualAcceptedSolution === null
     ? legacyAudit.solutionFidelityItems.map((item: Record<string, unknown>) => {
     const input = fidelityInputByKey.get(String(item.key));
@@ -4671,20 +4836,23 @@ function upgradeEntryToV3(
       printedNumber: String(recoveryTargetNumber),
       qtype: "mcq",
       basePage: manualAcceptedSolution.solution.page,
-      effectivePage: manualAcceptedSolution.solution.page,
-      answerStatus: manualAcceptedSolution.decision.answerStatus,
-      explanationStatus: manualAcceptedSolution.decision.explanationStatus,
-      evidence: manualAcceptedSolution.decision.evidence,
-      fidelityArtifact: {
+      effectivePage: manualAcceptedSolution.effectiveSolution.page,
+      answerStatus: manualSolutionRepair?.fidelityDecision.answerStatus
+        ?? manualAcceptedSolution.decision.answerStatus,
+      explanationStatus: manualSolutionRepair?.fidelityDecision.explanationStatus
+        ?? manualAcceptedSolution.decision.explanationStatus,
+      evidence: manualSolutionRepair?.fidelityDecision.evidence ?? manualAcceptedSolution.decision.evidence,
+      fidelityArtifact: manualSolutionRepair?.fidelityArtifact ?? {
         path: solutionFidelityCheckpoints[0].path,
         sha256: solutionFidelityCheckpoints[0].sha256,
       },
       baseSolutionItemHash: manualAcceptedSolution.input.baseSolutionItemHash,
-      effectiveSolutionItemHash: manualAcceptedSolution.input.baseSolutionItemHash,
+      effectiveSolutionItemHash: manualSolutionRepair?.effectiveSolutionItemHash
+        ?? manualAcceptedSolution.input.baseSolutionItemHash,
       baseRawAnswerHash: hash(manualAcceptedSolution.solution.answer),
-      effectiveRawAnswerHash: hash(manualAcceptedSolution.solution.answer),
+      effectiveRawAnswerHash: hash(manualAcceptedSolution.effectiveSolution.answer),
       baseExplanationHash: hash(manualAcceptedSolution.solution.explanation),
-      effectiveExplanationHash: hash(manualAcceptedSolution.solution.explanation),
+      effectiveExplanationHash: hash(manualAcceptedSolution.effectiveSolution.explanation),
     }];
   if (positiveAcceptedSolution) {
     solutionFidelityItems.push({
@@ -4717,15 +4885,33 @@ function upgradeEntryToV3(
   const effectiveSolutionCorpusHash = canonicalEvidenceHash(solutionFidelityItems.map(
     (item: Record<string, unknown>) => ({
       key: item.key,
-      solution: currentSolutionItems.find(
-        (solution: { number: string }) => solution.number === item.printedNumber,
-      ),
+      solution: manualAcceptedSolution !== null && item.key === manualAcceptedSolution.key
+        ? manualAcceptedSolution.effectiveSolution
+        : currentSolutionItems.find(
+            (solution: { number: string }) => solution.number === item.printedNumber,
+          ),
     }),
   ).sort((left: { key: string }, right: { key: string }) =>
     compareCorpusQuestionKeys(left.key, right.key)));
   const semanticCheckpoint = (() => {
-    if (legacyAudit.semanticCheckpoint === null && !positiveAcceptedSolution) return null;
-    const child = legacyAudit.semanticCheckpoint === null ? {
+    if (legacyAudit.semanticCheckpoint === null && !positiveAcceptedSolution && !manualSolutionRepair) return null;
+    const child = manualSolutionRepair && manualAcceptedSolution !== null ? (() => {
+      const inputs = [{
+        key: manualAcceptedSolution.key,
+        choices: effectiveProblems[recoveryTargetNumber - 1].choices,
+        detailedExplanation: redactedExplanation(manualAcceptedSolution.effectiveSolution.explanation),
+      }];
+      return {
+        inputs,
+        items: [{
+          key: manualAcceptedSolution.key,
+          status: "resolved",
+          choiceIndex: 3,
+          evidence: "both poems vary similar closing lines to emphasize their themes",
+        }],
+        inputHash: canonicalEvidenceHash(inputs),
+      };
+    })() : legacyAudit.semanticCheckpoint === null ? {
       inputs: [],
       items: [],
     } : JSON.parse(readFileSync(
@@ -4792,10 +4978,14 @@ function upgradeEntryToV3(
       printedNumber: String(recoveryTargetNumber),
       sourcePage: recoveryTargetPage,
       officialRawAnswerHash: hash(manualAcceptedSolution.solution.answer),
-      storedAnswerHash: hash(manualAcceptedSolution.solution.answer),
-      mode: "choice-content",
+      storedAnswerHash: hash(manualAcceptedSolution.effectiveSolution.answer),
+      mode: manualSolutionRepair ? "choice-marker" : "choice-content",
       choiceIndex: 3,
-      semantic: null,
+      semantic: manualSolutionRepair ? {
+        status: "resolved",
+        choiceIndex: 3,
+        evidence: "both poems vary similar closing lines to emphasize their themes",
+      } : null,
     }]) as Array<Record<string, unknown>>;
   if (positiveAcceptedSolution) {
     auditItems.push({
@@ -4832,15 +5022,20 @@ function upgradeEntryToV3(
     semanticChoiceVersion: options.answerV5 ? 5 : 4,
     semanticPromptDigest: options.answerV5 ? V5_SEMANTIC_PROMPT_DIGEST : CURRENT_SEMANTIC_PROMPT_DIGEST,
     sourceQuestionCount: legacyAudit.sourceQuestionCount,
-    acceptedQuestionCount: legacyAudit.acceptedQuestionCount + (positiveAcceptedSolution ? 1 : 0),
-    rejectedQuestionCount: legacyAudit.rejectedQuestionCount - (positiveAcceptedSolution ? 1 : 0),
+    acceptedQuestionCount: options.manualSolutionRepair
+      ? 1 : legacyAudit.acceptedQuestionCount + (positiveAcceptedSolution ? 1 : 0),
+    rejectedQuestionCount: options.manualSolutionRepair
+      ? legacyAudit.sourceQuestionCount - 1
+      : legacyAudit.rejectedQuestionCount - (positiveAcceptedSolution ? 1 : 0),
     reviewQuestionCount: 0,
-    targetQuestionCounts: positiveAcceptedSolution ? {
+    targetQuestionCounts: options.manualSolutionRepair ? {
+      [targetForCanonical(Q43_MANUAL_SPEC.expectedCanonicalSubject!)]: 1,
+    } : positiveAcceptedSolution ? {
       ...legacyAudit.targetQuestionCounts,
       "수학 - 수학Ⅱ·미적분Ⅰ": legacyAudit.targetQuestionCounts["수학 - 수학Ⅱ·미적분Ⅰ"] + 1,
     } : legacyAudit.targetQuestionCounts,
     acceptedSolutionKeys,
-    solutionRepairKeys: [],
+    solutionRepairKeys: manualSolutionRepair ? [manualAcceptedSolution!.key] : [],
     derivedAnswerKeys: positiveAcceptedSolution
       ? [...legacyAudit.derivedAnswerKeys, positiveAcceptedSolution.key].sort(compareCorpusQuestionKeys)
       : manualAcceptedSolution === null ? legacyAudit.derivedAnswerKeys : [],
@@ -4849,7 +5044,7 @@ function upgradeEntryToV3(
     effectiveSolutionCorpusHash,
     solutionFidelityCheckpoints,
     solutionFidelityItems,
-    solutionRepairs: [],
+    solutionRepairs: manualSolutionRepair ? [manualSolutionRepair.evidence] : [],
     problemTerminalFidelityCheckpoints,
     problemTerminalFidelityItems: terminalItems,
     semanticCheckpoint,
@@ -4864,6 +5059,33 @@ function upgradeEntryToV3(
     ...auditBasis,
   });
   const receipt = JSON.parse(readFileSync(join(stateDir, "receipt.json"), "utf8"));
+  if (options.manualSolutionRepair && manualSpec?.expectedCanonicalSubject) {
+    const expectedTarget = targetForCanonical(manualSpec.expectedCanonicalSubject);
+    const selectedTarget = receipt.targetBooks.find(
+      (value: { subject: string }) => value.subject === expectedTarget,
+    ) as { subject: string; expectedQuestionCount: number; problemR2Key: string; solutionR2Key: string };
+    if (!selectedTarget) throw new Error("manual solution repair fixture has no canonical target book");
+    const discardedTargets = receipt.targetBooks.filter(
+      (value: { subject: string }) => value.subject !== expectedTarget,
+    ) as Array<{ problemR2Key: string; solutionR2Key: string }>;
+    const db = new Database(files.dbPath);
+    for (const discarded of discardedTargets) {
+      const row = db.prepare("SELECT book_id FROM book_files WHERE r2_key = ?")
+        .get(discarded.problemR2Key) as { book_id: number };
+      db.prepare("DELETE FROM questions WHERE book_id = ?").run(row.book_id);
+      db.prepare("DELETE FROM book_items WHERE book_id = ?").run(row.book_id);
+      db.prepare("DELETE FROM book_files WHERE book_id = ?").run(row.book_id);
+      db.prepare("DELETE FROM books WHERE id = ?").run(row.book_id);
+      rmSync(join(files.dataDir, "files", discarded.problemR2Key));
+      rmSync(join(files.dataDir, "files", discarded.solutionR2Key));
+    }
+    db.close();
+    selectedTarget.expectedQuestionCount = 1;
+    receipt.targetBooks = [selectedTarget];
+    receipt.acceptedQuestionCount = 1;
+    receipt.rejectedQuestionCount = receipt.sourceQuestionCount - 1;
+    writeEvidence(join(stateDir, "receipt.json"), receipt);
+  }
   if (positiveAcceptedSolution) {
     const target = receipt.targetBooks.find(
       (value: { subject: string }) => value.subject === "수학 - 수학Ⅱ·미적분Ⅰ",
@@ -4931,7 +5153,12 @@ function upgradeEntryToV3(
     writeEvidence(join(stateDir, "receipt.json"), receipt);
   }
   if (manualAcceptedSolution !== null) {
-    const target = receipt.targetBooks[0] as { problemR2Key: string; solutionR2Key: string };
+    const expectedTarget = manualSpec?.expectedCanonicalSubject
+      ? targetForCanonical(manualSpec.expectedCanonicalSubject)
+      : receipt.targetBooks[0].subject;
+    const target = receipt.targetBooks.find(
+      (value: { subject: string }) => value.subject === expectedTarget,
+    ) as { problemR2Key: string; solutionR2Key: string };
     const question = effectiveProblems[recoveryTargetNumber - 1];
     const db = new Database(files.dbPath);
     const problemFile = db.prepare("SELECT id, book_id FROM book_files WHERE r2_key = ?")
@@ -4945,8 +5172,8 @@ function upgradeEntryToV3(
       question.qtype,
       question.question,
       JSON.stringify(question.choices),
-      manualAcceptedSolution.solution.answer,
-      manualAcceptedSolution.solution.explanation,
+      manualAcceptedSolution.effectiveSolution.answer,
+      manualAcceptedSolution.effectiveSolution.explanation,
       question.difficulty,
       String(recoveryTargetNumber),
       String(recoveryTargetNumber),
@@ -4960,7 +5187,7 @@ function upgradeEntryToV3(
     ).run(
       problemFile.id,
       String(recoveryTargetNumber),
-      manualAcceptedSolution.solution.answer,
+      manualAcceptedSolution.effectiveSolution.answer,
       question.question,
       recoveryTargetPage,
       problemFile.book_id,
@@ -4971,9 +5198,9 @@ function upgradeEntryToV3(
     ).run(
       solutionFile.id,
       String(recoveryTargetNumber),
-      manualAcceptedSolution.solution.answer,
-      manualAcceptedSolution.solution.explanation,
-      manualAcceptedSolution.solution.page,
+      manualAcceptedSolution.effectiveSolution.answer,
+      manualAcceptedSolution.effectiveSolution.explanation,
+      manualAcceptedSolution.effectiveSolution.page,
       problemFile.book_id,
     );
     db.close();
@@ -5002,7 +5229,7 @@ function upgradeEntryToV3(
     repairs,
     solutionFidelityCheckpoints,
     solutionFidelityItems,
-    solutionRepairs: [],
+    solutionRepairs: manualSolutionRepair ? [manualSolutionRepair.evidence] : [],
     problemTerminalFidelityCheckpoints,
     problemTerminalFidelityItems: terminalItems,
   };
@@ -5039,6 +5266,11 @@ function upgradeEntryToV3(
     manualViewArtifacts,
     problemManualAdjudicationArtifact,
     classificationManualAdjudicationArtifact,
+    solutionRepairArtifact: manualSolutionRepair
+      ? join(stateDir, manualSolutionRepair.repairArtifact.path) : undefined,
+    solutionRepairFidelityArtifact: manualSolutionRepair
+      ? join(stateDir, manualSolutionRepair.fidelityArtifact.path) : undefined,
+    semanticArtifact: semanticCheckpoint ? join(stateDir, semanticCheckpoint.path) : undefined,
   };
 }
 
@@ -10067,6 +10299,160 @@ describe("exam corpus verifier", () => {
       orphan.files.stateDirs.korean,
       "problem-manual-adjudications",
       `v1-0004-0009-${"1".repeat(64)}.json`,
+    ), {});
+    expect(verifyExamCorpus(orphan.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
+  });
+
+  it.skipIf(
+    !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q43_MANUAL_SPEC.allowlistId)!.problem)
+      || !existsSync(MANUAL_FAILED_ARTIFACTS.get(Q43_MANUAL_SPEC.allowlistId)!.classification)
+      || !existsSync(join(Q43_MANUAL_STATE, "problem.pdf"))
+      || !existsSync(join(Q43_MANUAL_STATE, "solution.pdf")),
+  )("reconstructs Q43 and requires its exact repaired solution and semantic authority", () => {
+    const manualFixture = (manualInvalidDecision = false) => {
+      const files = fixture();
+      prepareManualFixture(files, "korean", Q43_MANUAL_SPEC, Q43_MANUAL_STATE, true);
+      const artifacts = upgradeEntryToV3(files, "korean", {
+        manualAdjudication: true,
+        manualAdjudicationKey: Q43_MANUAL_SPEC.key,
+        manualInvalidDecision,
+        manualSolutionRepair: true,
+        terminalScope: "authorized-reject",
+        answerV5: true,
+      });
+      return { files, artifacts };
+    };
+
+    const valid = manualFixture();
+    const modifiedBefore = statSync(valid.files.dbPath).mtimeMs;
+    const report = verifyExamCorpus(valid.files);
+    expect(report, JSON.stringify(report.failures, null, 2)).toMatchObject({ ok: true });
+    expect(statSync(valid.files.dbPath).mtimeMs).toBe(modifiedBefore);
+    const audit = JSON.parse(readFileSync(valid.artifacts.auditArtifact, "utf8"));
+    const terminal = JSON.parse(readFileSync(valid.artifacts.terminalArtifact, "utf8"));
+    expect(terminal.inputs).toHaveLength(45);
+    expect(terminal.items).toHaveLength(45);
+    expect(new Set(terminal.items.map((item: { key: string }) => item.key)).size).toBe(45);
+    expect(terminal.items.find((item: { key: string }) => item.key === Q43_MANUAL_SPEC.key))
+      .toMatchObject({ status: "exact", scopeDecision: "accept", scopeConfidence: 0.99 });
+    const corrected = JSON.parse(
+      readFileSync(valid.artifacts.problemManualAdjudicationArtifact!, "utf8"),
+    ).item;
+    expect(corrected.question).toContain("[43 ~ 45] 다음을 읽고 물음에 답하시오.");
+    expect(corrected.question).toContain("먼― 기적(汽笛) 소리 처마를 스쳐가고");
+    expect(corrected.question).toContain("저 운암의 겨울새들의 행로를 보아버린 죄로");
+    expect(corrected.question).not.toMatch(/살아가나|차마를|베개 밑에|저 운하의/u);
+    const classification = JSON.parse(readFileSync(
+      valid.artifacts.classificationManualAdjudicationArtifact!,
+      "utf8",
+    )).items[0];
+    expect(classification).toMatchObject({
+      decision: "accept",
+      canonical_subject: "korean_literature",
+      curriculum_course: "문학",
+      achievement_codes: ["12문학01-02"],
+      transcription_status: "exact",
+    });
+
+    expect(audit.solutionRepairKeys).toEqual([Q43_MANUAL_SPEC.key]);
+    const repair = audit.solutionRepairs[0];
+    expect(repair).toMatchObject({
+      key: Q43_MANUAL_SPEC.key,
+      repairArtifact: { path: expect.stringMatching(/^solution-repairs\/v1-/u) },
+      fidelityArtifact: { path: expect.stringMatching(/^solution-fidelity-repairs\/v1-/u) },
+    });
+    const baseFidelity = JSON.parse(readFileSync(
+      join(valid.files.stateDirs.korean, repair.baseFidelityCheckpoint.path),
+      "utf8",
+    ));
+    expect(baseFidelity.items).toEqual([expect.objectContaining({
+      key: Q43_MANUAL_SPEC.key,
+      answerStatus: "exact",
+      explanationStatus: "mismatch",
+    })]);
+    const repairedSolution = JSON.parse(readFileSync(valid.artifacts.solutionRepairArtifact!, "utf8"));
+    expect(repairedSolution.item).toMatchObject({ answer: "③", page: 5, complete: true });
+    expect(repairedSolution.item.explanation).toBe(Q43_CORRECTED_SOLUTION);
+    const repairedFidelity = JSON.parse(
+      readFileSync(valid.artifacts.solutionRepairFidelityArtifact!, "utf8"),
+    );
+    expect(repairedFidelity.item).toMatchObject({
+      key: Q43_MANUAL_SPEC.key,
+      answerStatus: "exact",
+      explanationStatus: "exact",
+    });
+    expect(audit.solutionFidelityItems).toEqual([expect.objectContaining({
+      key: Q43_MANUAL_SPEC.key,
+      answerStatus: "exact",
+      explanationStatus: "exact",
+      fidelityArtifact: {
+        path: repair.fidelityArtifact.path,
+        sha256: repair.fidelityArtifact.sha256,
+      },
+    })]);
+    expect(audit.items).toEqual([expect.objectContaining({
+      key: Q43_MANUAL_SPEC.key,
+      mode: "choice-marker",
+      choiceIndex: 3,
+      semantic: expect.objectContaining({ status: "resolved", choiceIndex: 3 }),
+    })]);
+    const semantic = JSON.parse(readFileSync(valid.artifacts.semanticArtifact!, "utf8"));
+    expect(semantic.inputs).toEqual([expect.objectContaining({
+      key: Q43_MANUAL_SPEC.key,
+      detailedExplanation: redactedExplanation(Q43_CORRECTED_SOLUTION),
+    })]);
+    expect(semantic.items).toEqual([expect.objectContaining({
+      key: Q43_MANUAL_SPEC.key,
+      status: "resolved",
+      choiceIndex: 3,
+    })]);
+    expect(audit.semanticCheckpoint.path).toBe(
+      `semantic-choice-checks/v5-${audit.effectiveCorpusHash}-` +
+        `${audit.effectiveSolutionCorpusHash}-${semantic.inputHash}.json`,
+    );
+    const db = new Database(valid.files.dbPath, { readonly: true });
+    const stored = db.prepare(
+      "SELECT answer, explanation, question FROM questions WHERE printed_number = '43'",
+    ).get() as { answer: string; explanation: string; question: string };
+    db.close();
+    expect(stored).toMatchObject({ answer: "③", explanation: Q43_CORRECTED_SOLUTION });
+    expect(stored.question).toContain("[43 ~ 45] 다음을 읽고 물음에 답하시오.");
+
+    const invalidDecision = manualFixture(true);
+    expect(verifyExamCorpus(invalidDecision.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+        && failure.message.includes("manual adjudication is stale or non-exact"))).toBe(true);
+
+    const tamperedRepair = manualFixture();
+    writeFileSync(tamperedRepair.artifacts.solutionRepairArtifact!, "{}");
+    const tamperedRepairReport = verifyExamCorpus(tamperedRepair.files);
+    expect(tamperedRepairReport.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+        && failure.message.includes("persisted solution authority is not canonical immutable JSON")),
+    JSON.stringify(tamperedRepairReport.failures, null, 2)).toBe(true);
+
+    const missingFidelity = manualFixture();
+    rmSync(missingFidelity.artifacts.solutionRepairFidelityArtifact!);
+    const missingFidelityReport = verifyExamCorpus(missingFidelity.files);
+    expect(missingFidelityReport.failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID"
+        && failure.message.includes("persisted repair fidelity child coverage is not exact")),
+    JSON.stringify(missingFidelityReport.failures, null, 2)).toBe(true);
+
+    const omittedRepair = manualFixture();
+    rewriteCurrentV3Authority(omittedRepair.files, (currentAudit) => {
+      currentAudit.solutionRepairKeys = [];
+      currentAudit.solutionRepairs = [];
+    }, "korean");
+    expect(verifyExamCorpus(omittedRepair.files).failures.some((failure) =>
+      failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+
+    const orphan = manualFixture();
+    writeJson(join(
+      orphan.files.stateDirs.korean,
+      "problem-manual-adjudications",
+      `v1-0016-0043-${"1".repeat(64)}.json`,
     ), {});
     expect(verifyExamCorpus(orphan.files).failures.some((failure) =>
       failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);

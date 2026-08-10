@@ -47,6 +47,15 @@ const writeJson = (path: string, value: unknown) => {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
 };
 
+const Q43_CORRECTED_SOLUTION =
+  "(가)에서는 ‘여기 하나의 상심한 사람이 있다.’와 ‘여기 하나의 굳세게 살아온 인생이 있다.’와 " +
+  "같이 변주함으로써 주제 의식을 강조하고 있고, (나)에서는 ‘더 추워야겠다’와 ‘한껏 " +
+  "가난해져야겠다’와 같이 유사한 시구를 변주함으로써 주제 의식을 강조하고 있다. [오답풀이] " +
+  "① (가)에서는 마지막 부분에서 유사한 시구가 반복되기는 하지만 역동적 측면을 부각하는 것은 " +
+  "아니며, (나)에서는 점층적 부분이 드러난다고 보기 어렵다. ② (가)에서는 의성어의 활용이 " +
+  "드러나지 않고, (나)에서는 ‘카랑카랑’을 통해 새들의 목소리를 표현하고 있다. ④ 반어적 표현은 " +
+  "(가)와 (나) 모두 찾기 어렵다. ⑤ 여정에 따른 공간 이동은 (가)와 (나) 모두 나타나지 않는다.";
+
 const cases = [{
   entryId: "ebsi:5594499",
   sourceHash: "0ddccee92ce4e4ba3da53ed253e780cd7b41b5962f7e9761a920079619f81c31",
@@ -94,6 +103,14 @@ const cases = [{
     process.cwd(),
     "data/import-exam-corpus/4142baa37330a6d3d470294a/" +
       "problem-recoveries/v1-0004-0009-bddde1723f11b47836bb403b1415e8663a05efb246e6d6d51157be0a9c1b5cf0.json"
+  ),
+}, {
+  entryId: "ebsi:5577054",
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  path: join(
+    process.cwd(),
+    "data/import-exam-corpus/4745f3573f575a93f6adcccb/" +
+      "problem-recoveries/v1-0016-0043-9f785a5c7a2c2ae2813ddce7acae5e846c5b29d63a7f37def793f9fd05e8a4d1.json"
   ),
 }] as const;
 
@@ -163,6 +180,21 @@ const recoveryCases = [{
   finalAnchor: "ⓐ, ⓑ, ⓒ, ⓓ, ⓔ는 각각 정확히 한 번 보인다.",
   expectedDecision: "reject",
   expectedDpi: 600,
+}, {
+  index: 6,
+  stateDir: join(process.cwd(), "data/import-exam-corpus/4745f3573f575a93f6adcccb"),
+  classificationPath: join(
+    process.cwd(),
+    "data/import-exam-corpus/4745f3573f575a93f6adcccb/" +
+      "classification-recoveries/v1-0016-0043-921b9df51f48b859874f6130f78341df54117e62171d973f74c7f115d64f36a7-7bb7cb863c8c4855.json"
+  ),
+  questionCount: 45,
+  pageCount: 16,
+  finalAnchor: "서로 겹치지 않는 [A], [B], [C] 순서",
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+  expectedDpi: 600,
+  repairSolution: true,
 }] as const;
 
 const recoveryCasesAvailable = recoveryCases.every((item) =>
@@ -176,11 +208,22 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
   const entry = parseCorpusManifest({ schemaVersion: 2, entries: [storedEntry] }).entries[0];
   const officialProblemPath = join(testCase.stateDir, "problem.pdf");
   const problemBytes = readFileSync(officialProblemPath);
-  const solutionDocument = await PDFDocument.create({ updateMetadata: false });
-  solutionDocument.addPage([100, 100]);
-  const solutionBytes = await solutionDocument.save();
-  const solutionPath = join(root, "solution.pdf");
-  writeFileSync(solutionPath, solutionBytes);
+  const repairSolution = "repairSolution" in testCase;
+  let solutionBytes: Uint8Array;
+  let solutionPath: string;
+  let solutionPageCount: number;
+  if (repairSolution) {
+    solutionPath = join(testCase.stateDir, "solution.pdf");
+    solutionBytes = readFileSync(solutionPath);
+    solutionPageCount = 5;
+  } else {
+    const solutionDocument = await PDFDocument.create({ updateMetadata: false });
+    solutionDocument.addPage([100, 100]);
+    solutionBytes = await solutionDocument.save();
+    solutionPath = join(root, "solution.pdf");
+    solutionPageCount = 1;
+    writeFileSync(solutionPath, solutionBytes);
+  }
   const problem: PdfEvidence = {
     path: officialProblemPath,
     sha256: hash(problemBytes),
@@ -193,7 +236,7 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
     path: solutionPath,
     sha256: hash(solutionBytes),
     bytes: solutionBytes.length,
-    pageCount: 1,
+    pageCount: solutionPageCount,
     requestedUrl: entry.solutionPdfUrl,
     resolvedUrl: entry.solutionPdfUrl,
   };
@@ -247,13 +290,24 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
         transcription_evidence: "공식 source pixels와 일치한다.",
       });
   const classified = questions.map((question, index) => ({ question, classification: decisions[index] }));
-  const solutions: SolutionItem[] = questions.map((question) => ({
-    number: question.number!,
-    answer: Number(question.number) === targetNumber ? exhausted.answer : question.answer,
-    explanation: `${question.number}번 공식 해설`,
-    page: 1,
-    complete: true,
-  }));
+  const baseTargetSolution = repairSolution
+    ? (JSON.parse(readFileSync(join(testCase.stateDir, "solution-chunks/v3-0000.json"), "utf8"))
+      .items as SolutionItem[]).find((item) => Number(item.number) === targetNumber)!
+    : undefined;
+  if (repairSolution) {
+    expect(solution.sha256).toBe("2abfea3ad57f76b754720050839da1698222201359f290054d3c5564d3121f8a");
+    expect(baseTargetSolution?.explanation).toMatch(/근세게|더 추워하겠다|여성어|가랑가랑/u);
+  }
+  const solutions: SolutionItem[] = questions.map((question) => Number(question.number) === targetNumber &&
+      baseTargetSolution
+    ? structuredClone(baseTargetSolution)
+    : {
+        number: question.number!,
+        answer: Number(question.number) === targetNumber ? exhausted.answer : question.answer,
+        explanation: `${question.number}번 공식 해설`,
+        page: 1,
+        complete: true,
+      });
   writeJson(join(root, "problem-chunks", "v2-0000.json"), {
     version: 2,
     sourceHash: problem.sha256,
@@ -283,15 +337,15 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
     version: 3,
     sourceHash: solution.sha256,
     from: 1,
-    to: 1,
+    to: solutionPageCount,
     ownedFrom: 1,
-    ownedTo: 1,
+    ownedTo: solutionPageCount,
     model: "gpt-5.6-sol",
     reasoningEffort: "high",
     items: solutions,
   });
 
-  const calls = { extraction: 0, classification: 0, terminal: 0, solution: 0 };
+  const calls = { extraction: 0, classification: 0, terminal: 0, solution: 0, solutionRepair: 0, semantic: 0 };
   providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
     if (request.schema?.name === "studywork_file_quiz_items") {
       calls.extraction++;
@@ -340,10 +394,31 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
       calls.solution++;
       return { text: JSON.stringify([{
         key: targetKey,
-        sourcePage: 1,
+        sourcePage: baseTargetSolution?.page ?? 1,
         answerStatus: "exact",
-        explanationStatus: "exact",
-        evidence: "공식 답과 해설이 일치한다.",
+        explanationStatus: repairSolution && calls.solution === 1 ? "mismatch" : "exact",
+        evidence: repairSolution && calls.solution === 1
+          ? "공식 5쪽은 굳세게, 더 추워야겠다, 의성어, 카랑카랑인데 base 해설이 다르다."
+          : "공식 답과 전체 해설이 일치한다.",
+      }]) };
+    }
+    if (request.schema?.name === "studywork_solution_file_items") {
+      calls.solutionRepair++;
+      return { text: JSON.stringify([{
+        number: String(targetNumber),
+        answer: "③",
+        explanation: Q43_CORRECTED_SOLUTION,
+        page: 5,
+        complete: true,
+      }]) };
+    }
+    if (request.schema?.name === "studywork_exam_corpus_semantic_choice_check") {
+      calls.semantic++;
+      return { text: JSON.stringify([{
+        key: targetKey,
+        status: "resolved",
+        choiceIndex: 3,
+        evidence: "두 작품 모두 유사 시구를 변주해 주제 의식을 강조한다.",
       }]) };
     }
     throw new Error(`unexpected schema ${request.schema?.name}`);
@@ -374,6 +449,29 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
     scopeDecision: testCase.expectedDecision,
   });
   expect(result.auditPath).toMatch(/^answer-audit\/v5-/u);
+  if (repairSolution) {
+    expect(calls.solution).toBe(2);
+    expect(calls.solutionRepair).toBe(1);
+    expect(calls.semantic).toBe(1);
+    expect(result.solutionRepairs).toEqual([expect.objectContaining({
+      key: targetKey,
+      repairArtifact: expect.objectContaining({ path: expect.stringMatching(/^solution-repairs\/v1-/u) }),
+      fidelityArtifact: expect.objectContaining({
+        path: expect.stringMatching(/^solution-fidelity-repairs\/v1-/u),
+      }),
+    })]);
+    expect(result.solutions.find((item) => Number(item.number) === targetNumber)?.explanation)
+      .toBe(Q43_CORRECTED_SOLUTION);
+    expect(result.solutionFidelityItems).toEqual([expect.objectContaining({
+      key: targetKey,
+      answerStatus: "exact",
+      explanationStatus: "exact",
+    })]);
+    expect(result.effectiveSolutionCorpusHash).not.toBe(canonicalEvidenceHash([{
+      key: targetKey,
+      solution: baseTargetSolution,
+    }]));
+  }
   const cropCheckpoint = JSON.parse(readFileSync(join(root, manual.cropEvidenceArtifact.path), "utf8"));
   expect(cropCheckpoint.dpi).toBe("expectedDpi" in testCase ? testCase.expectedDpi : 300);
 
@@ -405,7 +503,7 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
 }
 
 describe("exact allowlisted problem manual adjudication", () => {
-  it("pins the six audited sources and exhausted child hashes", () => {
+  it("pins the seven audited sources and exhausted child hashes", () => {
     expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.map((item) => ({
       entryId: item.entryId,
       key: item.key,
@@ -455,6 +553,13 @@ describe("exact allowlisted problem manual adjudication", () => {
       sourceHash: cases[5].sourceHash,
       parentKind: "recovery",
       failedQuestionHash: "6b45bc49e5f0e87b14c8b93fc23e845b668bd8185af847c9929021235f6a8759",
+    }, {
+      entryId: "ebsi:5577054",
+      key: "16:43",
+      sourcePage: 16,
+      sourceHash: cases[6].sourceHash,
+      parentKind: "recovery",
+      failedQuestionHash: "59b3c10380338bed7ed9fcdcdf746d30cccddff38cce54d0c98c7b9fa4722bfb",
     }]);
   });
 
@@ -521,6 +626,34 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(q9.question).not.toMatch(/중심 주제:|강연 핵심 묘사|‘맥아더 펠로상’|㉠그릿|㉡그릿|㉢주목|㉣그러나|㉤떠올리고/u);
     expect(q9.figure_description).toContain("중앙에서 세 갈래 곡선이 뻗는다");
     expect(q9.figure_description).toContain("ⓐ, ⓑ, ⓒ, ⓓ, ⓔ는 각각 정확히 한 번 보인다");
+  });
+
+  it.skipIf(!available)("replaces the whole failed Q43 passage with the exact p15-p16 source", () => {
+    const failed = itemAt(6);
+    const spec = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST[6];
+    expect(spec.replacements).toEqual([expect.objectContaining({
+      field: "question",
+      from: failed.question,
+      count: 1,
+    })]);
+    const corrected = applyAllowlistedProblemManualCorrection(cases[6].entryId, cases[6].sourceHash, failed);
+    expect(corrected.question).toContain("[43 ~ 45] 다음을 읽고 물음에 답하시오.");
+    expect(corrected.question).toContain("시를 믿고 어떻게 살어가나");
+    expect(corrected.question).toContain("먼― 기적(汽笛) 소리 처마를 스쳐가고");
+    expect(corrected.question).toContain("잠들은 아내와 어린것의 벼개 맡에");
+    expect(corrected.question).toContain("등불이 나에게 속삭어린다.");
+    expect(corrected.question).toContain("운암댐 소롯길에 서서");
+    expect(corrected.question).toContain("머언 먼 순은의 눈나라에서나 배웠음직한 몸짓이랑");
+    expect(corrected.question).toContain("네 가슴에 못 박혀 삭고 싶은 속된 내 그리움은 또");
+    expect(corrected.question).toContain("저 운암의 겨울새들의 행로를 보아버린 죄로");
+    expect(corrected.question).toContain("- 김광균, ｢ 노신 ｣ -");
+    expect(corrected.question).toContain("- 복효근, ｢ 새에 대한 반성문 ｣ -");
+    expect(corrected.question).toContain("43. (가)와 (나)의 공통점에 대한 설명으로 가장 적절한 것은?");
+    expect(corrected.question).not.toMatch(/살아가나|차마를|베개 밑에|속삭거린다|몽당비자루|소줏집|아슴차니|순순의|살고 싶은|저 운하의/u);
+    expect(corrected.question.match(/^\[[ABC]\]$/gmu)).toEqual(["[A]", "[B]", "[C]"]);
+    expect(corrected.choices).toEqual(failed.choices);
+    expect(corrected.figure_description).toContain("왼쪽으로 열린 세로 묶음 괄호가 정확히 3개");
+    expect(corrected.figure_description).toContain("서로 겹치지 않는 [A], [B], [C] 순서");
   });
 
   it.skipIf(!available)("rejects a changed parent item before applying any correction", () => {
