@@ -14,6 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
+import { PDFDocument } from "pdf-lib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const providerMock = vi.hoisted(() => ({ complete: vi.fn() }));
@@ -29,6 +30,7 @@ import {
   PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST,
   PROBLEM_SCOPE_BOX_REVISION_PROMPT_DIGEST,
   PROBLEM_SCOPE_BOX_REVISION_VERSION,
+  PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST,
   applyAllowlistedProblemScopeBoxRevision,
   assertNoCommittedReceiptForFilteredResult,
   assertNoReceiptResultConflict,
@@ -159,6 +161,217 @@ describe.skipIf(!available)("Q11 scope box revision", () => {
     expect(providerMock.complete).not.toHaveBeenCalled();
     expect(snapshot(root)).toEqual(before);
   });
+
+  it("resolves the final Q11 scope disagreement from scope-box and solution evidence", async () => {
+    const root = mkdtempSync(join(tmpdir(), "studywork-q11-terminal-scope-"));
+    roots.push(root);
+    cpSync(liveState, root, { recursive: true });
+    const initial = fixtureInputs(root);
+    const receipt = JSON.parse(readFileSync(join(root, "receipt.json"), "utf8"));
+    const solutionByNumber = new Map(initial.solutions.map((item) => [String(Number(item.number)), item]));
+    const terminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((spec) =>
+      spec.entryId === "ebsi:5577055" && spec.key === "4:11"
+    )!;
+    const calls = { child: 0, solution: 0, solutionRepair: 0, semantic: 0 };
+    let crashSolutionRepair = true;
+    providerMock.complete.mockImplementation(async (request: {
+      schema?: { name?: string };
+      prompt: string;
+      file?: { path: string };
+    }) => {
+      if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
+        calls.child++;
+        expect(request.prompt).toContain("Final question:\n");
+        expect(request.prompt).toContain(
+          "page 1 is the official problem page 4 crop; pages 2-6 are official solution pages 1-5"
+        );
+        expect(request.prompt).not.toContain("canonical_subject=MATH_B");
+        expect(request.prompt).not.toContain("IN_SCOPE_SINGLE_SUBJECT");
+        expect(request.prompt).not.toContain("MIXED_SCOPE_LOG_FUNCTION_AND_COORDINATE_GEOMETRY");
+        const [item] = JSON.parse(request.prompt.split("Final question:\n")[1]) as Array<{ key: string }>;
+        expect(item.key).toBe("4:11");
+        expect(request.file).toBeDefined();
+        expect((await PDFDocument.load(readFileSync(request.file!.path))).getPageCount()).toBe(6);
+        return { text: JSON.stringify([{
+          key: "4:11",
+          status: "exact",
+          evidence: "공식 문제 crop의 전체 문항·그래프·선택지가 정확히 일치한다.",
+          scopeDecision: "reject",
+          scopeConfidence: 0.99,
+          scopeEvidence: "공식 해설은 로그함수와 제외 대상 좌표기하의 중점·선분 길이를 함께 사용한다.",
+        }]) };
+      }
+      if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
+        calls.solution++;
+        const inputs = JSON.parse(request.prompt.split("Accepted solutions:\n")[1]) as Array<{
+          key: string;
+          source_page: number;
+          raw_answer: string;
+        }>;
+        return { text: JSON.stringify(inputs.map((item) => ({
+          key: item.key,
+          sourcePage: item.source_page,
+          answerStatus: item.key === "2:5" && item.raw_answer === "$\\sqrt2$" ? "mismatch" : "exact",
+          explanationStatus: "exact",
+          evidence: item.key === "2:5" && item.raw_answer === "$\\sqrt2$"
+            ? "공식 1쪽은 세제곱근 2인데 base raw answer는 제곱근 2다."
+            : "공식 해설의 답과 전체 설명이 일치한다.",
+        }))) };
+      }
+      if (request.schema?.name === "studywork_solution_file_items") {
+        calls.solutionRepair++;
+        if (crashSolutionRepair) throw new Error("seeded crash after Q11 terminal child");
+        return { text: JSON.stringify([{
+          ...solutionByNumber.get("5")!,
+          answer: "$\\sqrt[3]{2}$",
+        }]) };
+      }
+      if (request.schema?.name === "studywork_exam_corpus_semantic_choice_check") {
+        calls.semantic++;
+        const inputs = JSON.parse(request.prompt.split("Items:\n")[1]) as Array<{
+          key: string;
+          choices: string[];
+        }>;
+        return { text: JSON.stringify(inputs.map((item) => ({
+          key: item.key,
+          status: "resolved",
+          choiceIndex: resolveOfficialAnswer(
+            { qtype: "mcq", choices: item.choices } as QuizItemEx,
+            solutionByNumber.get(item.key.split(":")[1])!.answer
+          ).choiceIndex! + 1,
+          evidence: "공식 해설의 결론과 한 선택지가 유일하게 일치한다.",
+        }))) };
+      }
+      throw new Error(`unexpected AI call: ${request.schema?.name ?? "unknown"}`);
+    });
+    const run = () => {
+      const input = fixtureInputs(root);
+      return repairAndAuditOfficialAnswers(
+        input.entry,
+        input.problem,
+        input.solution,
+        root,
+        input.classified,
+        input.solutions
+      );
+    };
+
+    await expect(run()).rejects.toThrow("seeded crash after Q11 terminal child");
+    expect(calls.child).toBe(1);
+    expect(calls.solutionRepair).toBe(1);
+    const childDirectory = join(root, "problem-terminal-fidelity-adjudications");
+    expect(readdirSync(childDirectory)).toHaveLength(1);
+
+    crashSolutionRepair = false;
+    calls.child = 0;
+    calls.solution = 0;
+    calls.solutionRepair = 0;
+    calls.semantic = 0;
+    const result = await run();
+    expect(calls.child).toBe(0);
+    expect(calls.solutionRepair).toBe(1);
+    expect(result.problemTerminalFidelityItems).toHaveLength(30);
+    expect(result.problemTerminalFidelityItems.find((item) => item.key === "4:11")).toMatchObject({
+      status: "exact",
+      scopeDecision: "reject",
+    });
+    const q11 = result.classified.find((item) => item.classification.key === "4:11")!;
+    expect(canonicalEvidenceHash(q11.question)).toBe(terminalSpec.parentQuestionHash);
+    expect(canonicalEvidenceHash(q11.classification)).toBe(terminalSpec.parentClassificationHash);
+    expect(q11.classification).toMatchObject({
+      decision: "reject",
+      canonical_subject: null,
+      curriculum_course: null,
+      domain: null,
+      achievement_codes: [],
+      transcription_status: "exact",
+    });
+    const terminalAdjudication = result.repairs.find((repair) => repair.key === "4:11")!.terminalAdjudication!;
+    expect(terminalAdjudication).toMatchObject({
+      parentKind: "scope-box",
+      parentScopeAdjudicationHash: terminalSpec.parentScopeAdjudicationHash,
+      parentScopeBoxEvidenceHash: terminalSpec.parentScopeBoxEvidenceHash,
+      sourceEvidence: { kind: "scope-box-crop", sha256: "135d148a90e2695499ef1c1439cfb8aaf19a7a979470dd2d5f40270731793086" },
+      baseSolutionCheckpoint: {
+        path: "solution-chunks/v3-0000.json",
+        sha256: "7e463c412565efc1a07c56dc3324da478426ad98822b31c95d586fee87391339",
+      },
+      baseSolutionItemHash: "ccf1b5bb896164a0466f3b1cd7d3a32463b07b0e640f952c05d14fb04dd74646",
+      solutionContextFrom: 1,
+      solutionContextTo: 5,
+    });
+    const childPath = join(root, terminalAdjudication.adjudicationArtifact.path);
+    const childBytes = readFileSync(childPath);
+    const childCheckpoint = JSON.parse(childBytes.toString("utf8"));
+    expect(childCheckpoint.items[0]).toMatchObject({ status: "exact", scopeDecision: "reject" });
+    expect(childCheckpoint.basis).toMatchObject({
+      parentScopeAdjudicationHash: terminalSpec.parentScopeAdjudicationHash,
+      parentScopeBoxEvidenceHash: terminalSpec.parentScopeBoxEvidenceHash,
+      solutionContextFrom: 1,
+      solutionContextTo: 5,
+    });
+    expect(result.auditPath).toMatch(/^answer-audit\/v5-/u);
+    const audit = JSON.parse(readFileSync(join(root, result.auditPath!), "utf8"));
+    expect(audit.repairs.find((repair: { key: string }) => repair.key === "4:11"))
+      .toMatchObject({ terminalAdjudication: { parentKind: "scope-box" } });
+    expect(matchOfficialSolutions(
+      initial.entry,
+      result.classified,
+      result.solutions,
+      baseDifficultyByQuestionKey(initial.classified)
+    ).some((item) => item.printedNumber === "11")).toBe(false);
+    expect((await writeAnswerAttestation(
+      root,
+      initial.entry.id,
+      initial.problem.sha256,
+      initial.solution.sha256,
+      receipt,
+      result
+    )).path).toMatch(/^answer-attestation\/v5-/u);
+
+    providerMock.complete.mockReset().mockRejectedValue(new Error("replay AI call"));
+    const replay = await run();
+    expect(replay.auditHash).toBe(result.auditHash);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+
+    const tampered = JSON.parse(childBytes.toString("utf8"));
+    tampered.unexpected = true;
+    writeFileSync(childPath, `${JSON.stringify(tampered, null, 2)}\n`);
+    await expect(run()).rejects.toThrow(/terminal fidelity adjudication checkpoint\/evidence/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    writeFileSync(childPath, childBytes);
+
+    rmSync(childPath);
+    const orphanPath = join(
+      childDirectory,
+      "v1-0004-0011-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json"
+    );
+    writeFileSync(orphanPath, "{}\n");
+    const beforeOrphan = snapshot(root);
+    await expect(run()).rejects.toThrow(/terminal fidelity adjudication orphan\/conflict/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(snapshot(root)).toEqual(beforeOrphan);
+    rmSync(orphanPath);
+    writeFileSync(childPath, childBytes);
+
+    const parentClassificationPath = join(root, terminalSpec.parentClassificationArtifactPath);
+    const parentClassificationBytes = readFileSync(parentClassificationPath);
+    const parentTamper = JSON.parse(parentClassificationBytes.toString("utf8"));
+    parentTamper.unexpected = true;
+    writeFileSync(parentClassificationPath, `${JSON.stringify(parentTamper, null, 2)}\n`);
+    await expect(run()).rejects.toThrow(/scope box classification revision (?:checkpoint|authority)/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    writeFileSync(parentClassificationPath, parentClassificationBytes);
+
+    const failedTerminalPath = join(root, terminalSpec.failedTerminalPath);
+    const failedTerminalBytes = readFileSync(failedTerminalPath);
+    const terminalTamper = JSON.parse(failedTerminalBytes.toString("utf8"));
+    terminalTamper.unexpected = true;
+    writeFileSync(failedTerminalPath, `${JSON.stringify(terminalTamper, null, 2)}\n`);
+    await expect(run()).rejects.toThrow(/terminal 문제 fidelity|failed terminal fidelity/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    writeFileSync(failedTerminalPath, failedTerminalBytes);
+  }, 120_000);
 
   it("crash-resumes the hidden box classifier and replays without AI", async () => {
     const root = mkdtempSync(join(tmpdir(), "studywork-q11-scope-box-"));

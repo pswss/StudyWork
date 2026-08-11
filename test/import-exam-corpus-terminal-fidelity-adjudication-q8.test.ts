@@ -128,6 +128,17 @@ describe.skipIf(!available)("Q8/Q20 terminal fidelity adjudication", () => {
         failedTerminalArtifactHash: "c4f64ef621cc454e232fa42af9605fb6af83e0fba5eb4a8c6173c774412fd8c9",
         failedItemHash: "21a1875add25568fe3b26eeea03c0b2a785c524ac71c5a35d6097f2f71d58506",
       }),
+      expect.objectContaining({
+        entryId: "ebsi:5577055",
+        key: "4:11",
+        parentKind: "scope-box",
+        failedStatus: "exact",
+        expectedScopeDecision: "reject",
+        parentQuestionHash: "35937a22d01677588672139e66a4e55a58a1711fa2b5ba7541d3181d009518d0",
+        parentClassificationHash: "d9048c372b65ea1743efa80533f60babf0c825d816ac84441562f5b7884899ef",
+        failedTerminalArtifactHash: "dcdeba5115626165988892bbe3ddcda57236e8dd5f48cb6171f3bc9092be37b6",
+        failedItemHash: "ae7b656cae88d66a886cd484c9f08ef5f4b707a2bec7e8466f868836eea22105",
+      }),
     ]);
   });
 

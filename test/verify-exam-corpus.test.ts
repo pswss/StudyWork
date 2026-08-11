@@ -9565,6 +9565,7 @@ async function scopeBoxRevisionFixture() {
     "problem-scope-box-evidence",
     "problem-scope-box-revisions",
     "classification-scope-box-revisions",
+    "problem-terminal-fidelity-adjudications",
     "solution-repairs",
     "solution-fidelity-repairs",
   ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
@@ -9600,29 +9601,32 @@ async function scopeBoxRevisionFixture() {
   const scopeByKey = new Map<string, Record<string, any>>(
     terminalTemplate.items.map((item: Record<string, any>) => [item.key, item]),
   );
+  const q11TerminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((spec) =>
+    spec.entryId === "ebsi:5577055" && spec.key === "4:11")!;
+  const q11ScopeBoxDecision = JSON.parse(readFileSync(join(
+    Q11_SCOPE_STATE,
+    q11TerminalSpec.parentClassificationArtifactPath,
+  ), "utf8")).items[0];
   const solutionByNumber = new Map(input.solutions.map((item) => [String(Number(item.number)), item]));
   let solutionFidelityCalls = 0;
   providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
     if (request.schema?.name === "studywork_exam_corpus_classification") {
       expect(request.prompt).toContain('"box":[0.12,0.36]');
-      return { text: JSON.stringify([{
-        key: "4:11",
-        decision: "reject",
-        canonical_subject: null,
-        curriculum_course: null,
-        domain: null,
-        achievement_codes: [],
-        confidence: 0.99,
-        reason_codes: [
-          "LOGARITHMIC_FUNCTION_REQUIRED",
-          "EXCLUDED_COORDINATE_GEOMETRY_REQUIRED",
-          "ONE_EXCLUDED_DEPENDENCY_REJECTS_WHOLE",
-        ],
-        transcription_status: "exact",
-        transcription_evidence: "공식 4쪽 crop은 stem, 전체 로그 그래프와 다섯 선택지를 모두 포함한다.",
-      }]) };
+      return { text: JSON.stringify([q11ScopeBoxDecision]) };
     }
     if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
+      if (request.prompt.includes("Final question:\n")) {
+        const [item] = JSON.parse(request.prompt.split("Final question:\n")[1]) as Array<{ key: string }>;
+        expect(item.key).toBe("4:11");
+        return { text: JSON.stringify([{
+          key: item.key,
+          status: "exact",
+          evidence: "공식 4쪽 crop의 전체 문항·그래프·선택지가 정확히 일치한다.",
+          scopeDecision: "reject",
+          scopeConfidence: 0.99,
+          scopeEvidence: "공식 해설은 로그함수와 제외 대상 좌표기하의 중점·선분 길이를 함께 사용한다.",
+        }]) };
+      }
       const items = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{ key: string }>;
       return { text: JSON.stringify(items.map((item) => {
         const scope = scopeByKey.get(item.key)!;
@@ -9923,7 +9927,7 @@ describe("exam corpus verifier", () => {
     expect(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST)
       .toBe("e92ed29fdd979e63d56635b2f7c99284ad01f14893384e680acd150cb2a29728");
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("692344c52ef38f43402275e0d6029a11af389d5d252b76ff22ea4cacb8ef3aee");
+      .toBe("8ad306a8309677e671e8ee185cf622f4cfd8bc93d03f790d27ddf4ab83992b4b");
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST));
 
@@ -9941,7 +9945,8 @@ describe("exam corpus verifier", () => {
       const audit = JSON.parse(readFileSync(join(files.stateDir, files.result.auditPath!), "utf8"));
       const adjudicated = audit.repairs.filter((repair: Record<string, any>) => repair.terminalAdjudication);
       expect(adjudicated.map((repair: { key: string }) => repair.key).sort()).toEqual(["3:8", "8:20"]);
-      for (const spec of PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST) {
+      for (const spec of PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.filter((candidate) =>
+        candidate.entryId === "ebsi:5525984")) {
         const repair = adjudicated.find((value: { key: string }) => value.key === spec.key);
         expect(repair.terminalAdjudication).toMatchObject({
           allowlistId: spec.allowlistId,
@@ -12231,6 +12236,10 @@ describe("exam corpus verifier", () => {
       .toBe("6006e177f56f72c29cac9f5051ebbfd0b397c7309e1d0f8e059a3a78eaf181ec");
     expect(scopeBoxRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST));
+    expect(terminalFidelityAdjudicationAllowlistFingerprint())
+      .toBe("8ad306a8309677e671e8ee185cf622f4cfd8bc93d03f790d27ddf4ab83992b4b");
+    const terminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((spec) =>
+      spec.entryId === "ebsi:5577055" && spec.key === "4:11")!;
     const parentQuestion = JSON.parse(readFileSync(join(
       Q11_SCOPE_STATE,
       PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST[0].parentRecoveryProblemArtifactPath,
@@ -12251,6 +12260,7 @@ describe("exam corpus verifier", () => {
       });
       const audit = JSON.parse(readFileSync(join(files.stateDir, files.result.auditPath!), "utf8"));
       const q11Repair = audit.repairs.find((repair: { key: string }) => repair.key === "4:11");
+      expect(files.result.effectiveCorpusHash).toBe(terminalSpec.failedEffectiveCorpusHash);
       const boxRevision = q11Repair.revision.recovery.scopeAdjudication.boxRevision;
       expect(boxRevision).toMatchObject({
         allowlistId: PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST[0].allowlistId,
@@ -12274,6 +12284,53 @@ describe("exam corpus verifier", () => {
         pixelWidth: 3017,
         pixelHeight: 2382,
       })]);
+      expect(q11Repair.terminalAdjudication).toMatchObject({
+        allowlistId: terminalSpec.allowlistId,
+        parentKind: "scope-box",
+        parentScopeAdjudicationHash: terminalSpec.parentScopeAdjudicationHash,
+        parentScopeBoxEvidenceHash: terminalSpec.parentScopeBoxEvidenceHash,
+        sourceEvidence: {
+          path: boxRevision.cropEvidencePdf.path,
+          sha256: boxRevision.cropEvidencePdf.sha256,
+          kind: "scope-box-crop",
+        },
+        cropEvidenceArtifact: boxRevision.cropEvidenceArtifact,
+        cropEvidencePdf: boxRevision.cropEvidencePdf,
+        cropViews: boxRevision.cropViews,
+        baseSolutionCheckpoint: {
+          path: terminalSpec.baseSolutionCheckpointPath,
+          sha256: terminalSpec.baseSolutionCheckpointHash,
+        },
+        baseSolutionItemHash: terminalSpec.baseSolutionItemHash,
+        solutionContextFrom: 1,
+        solutionContextTo: 5,
+        failedTerminalCheckpoint: {
+          path: terminalSpec.failedTerminalPath,
+          sha256: terminalSpec.failedTerminalArtifactHash,
+        },
+      });
+      const terminalChildPath = join(
+        files.stateDir,
+        q11Repair.terminalAdjudication.adjudicationArtifact.path,
+      );
+      const terminalChildBytes = readFileSync(terminalChildPath);
+      const terminalChild = JSON.parse(terminalChildBytes.toString("utf8"));
+      expect(terminalChild).toMatchObject({
+        basis: {
+          parentScopeAdjudicationHash: terminalSpec.parentScopeAdjudicationHash,
+          parentScopeBoxEvidenceHash: terminalSpec.parentScopeBoxEvidenceHash,
+          baseSolutionCheckpoint: {
+            path: terminalSpec.baseSolutionCheckpointPath,
+            sha256: terminalSpec.baseSolutionCheckpointHash,
+          },
+          solutionContextFrom: 1,
+          solutionContextTo: 5,
+        },
+        items: [{ key: "4:11", status: "exact", scopeDecision: "reject" }],
+      });
+      const failedTerminal = JSON.parse(readFileSync(join(files.stateDir, terminalSpec.failedTerminalPath), "utf8"));
+      expect(failedTerminal.items.find((item: { key: string }) => item.key === "4:11"))
+        .toMatchObject({ status: "exact", scopeDecision: "accept" });
       expect(audit.problemTerminalFidelityItems).toHaveLength(30);
       expect(audit.problemTerminalFidelityItems.find((item: { key: string }) => item.key === "4:11"))
         .toMatchObject({ status: "exact", scopeDecision: "reject" });
@@ -12284,13 +12341,13 @@ describe("exam corpus verifier", () => {
         baseRawAnswerHash: "1b65c648e3566876e3af03395e859b3c4d2ff8768568d590f7cf76172b2d5839",
         effectiveRawAnswerHash: "18eb660efcd50dde8e19c9c890afe1d9b15fb7a53f6746488c65e9468ecc9cf9",
         repairArtifact: {
-          path: "solution-repairs/v1-0001-0005-0827ec5e583fdcf147a8faeef01aa0657d3000783b2db663a746bca67a783717.json",
-          sha256: "6c691b4032540848bdd5a2e0f88b9ec136b14558dbed04f8a0afd56ab2f8665f",
+          path: "solution-repairs/v1-0001-0005-47f0cfc2c451d8a9f0e8f753750cf2d20d2f7755d0bd12de92437f9012998fde.json",
+          sha256: "59c2173978252b6686e1409955cb9ea4ac85171b1c1e6ff41e2e69df2ad5b492",
         },
         fidelityArtifact: {
-          path: "solution-fidelity-repairs/v1-0001-0005-0827ec5e583fdcf147a8faeef01aa0657d3000783b2db663a746bca67a783717-" +
+          path: "solution-fidelity-repairs/v1-0001-0005-47f0cfc2c451d8a9f0e8f753750cf2d20d2f7755d0bd12de92437f9012998fde-" +
             "6fd09d50cd90a6e59e7a39a7fa298d3df7b330826138f2b295c26bdcaae087b6.json",
-          sha256: "6517e8dceae274c66119f16119590411adb7b02705ef2524cd0fac72405a4c45",
+          sha256: "20a556867a816fd1083183a62ac557e666800c1c185650fad131f1602fa4e003",
         },
       });
       expect(audit.solutionFidelityItems.find((item: { key: string }) => item.key === "2:5"))
@@ -12323,6 +12380,31 @@ describe("exam corpus verifier", () => {
       expect(verifyExamCorpus(files).failures.some((failure) =>
         failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
       writeFileSync(cropPdfPath, cropPdfBytes);
+
+      rmSync(terminalChildPath);
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("missing"))).toBe(true);
+      writeFileSync(terminalChildPath, terminalChildBytes);
+
+      const terminalOrphan = join(
+        files.stateDir,
+        "problem-terminal-fidelity-adjudications",
+        `v1-0004-0011-${"2".repeat(64)}.json`,
+      );
+      writeJson(terminalOrphan, {});
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
+      rmSync(terminalOrphan);
+
+      const terminalChildCopy = join(files.stateDir, "terminal-child-copy.json");
+      writeFileSync(terminalChildCopy, terminalChildBytes);
+      rmSync(terminalChildPath);
+      symlinkSync(terminalChildCopy, terminalChildPath);
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+      rmSync(terminalChildPath);
+      writeFileSync(terminalChildPath, terminalChildBytes);
+      rmSync(terminalChildCopy);
 
       const problemPath = join(files.stateDir, boxRevision.problemArtifact.path);
       const problemBytes = readFileSync(problemPath);
@@ -12395,6 +12477,43 @@ describe("exam corpus verifier", () => {
     } finally {
       providerMock.complete.mockReset();
       rmSync(files.root, { recursive: true, force: true });
+    }
+
+    const invalidScope = await scopeBoxRevisionFixture();
+    try {
+      rewriteTerminalAdjudicationAuthority(invalidScope, (currentAudit) => {
+        const repair = currentAudit.repairs.find((value: { key: string }) => value.key === "4:11");
+        const adjudication = repair.terminalAdjudication;
+        const childPath = join(invalidScope.stateDir, adjudication.adjudicationArtifact.path);
+        const child = JSON.parse(readFileSync(childPath, "utf8"));
+        const item = child.items[0];
+        item.scopeDecision = "accept";
+        item.scopeEvidence = "self-consistent but allowlist-forbidden Q11 scope acceptance";
+        adjudication.adjudicationArtifact.sha256 = writeEvidence(childPath, child);
+        adjudication.adjudicationItemHash = canonicalEvidenceHash(item);
+        Object.assign(currentAudit.problemTerminalFidelityItems.find(
+          (value: { key: string }) => value.key === "4:11",
+        ), item);
+      });
+      const invalidReport = verifyExamCorpus(invalidScope);
+      expect(invalidReport.failures.some((failure) => failure.code === "ANSWER_AUDIT_INVALID"),
+        JSON.stringify(invalidReport.failures, null, 2)).toBe(true);
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(invalidScope.root, { recursive: true, force: true });
+    }
+
+    const omittedChild = await scopeBoxRevisionFixture();
+    try {
+      rewriteTerminalAdjudicationAuthority(omittedChild, (currentAudit) => {
+        delete currentAudit.repairs.find((value: { key: string }) => value.key === "4:11")
+          .terminalAdjudication;
+      });
+      expect(verifyExamCorpus(omittedChild).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(omittedChild.root, { recursive: true, force: true });
     }
 
     const parentTamper = await scopeBoxRevisionFixture();
@@ -12471,6 +12590,20 @@ describe("exam corpus verifier", () => {
       `v1-0004-0011-${"1".repeat(64)}.json`,
     ), {});
     expect(verifyExamCorpus(staleFallback).failures.some((failure) =>
+      failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
+
+    const terminalChildFallback = fixture();
+    const terminalChildSignalDirectory = join(
+      terminalChildFallback.stateDirs.math,
+      "problem-terminal-fidelity-adjudications",
+    );
+    mkdirSync(terminalChildSignalDirectory, { recursive: true });
+    writeJson(join(
+      terminalChildSignalDirectory,
+      `v1-0004-0011-${"3".repeat(64)}.json`,
+    ), {});
+    expect(verificationContractAuditVersionForTest(terminalChildFallback.stateDirs.math)).toBe(5);
+    expect(verifyExamCorpus(terminalChildFallback).failures.some((failure) =>
       failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
 
     const emptySymlinkFallback = fixture();

@@ -609,8 +609,11 @@ type PersistedTerminalRecoveryHydrationSpec = {
 
 type ProblemTerminalFidelityAdjudicationSpec = {
   allowlistId: string;
-  parentKind: "manual" | "repair";
+  parentKind: "manual" | "repair" | "scope-box";
   parentManualAllowlistId?: string;
+  parentScopeBoxAllowlistId?: string;
+  parentScopeAdjudicationHash?: string;
+  parentScopeBoxEvidenceHash?: string;
   entryId: string;
   key: string;
   sourcePage: number;
@@ -632,6 +635,8 @@ type ProblemTerminalFidelityAdjudicationSpec = {
   baseClassificationHash?: string;
   baseSolutionItemHash?: string;
   officialRawAnswerHash?: string;
+  solutionContextFrom?: number;
+  solutionContextTo?: number;
   failedTerminalPath: string;
   failedTerminalArtifactHash: string;
   failedEffectiveCorpusHash: string;
@@ -640,6 +645,8 @@ type ProblemTerminalFidelityAdjudicationSpec = {
   failedItemHash: string;
   failedEvidenceHash: string;
   failedScopeEvidenceHash: string;
+  failedStatus?: ProblemTerminalFidelityItem["status"];
+  expectedScopeDecision?: ProblemTerminalFidelityItem["scopeDecision"];
 };
 
 const PROBLEM_SCOPE_ADJUDICATION_ALLOWLIST: readonly ProblemScopeAdjudicationSpec[] = [{
@@ -1615,6 +1622,43 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedItemHash: "21a1875add25568fe3b26eeea03c0b2a785c524ac71c5a35d6097f2f71d58506",
   failedEvidenceHash: "644b2ad4270b75338872f1d1e0211d9297383e2e4ee0cfa6f8751f578dd219cb",
   failedScopeEvidenceHash: "cc75c4567dbac09b7ea2b7fe184aac906215c3914e46b251c442efdcdaafb4f1",
+}, {
+  allowlistId: "ebsi-5577055-q11-terminal-fidelity-v1",
+  parentKind: "scope-box",
+  parentScopeBoxAllowlistId: "ebsi-5577055-q11-scope-box-v1",
+  parentScopeAdjudicationHash: "37934d8167e1c967b0f0906a6580818f1fddac9fd3641b7ae8898e132a8620bd",
+  parentScopeBoxEvidenceHash: "c336b79354d5a3a3a18cc40cecb2d0bada62f8a6f37803c2a02cf3146beed7f4",
+  entryId: "ebsi:5577055",
+  key: "4:11",
+  sourcePage: 4,
+  sourceHash: "b4381bc3b831323375b2c4a25319d308185c930be5d2e3b07dfc28e7646a5fde",
+  solutionSourceHash: "1753328f4b4360a9d81312d0d1610c7a11063bbefeeb1e1fd286d54c601ec5fa",
+  parentQuestionHash: "35937a22d01677588672139e66a4e55a58a1711fa2b5ba7541d3181d009518d0",
+  parentClassificationHash: "d9048c372b65ea1743efa80533f60babf0c825d816ac84441562f5b7884899ef",
+  parentProblemArtifactPath: "problem-scope-box-revisions/" +
+    "v1-0004-0011-44277b5b18dcad59f73d872eee6fb349f563eeadf93e9590f603e93532583aa7.json",
+  parentProblemArtifactHash: "3ff383d6a16074679bc33cb0d3537b33599946af1732122f733ecc76f21f4618",
+  parentClassificationArtifactPath: "classification-scope-box-revisions/" +
+    "v1-0004-0011-480f4d397802564d27d80a188c79af42000ed85444bb2c1adc51df0ac2ff3ae6-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "5dc0cc4716259a2425cb82908316a3e8ee297e024309bb0061c645d8a7958f67",
+  baseSolutionCheckpointPath: "solution-chunks/v3-0000.json",
+  baseSolutionCheckpointHash: "7e463c412565efc1a07c56dc3324da478426ad98822b31c95d586fee87391339",
+  baseSolutionItemHash: "ccf1b5bb896164a0466f3b1cd7d3a32463b07b0e640f952c05d14fb04dd74646",
+  solutionContextFrom: 1,
+  solutionContextTo: 5,
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-8e22bc17f58eb8cc8e9138389ec705646ccdbd8a375cd46d52a8a6c33637cafe-" +
+    "a47fe46c7cb03dd93ba0c862afae8e2a6012b95bd1afa26e024a3f079c445e60.json",
+  failedTerminalArtifactHash: "dcdeba5115626165988892bbe3ddcda57236e8dd5f48cb6171f3bc9092be37b6",
+  failedEffectiveCorpusHash: "8e22bc17f58eb8cc8e9138389ec705646ccdbd8a375cd46d52a8a6c33637cafe",
+  failedInputHash: "a47fe46c7cb03dd93ba0c862afae8e2a6012b95bd1afa26e024a3f079c445e60",
+  failedTerminalInputHash: "5cddb010c8b5196168567c3261a393d0df39d95091d71bdf386067bf035e928e",
+  failedItemHash: "ae7b656cae88d66a886cd484c9f08ef5f4b707a2bec7e8466f868836eea22105",
+  failedEvidenceHash: "6da2099e40efdc09dd568ee1218577ee39f4ec2e2f909182b972754b147b959c",
+  failedScopeEvidenceHash: "ef60f9062f16b23ec37ff90ffbbefd571f2e9fe089bee6c4e36f73fa73abb00d",
+  failedStatus: "exact",
+  expectedScopeDecision: "reject",
 }] as const;
 
 export function manualAdjudicationAllowlistFingerprint(): string {
@@ -3100,6 +3144,13 @@ function verifyProblemTerminalFidelityAdjudications(
   cache: EvidenceCache,
   contract: VerificationContract,
 ): Map<string, ProblemTerminalFidelityItem> {
+  const expectedScopeDecision = (spec: ProblemTerminalFidelityAdjudicationSpec) =>
+    spec.expectedScopeDecision ?? "accept";
+  const isExpectedItem = (
+    spec: ProblemTerminalFidelityAdjudicationSpec,
+    item: ProblemTerminalFidelityItem,
+  ) => item.status === "exact" && item.scopeDecision === expectedScopeDecision(spec)
+    && item.scopeConfidence >= 0.9;
   const effectiveCorpusHash = canonicalEvidenceHash(effective.order.map((key) => {
     const record = effective.records.get(key)!;
     return { question: record.question.evidence, classification: record.classification };
@@ -3128,11 +3179,18 @@ function verifyProblemTerminalFidelityAdjudications(
     const key = exactString(repair.key, `answer audit repairs[${index}].key`);
     const current = effective.records.get(key);
     const spec = specs.find((candidate) => candidate.key === key);
+    const expectedParentDecision = spec?.parentKind === "scope-box" ? "reject" : "accept";
     if (!current || !spec || current.question.page !== spec.sourcePage
       || canonicalEvidenceHash(current.question.evidence) !== spec.parentQuestionHash
       || canonicalEvidenceHash(current.classification) !== spec.parentClassificationHash
       || current.classification.transcription_status !== "exact"
-      || current.classification.decision !== "accept") {
+      || current.classification.decision !== expectedParentDecision
+      || expectedParentDecision === "reject" && (
+        current.classification.canonical_subject !== null
+        || current.classification.curriculum_course !== null
+        || current.classification.domain !== null
+        || current.classification.achievement_codes.length !== 0
+      )) {
       throw new Error(`${key}: terminal fidelity adjudication current question/classification is stale`);
     }
     const { terminalAdjudication: rawAdjudication, ...parentRepair } = repair;
@@ -3148,16 +3206,28 @@ function verifyProblemTerminalFidelityAdjudications(
     const parentManual = recovery?.manualAdjudication === undefined
       ? undefined
       : object(recovery.manualAdjudication, `${key}.revision.recovery.manualAdjudication`);
+    const parentScopeAdjudication = recovery?.scopeAdjudication === undefined
+      ? undefined
+      : object(recovery.scopeAdjudication, `${key}.revision.recovery.scopeAdjudication`);
+    const parentScopeBox = parentScopeAdjudication?.boxRevision === undefined
+      ? undefined
+      : object(parentScopeAdjudication.boxRevision, `${key}.revision.recovery.scopeAdjudication.boxRevision`);
     const pointerFromEnvelope = (value: unknown, label: string): EvidencePointer => {
       const envelope = object(value, label);
       return evidencePointer({ path: envelope.path, sha256: envelope.sha256 }, label);
     };
     const parentProblemArtifact = pointerFromEnvelope(
-      spec.parentKind === "manual" ? parentManual?.problemArtifact : parentRepair.problemArtifact,
+      spec.parentKind === "manual"
+        ? parentManual?.problemArtifact
+        : spec.parentKind === "scope-box" ? parentScopeBox?.problemArtifact : parentRepair.problemArtifact,
       `${key}.terminalAdjudication.parentProblemArtifact`,
     );
     const parentClassificationArtifact = pointerFromEnvelope(
-      spec.parentKind === "manual" ? parentManual?.classificationArtifact : parentRepair.classificationArtifact,
+      spec.parentKind === "manual"
+        ? parentManual?.classificationArtifact
+        : spec.parentKind === "scope-box"
+          ? parentScopeBox?.classificationArtifact
+          : parentRepair.classificationArtifact,
       `${key}.terminalAdjudication.parentClassificationArtifact`,
     );
     if (parentProblemArtifact.path !== spec.parentProblemArtifactPath
@@ -3180,7 +3250,7 @@ function verifyProblemTerminalFidelityAdjudications(
         || parentManual.effectiveClassificationHash !== spec.parentClassificationHash) {
         throw new Error(`${key}: terminal fidelity adjudication manual parent is stale`);
       }
-    } else {
+    } else if (spec.parentKind === "repair") {
       const baseProblemCheckpoint = evidencePointer(
         parentRepair.baseProblemCheckpoint,
         `${key}.terminalAdjudication.baseProblemCheckpoint`,
@@ -3217,6 +3287,34 @@ function verifyProblemTerminalFidelityAdjudications(
       ] as const) {
         readBoundEvidenceCached(cache, stateDir, pointer, `${key} terminal adjudication ${label}`);
       }
+    } else {
+      if (!parentScopeAdjudication || !parentScopeBox
+        || parentScopeBox.allowlistId !== spec.parentScopeBoxAllowlistId
+        || canonicalEvidenceHash(parentScopeAdjudication) !== spec.parentScopeAdjudicationHash
+        || canonicalEvidenceHash(parentScopeBox) !== spec.parentScopeBoxEvidenceHash
+        || parentScopeBox.problemArtifactItemHash !== spec.parentQuestionHash
+        || parentScopeBox.effectiveQuestionHash !== spec.parentQuestionHash
+        || parentScopeBox.classificationArtifactItemHash !== spec.parentClassificationHash
+        || parentScopeBox.effectiveClassificationHash !== spec.parentClassificationHash
+        || parentScopeAdjudication.baseSolutionItemHash !== spec.baseSolutionItemHash
+        || parentScopeAdjudication.solutionContextFrom !== spec.solutionContextFrom
+        || parentScopeAdjudication.solutionContextTo !== spec.solutionContextTo) {
+        throw new Error(`${key}: terminal fidelity adjudication scope box parent is stale`);
+      }
+      const baseSolutionCheckpoint = evidencePointer(
+        parentScopeAdjudication.baseSolutionCheckpoint,
+        `${key}.terminalAdjudication.baseSolutionCheckpoint`,
+      );
+      if (baseSolutionCheckpoint.path !== spec.baseSolutionCheckpointPath
+        || baseSolutionCheckpoint.sha256 !== spec.baseSolutionCheckpointHash) {
+        throw new Error(`${key}: terminal fidelity adjudication scope box solution authority is stale`);
+      }
+      readBoundEvidenceCached(
+        cache,
+        stateDir,
+        baseSolutionCheckpoint,
+        `${key} terminal adjudication base solution`,
+      );
     }
 
     const adjudication = object(rawAdjudication, `${key}.terminalAdjudication`);
@@ -3247,16 +3345,25 @@ function verifyProblemTerminalFidelityAdjudications(
       || sha256(failedTerminalItem.evidence) !== spec.failedEvidenceHash
       || failedTerminalItem.scopeEvidence === undefined
       || sha256(failedTerminalItem.scopeEvidence) !== spec.failedScopeEvidenceHash
-      || failedTerminalItem.status !== "mismatch"
+      || failedTerminalItem.status !== (spec.failedStatus ?? "mismatch")
       || failedTerminalItem.scopeDecision !== "accept"
       || failedTerminalItem.scopeConfidence < 0.9) {
       throw new Error(`${key}: terminal fidelity adjudication failed item/input is stale`);
     }
     const parentRepairEvidenceHash = canonicalEvidenceHash(parentRepair);
     const parentManualEvidenceHash = parentManual ? canonicalEvidenceHash(parentManual) : undefined;
+    const parentScopeAdjudicationHash = parentScopeAdjudication
+      ? canonicalEvidenceHash(parentScopeAdjudication)
+      : undefined;
+    const parentScopeBoxEvidenceHash = parentScopeBox ? canonicalEvidenceHash(parentScopeBox) : undefined;
     const sourceEvidence = spec.parentKind === "manual"
       ? { ...evidencePointer(parentManual!.cropEvidencePdf, `${key}.manual.cropEvidencePdf`), kind: "manual-crop" }
-      : { path: "problem.pdf", sha256: problemEvidence.sha256, kind: "problem-pdf" };
+      : spec.parentKind === "scope-box"
+        ? {
+            ...evidencePointer(parentScopeBox!.cropEvidencePdf, `${key}.scopeBox.cropEvidencePdf`),
+            kind: "scope-box-crop",
+          }
+        : { path: "problem.pdf", sha256: problemEvidence.sha256, kind: "problem-pdf" };
     const sourcePath = confinedEvidencePath(
       stateDir,
       { path: sourceEvidence.path, sha256: sourceEvidence.sha256 },
@@ -3281,6 +3388,19 @@ function verifyProblemTerminalFidelityAdjudications(
         cropEvidenceArtifact: parentManual.cropEvidenceArtifact,
         cropEvidencePdf: parentManual.cropEvidencePdf,
         cropViews: parentManual.cropViews,
+      } : {}),
+      ...(parentScopeAdjudication && parentScopeBox ? {
+        parentScopeAdjudication,
+        parentScopeAdjudicationHash,
+        parentScopeBox,
+        parentScopeBoxEvidenceHash,
+        cropEvidenceArtifact: parentScopeBox.cropEvidenceArtifact,
+        cropEvidencePdf: parentScopeBox.cropEvidencePdf,
+        cropViews: parentScopeBox.cropViews,
+        baseSolutionCheckpoint: parentScopeAdjudication.baseSolutionCheckpoint,
+        baseSolutionItemHash: parentScopeAdjudication.baseSolutionItemHash,
+        solutionContextFrom: parentScopeAdjudication.solutionContextFrom,
+        solutionContextTo: parentScopeAdjudication.solutionContextTo,
       } : {}),
       sourceEvidence,
       effectiveCorpusHash,
@@ -3345,6 +3465,19 @@ function verifyProblemTerminalFidelityAdjudications(
       parentKind: spec.parentKind,
       parentRepairEvidenceHash,
       ...(parentManualEvidenceHash ? { parentManualEvidenceHash } : {}),
+      ...(parentScopeAdjudication && parentScopeBox ? {
+        parentScopeAdjudication,
+        parentScopeAdjudicationHash,
+        parentScopeBox,
+        parentScopeBoxEvidenceHash,
+        cropEvidenceArtifact: parentScopeBox.cropEvidenceArtifact,
+        cropEvidencePdf: parentScopeBox.cropEvidencePdf,
+        cropViews: parentScopeBox.cropViews,
+        baseSolutionCheckpoint: parentScopeAdjudication.baseSolutionCheckpoint,
+        baseSolutionItemHash: parentScopeAdjudication.baseSolutionItemHash,
+        solutionContextFrom: parentScopeAdjudication.solutionContextFrom,
+        solutionContextTo: parentScopeAdjudication.solutionContextTo,
+      } : {}),
       sourceEvidence,
       effectiveCorpusHash,
       failedTerminalCheckpoint,
@@ -3362,8 +3495,7 @@ function verifyProblemTerminalFidelityAdjudications(
     };
     if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)
       || !isDeepStrictEqual(adjudication, expectedEvidence)
-      || item.key !== key || item.status !== "exact"
-      || item.scopeDecision !== "accept" || item.scopeConfidence < 0.9) {
+      || item.key !== key || !isExpectedItem(spec, item)) {
       throw new Error(`${key}: terminal fidelity adjudication checkpoint/evidence is stale`);
     }
     overlays.set(key, item);
