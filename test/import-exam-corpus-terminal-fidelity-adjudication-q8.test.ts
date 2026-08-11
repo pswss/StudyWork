@@ -135,6 +135,7 @@ describe.skipIf(!available)("Q8/Q20 terminal fidelity adjudication", () => {
     const root = mkdtempSync(join(tmpdir(), "studywork-q8-terminal-adjudication-"));
     roots.push(root);
     cpSync(liveState, root, { recursive: true });
+    rmSync(join(root, "problem-terminal-fidelity-adjudications"), { recursive: true });
     const input = fixtureInputs(root);
     const run = () => {
       const current = fixtureInputs(root);
@@ -210,7 +211,7 @@ describe.skipIf(!available)("Q8/Q20 terminal fidelity adjudication", () => {
     calls.solution = 0;
     calls.semantic = 0;
     const result = await run();
-    expect(calls).toEqual({ adjudication: ["8:20"], solution: 1, semantic: 1 });
+    expect(calls).toEqual({ adjudication: ["8:20"], solution: 0, semantic: 0 });
     expect(readdirSync(childDirectory)).toHaveLength(2);
     expect(result.effectiveCorpusHash)
       .toBe("1e076c1128fc58f956f12db80716af215f2cedf605c1816acc5e234d0c320021");

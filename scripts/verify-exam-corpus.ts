@@ -590,6 +590,21 @@ type PersistedTerminalRecoveryHydrationSpec = {
   revisionTriggerEvidenceHash: string;
   selected: PersistedTerminalRecoveryGenerationSpec;
   historical: readonly PersistedTerminalRecoveryGenerationSpec[];
+  companion?: {
+    key: string;
+    sourcePage: number;
+    contextFrom: number;
+    contextTo: number;
+    repairHash: string;
+    baseProblemRepairArtifact: EvidencePointer & { itemHash: string };
+    baseClassificationRepairArtifact: EvidencePointer & { itemHash: string };
+    revisionProblemArtifact: EvidencePointer & { itemHash: string };
+    revisionClassificationArtifact: EvidencePointer & { itemHash: string };
+    selected: PersistedTerminalRecoveryGenerationSpec;
+    finalAudit: EvidencePointer & { auditDigest: string };
+    finalEffectiveCorpusHash: string;
+    finalTerminal: ProblemTerminalFidelityCheckpoint;
+  };
 };
 
 type ProblemTerminalFidelityAdjudicationSpec = {
@@ -1448,6 +1463,90 @@ readonly PersistedTerminalRecoveryHydrationSpec[] = [{
     evidenceHash: "9b8654885dfc899fd1f1ad87803089375c6da7d9a6bd2435afe8aa3b2968ddae",
     preRecoveryEffectiveCorpusHash: "7b68c83270ea7333159a52e8847430a33ce1b39c51a015e37498b0d7d2fa0925",
   }],
+  companion: {
+    key: "6:15",
+    sourcePage: 6,
+    contextFrom: 1,
+    contextTo: 12,
+    repairHash: "f400c07c349dfa5341073d07431c7cce953945e5e6b68c7a928b3851cde5cc6d",
+    baseProblemRepairArtifact: {
+      path: "problem-repair-batches/" +
+        "v2-0001-0012-007bb5df9bce2181b7fa5fccfd3f8fe99d52785743397fe479f038f250ac0a66.json",
+      sha256: "f1e9b3e7247ab950f66d0c6dafeecb5e3cc09ca375b9faaa6e6675cef424447b",
+      itemHash: "a7f26df6fec1046aad0c031011e6954a46d16b39bb67d589c088e3da981d5fad",
+    },
+    baseClassificationRepairArtifact: {
+      path: "classification-repair-batches/" +
+        "v1-0001-0012-a6569662b081a9dd2b05734a069a43d701a727ce434427a24e38fc27e3c55963-" +
+        "7bb7cb863c8c4855.json",
+      sha256: "412406514265296674c8bd4db65c39da4226a8e1537e7dcbb76b7dd792c762a3",
+      itemHash: "e12c52fe492fb5d459d2affde3db992491cd95f4719419483637884e352f0146",
+    },
+    revisionProblemArtifact: {
+      path: "problem-revision-batches/" +
+        "v1-0001-0012-0006-9bb41487b85aa7161eef13d1f23c2fc8da17ece5fe172b1b7eb12789ae8ee49f.json",
+      sha256: "d83b220b7ccdfc91833fda18ef862b3d90922604fbac3d56d60935a8095365a4",
+      itemHash: "255dfe9797e17a4665e806777c9d923f1122498efb4f39d279179cf879037bc6",
+    },
+    revisionClassificationArtifact: {
+      path: "classification-revision-batches/" +
+        "v1-0001-0012-3fa16e0f611d671f09e269e19dd95619ad52d6ddf045b71482a0d65c80112bce-" +
+        "7bb7cb863c8c4855.json",
+      sha256: "4176008a8d870e64fab4084560a7d903ce6b837bf172047f5c36c4394cfae379",
+      itemHash: "2896324db4f7f553f05c7c2fdff6456c626972d0b3393dc4aa4f94b80f6c7e0b",
+    },
+    selected: {
+      problemArtifact: {
+        path: "problem-recoveries/" +
+          "v2-0006-0015-2871fee6201e5c3ad8c5e1efedc77398b214cf99963671a5e377a68304347b7d.json",
+        sha256: "71962588bd933a63b5292cfb06566899188e61f1e0a1d7909c03dd78246205c1",
+        basisDigest: "2871fee6201e5c3ad8c5e1efedc77398b214cf99963671a5e377a68304347b7d",
+        itemHash: "62427daf49f36c23b0c647856574822702cba2371c929a8da38cbc57c3eb2f03",
+      },
+      classificationArtifact: {
+        path: "classification-recoveries/" +
+          "v2-0006-0015-69898d0bdb86d9253bfee5590ecd733822f9ca0768b4de1df669626d9e427d58-" +
+          "7bb7cb863c8c4855.json",
+        sha256: "6a8c0da7b617a50d862a4330f6dce94c76da13ef249b8c4aef3ab570e077d370",
+        basisDigest: "69898d0bdb86d9253bfee5590ecd733822f9ca0768b4de1df669626d9e427d58",
+        itemHash: "3b38739a732cb1836be1f16aa7169f17545c59e32e78a0889540d35d485fb179",
+      },
+      questionText: "그림과 같이 곡선 $y=3x+\\frac{2}{x}\\;(x>0)$과 $x$축 및 직선 $x=1$, 직선 $x=2$로 " +
+        "둘러싸인 도형을 밑면으로 하는 입체도형이 있다. 이 입체도형을 $x$축에 수직인 평면으로 자른 " +
+        "단면이 모두 정삼각형일 때, 이 입체도형의 부피는? [4점]",
+      terminalCheckpoint: {
+        path: "problem-terminal-fidelity/" +
+          "v2-0000-f469ad8d5e38cb71c9ab980e783a4ed92a86788e1130075bd7064682af467aa5-" +
+          "16800533754aa321e63d9c11541247d8825ef91ff57cd4bf7aed1dfcf9aa094a.json",
+        sha256: "e26f8b8cbe3d76173b2c1c0b0a1143b20a7825d074aee143b91407ea1099356c",
+        from: 1,
+        to: 12,
+        ownedFrom: 1,
+        ownedTo: 12,
+        inputHash: "16800533754aa321e63d9c11541247d8825ef91ff57cd4bf7aed1dfcf9aa094a",
+      },
+      terminalItemHash: "95824cc6e89169a7ffaac25804bce0890fe4862616dd003f189237a985c2866e",
+      evidenceHash: "bded99dfdd65f2c1aab75086d1c199068f9bce8fc57f76a51cc429d434d7d70f",
+      preRecoveryEffectiveCorpusHash: "f469ad8d5e38cb71c9ab980e783a4ed92a86788e1130075bd7064682af467aa5",
+    },
+    finalAudit: {
+      path: "answer-audit/v5-b8e7b69c44cf1cfb5d4527d7d25a9f062db5bdd9ce645244ccc2f46b6acbca7a.json",
+      sha256: "74ed4b805d9d0055b66e91a805e55cb801fed7b92c86de8e5e07b88aea09c838",
+      auditDigest: "b8e7b69c44cf1cfb5d4527d7d25a9f062db5bdd9ce645244ccc2f46b6acbca7a",
+    },
+    finalEffectiveCorpusHash: "fd27b3f4d9b4d9224c116326f7f5e9892d58dabf928cfecd838a260c93c14cbf",
+    finalTerminal: {
+      path: "problem-terminal-fidelity/" +
+        "v2-0000-fd27b3f4d9b4d9224c116326f7f5e9892d58dabf928cfecd838a260c93c14cbf-" +
+        "d6c42b6b5577981c398d014fe5e45171b83ec36884e47df7cf0bc853f76bff05.json",
+      sha256: "32bbecff7af28b478fe7a8a723492b2637fec4c68d2d45271fe6c82639a50491",
+      from: 1,
+      to: 12,
+      ownedFrom: 1,
+      ownedTo: 12,
+      inputHash: "d6c42b6b5577981c398d014fe5e45171b83ec36884e47df7cf0bc853f76bff05",
+    },
+  },
 }] as const;
 
 const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST:
@@ -4607,13 +4706,25 @@ type V3RevisionRow = {
 type PersistedTerminalRecoverySelection = {
   spec: PersistedTerminalRecoveryHydrationSpec;
   historicalPaths: Set<string>;
-  expectedPaths: Set<string>;
+  exactRecoverySets: Array<{
+    key: string;
+    problemPaths: Set<string>;
+    classificationPaths: Set<string>;
+  }>;
+};
+
+type PersistedTerminalRecoveryAuditAuthority = {
+  pointer: EvidencePointer;
+  digest: string;
+  effectiveCorpusHash: unknown;
+  terminalCheckpoints: unknown;
 };
 
 function persistedTerminalRecoverySelection(
   values: unknown[],
   entry: ManifestEntry,
   problemEvidence: DownloadEvidence,
+  auditAuthority: PersistedTerminalRecoveryAuditAuthority,
 ): PersistedTerminalRecoverySelection | null {
   const matches = PERSISTED_TERMINAL_RECOVERY_HYDRATION_ALLOWLIST.filter((spec) => spec.entryId === entry.id);
   if (matches.length > 1) throw new Error(`${entry.id}: persisted terminal recovery allowlist is duplicated`);
@@ -4696,16 +4807,117 @@ function persistedTerminalRecoverySelection(
     || recovery.classificationArtifactItemHash !== spec.selected.classificationArtifact.itemHash) {
     throw new Error(`${spec.key}: current audit does not select the source-authorized terminal recovery`);
   }
+  const companion = spec.companion;
+  if (companion) {
+    const companionRows = repairRows.filter((candidate) => candidate.key === companion.key);
+    if (companionRows.length !== 1) {
+      throw new Error(`${companion.key}: persisted terminal recovery audit row is not unique`);
+    }
+    const companionRepair = companionRows[0];
+    const companionRevision = object(companionRepair.revision, `${companion.key}.revision`);
+    const companionRecovery = object(companionRevision.recovery, `${companion.key}.revision.recovery`);
+    const companionProblem = evidencePointer(
+      companionRepair.problemArtifact,
+      `${companion.key}.problemArtifact`,
+    );
+    const companionClassificationEnvelope = object(
+      companionRepair.classificationArtifact,
+      `${companion.key}.classificationArtifact`,
+    );
+    const companionClassification = evidencePointer({
+      path: companionClassificationEnvelope.path,
+      sha256: companionClassificationEnvelope.sha256,
+    }, `${companion.key}.classificationArtifact`);
+    const companionRevisionProblem = evidencePointer(
+      companionRevision.problemArtifact,
+      `${companion.key}.revision.problemArtifact`,
+    );
+    const companionRevisionClassificationEnvelope = object(
+      companionRevision.classificationArtifact,
+      `${companion.key}.revision.classificationArtifact`,
+    );
+    const companionRevisionClassification = evidencePointer({
+      path: companionRevisionClassificationEnvelope.path,
+      sha256: companionRevisionClassificationEnvelope.sha256,
+    }, `${companion.key}.revision.classificationArtifact`);
+    const companionRecoveryProblem = evidencePointer(
+      companionRecovery.problemArtifact,
+      `${companion.key}.recovery.problemArtifact`,
+    );
+    const companionRecoveryClassificationEnvelope = object(
+      companionRecovery.classificationArtifact,
+      `${companion.key}.recovery.classificationArtifact`,
+    );
+    const companionRecoveryClassification = evidencePointer({
+      path: companionRecoveryClassificationEnvelope.path,
+      sha256: companionRecoveryClassificationEnvelope.sha256,
+    }, `${companion.key}.recovery.classificationArtifact`);
+    if (canonicalEvidenceHash(companionRepair) !== companion.repairHash
+      || companionRepair.sourcePage !== companion.sourcePage
+      || companionRepair.contextFrom !== companion.contextFrom
+      || companionRepair.contextTo !== companion.contextTo
+      || !isDeepStrictEqual(companionProblem, {
+        path: companion.baseProblemRepairArtifact.path,
+        sha256: companion.baseProblemRepairArtifact.sha256,
+      })
+      || companionRepair.problemArtifactItemHash !== companion.baseProblemRepairArtifact.itemHash
+      || !isDeepStrictEqual(companionClassification, {
+        path: companion.baseClassificationRepairArtifact.path,
+        sha256: companion.baseClassificationRepairArtifact.sha256,
+      })
+      || companionRepair.classificationArtifactItemHash !== companion.baseClassificationRepairArtifact.itemHash
+      || !isDeepStrictEqual(companionRevisionProblem, {
+        path: companion.revisionProblemArtifact.path,
+        sha256: companion.revisionProblemArtifact.sha256,
+      })
+      || companionRevision.problemArtifactItemHash !== companion.revisionProblemArtifact.itemHash
+      || !isDeepStrictEqual(companionRevisionClassification, {
+        path: companion.revisionClassificationArtifact.path,
+        sha256: companion.revisionClassificationArtifact.sha256,
+      })
+      || companionRevision.classificationArtifactItemHash !== companion.revisionClassificationArtifact.itemHash
+      || !isDeepStrictEqual(companionRecoveryProblem, {
+        path: companion.selected.problemArtifact.path,
+        sha256: companion.selected.problemArtifact.sha256,
+      })
+      || companionRecovery.problemArtifactItemHash !== companion.selected.problemArtifact.itemHash
+      || !isDeepStrictEqual(companionRecoveryClassification, {
+        path: companion.selected.classificationArtifact.path,
+        sha256: companion.selected.classificationArtifact.sha256,
+      })
+      || companionRecovery.classificationArtifactItemHash !== companion.selected.classificationArtifact.itemHash) {
+      throw new Error(`${companion.key}: current audit does not select the exact companion terminal recovery`);
+    }
+    if (!isDeepStrictEqual(auditAuthority.pointer, {
+      path: companion.finalAudit.path,
+      sha256: companion.finalAudit.sha256,
+    })
+      || auditAuthority.digest !== companion.finalAudit.auditDigest
+      || auditAuthority.effectiveCorpusHash !== companion.finalEffectiveCorpusHash
+      || !isDeepStrictEqual(auditAuthority.terminalCheckpoints, [companion.finalTerminal])) {
+      throw new Error(`${companion.key}: persisted terminal recovery final audit authority is stale`);
+    }
+  }
   return {
     spec,
     historicalPaths: new Set(spec.historical.flatMap((generation) => [
       generation.problemArtifact.path,
       generation.classificationArtifact.path,
     ])),
-    expectedPaths: new Set([spec.selected, ...spec.historical].flatMap((generation) => [
-      generation.problemArtifact.path,
-      generation.classificationArtifact.path,
-    ])),
+    exactRecoverySets: [
+      {
+        key: spec.key,
+        problemPaths: new Set([spec.selected, ...spec.historical]
+          .map((generation) => generation.problemArtifact.path)),
+        classificationPaths: new Set([spec.selected, ...spec.historical]
+          .map((generation) => generation.classificationArtifact.path)),
+      },
+      ...(companion ? [{
+        key: companion.key,
+        problemPaths: new Set([companion.selected.problemArtifact.path]),
+        classificationPaths: new Set([companion.selected.classificationArtifact.path]),
+      }] : []),
+    ],
   };
 }
 
@@ -4933,6 +5145,15 @@ function verifyProblemRecoveryCoverage(
       declaredCrop.add(pointer.path);
     }
   }
+  const recoveryPathsByDirectory = new Map<string, string[]>();
+  const isPinnedRecoveryPrefix = (path: string): boolean =>
+    persistedTerminalRecovery?.exactRecoverySets.some((exactSet) => {
+      const [page, number] = exactSet.key.split(":");
+      return path.startsWith(`problem-recoveries/v2-${String(Number(page)).padStart(4, "0")}-` +
+        `${String(Number(number)).padStart(4, "0")}-`)
+        || path.startsWith(`classification-recoveries/v2-${String(Number(page)).padStart(4, "0")}-` +
+          `${String(Number(number)).padStart(4, "0")}-`);
+    }) === true;
   for (const [directory, pattern] of [
     ["problem-recoveries", /^v[12]-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u],
     ["classification-recoveries", /^v[12]-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u],
@@ -4945,19 +5166,33 @@ function verifyProblemRecoveryCoverage(
           (name) => pattern.test(name),
         )
       : listJson(join(stateDir, directory), /\.json$/u);
+    const paths = names.map((name) => `${directory}/${name}`);
+    recoveryPathsByDirectory.set(directory, paths);
     for (const name of names) {
       if (!pattern.test(name)) throw new Error(`${directory}/${name}: malformed problem recovery artifact name`);
       const path = `${directory}/${name}`;
-      if (persistedTerminalRecovery && !persistedTerminalRecovery.expectedPaths.has(path)) {
-        throw new Error(`${path}: persisted terminal recovery artifact is an unexpected third generation`);
-      }
-      if (!declared.has(path) && !historicalRecoveryPaths.has(path)) {
+      if (!declared.has(path) && !historicalRecoveryPaths.has(path) && !isPinnedRecoveryPrefix(path)) {
         throw new Error(`${path}: problem recovery artifact is not declared by the terminal audit`);
       }
     }
   }
-  for (const path of persistedTerminalRecovery?.expectedPaths ?? historicalRecoveryPaths) {
-    if (!existsSync(join(stateDir, path))) throw new Error(`${path}: persisted terminal recovery artifact is missing`);
+  for (const exactSet of persistedTerminalRecovery?.exactRecoverySets ?? []) {
+    const [page, number] = exactSet.key.split(":");
+    const suffix = `${String(Number(page)).padStart(4, "0")}-${String(Number(number)).padStart(4, "0")}-`;
+    for (const [directory, expected] of [
+      ["problem-recoveries", exactSet.problemPaths],
+      ["classification-recoveries", exactSet.classificationPaths],
+    ] as const) {
+      const prefix = `${directory}/v2-${suffix}`;
+      const actual = new Set((recoveryPathsByDirectory.get(directory) ?? [])
+        .filter((path) => path.startsWith(prefix)));
+      const extra = [...actual].find((path) => !expected.has(path));
+      if (extra) {
+        throw new Error(`${extra}: persisted terminal recovery artifact is an unexpected third generation`);
+      }
+      const missing = [...expected].find((path) => !actual.has(path));
+      if (missing) throw new Error(`${missing}: persisted terminal recovery artifact is missing`);
+    }
   }
   for (const [directory, patterns] of [
     ["problem-crop-evidence", [
@@ -8780,8 +9015,14 @@ function applyDeclaredRepairsV3(
   solutions: Map<string, OfficialSolution>,
   cache: EvidenceCache,
   contract: VerificationContract,
+  auditAuthority: PersistedTerminalRecoveryAuditAuthority,
 ): Map<string, ClassifiedEvidence> {
-  const persistedTerminalRecovery = persistedTerminalRecoverySelection(values, entry, problemEvidence);
+  const persistedTerminalRecovery = persistedTerminalRecoverySelection(
+    values,
+    entry,
+    problemEvidence,
+    auditAuthority,
+  );
   if (persistedTerminalRecovery && contract.auditVersion !== 5) {
     throw new Error("persisted terminal recovery hydration requires answer audit v5");
   }
@@ -12124,6 +12365,12 @@ function verifyAnswerAudit(
           solutions,
           evidenceCache,
           contract,
+          {
+            pointer: auditPointer,
+            digest: auditDigest,
+            effectiveCorpusHash: audit.effectiveCorpusHash,
+            terminalCheckpoints: audit.problemTerminalFidelityCheckpoints,
+          },
         )
       : (() => {
           const legacy = new Map(base.records);
@@ -12439,6 +12686,12 @@ function verifyFilteredAnswerAudit(
           solutions,
           evidenceCache,
           contract,
+          {
+            pointer,
+            digest: auditDigest,
+            effectiveCorpusHash: audit.effectiveCorpusHash,
+            terminalCheckpoints: audit.problemTerminalFidelityCheckpoints,
+          },
         )
       : (() => {
           const legacy = new Map(base.records);

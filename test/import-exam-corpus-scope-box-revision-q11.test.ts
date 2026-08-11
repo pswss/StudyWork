@@ -164,6 +164,18 @@ describe.skipIf(!available)("Q11 scope box revision", () => {
     const root = mkdtempSync(join(tmpdir(), "studywork-q11-scope-box-"));
     roots.push(root);
     cpSync(liveState, root, { recursive: true });
+    for (const directory of [
+      "problem-scope-box-evidence",
+      "problem-scope-box-revisions",
+      "classification-scope-box-revisions",
+    ]) rmSync(join(root, directory), { recursive: true });
+    const terminalDirectory = join(root, "problem-terminal-fidelity");
+    for (const name of readdirSync(terminalDirectory)) {
+      const checkpoint = JSON.parse(readFileSync(join(terminalDirectory, name), "utf8"));
+      if (checkpoint.inputs.some((item: { key: string; box: unknown }) =>
+        item.key === "4:11" && canonicalEvidenceHash(item.box) === canonicalEvidenceHash([0.12, 0.36])
+      )) rmSync(join(terminalDirectory, name));
+    }
     const initial = fixtureInputs(root);
     const receipt = JSON.parse(readFileSync(join(root, "receipt.json"), "utf8"));
     const historicalTerminalFiles = new Set(readdirSync(join(root, "problem-terminal-fidelity")));

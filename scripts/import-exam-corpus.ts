@@ -1927,6 +1927,21 @@ type PersistedTerminalRecoveryHydrationSpec = {
   revisionTriggerEvidenceHash: string;
   selected: PersistedTerminalRecoveryGenerationSpec;
   historical: readonly PersistedTerminalRecoveryGenerationSpec[];
+  companion?: {
+    key: string;
+    sourcePage: number;
+    contextFrom: number;
+    contextTo: number;
+    repairHash: string;
+    baseProblemRepairArtifact: EvidencePointer & { itemHash: string };
+    baseClassificationRepairArtifact: EvidencePointer & { itemHash: string };
+    revisionProblemArtifact: EvidencePointer & { itemHash: string };
+    revisionClassificationArtifact: EvidencePointer & { itemHash: string };
+    selected: PersistedTerminalRecoveryGenerationSpec;
+    finalAudit: EvidencePointer & { auditDigest: string };
+    finalEffectiveCorpusHash: string;
+    finalTerminal: ProblemTerminalFidelityCheckpoint;
+  };
 };
 
 type ProblemTerminalFidelityAdjudicationSpec = {
@@ -2680,6 +2695,90 @@ readonly PersistedTerminalRecoveryHydrationSpec[] = [{
     evidenceHash: "9b8654885dfc899fd1f1ad87803089375c6da7d9a6bd2435afe8aa3b2968ddae",
     preRecoveryEffectiveCorpusHash: "7b68c83270ea7333159a52e8847430a33ce1b39c51a015e37498b0d7d2fa0925",
   }],
+  companion: {
+    key: "6:15",
+    sourcePage: 6,
+    contextFrom: 1,
+    contextTo: 12,
+    repairHash: "f400c07c349dfa5341073d07431c7cce953945e5e6b68c7a928b3851cde5cc6d",
+    baseProblemRepairArtifact: {
+      path: "problem-repair-batches/" +
+        "v2-0001-0012-007bb5df9bce2181b7fa5fccfd3f8fe99d52785743397fe479f038f250ac0a66.json",
+      sha256: "f1e9b3e7247ab950f66d0c6dafeecb5e3cc09ca375b9faaa6e6675cef424447b",
+      itemHash: "a7f26df6fec1046aad0c031011e6954a46d16b39bb67d589c088e3da981d5fad",
+    },
+    baseClassificationRepairArtifact: {
+      path: "classification-repair-batches/" +
+        "v1-0001-0012-a6569662b081a9dd2b05734a069a43d701a727ce434427a24e38fc27e3c55963-" +
+        "7bb7cb863c8c4855.json",
+      sha256: "412406514265296674c8bd4db65c39da4226a8e1537e7dcbb76b7dd792c762a3",
+      itemHash: "e12c52fe492fb5d459d2affde3db992491cd95f4719419483637884e352f0146",
+    },
+    revisionProblemArtifact: {
+      path: "problem-revision-batches/" +
+        "v1-0001-0012-0006-9bb41487b85aa7161eef13d1f23c2fc8da17ece5fe172b1b7eb12789ae8ee49f.json",
+      sha256: "d83b220b7ccdfc91833fda18ef862b3d90922604fbac3d56d60935a8095365a4",
+      itemHash: "255dfe9797e17a4665e806777c9d923f1122498efb4f39d279179cf879037bc6",
+    },
+    revisionClassificationArtifact: {
+      path: "classification-revision-batches/" +
+        "v1-0001-0012-3fa16e0f611d671f09e269e19dd95619ad52d6ddf045b71482a0d65c80112bce-" +
+        "7bb7cb863c8c4855.json",
+      sha256: "4176008a8d870e64fab4084560a7d903ce6b837bf172047f5c36c4394cfae379",
+      itemHash: "2896324db4f7f553f05c7c2fdff6456c626972d0b3393dc4aa4f94b80f6c7e0b",
+    },
+    selected: {
+      problemArtifact: {
+        path: "problem-recoveries/" +
+          "v2-0006-0015-2871fee6201e5c3ad8c5e1efedc77398b214cf99963671a5e377a68304347b7d.json",
+        sha256: "71962588bd933a63b5292cfb06566899188e61f1e0a1d7909c03dd78246205c1",
+        basisDigest: "2871fee6201e5c3ad8c5e1efedc77398b214cf99963671a5e377a68304347b7d",
+        itemHash: "62427daf49f36c23b0c647856574822702cba2371c929a8da38cbc57c3eb2f03",
+      },
+      classificationArtifact: {
+        path: "classification-recoveries/" +
+          "v2-0006-0015-69898d0bdb86d9253bfee5590ecd733822f9ca0768b4de1df669626d9e427d58-" +
+          "7bb7cb863c8c4855.json",
+        sha256: "6a8c0da7b617a50d862a4330f6dce94c76da13ef249b8c4aef3ab570e077d370",
+        basisDigest: "69898d0bdb86d9253bfee5590ecd733822f9ca0768b4de1df669626d9e427d58",
+        itemHash: "3b38739a732cb1836be1f16aa7169f17545c59e32e78a0889540d35d485fb179",
+      },
+      questionText: "그림과 같이 곡선 $y=3x+\\frac{2}{x}\\;(x>0)$과 $x$축 및 직선 $x=1$, 직선 $x=2$로 " +
+        "둘러싸인 도형을 밑면으로 하는 입체도형이 있다. 이 입체도형을 $x$축에 수직인 평면으로 자른 " +
+        "단면이 모두 정삼각형일 때, 이 입체도형의 부피는? [4점]",
+      terminalCheckpoint: {
+        path: "problem-terminal-fidelity/" +
+          "v2-0000-f469ad8d5e38cb71c9ab980e783a4ed92a86788e1130075bd7064682af467aa5-" +
+          "16800533754aa321e63d9c11541247d8825ef91ff57cd4bf7aed1dfcf9aa094a.json",
+        sha256: "e26f8b8cbe3d76173b2c1c0b0a1143b20a7825d074aee143b91407ea1099356c",
+        from: 1,
+        to: 12,
+        ownedFrom: 1,
+        ownedTo: 12,
+        inputHash: "16800533754aa321e63d9c11541247d8825ef91ff57cd4bf7aed1dfcf9aa094a",
+      },
+      terminalItemHash: "95824cc6e89169a7ffaac25804bce0890fe4862616dd003f189237a985c2866e",
+      evidenceHash: "bded99dfdd65f2c1aab75086d1c199068f9bce8fc57f76a51cc429d434d7d70f",
+      preRecoveryEffectiveCorpusHash: "f469ad8d5e38cb71c9ab980e783a4ed92a86788e1130075bd7064682af467aa5",
+    },
+    finalAudit: {
+      path: "answer-audit/v5-b8e7b69c44cf1cfb5d4527d7d25a9f062db5bdd9ce645244ccc2f46b6acbca7a.json",
+      sha256: "74ed4b805d9d0055b66e91a805e55cb801fed7b92c86de8e5e07b88aea09c838",
+      auditDigest: "b8e7b69c44cf1cfb5d4527d7d25a9f062db5bdd9ce645244ccc2f46b6acbca7a",
+    },
+    finalEffectiveCorpusHash: "fd27b3f4d9b4d9224c116326f7f5e9892d58dabf928cfecd838a260c93c14cbf",
+    finalTerminal: {
+      path: "problem-terminal-fidelity/" +
+        "v2-0000-fd27b3f4d9b4d9224c116326f7f5e9892d58dabf928cfecd838a260c93c14cbf-" +
+        "d6c42b6b5577981c398d014fe5e45171b83ec36884e47df7cf0bc853f76bff05.json",
+      sha256: "32bbecff7af28b478fe7a8a723492b2637fec4c68d2d45271fe6c82639a50491",
+      from: 1,
+      to: 12,
+      ownedFrom: 1,
+      ownedTo: 12,
+      inputHash: "d6c42b6b5577981c398d014fe5e45171b83ec36884e47df7cf0bc853f76bff05",
+    },
+  },
 }] as const;
 
 export const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST:
@@ -7583,16 +7682,20 @@ async function preflightPersistedTerminalRecoveryHydration(
   if (expectedProblems.size !== generations.length || expectedClassifications.size !== generations.length) {
     throw new Error(`${entry.id} persisted terminal recovery allowlist generation이 중복입니다`);
   }
+  const sourcePage = String(spec.sourcePage).padStart(4, "0");
+  const printedNumber = spec.key.split(":")[1].padStart(4, "0");
+  const problemPrefix = `problem-recoveries/v2-${sourcePage}-${printedNumber}-`;
+  const classificationPrefix = `classification-recoveries/v2-${sourcePage}-${printedNumber}-`;
   const actualProblems = new Set(strictArtifactNames(
     join(stateDir, "problem-recoveries"),
     "persisted terminal problem recovery",
     (name) => /^v2-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
-  ).map((name) => `problem-recoveries/${name}`));
+  ).map((name) => `problem-recoveries/${name}`).filter((path) => path.startsWith(problemPrefix)));
   const actualClassifications = new Set(strictArtifactNames(
     join(stateDir, "classification-recoveries"),
     "persisted terminal classification recovery",
     (name) => /^v2-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
-  ).map((name) => `classification-recoveries/${name}`));
+  ).map((name) => `classification-recoveries/${name}`).filter((path) => path.startsWith(classificationPrefix)));
   const problemExtras = [...actualProblems].filter((path) => !expectedProblems.has(path));
   const problemMissing = [...expectedProblems].filter((path) => !actualProblems.has(path));
   const classificationExtras = [...actualClassifications].filter((path) => !expectedClassifications.has(path));
@@ -8023,6 +8126,515 @@ async function preflightPersistedTerminalRecoveryHydration(
     selected.classified.classification.confidence < 0.9
   ) throw new Error(`${spec.key} persisted terminal selected recovery source authority가 다릅니다`);
   return { spec, revision, selected: { classified: selected.classified, evidence: selected.evidence } };
+}
+
+async function preparePersistedTerminalRecoveryCompanion(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  solution: PdfEvidence,
+  stateDir: string,
+  spec: PersistedTerminalRecoveryHydrationSpec,
+  effective: ClassifiedQuestion[],
+  repairs: ReadonlyMap<string, ProblemRepairEvidence>
+): Promise<{ effective: ClassifiedQuestion[]; classified: ClassifiedQuestion; evidence: ProblemRepairEvidence } | null> {
+  const companion = spec.companion;
+  if (!companion) return null;
+  const auditExists = existsSync(join(stateDir, companion.finalAudit.path));
+  const terminalExists = existsSync(join(stateDir, companion.finalTerminal.path));
+  if (!auditExists) return null;
+  if (!terminalExists) {
+    throw new Error(`${companion.key} persisted terminal recovery final authority가 partial입니다`);
+  }
+
+  const page = String(companion.sourcePage).padStart(4, "0");
+  const number = companion.key.split(":")[1].padStart(4, "0");
+  const problemPrefix = `problem-recoveries/v2-${page}-${number}-`;
+  const classificationPrefix = `classification-recoveries/v2-${page}-${number}-`;
+  const actualProblems = strictArtifactNames(
+    join(stateDir, "problem-recoveries"),
+    "persisted terminal problem recovery",
+    (name) => /^v2-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
+  ).map((name) => `problem-recoveries/${name}`).filter((path) => path.startsWith(problemPrefix));
+  const actualClassifications = strictArtifactNames(
+    join(stateDir, "classification-recoveries"),
+    "persisted terminal classification recovery",
+    (name) => /^v2-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
+  ).map((name) => `classification-recoveries/${name}`).filter((path) => path.startsWith(classificationPrefix));
+  if (
+    canonicalEvidenceHash(actualProblems) !== canonicalEvidenceHash([companion.selected.problemArtifact.path]) ||
+    canonicalEvidenceHash(actualClassifications) !==
+      canonicalEvidenceHash([companion.selected.classificationArtifact.path])
+  ) throw new Error(`${companion.key} persisted terminal recovery artifact set이 다릅니다`);
+
+  const audit = await pinnedCanonicalCheckpoint(stateDir, companion.finalAudit, "persisted terminal final audit");
+  const auditRepairs = Array.isArray(audit.repairs) ? audit.repairs : [];
+  const companionRows = auditRepairs.filter((value) =>
+    object(value, "persisted terminal final audit repair").key === companion.key);
+  const auditCheckpoints = Array.isArray(audit.problemTerminalFidelityCheckpoints)
+    ? audit.problemTerminalFidelityCheckpoints
+    : [];
+  if (
+    audit.version !== ANSWER_AUDIT_VERSION || audit.entryId !== entry.id || audit.problemHash !== problem.sha256 ||
+    audit.solutionHash !== solution.sha256 || audit.auditDigest !== companion.finalAudit.auditDigest ||
+    audit.effectiveCorpusHash !== companion.finalEffectiveCorpusHash || companionRows.length !== 1 ||
+    canonicalEvidenceHash(companionRows[0]) !== companion.repairHash ||
+    canonicalEvidenceHash(auditCheckpoints) !== canonicalEvidenceHash([companion.finalTerminal])
+  ) throw new Error(`${companion.key} persisted terminal final audit authority가 다릅니다`);
+
+  const rawRepair = object(companionRows[0], "persisted terminal companion repair");
+  const revision = object(rawRepair.revision, "persisted terminal companion revision");
+  const recovery = object(revision.recovery, "persisted terminal companion recovery");
+  const envelopePointer = (value: unknown, label: string): EvidencePointer => {
+    const row = object(value, label);
+    return { path: exactString(row.path, `${label}.path`, 500), sha256: exactHash(row.sha256, `${label}.sha256`) };
+  };
+  const samePointer = (value: unknown, pointer: EvidencePointer, label: string) =>
+    canonicalEvidenceHash(envelopePointer(value, label)) === canonicalEvidenceHash({
+      path: pointer.path,
+      sha256: pointer.sha256,
+    });
+  const currentRepair = repairs.get(companion.key);
+  const currentIndex = effective.findIndex((item) => questionKey(item.question) === companion.key);
+  if (
+    !currentRepair || currentRepair.revision || currentIndex < 0 ||
+    !samePointer(rawRepair.problemArtifact, companion.baseProblemRepairArtifact, "companion base problem") ||
+    rawRepair.problemArtifactItemHash !== companion.baseProblemRepairArtifact.itemHash ||
+    !samePointer(rawRepair.classificationArtifact, companion.baseClassificationRepairArtifact,
+      "companion base classification") ||
+    rawRepair.classificationArtifactItemHash !== companion.baseClassificationRepairArtifact.itemHash ||
+    !samePointer(revision.problemArtifact, companion.revisionProblemArtifact, "companion revision problem") ||
+    revision.problemArtifactItemHash !== companion.revisionProblemArtifact.itemHash ||
+    !samePointer(revision.classificationArtifact, companion.revisionClassificationArtifact,
+      "companion revision classification") ||
+    revision.classificationArtifactItemHash !== companion.revisionClassificationArtifact.itemHash ||
+    !samePointer(recovery.problemArtifact, companion.selected.problemArtifact, "companion recovery problem") ||
+    recovery.problemArtifactItemHash !== companion.selected.problemArtifact.itemHash ||
+    !samePointer(recovery.classificationArtifact, companion.selected.classificationArtifact,
+      "companion recovery classification") ||
+    recovery.classificationArtifactItemHash !== companion.selected.classificationArtifact.itemHash ||
+    canonicalEvidenceHash(currentRepair.problemArtifact) !== canonicalEvidenceHash({
+      path: companion.baseProblemRepairArtifact.path,
+      sha256: companion.baseProblemRepairArtifact.sha256,
+    }) || currentRepair.problemArtifactItemHash !== companion.baseProblemRepairArtifact.itemHash ||
+    canonicalEvidenceHash(currentRepair.classificationArtifact) !== canonicalEvidenceHash({
+      path: companion.baseClassificationRepairArtifact.path,
+      sha256: companion.baseClassificationRepairArtifact.sha256,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    }) || currentRepair.classificationArtifactItemHash !== companion.baseClassificationRepairArtifact.itemHash ||
+    canonicalEvidenceHash(effective[currentIndex].question) !== companion.baseProblemRepairArtifact.itemHash ||
+    canonicalEvidenceHash(effective[currentIndex].classification) !== companion.baseClassificationRepairArtifact.itemHash
+  ) throw new Error(`${companion.key} persisted terminal recovery chain이 다릅니다`);
+
+  for (const [label, pointer] of [
+    ["base problem", companion.baseProblemRepairArtifact],
+    ["base classification", companion.baseClassificationRepairArtifact],
+  ] as const) await pinnedCanonicalCheckpoint(stateDir, pointer, `persisted terminal companion ${label}`);
+
+  const revisionTrigger = object(revision.trigger, "persisted terminal companion revision trigger");
+  const revisionTriggerCheckpointRaw = object(
+    revisionTrigger.terminalCheckpoint, "persisted terminal companion revision trigger checkpoint"
+  );
+  const revisionTriggerPointer: ProblemTerminalFidelityCheckpoint = {
+    ...envelopePointer(revisionTriggerCheckpointRaw, "persisted terminal companion revision trigger checkpoint"),
+    from: Number(revisionTriggerCheckpointRaw.from),
+    to: Number(revisionTriggerCheckpointRaw.to),
+    ownedFrom: Number(revisionTriggerCheckpointRaw.ownedFrom),
+    ownedTo: Number(revisionTriggerCheckpointRaw.ownedTo),
+    inputHash: exactHash(revisionTriggerCheckpointRaw.inputHash,
+      "persisted terminal companion revision trigger inputHash"),
+  };
+  const revisionTriggerCheckpoint = await pinnedCanonicalCheckpoint(
+    stateDir, revisionTriggerPointer, "persisted terminal companion revision trigger checkpoint"
+  );
+  const revisionTriggerInputs = Array.isArray(revisionTriggerCheckpoint.inputs)
+    ? revisionTriggerCheckpoint.inputs
+    : [];
+  const revisionTriggerItems = Array.isArray(revisionTriggerCheckpoint.items)
+    ? revisionTriggerCheckpoint.items.map((value, index) => pinnedTerminalRecoveryItem(
+        value,
+        exactString(object(value, `persisted terminal companion revision item ${index + 1}`).key,
+          `persisted terminal companion revision item ${index + 1}.key`, 100),
+        `persisted terminal companion revision item ${index + 1}`
+      ))
+    : [];
+  const revisionTriggerInput = revisionTriggerInputs.filter((value) =>
+    object(value, "persisted terminal companion revision input").key === companion.key);
+  const revisionTriggerItem = revisionTriggerItems.filter((value) => value.key === companion.key);
+  const revisionTriggerMatch = /^problem-terminal-fidelity\/v2-0000-([a-f0-9]{64})-([a-f0-9]{64})\.json$/u
+    .exec(revisionTriggerPointer.path);
+  const expectedRevisionTriggerCheckpoint = {
+    version: PROBLEM_TERMINAL_FIDELITY_VERSION,
+    entryId: entry.id,
+    sourceHash: problem.sha256,
+    from: revisionTriggerPointer.from,
+    to: revisionTriggerPointer.to,
+    ownedFrom: revisionTriggerPointer.ownedFrom,
+    ownedTo: revisionTriggerPointer.ownedTo,
+    effectiveCorpusHash: revisionTriggerMatch?.[1],
+    inputHash: revisionTriggerPointer.inputHash,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    rulesDigest: CLASSIFIER_DIGEST,
+    scopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    inputs: revisionTriggerInputs,
+    items: revisionTriggerItems,
+  };
+  if (
+    revisionTrigger.kind !== "terminal" || !revisionTriggerMatch ||
+    revisionTriggerMatch[2] !== revisionTriggerPointer.inputHash ||
+    revisionTriggerCheckpoint.inputHash !== canonicalEvidenceHash(revisionTriggerInputs) ||
+    revisionTriggerInput.length !== 1 || revisionTriggerItem.length !== 1 ||
+    canonicalEvidenceHash(revisionTriggerInput[0]) !==
+      canonicalEvidenceHash(problemTerminalInput(effective[currentIndex].question)) ||
+    revisionTriggerItem[0].status === "exact" ||
+    revisionTrigger.terminalItemHash !== canonicalEvidenceHash(revisionTriggerItem[0]) ||
+    revisionTrigger.evidenceHash !== sha256Text(revisionTriggerItem[0].evidence) ||
+    canonicalEvidenceHash(revisionTriggerCheckpoint) !== canonicalEvidenceHash(expectedRevisionTriggerCheckpoint)
+  ) throw new Error(`${companion.key} persisted terminal companion revision trigger가 다릅니다`);
+
+  const normalizedRevisionTrigger = {
+    kind: "terminal" as const,
+    evidenceHash: exactHash(revisionTrigger.evidenceHash, "persisted terminal companion revision evidenceHash"),
+    terminalCheckpoint: revisionTriggerPointer,
+    terminalItemHash: exactHash(
+      revisionTrigger.terminalItemHash, "persisted terminal companion revision terminalItemHash"
+    ),
+  };
+  if (canonicalEvidenceHash(revisionTrigger) !== canonicalEvidenceHash(normalizedRevisionTrigger)) {
+    throw new Error(`${companion.key} persisted terminal companion revision trigger envelope가 다릅니다`);
+  }
+  const revisionMember = {
+    key: companion.key,
+    printedNumber: companion.key.split(":")[1],
+    sourcePage: companion.sourcePage,
+    baseProblemRepairArtifact: {
+      path: companion.baseProblemRepairArtifact.path,
+      sha256: companion.baseProblemRepairArtifact.sha256,
+    },
+    baseProblemRepairItemHash: companion.baseProblemRepairArtifact.itemHash,
+    baseClassificationRepairArtifact: {
+      path: companion.baseClassificationRepairArtifact.path,
+      sha256: companion.baseClassificationRepairArtifact.sha256,
+    },
+    baseClassificationRepairItemHash: companion.baseClassificationRepairArtifact.itemHash,
+    baseQuestionHash: companion.baseProblemRepairArtifact.itemHash,
+    baseClassificationHash: companion.baseClassificationRepairArtifact.itemHash,
+    trigger: normalizedRevisionTrigger,
+  };
+  const revisionMembersDigest = canonicalEvidenceHash([revisionMember]);
+  const expectedRevisionProblemPath = `problem-revision-batches/v${PROBLEM_REVISION_BATCH_VERSION}-` +
+    `${String(companion.contextFrom).padStart(4, "0")}-${String(companion.contextTo).padStart(4, "0")}-` +
+    `${page}-${revisionMembersDigest}.json`;
+  const revisionProblem = await pinnedCanonicalCheckpoint(
+    stateDir, companion.revisionProblemArtifact, "persisted terminal companion revision problem"
+  );
+  const revisedQuestions = restoredSparseQuizItems(revisionProblem.items);
+  if (revisedQuestions.length !== 1) {
+    throw new Error(`${companion.key} persisted terminal companion revision problem item이 유일하지 않습니다`);
+  }
+  const revisedQuestion = revisedQuestions[0];
+  const expectedRevisionProblem = {
+    version: PROBLEM_REVISION_BATCH_VERSION,
+    entryId: entry.id,
+    sourceHash: problem.sha256,
+    contextFrom: companion.contextFrom,
+    contextTo: companion.contextTo,
+    sourcePage: companion.sourcePage,
+    membersDigest: revisionMembersDigest,
+    members: [revisionMember],
+    batchPromptVersion: TARGETED_PROBLEM_BATCH_VERSION,
+    batchPromptDigest: TARGETED_PROBLEM_BATCH_PROMPT_DIGEST,
+    revisionPromptVersion: TARGETED_PROBLEM_REVISION_VERSION,
+    revisionPromptDigest: TARGETED_PROBLEM_BATCH_REVISION_PROMPT_DIGEST,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    items: [revisedQuestion],
+  };
+  if (
+    companion.revisionProblemArtifact.path !== expectedRevisionProblemPath ||
+    questionKey(revisedQuestion) !== companion.key ||
+    canonicalEvidenceHash(revisedQuestion) !== companion.revisionProblemArtifact.itemHash ||
+    canonicalEvidenceHash(revisionProblem) !== canonicalEvidenceHash(expectedRevisionProblem)
+  ) throw new Error(`${companion.key} persisted terminal companion revision problem이 다릅니다`);
+
+  const revisionClassificationMember = {
+    key: companion.key,
+    problemAuthority: {
+      key: companion.key,
+      path: companion.revisionProblemArtifact.path,
+      sha256: companion.revisionProblemArtifact.sha256,
+      itemHash: companion.revisionProblemArtifact.itemHash,
+    },
+    effectiveQuestionHash: companion.revisionProblemArtifact.itemHash,
+    baseClassificationRepairArtifact: {
+      path: companion.baseClassificationRepairArtifact.path,
+      sha256: companion.baseClassificationRepairArtifact.sha256,
+    },
+    baseClassificationRepairItemHash: companion.baseClassificationRepairArtifact.itemHash,
+    triggerHash: canonicalEvidenceHash(normalizedRevisionTrigger),
+  };
+  const revisionOverlayDigest = canonicalEvidenceHash([revisionClassificationMember]);
+  const expectedRevisionClassificationPath = `classification-revision-batches/` +
+    `v${CLASSIFICATION_REVISION_BATCH_VERSION}-${String(companion.contextFrom).padStart(4, "0")}-` +
+    `${String(companion.contextTo).padStart(4, "0")}-${revisionOverlayDigest}-${CLASSIFIER_DIGEST}.json`;
+  const revisionClassification = await pinnedCanonicalCheckpoint(
+    stateDir, companion.revisionClassificationArtifact, "persisted terminal companion revision classification"
+  );
+  const revisionClassificationItems = Array.isArray(revisionClassification.items)
+    ? revisionClassification.items
+    : [];
+  if (revisionClassificationItems.length !== 1) {
+    throw new Error(`${companion.key} persisted terminal companion revision classification item이 유일하지 않습니다`);
+  }
+  const revisedDecision = parseHistoricalDecision(
+    revisionClassificationItems[0], companion.key, "persisted terminal companion revision classification item"
+  );
+  const expectedRevisionClassification = {
+    version: CLASSIFICATION_REVISION_BATCH_VERSION,
+    entryId: entry.id,
+    sourceHash: problem.sha256,
+    contextFrom: companion.contextFrom,
+    contextTo: companion.contextTo,
+    overlayDigest: revisionOverlayDigest,
+    classifierVersion: CLASSIFIER_VERSION,
+    rulesDigest: CLASSIFIER_DIGEST,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    members: [revisionClassificationMember],
+    items: [revisedDecision],
+  };
+  if (
+    companion.revisionClassificationArtifact.path !== expectedRevisionClassificationPath ||
+    canonicalEvidenceHash(revisedDecision) !== companion.revisionClassificationArtifact.itemHash ||
+    revisedDecision.transcription_status !== "exact" ||
+    canonicalEvidenceHash(revisionClassification) !== canonicalEvidenceHash(expectedRevisionClassification)
+  ) throw new Error(`${companion.key} persisted terminal companion revision classification이 다릅니다`);
+
+  const trigger = object(recovery.trigger, "persisted terminal companion trigger");
+  const triggerCheckpoint = await pinnedCanonicalCheckpoint(
+    stateDir, companion.selected.terminalCheckpoint, "persisted terminal companion trigger checkpoint"
+  );
+  const triggerInputs = Array.isArray(triggerCheckpoint.inputs) ? triggerCheckpoint.inputs : [];
+  const triggerItems = Array.isArray(triggerCheckpoint.items)
+    ? triggerCheckpoint.items.map((value, index) => pinnedTerminalRecoveryItem(
+        value,
+        exactString(object(value, `persisted terminal companion trigger item ${index + 1}`).key,
+          `persisted terminal companion trigger item ${index + 1}.key`, 100),
+        `persisted terminal companion trigger item ${index + 1}`
+      ))
+    : [];
+  const triggerInput = triggerInputs.filter((value) =>
+    object(value, "persisted terminal companion trigger input").key === companion.key);
+  const triggerItem = triggerItems.filter((value) => value.key === companion.key);
+  const expectedTriggerPath = `problem-terminal-fidelity/v2-0000-` +
+    `${companion.selected.preRecoveryEffectiveCorpusHash}-${companion.selected.terminalCheckpoint.inputHash}.json`;
+  const expectedTriggerCheckpoint = {
+    version: PROBLEM_TERMINAL_FIDELITY_VERSION,
+    entryId: entry.id,
+    sourceHash: problem.sha256,
+    from: companion.selected.terminalCheckpoint.from,
+    to: companion.selected.terminalCheckpoint.to,
+    ownedFrom: companion.selected.terminalCheckpoint.ownedFrom,
+    ownedTo: companion.selected.terminalCheckpoint.ownedTo,
+    effectiveCorpusHash: companion.selected.preRecoveryEffectiveCorpusHash,
+    inputHash: companion.selected.terminalCheckpoint.inputHash,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    rulesDigest: CLASSIFIER_DIGEST,
+    scopePromptDigest: PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    inputs: triggerInputs,
+    items: triggerItems,
+  };
+  if (
+    companion.selected.terminalCheckpoint.path !== expectedTriggerPath ||
+    triggerInputs.length === 0 || triggerInputs.length !== triggerItems.length ||
+    triggerCheckpoint.inputHash !== canonicalEvidenceHash(triggerInputs) || triggerInput.length !== 1 ||
+    triggerItem.length !== 1 ||
+    canonicalEvidenceHash(triggerInput[0]) !== canonicalEvidenceHash(problemTerminalInput(revisedQuestion)) ||
+    triggerItem[0].status === "exact" || canonicalEvidenceHash(triggerItem[0]) !== companion.selected.terminalItemHash ||
+    sha256Text(triggerItem[0].evidence) !== companion.selected.evidenceHash ||
+    canonicalEvidenceHash(triggerCheckpoint) !== canonicalEvidenceHash(expectedTriggerCheckpoint)
+  ) throw new Error(`${companion.key} persisted terminal companion trigger가 다릅니다`);
+  const recoveryTrigger = {
+    kind: "terminal" as const,
+    evidenceHash: companion.selected.evidenceHash,
+    terminalCheckpoint: companion.selected.terminalCheckpoint,
+    terminalItemHash: companion.selected.terminalItemHash,
+    terminalItem: triggerItem[0],
+    preRecoveryEffectiveCorpusHash: companion.selected.preRecoveryEffectiveCorpusHash,
+  };
+  if (canonicalEvidenceHash(trigger) !== canonicalEvidenceHash(recoveryTrigger)) {
+    throw new Error(`${companion.key} persisted terminal companion trigger envelope가 다릅니다`);
+  }
+
+  const recoveryProblemBasis = {
+    key: companion.key,
+    printedNumber: companion.key.split(":")[1],
+    sourcePage: companion.sourcePage,
+    sourceHash: problem.sha256,
+    contextFrom: companion.contextFrom,
+    contextTo: companion.contextTo,
+    baseProblemRepairArtifact: revisionMember.baseProblemRepairArtifact,
+    baseProblemRepairItemHash: companion.baseProblemRepairArtifact.itemHash,
+    baseClassificationRepairArtifact: revisionMember.baseClassificationRepairArtifact,
+    baseClassificationRepairItemHash: companion.baseClassificationRepairArtifact.itemHash,
+    baseProblemRevisionArtifact: {
+      path: companion.revisionProblemArtifact.path,
+      sha256: companion.revisionProblemArtifact.sha256,
+    },
+    baseProblemRevisionItemHash: companion.revisionProblemArtifact.itemHash,
+    baseClassificationRevisionArtifact: {
+      path: companion.revisionClassificationArtifact.path,
+      sha256: companion.revisionClassificationArtifact.sha256,
+    },
+    baseClassificationRevisionItemHash: companion.revisionClassificationArtifact.itemHash,
+    baseQuestionHash: companion.revisionProblemArtifact.itemHash,
+    baseClassificationHash: companion.revisionClassificationArtifact.itemHash,
+    trigger: recoveryTrigger,
+  };
+  const recoveryProblemDigest = canonicalEvidenceHash(recoveryProblemBasis);
+  const problemCheckpoint = await pinnedCanonicalCheckpoint(
+    stateDir, companion.selected.problemArtifact, "persisted terminal companion problem recovery"
+  );
+  const question = restoredQuizItems([problemCheckpoint.item])[0];
+  const expectedRecoveryProblemPath = `problem-recoveries/v${PROBLEM_TERMINAL_RECOVERY_VERSION}-${page}-${number}-` +
+    `${recoveryProblemDigest}.json`;
+  const expectedProblemCheckpoint = {
+    version: PROBLEM_TERMINAL_RECOVERY_VERSION,
+    entryId: entry.id,
+    basisDigest: recoveryProblemDigest,
+    basis: recoveryProblemBasis,
+    promptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+    promptDigest: TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    item: question,
+  };
+  if (
+    companion.selected.problemArtifact.path !== expectedRecoveryProblemPath ||
+    companion.selected.problemArtifact.basisDigest !== recoveryProblemDigest ||
+    canonicalEvidenceHash(problemCheckpoint) !== canonicalEvidenceHash(expectedProblemCheckpoint)
+  ) throw new Error(`${companion.key} persisted terminal companion recovery problem이 다릅니다`);
+  const recoveryClassificationBasis = {
+    ...recoveryProblemBasis,
+    problemArtifact: {
+      path: companion.selected.problemArtifact.path,
+      sha256: companion.selected.problemArtifact.sha256,
+    },
+    problemArtifactItemHash: companion.selected.problemArtifact.itemHash,
+    effectiveQuestionHash: companion.selected.problemArtifact.itemHash,
+  };
+  const recoveryClassificationDigest = canonicalEvidenceHash(recoveryClassificationBasis);
+  const classificationCheckpoint = await pinnedCanonicalCheckpoint(
+    stateDir, companion.selected.classificationArtifact, "persisted terminal companion classification recovery"
+  );
+  const classificationItems = Array.isArray(classificationCheckpoint.items) ? classificationCheckpoint.items : [];
+  if (classificationItems.length !== 1) {
+    throw new Error(`${companion.key} persisted terminal companion classification item이 유일하지 않습니다`);
+  }
+  const classification = parseHistoricalDecision(
+    classificationItems[0], companion.key, "persisted terminal companion classification item"
+  );
+  const expectedRecoveryClassificationPath =
+    `classification-recoveries/v${CLASSIFICATION_TERMINAL_RECOVERY_VERSION}-${page}-${number}-` +
+    `${recoveryClassificationDigest}-${CLASSIFIER_DIGEST}.json`;
+  const expectedClassificationCheckpoint = {
+    version: CLASSIFICATION_TERMINAL_RECOVERY_VERSION,
+    entryId: entry.id,
+    basisDigest: recoveryClassificationDigest,
+    basis: recoveryClassificationBasis,
+    classifierVersion: CLASSIFIER_VERSION,
+    rulesDigest: CLASSIFIER_DIGEST,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    recoveryPromptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+    recoveryPromptDigest: TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    items: [classification],
+  };
+  const expectedRecoveryEvidence: ProblemRecoveryEvidence = {
+    key: companion.key,
+    printedNumber: companion.key.split(":")[1],
+    sourcePage: companion.sourcePage,
+    sourceHash: problem.sha256,
+    contextFrom: companion.contextFrom,
+    contextTo: companion.contextTo,
+    baseProblemRepairArtifact: revisionMember.baseProblemRepairArtifact,
+    baseProblemRepairItemHash: companion.baseProblemRepairArtifact.itemHash,
+    baseClassificationRepairArtifact: revisionMember.baseClassificationRepairArtifact,
+    baseClassificationRepairItemHash: companion.baseClassificationRepairArtifact.itemHash,
+    baseProblemRevisionArtifact: recoveryProblemBasis.baseProblemRevisionArtifact,
+    baseProblemRevisionItemHash: companion.revisionProblemArtifact.itemHash,
+    baseClassificationRevisionArtifact: recoveryProblemBasis.baseClassificationRevisionArtifact,
+    baseClassificationRevisionItemHash: companion.revisionClassificationArtifact.itemHash,
+    problemArtifact: recoveryClassificationBasis.problemArtifact,
+    problemArtifactItemHash: companion.selected.problemArtifact.itemHash,
+    classificationArtifact: {
+      path: companion.selected.classificationArtifact.path,
+      sha256: companion.selected.classificationArtifact.sha256,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      recoveryPromptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+      recoveryPromptDigest: TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
+    },
+    classificationArtifactItemHash: companion.selected.classificationArtifact.itemHash,
+    trigger: recoveryTrigger,
+    baseQuestionHash: companion.revisionProblemArtifact.itemHash,
+    effectiveQuestionHash: companion.selected.problemArtifact.itemHash,
+    baseClassificationHash: companion.revisionClassificationArtifact.itemHash,
+    effectiveClassificationHash: companion.selected.classificationArtifact.itemHash,
+  };
+  if (
+    companion.selected.classificationArtifact.path !== expectedRecoveryClassificationPath ||
+    companion.selected.classificationArtifact.basisDigest !== recoveryClassificationDigest ||
+    canonicalEvidenceHash(classificationCheckpoint) !== canonicalEvidenceHash(expectedClassificationCheckpoint) ||
+    canonicalEvidenceHash(recovery) !== canonicalEvidenceHash(expectedRecoveryEvidence) ||
+    questionKey(question) !== companion.key || question.page !== companion.sourcePage ||
+    question.question !== companion.selected.questionText ||
+    canonicalEvidenceHash(question) !== companion.selected.problemArtifact.itemHash ||
+    canonicalEvidenceHash(classification) !== companion.selected.classificationArtifact.itemHash ||
+    classification.transcription_status !== "exact" || classification.decision !== "reject" ||
+    classification.canonical_subject !== null || classification.curriculum_course !== null ||
+    classification.domain !== null || classification.achievement_codes.length !== 0 || classification.confidence < 0.9
+  ) throw new Error(`${companion.key} persisted terminal companion selected authority가 다릅니다`);
+
+  const combined = [...effective];
+  combined[currentIndex] = { question, classification };
+  if (canonicalEvidenceHash(combined) !== companion.finalEffectiveCorpusHash) {
+    throw new Error(`${companion.key} persisted terminal companion combined corpus가 다릅니다`);
+  }
+  const finalTerminal = await validatedProblemTerminalCheckpoint(
+    stateDir,
+    entry.id,
+    problem.sha256,
+    combined,
+    companion.finalEffectiveCorpusHash,
+    companion.finalTerminal,
+    "persisted terminal companion final checkpoint"
+  );
+  const q11 = finalTerminal.items.find((item) => item.key === spec.key);
+  const q15 = finalTerminal.items.find((item) => item.key === companion.key);
+  const sortedFinalItems = [...finalTerminal.items].sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+  if (
+    canonicalEvidenceHash(audit.problemTerminalFidelityItems) !== canonicalEvidenceHash(sortedFinalItems) ||
+    !q11 || q11.status !== "exact" || q11.scopeDecision !== "accept" || q11.scopeConfidence < 0.9 ||
+    !q15 || q15.status !== "exact" || q15.scopeDecision !== "reject" || q15.scopeConfidence < 0.9
+  ) throw new Error(`${companion.key} persisted terminal companion final policy가 다릅니다`);
+  return {
+    effective: combined,
+    classified: { question, classification },
+    evidence: rawRepair as unknown as ProblemRepairEvidence,
+  };
 }
 
 async function hydratePersistedProblemRepairBatches(
@@ -14011,11 +14623,24 @@ export async function repairAndAuditOfficialAnswers(
       canonicalEvidenceHash(effective[index].question) !== spec.baseProblemRepairArtifact.itemHash ||
       canonicalEvidenceHash(effective[index].classification) !== spec.baseClassificationRepairArtifact.itemHash
     ) throw new Error(`${spec.key} persisted terminal recovery base hydration authority가 다릅니다`);
-    effective[index] = selected.classified;
-    repairs.set(spec.key, {
+    const selectedEffective = [...effective];
+    selectedEffective[index] = selected.classified;
+    const selectedRepair = {
       ...repair,
       revision: { ...revision, recovery: selected.evidence },
-    });
+    };
+    const companion = await preparePersistedTerminalRecoveryCompanion(
+      entry,
+      problem,
+      solutionEvidence,
+      stateDir,
+      spec,
+      selectedEffective,
+      repairs
+    );
+    effective = companion?.effective ?? selectedEffective;
+    repairs.set(spec.key, selectedRepair);
+    if (companion) repairs.set(companion.evidence.key, companion.evidence);
   }
   const solutionRevisionTriggers = new Map<
     string,
