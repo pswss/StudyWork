@@ -277,6 +277,16 @@ const Q23_Q29_MANUAL_SPECS = ["9:23", "11:28", "11:29"].map((key) =>
   PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
     spec.entryId === "ebsi:5525982" && spec.key === key)!,
 );
+const Q30_Q42_MANUAL_GROUPS = [
+  ["11:30"],
+  ["12:31", "12:32"],
+  ["14:37"],
+  ["15:38", "15:40", "15:41", "15:42"],
+] as const;
+const Q30_Q42_MANUAL_SPECS = Q30_Q42_MANUAL_GROUPS.flat().map((key) =>
+  PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
+    spec.entryId === "ebsi:5525982" && spec.key === key)!,
+);
 const Q8_TERMINAL_ADJUDICATION_STATE = join(
   process.cwd(),
   "data/import-exam-corpus/7755c70fefaa45f755086e2b",
@@ -9733,6 +9743,55 @@ async function q23Q29ManualAuthorityFixture() {
   }));
 }
 
+async function q30Q42ManualAuthorityFixture() {
+  const stateDir = mkdtempSync(join(tmpdir(), "verify-q30-q42-manual-authority-"));
+  cpSync(Q27_MANUAL_STATE, stateDir, { recursive: true });
+  for (const directory of [
+    "problem-manual-evidence",
+    "problem-manual-adjudications",
+    "classification-manual-adjudications",
+    "problem-manual-revisions",
+    "classification-manual-revisions",
+  ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
+  const rows = Q30_Q42_MANUAL_SPECS.map((spec) => ({
+    spec,
+    ...pinnedManualRecoveryParent(stateDir, spec),
+  }));
+  providerMock.complete.mockReset();
+  for (const row of rows) {
+    const literature = ["11:30", "12:31", "12:32"].includes(row.spec.key);
+    providerMock.complete.mockResolvedValueOnce({ text: JSON.stringify([{
+      key: row.spec.key,
+      decision: "accept",
+      canonical_subject: literature ? "korean_literature" : "korean_reading",
+      curriculum_course: literature ? "문학" : "독서와 작문",
+      domain: literature ? "현대시와 희곡의 표현 및 감상" : "보험의 경제 원리와 고지 의무",
+      achievement_codes: literature ? ["12문학01-03"] : ["12독작01-03"],
+      confidence: 0.99,
+      reason_codes: ["IN_SCOPE_KOREAN", "SOURCE_EXACT"],
+      transcription_status: "exact",
+      transcription_evidence: `공식 source의 ${row.spec.key} 전체 지문·발문·선택지가 일치한다.`,
+    }]) });
+    const adjudicated = await adjudicateProblemManual(
+      row.input.entry,
+      row.input.problem,
+      stateDir,
+      row.failed,
+      row.parent,
+    );
+    Object.assign(row, { adjudicated });
+  }
+  expect(providerMock.complete).toHaveBeenCalledTimes(8);
+  providerMock.complete.mockReset();
+  return rows.map((row) => ({
+    ...row,
+    adjudicated: (row as typeof row & {
+      adjudicated: Awaited<ReturnType<typeof adjudicateProblemManual>>;
+    }).adjudicated,
+    stateDir,
+  }));
+}
+
 function withOnlyManualArtifactsForKey<T>(stateDir: string, key: string, run: () => T): T {
   const number = key.split(":")[1]!.padStart(4, "0");
   const renamed: Array<{ from: string; to: string }> = [];
@@ -12788,7 +12847,7 @@ describe("exam corpus verifier", () => {
       || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
   )("verifies the exact Q27 recovery-parent manual authority without claiming downstream completion", async () => {
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("463fceef246487e1ec791ffb0489048f874cd5944d946f9c6d819f3fd3c76eda");
+      .toBe("4d844c71cc01ae752974edb5941ed475d80e76dd03bb5ee1a51a7b256512bb80");
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 11)))
@@ -12945,7 +13004,7 @@ describe("exam corpus verifier", () => {
       || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
   )("verifies the exact Q43-Q45 shared-passage manual authorities without inventing a terminal", async () => {
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("463fceef246487e1ec791ffb0489048f874cd5944d946f9c6d819f3fd3c76eda");
+      .toBe("4d844c71cc01ae752974edb5941ed475d80e76dd03bb5ee1a51a7b256512bb80");
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 11)))
@@ -13102,7 +13161,7 @@ describe("exam corpus verifier", () => {
       || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
   )("verifies the exact Q8/Q16 manual pair while Q15 remains normal exact rejection authority", async () => {
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("463fceef246487e1ec791ffb0489048f874cd5944d946f9c6d819f3fd3c76eda");
+      .toBe("4d844c71cc01ae752974edb5941ed475d80e76dd03bb5ee1a51a7b256512bb80");
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 11)))
@@ -13255,7 +13314,7 @@ describe("exam corpus verifier", () => {
       || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
   )("verifies the exact Q17/Q20 manual pair while Q18/Q19 stay exact without manual children", async () => {
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("463fceef246487e1ec791ffb0489048f874cd5944d946f9c6d819f3fd3c76eda");
+      .toBe("4d844c71cc01ae752974edb5941ed475d80e76dd03bb5ee1a51a7b256512bb80");
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 13)))
@@ -13434,7 +13493,7 @@ describe("exam corpus verifier", () => {
       || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
   )("verifies the exact Q23/Q28/Q29 manual triple without crossing the Q31/Q42 boundary", async () => {
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("463fceef246487e1ec791ffb0489048f874cd5944d946f9c6d819f3fd3c76eda");
+      .toBe("4d844c71cc01ae752974edb5941ed475d80e76dd03bb5ee1a51a7b256512bb80");
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 15)))
@@ -13611,7 +13670,10 @@ describe("exam corpus verifier", () => {
       for (const key of ["12:31", "15:42"]) {
         expect(revisionItems.find((item) => item.key === key)?.transcription_status).toBe("mismatch");
         expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.some((spec) =>
-          spec.entryId === "ebsi:5525982" && spec.key === key)).toBe(false);
+          spec.entryId === "ebsi:5525982" && spec.key === key)).toBe(true);
+        const number = key.split(":")[1]!.padStart(4, "0");
+        expect(readdirSync(join(rows[0].stateDir, "problem-manual-adjudications"))
+          .some((name) => name.includes(`-${number}-`))).toBe(false);
       }
       expect(existsSync(join(rows[0].stateDir, "answer-audit"))).toBe(false);
       expect(existsSync(join(rows[0].stateDir, "answer-attestation"))).toBe(false);
@@ -13620,6 +13682,221 @@ describe("exam corpus verifier", () => {
       rmSync(rows[0].stateDir, { recursive: true, force: true });
     }
   }, 180_000);
+
+  it.skipIf(
+    !existsSync(join(Q27_MANUAL_STATE, "problem.pdf"))
+      || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
+  )("verifies the final Q30-Q42 manual groups before the fresh terminal input", async () => {
+    expect(manualAdjudicationAllowlistFingerprint())
+      .toBe("4d844c71cc01ae752974edb5941ed475d80e76dd03bb5ee1a51a7b256512bb80");
+    expect(manualAdjudicationAllowlistFingerprint())
+      .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 18)))
+      .toBe("463fceef246487e1ec791ffb0489048f874cd5944d946f9c6d819f3fd3c76eda");
+    expect(Q30_Q42_MANUAL_GROUPS.map((group) => [...group])).toEqual([
+      ["11:30"],
+      ["12:31", "12:32"],
+      ["14:37"],
+      ["15:38", "15:40", "15:41", "15:42"],
+    ]);
+    const literatureViews = [
+      "5292aacb2170ebb8ae9c70ba089bce6ce689ff9276e9d997b0f3d16c3cb3d665",
+      "c534698ffb42c13ef9642bdd930e2b7ddd8b54c907bed0a5dd69ed960d7013e6",
+      "581577c6aba6368e2e807d3491debc8bda2c27e4e891a734a374077ba9909376",
+      "f4a0912b56ff5f19180cd6701e1b9e8a1760903869fa5284ba364f854d0587e0",
+    ];
+    const readingViews = [
+      "f040b886b1427ed078054e833d489891f27b0d99b5c16cd70e7e4066e766483a",
+      "53a758c22f1823ff10bbc7361f9f37e40c46bdd2f57d353feb01bb2c6c8b2a3d",
+      "f9638782429e6b95df53473a371cda77c80ad1e3a283f57cd9a2ee4635f42343",
+    ];
+    const expected = new Map([
+      ["11:30", {
+        row: "0d5d73306f77fc61f30ccde3e970f80499e4db7be3fbefc646350170cde9696e",
+        spec: "dd55aabf3be8fd6f23043a29e4b9032734bb6b5edbe551745a6de88e4088225e",
+        item: "e6e694a660190ad645dcd3cbaf1549281bdd056c04802907c04db2c061784897",
+        status: "exact", subject: "korean_literature", course: "문학",
+        crops: [...literatureViews, "7d92443eaa6f0ac4f34a537e127ca54b55fb968bf64fa5cfc7bb5f777df4646c"],
+      }],
+      ["12:31", {
+        row: "a68cbd6c6b2c4f27f2db4784b2b15a1e45f2255a764a2df7b48840514bf4abd4",
+        spec: "cc956ab4878e26788b2892f9a98d6b473bceaae9589207ba542c6f07311cf5c5",
+        item: "5ab49dec77f4e47ae71671c2ebd38e16a1e387cece768bbdd45ace55cde2f6fa",
+        status: "mismatch", subject: "korean_literature", course: "문학",
+        crops: [...literatureViews, "763af66685e7abed5840a675c484ffd1cef68207475c3b12f77c8498b00bbfc6"],
+      }],
+      ["12:32", {
+        row: "974562dc407ca854aebb49fb2fe9a56df97383a9f44407bd54ae949d2a85a796",
+        spec: "b83d9d387214b64ec20bc885e5159f1afdf3b110c11d8c09c4aa65aa3b09e740",
+        item: "e3f26787b00f65c346910a688088f941dce1b8b872e330491da0b61a8e3f5269",
+        status: "mismatch", subject: "korean_literature", course: "문학",
+        crops: [...literatureViews, "3ceee6f7e00d9030cc8bc8b972b0660dd0aa4abad1bd610ca5b3ae9588cdbc33"],
+      }],
+      ["14:37", {
+        row: "3002ecd3c82d2ee9e4927228ef082c58e317c88a103f0cf2d29317848813006c",
+        spec: "2fedd6fd825dc06bc5c64c0ec8dc369d9cb79ffd10b348488950c18b22e1cace",
+        item: "ceea23fac5375f0d514c61a3a0a49754ea67796458365b3c17de6f67ad5837fd",
+        status: "exact", subject: "korean_reading", course: "독서와 작문", crops: readingViews,
+      }],
+      ["15:38", {
+        row: "274ff9d1bab3e2b8adaaeca6a50cbd6ebab4d8efc9ce98f241531e554f5a7fbf",
+        spec: "2ce1c09fd085da6830a5fc1e9498bd970e8d97457c49b4e2a8744650fc861e27",
+        item: "3a84154e36d6a7a703afecb37e7e090e46ea5c9b6aa6cf6235d96718a4416c57",
+        status: "mismatch", subject: "korean_reading", course: "독서와 작문",
+        crops: [...readingViews, "119d571b4bf6c495fa6a8a7ad05df04a569c0fed673fc8890959a8837c80bd48"],
+      }],
+      ["15:40", {
+        row: "352f1f625a2b842cd8cfb55b3b16442aa7610cba84e9134f8cb234ecf0c20eca",
+        spec: "e724b7230999c32d092bc4ccbef893ae106132b9d3d768780cc42670cc2d7bde",
+        item: "b7fdf4136ce89e411f5e65c7e4cc2a98ef30ea97f3aae7d3098a9556884aed3d",
+        status: "mismatch", subject: "korean_reading", course: "독서와 작문",
+        crops: [...readingViews, "34a46f0aebac0098b64feb0cddf4370866945614b38483dcaaf12c97d6de1198"],
+      }],
+      ["15:41", {
+        row: "17d17089a45be6edc291d7d5489176dcd18d00007589089db657ae618e71f593",
+        spec: "244193365a2b911e6383b505abadaee0de6d374f4d9f45b11ca769685e3cb9f1",
+        item: "371eba06e9adf7dec40b792dd060a10fa87237384dd6b7f20c2b4629eec8a876",
+        status: "mismatch", subject: "korean_reading", course: "독서와 작문",
+        crops: [...readingViews, "a0dad8b265040dcda0ac223e8382f4dd447be0a0501571d70b6b4187b060d2a5"],
+      }],
+      ["15:42", {
+        row: "44900a00af38a5de0486bf115b0f1e928b5ee111f9df7f9ce3749b9beb416b83",
+        spec: "c84aa86ee78524be5f342365eb0541461cff6ab845e0e48b0dd1a759f972a6e0",
+        item: "4e708254da01f6edf7b57bde696ef5af8faec1116dfb3ebf8eb7e1a3b5daabe8",
+        status: "mismatch", subject: "korean_reading", course: "독서와 작문",
+        crops: [...readingViews, "4f2a482f02360ef1953238997f6ff7f6a18801f7d36b8382090b8f3ce3c634f2"],
+      }],
+    ]);
+    for (const spec of Q30_Q42_MANUAL_SPECS) {
+      expect(canonicalEvidenceHash(spec)).toBe(expected.get(spec.key)!.row);
+    }
+
+    const rows = await q30Q42ManualAuthorityFixture();
+    const verify = (
+      row: (typeof rows)[number],
+      manualAdjudication: unknown = row.adjudicated.evidence,
+      parentRecovery: Record<string, unknown> = row.parent as unknown as Record<string, unknown>,
+      failedClassification: unknown = row.failed.classification,
+    ) => withOnlyManualArtifactsForKey(row.stateDir, row.spec.key, () =>
+      verifyProblemManualAdjudicationForTest({
+        stateDir: row.stateDir,
+        entry: row.input.entry,
+        problemEvidence: row.input.problem,
+        parentRecovery,
+        failedQuestion: row.failed.question,
+        failedClassification,
+        manualAdjudication,
+      }));
+
+    try {
+      const verifiedByKey = new Map<string, { question: QuizItemEx; classification: ClassificationDecision }>();
+      for (const row of rows) {
+        const pin = expected.get(row.spec.key)!;
+        expect(row.failed.classification.transcription_status).toBe(pin.status);
+        const verified = verify(row) as {
+          question: QuizItemEx;
+          classification: ClassificationDecision;
+          evidence: Record<string, any>;
+        };
+        expect(canonicalEvidenceHash(verified.question)).toBe(pin.item);
+        expect(verified.evidence).toMatchObject({
+          allowlistId: row.spec.allowlistId,
+          parentRecoveryEvidenceHash: row.spec.parentRecoveryEvidenceHash,
+          correctionSpecHash: pin.spec,
+          problemArtifactItemHash: pin.item,
+        });
+        expect(verified.evidence.cropViews.map((view: { pixelSha256: string }) => view.pixelSha256))
+          .toEqual(pin.crops);
+        expect(verified.classification).toMatchObject({
+          key: row.spec.key,
+          decision: "accept",
+          canonical_subject: pin.subject,
+          curriculum_course: pin.course,
+          transcription_status: "exact",
+        });
+        verifiedByKey.set(row.spec.key, verified);
+      }
+
+      expect(verifiedByKey.get("11:30")!.question).toMatchObject({ figure: true });
+      expect(verifiedByKey.get("11:30")!.question.question)
+        .toContain("30. 무대 상연을 전제로 하는 희곡의 특성을");
+      for (const key of ["12:31", "12:32"]) {
+        expect(verifiedByKey.get(key)!.question.answer).toContain("조숭인");
+        expect(verifiedByKey.get(key)!.question.answer).not.toContain("조승인");
+      }
+      expect(verifiedByKey.get("12:32")!.question.choices?.[1]).toContain("이야기 속의 인물들을");
+      expect(verifiedByKey.get("14:37")!.question.question).toContain("이미 보험금을 지급했다면");
+      expect(verifiedByKey.get("15:41")!.question.answer).toContain("고지하지 않은 중요한 사항");
+      expect(verifiedByKey.get("15:41")!.question.answer).not.toContain("‘중요한 사항’");
+      expect(new Set(verifiedByKey.keys()).size).toBe(8);
+
+      expect(() => verify(rows[0], rows[3].adjudicated.evidence))
+        .toThrow(/allowlist\/parent authority/u);
+      expect(() => verify(rows[1], rows[1].adjudicated.evidence,
+        rows[4].parent as unknown as Record<string, unknown>))
+        .toThrow(/allowlist\/parent authority/u);
+
+      const q30WrongStatus = structuredClone(rows[0].failed.classification);
+      q30WrongStatus.transcription_status = "mismatch";
+      expect(() => verify(rows[0], rows[0].adjudicated.evidence,
+        rows[0].parent as unknown as Record<string, unknown>, q30WrongStatus))
+        .toThrow(/allowlisted exhausted recovery status/u);
+      const q31WrongStatus = structuredClone(rows[1].failed.classification);
+      q31WrongStatus.transcription_status = "exact";
+      expect(() => verify(rows[1], rows[1].adjudicated.evidence,
+        rows[1].parent as unknown as Record<string, unknown>, q31WrongStatus))
+        .toThrow(/allowlisted exhausted recovery status/u);
+
+      const missingPath = join(rows[2].stateDir, rows[2].adjudicated.evidence.classificationArtifact.path);
+      const missingBytes = readFileSync(missingPath);
+      rmSync(missingPath);
+      expect(() => verify(rows[2])).toThrow();
+      writeFileSync(missingPath, missingBytes);
+
+      const cropPath = join(rows[6].stateDir, rows[6].adjudicated.evidence.cropViews.at(-1)!.artifact.path);
+      const cropBytes = readFileSync(cropPath);
+      writeFileSync(cropPath, Buffer.concat([cropBytes, Buffer.from("tampered")]));
+      expect(() => verify(rows[6])).toThrow(/hash mismatch/u);
+      writeFileSync(cropPath, cropBytes);
+
+      withOnlyManualArtifactsForKey(rows[7].stateDir, rows[7].spec.key, () => {
+        const orphanPath = join(
+          rows[7].stateDir,
+          "classification-manual-adjudications",
+          `v1-0015-0042-${"1".repeat(64)}-${DIGEST}.json`,
+        );
+        writeJson(orphanPath, {});
+        try {
+          expect(() => verifyProblemManualAdjudicationForTest({
+            stateDir: rows[7].stateDir,
+            entry: rows[7].input.entry,
+            problemEvidence: rows[7].input.problem,
+            parentRecovery: rows[7].parent as unknown as Record<string, unknown>,
+            failedQuestion: rows[7].failed.question,
+            failedClassification: rows[7].failed.classification,
+            manualAdjudication: rows[7].adjudicated.evidence,
+          })).toThrow(/not declared/u);
+        } finally {
+          rmSync(orphanPath);
+        }
+      });
+
+      const q39Classification = readdirSync(join(rows[0].stateDir, "classification-recoveries"))
+        .find((name) => name.startsWith("v1-0015-0039-"))!;
+      expect(JSON.parse(readFileSync(
+        join(rows[0].stateDir, "classification-recoveries", q39Classification), "utf8",
+      )).items[0].transcription_status).toBe("exact");
+      expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.some((spec) =>
+        spec.entryId === "ebsi:5525982" && spec.key === "15:39")).toBe(false);
+      expect(readdirSync(join(rows[0].stateDir, "problem-manual-adjudications"))
+        .some((name) => name.startsWith("v1-0015-0039-"))).toBe(false);
+      expect(existsSync(join(rows[0].stateDir, "answer-audit"))).toBe(false);
+      expect(existsSync(join(rows[0].stateDir, "answer-attestation"))).toBe(false);
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(rows[0].stateDir, { recursive: true, force: true });
+    }
+  }, 300_000);
 
   it("keeps the repair-scope allowlist byte-aligned with the importer", () => {
     expect(repairScopeAdjudicationAllowlistFingerprint())
