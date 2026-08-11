@@ -261,6 +261,10 @@ const Q43_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
 const Q27_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/bb876a67170089dfb2022f47");
 const Q27_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5525982" && spec.key === "11:27")!;
+const Q43_TO_45_MANUAL_SPECS = ["16:43", "16:44", "16:45"].map((key) =>
+  PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
+    spec.entryId === "ebsi:5525982" && spec.key === key)!,
+);
 const Q8_TERMINAL_ADJUDICATION_STATE = join(
   process.cwd(),
   "data/import-exam-corpus/7755c70fefaa45f755086e2b",
@@ -9413,6 +9417,69 @@ function q27ExactRecoveryParent(stateDir: string): {
   return { input, failed: { question, classification }, parent };
 }
 
+function q43To45RecoveryParent(
+  stateDir: string,
+  spec: (typeof Q43_TO_45_MANUAL_SPECS)[number],
+): {
+  input: ReturnType<typeof terminalAdjudicationInputs>;
+  failed: ClassifiedQuestion;
+  parent: ProblemRecoveryEvidence;
+} {
+  const input = terminalAdjudicationInputs(stateDir);
+  const page = String(spec.sourcePage).padStart(4, "0");
+  const number = spec.key.split(":")[1]!.padStart(4, "0");
+  const problemNames = readdirSync(join(stateDir, "problem-recoveries"))
+    .filter((name) => name.startsWith(`v1-${page}-${number}-`) && name.endsWith(".json"));
+  const classificationNames = readdirSync(join(stateDir, "classification-recoveries"))
+    .filter((name) => name.startsWith(`v1-${page}-${number}-`) && name.endsWith(`-${DIGEST}.json`));
+  expect(problemNames).toHaveLength(1);
+  expect(classificationNames).toHaveLength(1);
+  const problemRelativePath = `problem-recoveries/${problemNames[0]}`;
+  const classificationRelativePath = `classification-recoveries/${classificationNames[0]}`;
+  const problemBytes = readFileSync(join(stateDir, problemRelativePath));
+  const classificationBytes = readFileSync(join(stateDir, classificationRelativePath));
+  const problemCheckpoint = JSON.parse(problemBytes.toString("utf8"));
+  const classificationCheckpoint = JSON.parse(classificationBytes.toString("utf8"));
+  const basis = problemCheckpoint.basis;
+  const question = problemCheckpoint.item as QuizItemEx;
+  const classification = classificationCheckpoint.items[0] as ClassificationDecision;
+  const parent: ProblemRecoveryEvidence = {
+    key: basis.key,
+    printedNumber: basis.printedNumber,
+    sourcePage: basis.sourcePage,
+    sourceHash: basis.sourceHash,
+    contextFrom: basis.contextFrom,
+    contextTo: basis.contextTo,
+    baseProblemRepairArtifact: basis.baseProblemRepairArtifact,
+    baseProblemRepairItemHash: basis.baseProblemRepairItemHash,
+    baseClassificationRepairArtifact: basis.baseClassificationRepairArtifact,
+    baseClassificationRepairItemHash: basis.baseClassificationRepairItemHash,
+    baseProblemRevisionArtifact: basis.baseProblemRevisionArtifact,
+    baseProblemRevisionItemHash: basis.baseProblemRevisionItemHash,
+    baseClassificationRevisionArtifact: basis.baseClassificationRevisionArtifact,
+    baseClassificationRevisionItemHash: basis.baseClassificationRevisionItemHash,
+    problemArtifact: { path: problemRelativePath, sha256: hash(problemBytes) },
+    problemArtifactItemHash: canonicalEvidenceHash(question),
+    classificationArtifact: {
+      path: classificationRelativePath,
+      sha256: hash(classificationBytes),
+      rulesDigest: classificationCheckpoint.rulesDigest,
+      transcriptionGateVersion: classificationCheckpoint.transcriptionGateVersion,
+      transcriptionPromptDigest: classificationCheckpoint.transcriptionPromptDigest,
+      recoveryPromptVersion: classificationCheckpoint.recoveryPromptVersion,
+      recoveryPromptDigest: classificationCheckpoint.recoveryPromptDigest,
+    },
+    classificationArtifactItemHash: canonicalEvidenceHash(classification),
+    failedClassificationEvidenceHash: basis.failedClassificationEvidenceHash,
+    baseQuestionHash: basis.baseQuestionHash,
+    effectiveQuestionHash: canonicalEvidenceHash(question),
+    baseClassificationHash: basis.baseClassificationHash,
+    effectiveClassificationHash: canonicalEvidenceHash(classification),
+  };
+  expect(canonicalEvidenceHash(parent)).toBe(spec.parentRecoveryEvidenceHash);
+  return { input, failed: { question, classification }, parent };
+}
+
 async function q27ManualAuthorityFixture() {
   const stateDir = mkdtempSync(join(tmpdir(), "verify-q27-manual-authority-"));
   cpSync(Q27_MANUAL_STATE, stateDir, { recursive: true });
@@ -9451,6 +9518,79 @@ async function q27ManualAuthorityFixture() {
   );
   providerMock.complete.mockReset();
   return { stateDir, input, failed, parent, adjudicated };
+}
+
+async function q43To45ManualAuthorityFixture() {
+  const stateDir = mkdtempSync(join(tmpdir(), "verify-q43-45-manual-authority-"));
+  cpSync(Q27_MANUAL_STATE, stateDir, { recursive: true });
+  for (const directory of [
+    "problem-manual-evidence",
+    "problem-manual-adjudications",
+    "classification-manual-adjudications",
+    "problem-manual-revisions",
+    "classification-manual-revisions",
+  ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
+  const rows = Q43_TO_45_MANUAL_SPECS.map((spec) => ({
+    spec,
+    ...q43To45RecoveryParent(stateDir, spec),
+  }));
+  providerMock.complete.mockReset();
+  for (const row of rows) {
+    providerMock.complete.mockResolvedValueOnce({ text: JSON.stringify([{
+      key: row.spec.key,
+      decision: "accept",
+      canonical_subject: "korean_literature",
+      curriculum_course: "문학",
+      domain: "고전 기행 가사의 표현과 상황 이해",
+      achievement_codes: ["12문학01-02", "12문학01-03"],
+      confidence: 0.99,
+      reason_codes: ["IN_SCOPE_KOREAN_LITERATURE", "CLASSICAL_VERSE_COMPREHENSION"],
+      transcription_status: "exact",
+      transcription_evidence: `공식 16쪽의 공유 제시문과 문항 ${row.spec.key.split(":")[1]}이 모두 일치한다.`,
+    }]) });
+    const adjudicated = await adjudicateProblemManual(
+      row.input.entry,
+      row.input.problem,
+      stateDir,
+      row.failed,
+      row.parent,
+    );
+    Object.assign(row, { adjudicated });
+  }
+  expect(providerMock.complete).toHaveBeenCalledTimes(3);
+  providerMock.complete.mockReset();
+  return rows.map((row) => ({
+    ...row,
+    adjudicated: (row as typeof row & {
+      adjudicated: Awaited<ReturnType<typeof adjudicateProblemManual>>;
+    }).adjudicated,
+    stateDir,
+  }));
+}
+
+function withOnlyManualArtifactsForKey<T>(stateDir: string, key: string, run: () => T): T {
+  const number = key.split(":")[1]!.padStart(4, "0");
+  const renamed: Array<{ from: string; to: string }> = [];
+  for (const directory of [
+    "problem-manual-evidence",
+    "problem-manual-adjudications",
+    "classification-manual-adjudications",
+  ]) {
+    const absolute = join(stateDir, directory);
+    if (!existsSync(absolute)) continue;
+    for (const name of readdirSync(absolute)) {
+      if (name.includes(`-${number}-`) || name.endsWith(".tmp")) continue;
+      const from = join(absolute, name);
+      const to = `${from}.tmp`;
+      renameSync(from, to);
+      renamed.push({ from, to });
+    }
+  }
+  try {
+    return run();
+  } finally {
+    for (const { from, to } of renamed.reverse()) renameSync(to, from);
+  }
 }
 
 async function terminalAdjudicationFixture() {
@@ -12483,7 +12623,7 @@ describe("exam corpus verifier", () => {
       || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
   )("verifies the exact Q27 recovery-parent manual authority without claiming downstream completion", async () => {
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("42a5a82dcb88e409ed0904ed1c7ce44e790b710fc1645bb5ecb31af4bc8eb65d");
+      .toBe("7851318ea1e176be603db1f2679081e16ef222d90ff704e39dce8d47db446268");
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
     const files = await q27ManualAuthorityFixture();
@@ -12593,6 +12733,192 @@ describe("exam corpus verifier", () => {
       rmSync(files.stateDir, { recursive: true, force: true });
     }
   }, 120_000);
+
+  it("forces current verification for invalid manual directories but ignores confined temp residue", () => {
+    const directories = [
+      "problem-manual-evidence",
+      "problem-manual-adjudications",
+      "classification-manual-adjudications",
+      "problem-manual-revisions",
+      "classification-manual-revisions",
+    ];
+    for (const directory of directories) {
+      const files = fixture();
+      const outside = mkdtempSync(join(tmpdir(), "verify-manual-empty-signal-"));
+      const signalPath = join(files.stateDirs.math, directory);
+      symlinkSync(outside, signalPath);
+      try {
+        expect(verificationContractAuditVersionForTest(files.stateDirs.math)).toBe(5);
+        expect(verifyExamCorpus(files).failures.some((failure) =>
+          failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
+      } finally {
+        rmSync(signalPath);
+        rmSync(outside, { recursive: true, force: true });
+      }
+    }
+
+    const residue = fixture();
+    const previousContract = verificationContractAuditVersionForTest(residue.stateDirs.math);
+    for (const directory of directories) {
+      const absolute = join(residue.stateDirs.math, directory);
+      mkdirSync(absolute, { recursive: true });
+      writeFileSync(join(absolute, "crash-resume.tmp"), "partial immutable write");
+    }
+    expect(verificationContractAuditVersionForTest(residue.stateDirs.math)).toBe(previousContract);
+    expect(verifyExamCorpus(residue), "regular temp-only manual directories must remain inert")
+      .toMatchObject({ ok: true });
+  });
+
+  it.skipIf(
+    !existsSync(join(Q27_MANUAL_STATE, "problem.pdf"))
+      || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
+  )("verifies the exact Q43-Q45 shared-passage manual authorities without inventing a terminal", async () => {
+    expect(manualAdjudicationAllowlistFingerprint())
+      .toBe("7851318ea1e176be603db1f2679081e16ef222d90ff704e39dce8d47db446268");
+    expect(manualAdjudicationAllowlistFingerprint())
+      .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
+    const expectedRows = new Map([
+      ["16:43", {
+        row: "fc841055b1d90f58e118b165cc00b356aff8f0ead1de89b30bdeee54a61846f1",
+        spec: "48a46e5183398c07c9207706cff83cf1fea85a441777b6a81223186976eddc72",
+        status: "exact",
+      }],
+      ["16:44", {
+        row: "14ac8dc295ca946619aa61c9e83e9dd5fe11b5bd7eea3cfdb8e44b0ff1a65a49",
+        spec: "57b3f8211b1d65489be9c677b7c5a32503f72e2b2711f535a1c04097111c5bb0",
+        status: "mismatch",
+      }],
+      ["16:45", {
+        row: "0cf6173c1aee8aa61d6d57af5b7665af207e864438a73d78eb93a7a3543f00fd",
+        spec: "43f159475ecbbd6d3ecdd8d031abc0903f9bee5783145afb6a92c8a13e989055",
+        status: "mismatch",
+      }],
+    ]);
+    for (const spec of Q43_TO_45_MANUAL_SPECS) {
+      expect(canonicalEvidenceHash(spec)).toBe(expectedRows.get(spec.key)!.row);
+    }
+    const rows = await q43To45ManualAuthorityFixture();
+    const verify = (
+      row: (typeof rows)[number],
+      manualAdjudication: unknown = row.adjudicated.evidence,
+      parentRecovery: Record<string, unknown> = row.parent as unknown as Record<string, unknown>,
+      failedClassification: unknown = row.failed.classification,
+    ) => withOnlyManualArtifactsForKey(row.stateDir, row.spec.key, () =>
+      verifyProblemManualAdjudicationForTest({
+        stateDir: row.stateDir,
+        entry: row.input.entry,
+        problemEvidence: row.input.problem,
+        parentRecovery,
+        failedQuestion: row.failed.question,
+        failedClassification,
+        manualAdjudication,
+      }));
+
+    try {
+      for (const row of rows) {
+        expect(row.failed.classification.transcription_status).toBe(expectedRows.get(row.spec.key)!.status);
+        const verified = verify(row) as {
+          question: QuizItemEx;
+          classification: ClassificationDecision;
+          evidence: Record<string, any>;
+        };
+        const expectedQuestion = applyAllowlistedProblemManualCorrection(
+          row.input.entry.id,
+          row.input.problem.sha256,
+          row.failed.question,
+        );
+        expect(canonicalEvidenceHash(verified.question)).toBe(canonicalEvidenceHash(expectedQuestion));
+        expect(verified.question.question).toContain("[43 ~ 45] 다음 글을 읽고 물음에 답하시오.");
+        expect(verified.question.question).toContain("천하의 글은 같아 필담이나 하오리라");
+        expect(verified.question.question).toContain("흥정 외상 셈하려 주주리는 지저귄다");
+        expect(verified.question.figure_description).toContain("오른쪽으로 열린 세로 묶음 괄호가 정확히 두 개");
+        expect(verified.classification).toMatchObject({
+          key: row.spec.key,
+          decision: "accept",
+          canonical_subject: "korean_literature",
+          transcription_status: "exact",
+        });
+        expect(verified.evidence).toMatchObject({
+          allowlistId: row.spec.allowlistId,
+          parentRecoveryEvidenceHash: row.spec.parentRecoveryEvidenceHash,
+          correctionSpecHash: expectedRows.get(row.spec.key)!.spec,
+        });
+      }
+      expect((verify(rows[0]) as { question: QuizItemEx }).question.choices?.[3])
+        .toContain("외양과 감정을");
+      expect((verify(rows[1]) as { question: QuizItemEx }).question.choices?.[3])
+        .toContain("새로운 계책을 마련한 기쁨");
+      expect((verify(rows[2]) as { question: QuizItemEx }).question.choices?.[4])
+        .toContain("메밀떡에 밀다식에 겉밤");
+
+      expect(() => verify(rows[0], rows[1].adjudicated.evidence))
+        .toThrow(/allowlist\/parent authority/u);
+      expect(() => verify(rows[0], rows[0].adjudicated.evidence,
+        rows[1].parent as unknown as Record<string, unknown>))
+        .toThrow(/allowlist\/parent authority/u);
+
+      const wrongExactStatus = structuredClone(rows[0].failed.classification);
+      wrongExactStatus.transcription_status = "mismatch";
+      expect(() => verify(rows[0], rows[0].adjudicated.evidence,
+        rows[0].parent as unknown as Record<string, unknown>, wrongExactStatus))
+        .toThrow(/allowlisted exhausted recovery status/u);
+      const wrongDefaultStatus = structuredClone(rows[1].failed.classification);
+      wrongDefaultStatus.transcription_status = "exact";
+      expect(() => verify(rows[1], rows[1].adjudicated.evidence,
+        rows[1].parent as unknown as Record<string, unknown>, wrongDefaultStatus))
+        .toThrow(/allowlisted exhausted recovery status/u);
+
+      const missingPath = join(rows[2].stateDir, rows[2].adjudicated.evidence.classificationArtifact.path);
+      const missingBytes = readFileSync(missingPath);
+      rmSync(missingPath);
+      expect(() => verify(rows[2])).toThrow();
+      writeFileSync(missingPath, missingBytes);
+
+      const tamperedPath = join(rows[1].stateDir, rows[1].adjudicated.evidence.problemArtifact.path);
+      const tamperedBytes = readFileSync(tamperedPath);
+      writeFileSync(tamperedPath, Buffer.concat([tamperedBytes, Buffer.from("tampered")]));
+      expect(() => verify(rows[1])).toThrow(/hash mismatch/u);
+      writeFileSync(tamperedPath, tamperedBytes);
+
+      withOnlyManualArtifactsForKey(rows[0].stateDir, rows[0].spec.key, () => {
+        const orphanPath = join(
+          rows[0].stateDir,
+          "problem-manual-adjudications",
+          `v1-0016-0043-${"1".repeat(64)}.json`,
+        );
+        writeJson(orphanPath, {});
+        try {
+          expect(() => verifyProblemManualAdjudicationForTest({
+            stateDir: rows[0].stateDir,
+            entry: rows[0].input.entry,
+            problemEvidence: rows[0].input.problem,
+            parentRecovery: rows[0].parent as unknown as Record<string, unknown>,
+            failedQuestion: rows[0].failed.question,
+            failedClassification: rows[0].failed.classification,
+            manualAdjudication: rows[0].adjudicated.evidence,
+          })).toThrow(/not declared/u);
+        } finally {
+          rmSync(orphanPath);
+        }
+      });
+
+      const outside = mkdtempSync(join(tmpdir(), "verify-manual-inventory-symlink-"));
+      const symlinkPath = join(rows[0].stateDir, "problem-manual-revisions");
+      symlinkSync(outside, symlinkPath);
+      try {
+        expect(() => verify(rows[0])).toThrow(/confined regular directory/u);
+      } finally {
+        rmSync(symlinkPath);
+        rmSync(outside, { recursive: true, force: true });
+      }
+
+      expect(existsSync(join(rows[0].stateDir, "answer-audit"))).toBe(false);
+      expect(existsSync(join(rows[0].stateDir, "answer-attestation"))).toBe(false);
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(rows[0].stateDir, { recursive: true, force: true });
+    }
+  }, 180_000);
 
   it("keeps the repair-scope allowlist byte-aligned with the importer", () => {
     expect(repairScopeAdjudicationAllowlistFingerprint())

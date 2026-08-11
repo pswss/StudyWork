@@ -2204,6 +2204,7 @@ type ProblemManualReplacement = {
 type ProblemManualAdjudicationSpec = ProblemCropAdjudicationSpec & {
   parentKind: "recovery" | "crop";
   parentRecoveryEvidenceHash?: string;
+  failedStatus?: "exact";
   dpi?: number;
   failedQuestionHash: string;
   failedClassificationHash: string;
@@ -2587,6 +2588,249 @@ const Q27_FIGURE_DESCRIPTION =
   "비쳐 보여요, 우리 얼굴이……’부터 ‘물이 맑고 시원해요.’까지의 오른쪽에는 같은 모양의 세로 " +
   "묶음 괄호 [B]가 하나 있다. [A]와 [B]는 각각 정확히 한 번 보이며, 두 괄호는 29번에서 두 " +
   "부분을 비교하는 표지이다.";
+
+const Q43_5525982_FAILED_QUESTION = [
+  "다음 글을 읽고 물음에 답하시오.",
+  "",
+  "좌우에 탁자 놓아 만권 서책 쌓아 놓고",
+  "㉠ 자명종과 자명악은 절로 울어 소리하며",
+  "좌우에 당전(唐氈) 깔고 담방석과 백전요며",
+  "㉡ 이편저편 화류교의(樺榴交椅) 서로 마주 걸터앉고",
+  "거기 사람 처음 인사 차 한 그릇 갖다 준다",
+  "",
+  "[A]",
+  "화찻종에 대를 받쳐 가득 부어 권하거늘",
+  "파르스름 노르스름 향기가 만구하데",
+  "저희들과 우리들이 언어가 같지 않아",
+  "말 한마디 못 해 보고 덤덤하니 앉았으니",
+  "귀머거리 벙어린 듯 물끄러미 서로 보다",
+  "친하여 글은 같아 필담이나 하오리라",
+  "담헌(湛軒)에 먹을 갈아 양호수필(羊毫鬚筆) 덤벅 찍어",
+  "시전지(詩箋紙)를 빼어 들고 글씨 써서 말을 하니",
+  "묻는 말과 대답함을 글귀 절로 오락가락",
+  "간담을 상응하여 정곡(情曲) 상통(相通)하는구나",
+  "",
+  "(중략)",
+  "",
+  "[B]",
+  "황상이 상을 주사 예부상서 거행한다",
+  "삼 사신과 역관이며 마두와 노자(奴子)까지",
+  "은자며 비단 등속 차례로 받아 놓고",
+  "삼배(三拜)에 구고두(九叩頭)하고 사례하고 돌아오니",
+  "삼 사신과 역관들이 예부로 나아가니",
+  "대청 위에 포진하고 상을 차려 놓은 모양",
+  "메밀떡에 밀다식에 결밥 머루 비자(榧子) 등물(等物)",
+  "푸닥거리 상 벌이듯 좌우에 떠벌였다",
+  "다 각기 한 상씩을 앞에다 받아 놓으니",
+  "비위가 뒤집혀서 먹을 것이 전혀 없네",
+  "삼배주를 마시는 듯 연파(宴罷)하고 일어서서",
+  "뜰에 내려 북향하여 구고두 사례한 후",
+  "관소로 돌아와서 회환(回還) 날짜 택일하니",
+  "㉢ 사람마다 짐 동이느라 각 방은 분분하고",
+  "황점 외상 셈하러 점주인은 지저귄다",
+  "㉣ 장계(狀啓)를 발정(發程)하여 선래 군관(先來軍官) 전송하고",
+  "추칠월 십일일에 회환하여 떠나오니",
+  "한 달 닷새 유하다가 시원하고 상연(爽然)하구나",
+  "천일방(天一方) 우리 서울 창망하다 갈 길이여",
+  "풍진이 분운(紛紜)한데 집 소식이 돈절하니",
+  "사오 삭(朔) 타국 객이 귀심(歸心)이 살 같구나",
+  "숭문문 내달아서 동국로 향해 가니",
+  "㉤ 올 적에 심은 곡식 추수가 한창이요",
+  "서풍이 삽삽하여 가을빛이 쾌히 난다",
+  "",
+  "－홍순학, 「연행가」－",
+  "",
+  "* 구고두: 공경하는 뜻으로 머리를 땅에 아홉 번 조아림.",
+  "* 상마연: 일을 마치고 떠나가는 외국 사신들을 위하여 베풀던 잔치.",
+  "",
+  "윗글에 대한 설명으로 가장 적절한 것은?",
+].join("\n");
+
+const Q44_5525982_FAILED_QUESTION = [
+  "다음 글을 읽고 물음에 답하시오.",
+  "",
+  "좌우에 탁자 놓아 만권 서책 쌓아 놓고",
+  "㉠ 자명종과 자명악은 절로 울어 소리하며",
+  "좌우에 당전(唐氈) 깔고 담방석과 백전요며",
+  "㉡ 이편저편 화류교의(樺榴交椅) 서로 마주 걸터앉고",
+  "거기 사람 처음 인사 차 한 그릇 갖다 준다",
+  "",
+  "[A]",
+  "화찻종에 대를 받쳐 가득 부어 권하기를",
+  "파르스름 노르스름 향기가 만구하데",
+  "저희들과 우리들이 언어가 같지 않아",
+  "말 한마디 못 해 보고 덤덤하니 앉았으니",
+  "귀머거리 벙어린 듯 물끄러미 서로 보다",
+  "친하여 글은 같아 필담이나 하오리라",
+  "당연(唐硯)에 먹을 갈아 양호수필(羊毫鬚筆) 덤뿍 찍어",
+  "시전지(詩箋紙)를 빼어 들고 글씨 써서 말을 하니",
+  "묻는 말과 대답함을 글귀 절로 오락가락",
+  "간담을 상응하여 정곡(情曲) 상통(相通)하는구나",
+  "",
+  "(중략)",
+  "",
+  "[B]",
+  "황상이 상을 주사 예부상서 거행한다",
+  "삼 사신과 역관이며 마두와 노자(奴子)까지",
+  "은자며 비단 등속 차례로 받아 놓고",
+  "삼배(三拜)에 구고두(九叩頭)*로 사례하고 돌아오니",
+  "상마연* 잔치한다 예부에서 지휘하기로",
+  "삼 사신과 역관들이 예부로 나아가니",
+  "대청 위에 포진하고 상을 차려 놓은 모양",
+  "메밀떡에 밀다식에 결밥 머루 비자(榧子) 등물(等物)",
+  "푸닥거리 상 벌이듯 좌우에 떠벌였다",
+  "다 각기 한 상씩을 앞에다 받아 놓으니",
+  "비위가 뒤집혀서 먹을 것이 전혀 없네",
+  "삼배주를 마시는 듯 연파(宴罷)하고 일어서서",
+  "뜰에 내려 북향하여 구고두 사례한 후",
+  "관소로 돌아와서 회환(回還) 날짜 택일하니",
+  "㉢ 사관마다 짐 동이느라 각 방은 분분하고",
+  "홍정 회상 세하러 주주리는 지저귀다",
+  "㉣ 장계(狀啓)를 발정(發程)하여 선래 군관(先來軍官) 전송하고",
+  "추칠월 십일일에 회환하여 떠나오니",
+  "한 달 닷새 유하다가 시원하고 상연(爽然)하구나",
+  "천일방(天一方) 우리 서울 창망하다 갈 길이여",
+  "풍진이 분운(紛紜)한데 집 소식이 돈절하니",
+  "사오 삭(朔) 타국 객이 귀심(歸心)이 살 같구나",
+  "숭문문 내달아서 동주로 향해 가니",
+  "㉤ 올 적에 심은 곡식 추수가 한창이요",
+  "서풍이 삽삽하여 가을빛이 쾌히 난다",
+  "",
+  "- 홍순학, 「연행가」 -",
+  "",
+  "* 구고두: 공경하는 뜻으로 머리를 땅에 아홉 번 조아림.",
+  "* 상마연: 일을 마치고 떠나가는 외국 사신들을 위하여 베풀던 잔치.",
+  "",
+  "㉠~㉤을 이해한 내용으로 가장 적절한 것은?",
+].join("\n");
+
+const Q45_5525982_FAILED_QUESTION = [
+  "다음 글을 읽고 물음에 답하시오.",
+  "",
+  "좌우에 탁자 놓아 만련 서책 쌓아 놓고",
+  "㉠ 자명종과 자명악은 절로 울어 소리하며",
+  "좌우에 당전(唐氈) 깔고 담방석과 백전요며",
+  "㉡ 이편저편 화류교의(樺榴交椅) 서로 마주 걸터앉고",
+  "거기 사람 처음 인사 차 한 그릇 갖다 준다",
+  "화찻종에 대를 받쳐 가득 부어 권하기를",
+  "파르스름 노르스름 향취가 만구하데",
+  "저희들과 우리들이 언어가 같지 않아",
+  "말 한마디 못 해 보고 덤덤하니 앉았으니",
+  "",
+  "[A]",
+  "귀머거리 벙어린 듯 물끄러미 서로 보다",
+  "천하의 글은 같아 필담이나 하오리라",
+  "당연(唐硯)에 먹을 갈아 양호수필(羊毫鬚筆) 덤뿍 찍어",
+  "시전지(詩箋紙)를 빼어 들고 글씨 써서 말을 하니",
+  "묻는 말과 대답함을 글귀 절로 오락가락",
+  "간담을 상응하여 정곡(情曲) 상통(相通)하는구나",
+  "",
+  "(중략)",
+  "",
+  "황상이 상을 주사 예부상서 거행한다",
+  "삼 사신과 역관이며 마두와 노자(奴子)까지",
+  "은자며 비단 등속 차례로 받아 놓고",
+  "삼배(三拜)에 구고두(九叩頭)*로 사례하고 돌아오니",
+  "상마연* 잔치한다 예부에서 지휘하기로",
+  "삼 사신과 역관들이 예부로 나아가니",
+  "대청 위에 포진하고 상을 차려 놓은 모양",
+  "",
+  "[B]",
+  "메밀떡에 밀다식에 결밤 머루 비자(榧子) 등물(等物)",
+  "푸닥거리 상 벌이듯 좌우에 떠벌였다",
+  "다 각기 한 상씩을 앞에다 받아 놓으니",
+  "비위가 뒤집혀서 먹을 것이 전혀 없네",
+  "삼배주를 마시는 듯 연파(宴罷)하고 일어서서",
+  "뜰에 내려 북향하여 구고두 사례한 후",
+  "관소로 돌아와서 회환(回還) 날짜 택일하니",
+  "㉢ 사람마다 짐 동이느라 각 방은 분분하고",
+  "홍정 의상 잽히려 주주리는 지저귄다",
+  "㉣ 장계(狀啓)를 발정(發程)하여 선래 군관(先來軍官) 전송하고",
+  "추칠월 십일일에 회환하여 떠나오니",
+  "한 달 닷새 유하다가 시원하고 상연(爽然)하구나",
+  "천일방(天一方) 우리 서울 창망하다 갈 길이여",
+  "풍진이 분운(紛紜)한데 집 소식이 돈절하니",
+  "사오 삭(朔) 타국 객이 귀심(歸心)이 살 같구나",
+  "숭문문 내달아서 통주로 향해 가니",
+  "㉤ 올 적에 심은 곡식 추수가 한창이요",
+  "서풍이 삽삽하여 가을빛이 쾌히 난다",
+  "",
+  "- 홍순학, 「연행가」 -",
+  "",
+  "* 구고두: 공경하는 뜻으로 머리를 땅에 아홉 번 조아림.",
+  "* 상마연: 일을 마치고 떠나가는 외국 사신들을 위하여 베풀던 잔치.",
+  "",
+  "[A], [B]에 대한 감상으로 적절하지 않은 것은? [3점]",
+].join("\n");
+
+const Q43_45_5525982_PASSAGE = [
+  "[43 ~ 45] 다음 글을 읽고 물음에 답하시오.",
+  "",
+  "좌우에 탁자 놓아 만권 서책 쌓아 놓고",
+  "㉠ 자명종과 자명악은 절로 울어 소리하며",
+  "좌우에 당전(唐氈) 깔고 담방석과 백전요며",
+  "㉡ 이편저편 화류교의(樺榴交椅) 서로 마주 걸터앉고",
+  "[A]",
+  "거기 사람 처음 인사 차 한 그릇 갖다 준다",
+  "화찻종에 대를 받쳐 가득 부어 권하거늘",
+  "파르스름 노르스름 향취가 만구하데",
+  "저희들과 우리들이 언어가 같지 않아",
+  "말 한마디 못 해 보고 덤덤하니 앉았으니",
+  "귀머거리 벙어린 듯 물끄러미 서로 보다",
+  "천하의 글은 같아 필담이나 하오리라",
+  "당연(唐硯)에 먹을 갈아 양호수필(羊毫鬚筆) 덤뻑 찍어",
+  "시전지(詩箋紙)를 빼어 들고 글씨 써서 말을 하니",
+  "묻는 말과 대답함을 글귀 절로 오락가락",
+  "간담을 상응하여 정곡(情曲) 상통(相通)하는구나",
+  "",
+  "(중략)",
+  "",
+  "[B]",
+  "황상이 상을 주사 예부상서 거행한다",
+  "삼 사신과 역관이며 마두와 노자(奴子)까지",
+  "은자며 비단 등속 차례로 받아 놓고",
+  "삼배(三拜)에 구고두(九叩頭)*로 사례하고 돌아오니",
+  "상마연* 잔치한다 예부에서 지휘하기로",
+  "삼 사신과 역관들이 예부로 나아가니",
+  "대청 위에 포진하고 상을 차려 놓은 모양",
+  "메밀떡에 밀다식에 겉밤 머루 비자(榧子) 등물(等物)",
+  "푸닥거리 상 벌이듯 좌우에 떠벌였다",
+  "다 각기 한 상씩을 앞에다 받아 놓으니",
+  "비위가 뒤집혀서 먹을 것이 전혀 없네",
+  "삼배주를 마시는 듯 연파(宴罷)하고 일어서서",
+  "뜰에 내려 북향하여 구고두 사례한 후",
+  "관소로 돌아와서 회환(回還) 날짜 택일하니",
+  "㉢ 사람마다 짐 동이느라 각 방은 분분하고",
+  "흥정 외상 셈하려 주주리는 지저귄다",
+  "㉣ 장계(狀啓)를 발정(發程)하여 선래 군관(先來軍官) 전송하고",
+  "추칠월 십일일에 회환하여 떠나오니",
+  "한 달 닷새 유하다가 시원하고 상연(爽然)하구나",
+  "천일방(天一方) 우리 서울 창망하다 갈 길이여",
+  "풍진이 분운(紛紜)한데 집 소식이 돈절하니",
+  "사오 삭(朔) 타국 객이 귀심(歸心)이 살 같구나",
+  "숭문문 내달아서 통주로 향해 가니",
+  "㉤ 올 적에 심은 곡식 추수가 한창이요",
+  "서풍이 삽삽하여 가을빛이 쾌히 난다",
+  "",
+  "- 홍순학, ｢연행가｣ -",
+  "",
+  "* 구고두 : 공경하는 뜻으로 머리를 땅에 아홉 번 조아림.",
+  "* 상마연 : 일을 마치고 떠나가는 외국 사신들을 위하여 베풀던 잔치.",
+].join("\n");
+
+const Q43_5525982_CORRECTED_QUESTION =
+  `${Q43_45_5525982_PASSAGE}\n\n43. 윗글에 대한 설명으로 가장 적절한 것은?`;
+const Q44_5525982_CORRECTED_QUESTION =
+  `${Q43_45_5525982_PASSAGE}\n\n44. ㉠ ~ ㉤을 이해한 내용으로 가장 적절한 것은?`;
+const Q45_5525982_CORRECTED_QUESTION =
+  `${Q43_45_5525982_PASSAGE}\n\n45. [A], [B]에 대한 감상으로 적절하지 않은 것은? [3점]`;
+
+const Q43_45_5525982_FIGURE_DESCRIPTION =
+  "공식 16쪽 왼쪽 제시문에는 오른쪽으로 열린 세로 묶음 괄호가 정확히 두 개 있다. " +
+  "[A]는 ‘거기 사람 처음 인사 차 한 그릇 갖다 준다’부터 ‘간담을 상응하여 정곡(情曲) " +
+  "상통(相通)하는구나’까지를 묶고, [B]는 ‘황상이 상을 주사 예부상서 거행한다’부터 " +
+  "‘관소로 돌아와서 회환(回還) 날짜 택일하니’까지를 묶는다. 두 괄호는 위에서 아래로 " +
+  "[A], [B] 순서이며 서로 겹치지 않는다.";
 
 const Q43_FAILED_QUESTION = [
   "다음 글을 읽고 물음에 답하시오.",
@@ -3094,6 +3338,128 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     }],
     figure: true,
     figureDescription: Q27_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  },
+  {
+    allowlistId: "ebsi-5525982-q43-manual-v1",
+    entryId: "ebsi:5525982",
+    key: "16:43",
+    sourcePage: 16,
+    sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "84d4b49f54feb1f985136877a7edb551fa429895815f8969f9ec1d1b09fba975",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "40fbcf1de1b8b75e83c7844f7dbc7d344f07bb4ddea4f4d6276fc4f33d2fdc64",
+    failedClassificationHash: "94b5fea2802e20abc5af5c06d9c94f7411c08959b874bbfba5adafb7126924b7",
+    failedClassificationEvidenceHash: "4d198c7a1eb297bad447eec04eacb0634b02cbecbdd5d5a3713157773a674a4e",
+    views: [
+      { sourcePage: 16, label: "p16 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 16, label: "p16 left shared passage", rect: [0.07, 0.12, 0.50, 0.93] },
+      { sourcePage: 16, label: "p16 right Q43-Q44", rect: [0.50, 0.12, 0.95, 0.53] },
+    ],
+    requiredTokens: [
+      "[43 ~ 45]", "향취가", "귀머거리", "천하의 글은 같아", "당연(唐硯)", "덤뻑", "[A]",
+      "상마연* 잔치한다", "겉밤", "[B]", "짐 동이느라", "셈하려", "紛紜", "통주로", "삽삽하여",
+      "- 홍순학, ｢연행가｣ -", "43.", "외양과 감정", "오른쪽으로 열린 세로 묶음 괄호가 정확히 두 개",
+      "관소로 돌아와서 회환(回還) 날짜 택일하니",
+    ],
+    replacements: [{
+      field: "question",
+      from: Q43_5525982_FAILED_QUESTION,
+      to: Q43_5525982_CORRECTED_QUESTION,
+      count: 1,
+    }, {
+      field: "choices",
+      from: "④ 공식적인 행사에 참여한 다양한 사람들의 의상과 감정을 개성적으로 표현하고 있다.",
+      to: "④ 공식적인 행사에 참여한 다양한 사람들의 외양과 감정을 개성적으로 표현하고 있다.",
+      count: 1,
+    }],
+    figure: true,
+    figureDescription: Q43_45_5525982_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  },
+  {
+    allowlistId: "ebsi-5525982-q44-manual-v1",
+    entryId: "ebsi:5525982",
+    key: "16:44",
+    sourcePage: 16,
+    sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "af872af9b7cd1bf3d601cd052e0151aa4220054dbf534d94db4fc1e0f32af800",
+    dpi: 600,
+    failedQuestionHash: "1a9a5ffba8dc8f7fe71ce7f334f59c319024de355592e64484e552934f9473f1",
+    failedClassificationHash: "87ee1aa1daded6626f0dfa2a4ae16bd29b8759a9da87cc07b841100be4251e26",
+    failedClassificationEvidenceHash: "144eee0e06dc7653be0e32f4118a0c39f3a963f1ac3c6c56b2bd9261a09cf6d7",
+    views: [
+      { sourcePage: 16, label: "p16 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 16, label: "p16 left shared passage", rect: [0.07, 0.12, 0.50, 0.93] },
+      { sourcePage: 16, label: "p16 right Q43-Q44", rect: [0.50, 0.12, 0.95, 0.53] },
+    ],
+    requiredTokens: [
+      "[43 ~ 45]", "권하거늘", "향취가", "천하의 글은 같아", "덤뻑", "겉밤", "사람마다",
+      "셈하려", "통주로", "- 홍순학, ｢연행가｣ -", "44. ㉠ ~ ㉤", "㉣ : 대구적 표현",
+      "새로운 계책", "오른쪽으로 열린 세로 묶음 괄호가 정확히 두 개",
+    ],
+    replacements: [{
+      field: "question",
+      from: Q44_5525982_FAILED_QUESTION,
+      to: Q44_5525982_CORRECTED_QUESTION,
+      count: 1,
+    },
+    ...["㉠", "㉡", "㉢", "㉣", "㉤"].map((marker) => ({
+      field: "choices" as const,
+      from: `${marker}:`,
+      to: `${marker} :`,
+      count: 1,
+    })), {
+      field: "choices",
+      from: "새로운 계절을 마련한 기쁨",
+      to: "새로운 계책을 마련한 기쁨",
+      count: 1,
+    }],
+    figure: true,
+    figureDescription: Q43_45_5525982_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  },
+  {
+    allowlistId: "ebsi-5525982-q45-manual-v1",
+    entryId: "ebsi:5525982",
+    key: "16:45",
+    sourcePage: 16,
+    sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "fcae74eb4bb77c17f41dff806dc6866863c4debc15c99051e4a0e3a81abb3ae3",
+    dpi: 600,
+    failedQuestionHash: "ba0d851b6048c4de5f86240cda0f054a66f2c54408d47ca284abf596da4198db",
+    failedClassificationHash: "0b01d04bbf79fa3cd6b5adb9fe56d2e27973580e5832930527ca0076b6fe13cc",
+    failedClassificationEvidenceHash: "7b5e6f9fc0da577951c4a71a173e958f93ac2b9a80af042408fd27a8734f4ed9",
+    views: [
+      { sourcePage: 16, label: "p16 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 16, label: "p16 left shared passage", rect: [0.07, 0.12, 0.50, 0.93] },
+      { sourcePage: 16, label: "p16 right Q45", rect: [0.50, 0.53, 0.95, 0.80] },
+    ],
+    requiredTokens: [
+      "[43 ~ 45]", "만권 서책", "권하거늘", "향취가", "덤뻑", "겉밤", "셈하려", "狀啓",
+      "45. [A], [B]", "뜰에 내려 북향하여", "‘우리들’은", "감사를 표하는", "귀머거리 벙어린 듯",
+      "메밀떡에 밀다식에 겉밤", "오른쪽으로 열린 세로 묶음 괄호가 정확히 두 개",
+    ],
+    replacements: [{
+      field: "question",
+      from: Q45_5525982_FAILED_QUESTION,
+      to: Q45_5525982_CORRECTED_QUESTION,
+      count: 1,
+    }, {
+      field: "choices",
+      from: "‘메밀떡에 밀다식에 결밤’",
+      to: "‘메밀떡에 밀다식에 겉밤’",
+      count: 1,
+    }],
+    figure: true,
+    figureDescription: Q43_45_5525982_FIGURE_DESCRIPTION,
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_literature",
   },
@@ -3767,8 +4133,22 @@ async function prepareProblemCropEvidence(
   problem: PdfEvidence,
   stateDir: string,
   spec: ProblemCropAdjudicationSpec,
-  options: { namespace?: string; version?: number; dpi?: number } = {}
-): Promise<PreparedProblemCropEvidence> {
+  options: { namespace?: string; version?: number; dpi?: number; preflightOnly: true }
+): Promise<PreparedProblemCropEvidence | null>;
+async function prepareProblemCropEvidence(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  stateDir: string,
+  spec: ProblemCropAdjudicationSpec,
+  options?: { namespace?: string; version?: number; dpi?: number; preflightOnly?: false }
+): Promise<PreparedProblemCropEvidence>;
+async function prepareProblemCropEvidence(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  stateDir: string,
+  spec: ProblemCropAdjudicationSpec,
+  options: { namespace?: string; version?: number; dpi?: number; preflightOnly?: boolean } = {}
+): Promise<PreparedProblemCropEvidence | null> {
   const namespace = options.namespace ?? "problem-crop-evidence";
   const version = options.version ?? PROBLEM_CROP_ADJUDICATION_VERSION;
   const dpi = options.dpi ?? PROBLEM_CROP_DPI;
@@ -3809,6 +4189,14 @@ async function prepareProblemCropEvidence(
       }) || !Array.isArray(checkpoint.views) || checkpoint.views.length !== spec.views.length
     ) throw new Error(`기존 crop evidence 메타데이터가 다릅니다: ${checkpointPath}`);
   } else {
+    const expectedBinaryPaths = [
+      pdfPath,
+      ...spec.views.map((_, index) => join(
+        stateDir,
+        `${namespace}/${stem}-view-${String(index).padStart(2, "0")}.png`
+      )),
+    ];
+    if (options.preflightOnly && expectedBinaryPaths.every((path) => !existsSync(path))) return null;
     await withImporterPdfForAnalysis(problem, async (analysisProblem) => {
       const tempDir = mkdtempSync(join(tmpdir(), "studywork-problem-crop-"));
       try {
@@ -3875,29 +4263,32 @@ async function prepareProblemCropEvidence(
             throw new Error(`기존 binary evidence가 다릅니다: ${expected.target}`);
           }
         }
-        const persistedViews: ProblemCropAdjudicationEvidence["cropViews"] = [];
-        for (const [index, { path, ...view }] of rendered.entries()) {
-          const viewRelativePath = `${namespace}/${stem}-view-${String(index).padStart(2, "0")}.png`;
-          const viewSha = await copyImmutableBinary(path, join(stateDir, viewRelativePath));
-          if (viewSha !== view.pixelSha256) throw new Error(`${spec.key} crop evidence view hash가 다릅니다`);
-          persistedViews.push({ ...view, artifact: { path: viewRelativePath, sha256: viewSha } });
+        if (!options.preflightOnly) {
+          const persistedViews: ProblemCropAdjudicationEvidence["cropViews"] = [];
+          for (const [index, { path, ...view }] of rendered.entries()) {
+            const viewRelativePath = `${namespace}/${stem}-view-${String(index).padStart(2, "0")}.png`;
+            const viewSha = await copyImmutableBinary(path, join(stateDir, viewRelativePath));
+            if (viewSha !== view.pixelSha256) throw new Error(`${spec.key} crop evidence view hash가 다릅니다`);
+            persistedViews.push({ ...view, artifact: { path: viewRelativePath, sha256: viewSha } });
+          }
+          const evidencePdfSha = await copyImmutableBinary(tempPdf, pdfPath);
+          checkpoint = {
+            version,
+            entryId: entry.id,
+            basisDigest,
+            basis,
+            renderer: "pdftocairo-png+pdf-lib",
+            dpi,
+            evidencePdf: { path: pdfRelativePath, sha256: evidencePdfSha },
+            views: persistedViews,
+          };
+          await writeImmutableEvidence(checkpointPath, checkpoint);
         }
-        const evidencePdfSha = await copyImmutableBinary(tempPdf, pdfPath);
-        checkpoint = {
-          version,
-          entryId: entry.id,
-          basisDigest,
-          basis,
-          renderer: "pdftocairo-png+pdf-lib",
-          dpi,
-          evidencePdf: { path: pdfRelativePath, sha256: evidencePdfSha },
-          views: persistedViews,
-        };
-        await writeImmutableEvidence(checkpointPath, checkpoint);
       } finally {
         rmSync(tempDir, { recursive: true, force: true });
       }
     });
+    if (options.preflightOnly) return null;
   }
   const checkpointSha = await sha256File(checkpointPath);
   if (checkpointSha !== canonicalEvidenceHash(checkpoint!)) {
@@ -10887,6 +11278,7 @@ function problemManualCorrectionSpecHash(spec: ProblemManualAdjudicationSpec): s
     ...(spec.parentRecoveryEvidenceHash
       ? { parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash }
       : {}),
+    ...(spec.failedStatus ? { failedStatus: spec.failedStatus } : {}),
     views: spec.views,
     ...(spec.dpi ? { dpi: spec.dpi } : {}),
     requiredTokens: spec.requiredTokens,
@@ -11464,6 +11856,192 @@ async function reviseProblemManualAdjudication(
   };
 }
 
+function isQ43To45ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5525982" && ["16:43", "16:44", "16:45"].includes(spec.key);
+}
+
+async function restoredPinnedManualRecovery(
+  entry: CorpusManifestEntry,
+  stateDir: string,
+  spec: ProblemManualAdjudicationSpec
+): Promise<{ failed: ClassifiedQuestion; parent: ProblemRecoveryEvidence }> {
+  const page = String(spec.sourcePage).padStart(4, "0");
+  const number = spec.key.split(":")[1]!.padStart(4, "0");
+  const keyPattern = new RegExp(`^v\\d+-${page}-${number}-`, "u");
+  const problemNames = strictArtifactNames(
+    join(stateDir, "problem-recoveries"),
+    "manual batch problem recovery",
+    (name) => /^v\d+-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
+  ).filter((name) => keyPattern.test(name));
+  const classificationNames = strictArtifactNames(
+    join(stateDir, "classification-recoveries"),
+    "manual batch classification recovery",
+    (name) => /^v\d+-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
+  ).filter((name) => keyPattern.test(name));
+  if (problemNames.length !== 1 || classificationNames.length !== 1) {
+    throw new Error(`${spec.key} manual batch recovery exact-set가 다릅니다`);
+  }
+  const problemRelativePath = `problem-recoveries/${problemNames[0]}`;
+  const classificationRelativePath = `classification-recoveries/${classificationNames[0]}`;
+  const problemPath = confinedStateFile(stateDir, problemRelativePath, "manual batch problem recovery");
+  const classificationPath = confinedStateFile(
+    stateDir,
+    classificationRelativePath,
+    "manual batch classification recovery"
+  );
+  const problemCheckpoint = object(JSON.parse(readFileSync(problemPath, "utf8")), problemRelativePath);
+  const classificationCheckpoint = object(
+    JSON.parse(readFileSync(classificationPath, "utf8")),
+    classificationRelativePath
+  );
+  const problemBasis = object(problemCheckpoint.basis, `${spec.key} manual batch recovery basis`);
+  const problemBasisDigest = canonicalEvidenceHash(problemBasis);
+  const problemSha = await sha256File(problemPath);
+  const question = restoredQuizItems([problemCheckpoint.item])[0];
+  const questionHash = canonicalEvidenceHash(question);
+  const expectedProblemPath = `problem-recoveries/v${PROBLEM_RECOVERY_VERSION}-${page}-${number}-` +
+    `${problemBasisDigest}.json`;
+  if (
+    problemRelativePath !== expectedProblemPath || problemCheckpoint.version !== PROBLEM_RECOVERY_VERSION ||
+    problemCheckpoint.entryId !== entry.id || problemCheckpoint.basisDigest !== problemBasisDigest ||
+    problemCheckpoint.promptVersion !== TARGETED_PROBLEM_RECOVERY_VERSION ||
+    problemCheckpoint.promptDigest !== TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST ||
+    problemCheckpoint.model !== IMPORT_MODEL || problemCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+    problemSha !== canonicalEvidenceHash(problemCheckpoint) || problemBasis.key !== spec.key ||
+    problemBasis.sourcePage !== spec.sourcePage || problemBasis.sourceHash !== spec.sourceHash ||
+    problemBasis.printedNumber !== spec.key.split(":")[1] ||
+    questionKey(question) !== spec.key || questionHash !== spec.failedQuestionHash
+  ) throw new Error(`${spec.key} manual batch problem recovery envelope가 다릅니다`);
+
+  const classificationBasis = {
+    ...problemBasis,
+    problemArtifact: { path: problemRelativePath, sha256: problemSha },
+    problemArtifactItemHash: questionHash,
+    effectiveQuestionHash: questionHash,
+  };
+  const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+  const classificationSha = await sha256File(classificationPath);
+  const expectedClassificationPath = `classification-recoveries/` +
+    `v${CLASSIFICATION_RECOVERY_VERSION}-${page}-${number}-${classificationBasisDigest}-${CLASSIFIER_DIGEST}.json`;
+  const classificationItems = Array.isArray(classificationCheckpoint.items) ? classificationCheckpoint.items : [];
+  const classification = classificationItems.length === 1
+    ? parseHistoricalDecision(classificationItems[0], spec.key, "manual batch recovery classification")
+    : null;
+  if (
+    classificationRelativePath !== expectedClassificationPath ||
+    classificationCheckpoint.version !== CLASSIFICATION_RECOVERY_VERSION ||
+    classificationCheckpoint.entryId !== entry.id ||
+    classificationCheckpoint.basisDigest !== classificationBasisDigest ||
+    canonicalEvidenceHash(classificationCheckpoint.basis) !== canonicalEvidenceHash(classificationBasis) ||
+    classificationCheckpoint.classifierVersion !== CLASSIFIER_VERSION ||
+    classificationCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+    classificationCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+    classificationCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+    classificationCheckpoint.recoveryPromptVersion !== TARGETED_PROBLEM_RECOVERY_VERSION ||
+    classificationCheckpoint.recoveryPromptDigest !== TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST ||
+    classificationCheckpoint.model !== IMPORT_MODEL ||
+    classificationCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+    classificationSha !== canonicalEvidenceHash(classificationCheckpoint) || !classification ||
+    canonicalEvidenceHash(classification) !== spec.failedClassificationHash ||
+    sha256Text(classification.transcription_evidence) !== spec.failedClassificationEvidenceHash ||
+    (spec.failedStatus === "exact"
+      ? classification.transcription_status !== "exact"
+      : classification.transcription_status === "exact")
+  ) throw new Error(`${spec.key} manual batch classification recovery envelope가 다릅니다`);
+
+  const parent: ProblemRecoveryEvidence = {
+    key: exactString(problemBasis.key, "manual batch recovery key", 100),
+    printedNumber: exactString(problemBasis.printedNumber, "manual batch printed number", 20),
+    sourcePage: Number(problemBasis.sourcePage),
+    sourceHash: exactHash(problemBasis.sourceHash, "manual batch source hash"),
+    contextFrom: Number(problemBasis.contextFrom),
+    contextTo: Number(problemBasis.contextTo),
+    baseProblemRepairArtifact: object(
+      problemBasis.baseProblemRepairArtifact,
+      "manual batch base problem repair"
+    ) as EvidencePointer,
+    baseProblemRepairItemHash: exactHash(
+      problemBasis.baseProblemRepairItemHash,
+      "manual batch base problem item hash"
+    ),
+    baseClassificationRepairArtifact: object(
+      problemBasis.baseClassificationRepairArtifact,
+      "manual batch base classification repair"
+    ) as EvidencePointer,
+    baseClassificationRepairItemHash: exactHash(
+      problemBasis.baseClassificationRepairItemHash,
+      "manual batch base classification item hash"
+    ),
+    baseProblemRevisionArtifact: object(
+      problemBasis.baseProblemRevisionArtifact,
+      "manual batch base problem revision"
+    ) as EvidencePointer,
+    baseProblemRevisionItemHash: exactHash(
+      problemBasis.baseProblemRevisionItemHash,
+      "manual batch base problem revision item hash"
+    ),
+    baseClassificationRevisionArtifact: object(
+      problemBasis.baseClassificationRevisionArtifact,
+      "manual batch base classification revision"
+    ) as EvidencePointer,
+    baseClassificationRevisionItemHash: exactHash(
+      problemBasis.baseClassificationRevisionItemHash,
+      "manual batch base classification revision item hash"
+    ),
+    problemArtifact: { path: problemRelativePath, sha256: problemSha },
+    problemArtifactItemHash: questionHash,
+    classificationArtifact: {
+      path: classificationRelativePath,
+      sha256: classificationSha,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      recoveryPromptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+      recoveryPromptDigest: TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
+    },
+    classificationArtifactItemHash: canonicalEvidenceHash(classification),
+    failedClassificationEvidenceHash: exactHash(
+      problemBasis.failedClassificationEvidenceHash,
+      "manual batch failed classification evidence hash"
+    ),
+    baseQuestionHash: exactHash(problemBasis.baseQuestionHash, "manual batch base question hash"),
+    effectiveQuestionHash: questionHash,
+    baseClassificationHash: exactHash(
+      problemBasis.baseClassificationHash,
+      "manual batch base classification hash"
+    ),
+    effectiveClassificationHash: canonicalEvidenceHash(classification),
+  };
+  if (canonicalEvidenceHash(parent) !== spec.parentRecoveryEvidenceHash) {
+    throw new Error(`${spec.key} manual batch parent recovery hash가 다릅니다`);
+  }
+  return { failed: { question, classification }, parent };
+}
+
+async function preflightQ43To45ProblemManualBatch(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  stateDir: string
+): Promise<void> {
+  const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(isQ43To45ManualBatchSpec);
+  if (
+    specs.length !== 3 || problem.sha256 !== specs[0].sourceHash ||
+    await sha256File(problem.path) !== problem.sha256
+  ) throw new Error("16:43-45 manual batch source/allowlist가 다릅니다");
+  const restored = [] as Array<{
+    spec: ProblemManualAdjudicationSpec;
+    failed: ClassifiedQuestion;
+    parent: ProblemRecoveryEvidence;
+  }>;
+  for (const spec of specs) {
+    const row = await restoredPinnedManualRecovery(entry, stateDir, spec);
+    restored.push({ spec, ...row });
+  }
+  for (const { failed, parent } of restored) {
+    await adjudicateProblemManualOne(entry, problem, stateDir, failed, parent, true);
+  }
+}
+
 export async function adjudicateProblemManual(
   entry: CorpusManifestEntry,
   problem: PdfEvidence,
@@ -11471,6 +12049,29 @@ export async function adjudicateProblemManual(
   failed: ClassifiedQuestion,
   parentRecovery: ProblemRecoveryEvidence
 ): Promise<{ classified: ClassifiedQuestion; evidence: ProblemManualAdjudicationEvidence }> {
+  const spec = problemManualAdjudicationSpec(
+    entry.id,
+    questionKey(failed.question),
+    failed.question.page!,
+    problem.sha256
+  );
+  if (!spec) throw new Error(`${questionKey(failed.question)} manual adjudication allowlist에 없습니다`);
+  if (isQ43To45ManualBatchSpec(spec)) {
+    await preflightQ43To45ProblemManualBatch(entry, problem, stateDir);
+  }
+  const result = await adjudicateProblemManualOne(entry, problem, stateDir, failed, parentRecovery, false);
+  if (!result) throw new Error(`${questionKey(failed.question)} manual adjudication child가 없습니다`);
+  return result;
+}
+
+async function adjudicateProblemManualOne(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  stateDir: string,
+  failed: ClassifiedQuestion,
+  parentRecovery: ProblemRecoveryEvidence,
+  existingOnly: boolean
+): Promise<{ classified: ClassifiedQuestion; evidence: ProblemManualAdjudicationEvidence } | null> {
   const key = questionKey(failed.question);
   const sourcePage = failed.question.page!;
   const spec = problemManualAdjudicationSpec(entry.id, key, sourcePage, problem.sha256);
@@ -11496,7 +12097,9 @@ export async function adjudicateProblemManual(
     sha256Text(failed.classification.transcription_evidence) !== spec.failedClassificationEvidenceHash ||
     (spec.parentRecoveryEvidenceHash !== undefined &&
       parentRecoveryEvidenceHash !== spec.parentRecoveryEvidenceHash) ||
-    failed.classification.transcription_status === "exact"
+    (spec.failedStatus === "exact"
+      ? failed.classification.transcription_status !== "exact"
+      : failed.classification.transcription_status === "exact")
   ) throw new Error(`${key} manual adjudication 입력이 exhausted recovery와 다릅니다`);
 
   const sourcePages = [...new Set(spec.views.map((view) => view.sourcePage))].sort((a, b) => a - b);
@@ -11583,7 +12186,7 @@ export async function adjudicateProblemManual(
     if (await sha256File(path) !== pointer.sha256) throw new Error(`${key} manual adjudication ${label} hash가 다릅니다`);
   }
 
-  const prepared: PreparedProblemCropEvidence = parentRecovery.adjudication
+  const prepared = parentRecovery.adjudication
     ? {
         artifact: parentRecovery.adjudication.cropEvidenceArtifact,
         pdf: {
@@ -11596,11 +12199,19 @@ export async function adjudicateProblemManual(
         },
         views: parentRecovery.adjudication.cropViews,
       }
-    : await prepareProblemCropEvidence(entry, problem, stateDir, spec, {
-        namespace: "problem-manual-evidence",
-        version: PROBLEM_MANUAL_ADJUDICATION_VERSION,
-        dpi: spec.dpi ?? PROBLEM_CROP_DPI,
-      });
+    : existingOnly
+      ? await prepareProblemCropEvidence(entry, problem, stateDir, spec, {
+          namespace: "problem-manual-evidence",
+          version: PROBLEM_MANUAL_ADJUDICATION_VERSION,
+          dpi: spec.dpi ?? PROBLEM_CROP_DPI,
+          preflightOnly: true,
+        })
+      : await prepareProblemCropEvidence(entry, problem, stateDir, spec, {
+          namespace: "problem-manual-evidence",
+          version: PROBLEM_MANUAL_ADJUDICATION_VERSION,
+          dpi: spec.dpi ?? PROBLEM_CROP_DPI,
+        });
+  if (!prepared) return null;
   if (
     canonicalEvidenceHash(prepared.views.map(({ sourcePage: page, label, rect }) => ({ sourcePage: page, label, rect }))) !==
       canonicalEvidenceHash(spec.views) ||
@@ -11651,7 +12262,13 @@ export async function adjudicateProblemManual(
       problemCheckpoint.correctionDigest !== PROBLEM_MANUAL_CORRECTION_DIGEST
     ) throw new Error(`기존 problem manual adjudication 메타데이터가 다릅니다: ${problemPath}`);
     corrected = restoredQuizItems([problemCheckpoint.item])[0];
+    corrected.answer = exactString(
+      object(problemCheckpoint.item, "problem manual adjudication item").answer,
+      "problem manual adjudication answer",
+      10_000
+    );
   } else {
+    if (existingOnly) return null;
     corrected = applyAllowlistedProblemManualCorrection(entry.id, problem.sha256, failed.question);
     problemCheckpoint = {
       version: PROBLEM_MANUAL_ADJUDICATION_VERSION,
@@ -11665,11 +12282,16 @@ export async function adjudicateProblemManual(
     await writeImmutableEvidence(problemPath, problemCheckpoint);
   }
   const expectedCorrected = applyAllowlistedProblemManualCorrection(entry.id, problem.sha256, failed.question);
+  const correctedHash = canonicalEvidenceHash(corrected);
+  const expectedCorrectedHash = canonicalEvidenceHash(expectedCorrected);
   if (
-    canonicalEvidenceHash(corrected) !== canonicalEvidenceHash(expectedCorrected) ||
+    correctedHash !== expectedCorrectedHash ||
     questionKey(corrected) !== key || corrected.page !== sourcePage ||
     numericPrintedLocator(corrected.number) !== Number(parentRecovery.printedNumber)
-  ) throw new Error(`${key} manual adjudication corrected item이 allowlist와 다릅니다`);
+  ) throw new Error(
+    `${key} manual adjudication corrected item이 allowlist와 다릅니다: ` +
+    `actual=${correctedHash}, expected=${expectedCorrectedHash}`
+  );
   const problemSha = await sha256File(problemPath);
   if (problemSha !== canonicalEvidenceHash(problemCheckpoint)) throw new Error(`${key} manual adjudication hash가 다릅니다`);
   const problemItemHash = canonicalEvidenceHash(corrected);
@@ -11710,6 +12332,7 @@ export async function adjudicateProblemManual(
     ) throw new Error(`기존 classification manual adjudication 메타데이터가 다릅니다: ${classificationPath}`);
     classification = parseDecisions(classificationCheckpoint.items, [corrected], entry)[0];
   } else {
+    if (existingOnly) return null;
     classification = (await classifyQuestions(
       entry,
       prepared.pdf.absolutePath,
@@ -12724,9 +13347,31 @@ export async function assertProblemManualAdjudicationAuthority(
       JSON.parse(readFileSync(confinedStateFile(stateDir, failedArtifact.path, "manual parent problem"), "utf8")),
       failedArtifact.path
     );
+    const failedClassificationArtifact = spec.parentKind === "crop"
+      ? parentCrop!.classificationArtifact
+      : parentRecovery.classificationArtifact;
+    const failedClassificationCheckpoint = object(JSON.parse(readFileSync(confinedStateFile(
+      stateDir,
+      failedClassificationArtifact.path,
+      "manual parent classification"
+    ), "utf8")), failedClassificationArtifact.path);
+    const failedClassification = Array.isArray(failedClassificationCheckpoint.items) &&
+      failedClassificationCheckpoint.items.length === 1
+      ? parseHistoricalDecision(
+          failedClassificationCheckpoint.items[0],
+          manual.key,
+          "manual parent classification item"
+        )
+      : null;
     const failedItem = restoredQuizItems([failedCheckpoint.item])[0];
     const expectedItem = applyAllowlistedProblemManualCorrection(spec.entryId, spec.sourceHash, failedItem);
     if (
+      !failedClassification ||
+      canonicalEvidenceHash(failedClassification) !== spec.failedClassificationHash ||
+      sha256Text(failedClassification.transcription_evidence) !== spec.failedClassificationEvidenceHash ||
+      (spec.failedStatus === "exact"
+        ? failedClassification.transcription_status !== "exact"
+        : failedClassification.transcription_status === "exact") ||
       manual.problemArtifact.path !== expectedProblemPath ||
       problemCheckpoint.version !== PROBLEM_MANUAL_ADJUDICATION_VERSION ||
       problemCheckpoint.entryId !== spec.entryId || problemCheckpoint.basisDigest !== basisDigest ||
@@ -15427,6 +16072,15 @@ async function recoverClassifiedQuestion(
       baseClassificationHash: problemBasis.baseClassificationHash,
       effectiveClassificationHash: canonicalEvidenceHash(classification),
   };
+  const exactManualSpec = problemManualAdjudicationSpec(entry.id, input.key, input.sourcePage, problem.sha256);
+  if (classification.transcription_status === "exact" && exactManualSpec?.failedStatus === "exact") {
+    const failed = { question: recovered, classification };
+    const adjudicated = await adjudicateProblemManual(entry, problem, stateDir, failed, recoveryEvidence);
+    return {
+      classified: adjudicated.classified,
+      evidence: { ...recoveryEvidence, manualAdjudication: adjudicated.evidence },
+    };
+  }
   if (classification.transcription_status !== "exact") {
     let failed: ClassifiedQuestion = { question: recovered, classification };
     let parentRecovery = recoveryEvidence;
