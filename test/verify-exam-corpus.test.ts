@@ -9574,6 +9574,9 @@ async function scopeBoxRevisionFixture() {
     "problem-terminal-fidelity-policy-revisions",
     "solution-repairs",
     "solution-fidelity-repairs",
+    "migration-plans",
+    "migration-commits",
+    "receipt-history",
   ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
   for (const [directory, pattern] of [
     ["answer-audit", /^v5-/u],
@@ -9883,7 +9886,7 @@ describe("exam corpus verifier", () => {
 
   it("keeps the exact existing-corpus migration allowlist aligned with the importer", () => {
     expect(existingCorpusMigrationAllowlistFingerprint())
-      .toBe("8f3bd2de988e85c7b7c341508f4cfa90ac7997a8a00e067a9a8ceb4e67c71934");
+      .toBe("b36883e5558a211809420335ae95f5509f3b5b73acc4159542c1b0e130055921");
     expect(existingCorpusMigrationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(EXISTING_CORPUS_MIGRATION_ALLOWLIST));
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.map((spec) => spec.entryId)).toEqual([
@@ -9900,9 +9903,16 @@ describe("exam corpus verifier", () => {
       "ebsi:5734413",
       "ebsi:5656592",
       "ebsi:5577055",
+      "ebsi:5594500",
+      "ebsi:5525984",
+      "ebsi:5594501",
+      "ebsi:5769268",
+      "ebsi:5875877",
+      "ebsi:5578423",
+      "ebsi:5772823",
     ]);
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.filter((spec) =>
-      !["ebsi:5695028", "ebsi:5853841", "ebsi:5577055"].includes(spec.entryId)
+      !["ebsi:5695028", "ebsi:5853841", "ebsi:5577055", "ebsi:5525984"].includes(spec.entryId)
     ).every((spec) => spec.newKeys.length === 0 && spec.newQuestions.length === 0)).toBe(true);
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((spec) => spec.entryId === "ebsi:5853841"))
       .toMatchObject({
@@ -9940,6 +9950,18 @@ describe("exam corpus verifier", () => {
           difficulty: "중",
           answer: "④ $\\sqrt[3]{2}$",
         })],
+      });
+    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((spec) => spec.entryId === "ebsi:5525984"))
+      .toMatchObject({
+        entryToken: "7755c70fefaa45f755086e2b",
+        receiptCoreSha256: "34c59e90557f5aff5b6fc422426a296901d0777b0d533a5d4220b5f4dc9277c1",
+        beforeProjectionHash: "2c2a65902b4e0c78d35545f25a36a018a8fb61f6386eb85eef95bb4bc1946fce",
+        afterProjectionHash: "74a78e48a28f366787238a8e9d901b73821ac7b4a23889002fc3e844ef2429c8",
+        newKeys: ["10:25", "7:18"],
+        newQuestions: [
+          expect.objectContaining({ key: "10:25", difficulty: "하", answer: "150" }),
+          expect.objectContaining({ key: "7:18", difficulty: "중", answer: "④" }),
+        ],
       });
   });
 
@@ -10312,6 +10334,251 @@ describe("exam corpus verifier", () => {
       const originalPlan = readFileSync(files.planPath);
       const tamperedPlan = structuredClone(files.plan);
       tamperedPlan.identity.operations.questionInserts[0].after.question = "tampered inserted question";
+      writeEvidence(files.planPath, tamperedPlan);
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "MIGRATION_INVALID" }),
+      ]));
+      writeFileSync(files.planPath, originalPlan);
+    } finally {
+      rmSync(files.root, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("verifies the completed 5525984 two-question migration and stable replay", async () => {
+    const entryId = "ebsi:5525984";
+    const spec = EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((candidate) => candidate.entryId === entryId)!;
+    const files = await migratedVerifierFixture(entryId);
+    const verify = () => verifyExamCorpus({
+      manifestPath: files.manifestPath,
+      dbPath: files.dbPath,
+      dataDir: files.dataDir,
+    });
+    try {
+      expect(files.plan.identity).toMatchObject({
+        receiptCore: { sha256: spec.receiptCoreSha256 },
+        beforeProjectionHash: spec.beforeProjectionHash,
+        afterProjectionHash: spec.afterProjectionHash,
+        stableAfterProjectionHash: "648bdd1108934d0840df9d6e235f7d24b3ad0a4b2688b40cba58e359ae1f15d0",
+        beforeSequences: { questions: 3649, bookItems: 7829 },
+        afterSequences: { questions: 3651, bookItems: 7833 },
+        answerAudit: {
+          path: spec.auditPath,
+          sha256: spec.auditSha256,
+          effectiveCorpusHash: spec.effectiveCorpusHash,
+          effectiveSolutionCorpusHash: spec.effectiveSolutionCorpusHash,
+        },
+        ownership: {
+          bookIds: [133, 134],
+          fileIds: [214, 215, 216, 217],
+          beforeQuestionIds: [3504, 3505, 3506, 3507, 3508, 3509, 3510, 3511, 3512, 3513, 3514],
+          afterQuestionIds: [
+            3504, 3505, 3506, 3507, 3508, 3509, 3510, 3511, 3512, 3513, 3514, 3650, 3651,
+          ],
+          beforeBookItemIds: [
+            7538, 7539, 7540, 7541, 7542, 7543, 7544, 7545, 7546, 7547, 7548,
+            7549, 7550, 7551, 7552, 7553, 7554, 7555, 7556, 7557, 7558, 7559,
+          ],
+          afterBookItemIds: [
+            7538, 7539, 7540, 7541, 7542, 7543, 7544, 7545, 7546, 7547, 7548,
+            7549, 7550, 7551, 7552, 7553, 7554, 7555, 7556, 7557, 7558, 7559,
+            7830, 7831, 7832, 7833,
+          ],
+        },
+      });
+      expect(files.plan.identity.operations.questionUpdates).toHaveLength(11);
+      expect(files.plan.identity.operations.itemUpdates).toHaveLength(22);
+      expect(files.plan.identity.operations.questionInserts).toHaveLength(2);
+      expect(files.plan.identity.operations.itemInserts).toHaveLength(4);
+      expect(files.plan.identity.operations.questionInserts.map(
+        (operation: { after: Record<string, unknown> }) => operation.after,
+      )).toEqual([
+        expect.objectContaining({
+          id: 3650,
+          src_page: 10,
+          printed_number: "25",
+          difficulty: "하",
+          question: "함수 $f(x)=\\dfrac{1}{2}x+2$에 대하여 " +
+            "$\\displaystyle\\sum_{k=1}^{15}f(2k)$의 값을 구하시오. [3점]",
+          answer: "150",
+        }),
+        expect.objectContaining({
+          id: 3651,
+          src_page: 7,
+          printed_number: "18",
+          difficulty: "중",
+          answer: "④",
+        }),
+      ]);
+      expect(files.plan.identity.operations.itemInserts.map(
+        (operation: { after: { id: number } }) => operation.after.id,
+      )).toEqual([7830, 7831, 7832, 7833]);
+
+      const initial = verify();
+      expect(initial, JSON.stringify(initial.failures, null, 2))
+        .toMatchObject({ ok: true, failureCount: 0, questions: { expected: 13, actual: 13 } });
+
+      let db = new Database(files.dbPath);
+      try {
+        expect(db.prepare(
+          "SELECT id, src_page, printed_number, difficulty, answer FROM questions " +
+          "WHERE id IN (3650, 3651) ORDER BY id",
+        ).all()).toEqual([
+          { id: 3650, src_page: 10, printed_number: "25", difficulty: "하", answer: "150" },
+          { id: 3651, src_page: 7, printed_number: "18", difficulty: "중", answer: "④" },
+        ]);
+        expect((db.prepare("SELECT id FROM book_items WHERE id BETWEEN 7830 AND 7833 ORDER BY id")
+          .all() as Array<{ id: number }>).map((row) => row.id)).toEqual([7830, 7831, 7832, 7833]);
+        db.prepare(
+          "UPDATE questions SET correct_count = 7, wrong_count = 4, from_wrong_note = 1 WHERE id = 3650",
+        ).run();
+        db.prepare(
+          "INSERT INTO question_attempts (question_id, attempt_id, correct) " +
+          "VALUES (3650, 'verify-5525984', 1)",
+        ).run();
+      } finally {
+        db.close();
+      }
+
+      const explicit = await execFileP(process.execPath, [
+        "--import", "tsx", "scripts/import-exam-corpus.ts",
+        "--manifest", "data/ebsi-exam-manifest.json",
+        "--data-dir", files.dataDir,
+        "--commit",
+        "--migrate-existing", entryId,
+        "--expect-receipt-sha256", spec.oldReceiptSha256,
+      ], {
+        cwd: migrationRepository,
+        timeout: 60_000,
+        env: { ...process.env, STUDYWORK_CODEX_BIN: "/usr/bin/false" },
+      });
+      expect(explicit.stdout).toContain("existing ebsi:5525984 13");
+      const normal = await execFileP(process.execPath, [
+        "--import", "tsx", "scripts/import-exam-corpus.ts",
+        "--manifest", files.manifestPath,
+        "--data-dir", files.dataDir,
+        "--commit",
+      ], {
+        cwd: migrationRepository,
+        timeout: 60_000,
+        env: { ...process.env, STUDYWORK_CODEX_BIN: "/usr/bin/false" },
+      });
+      expect(normal.stdout).toContain("existing ebsi:5525984 13");
+      expect(verify()).toMatchObject({ ok: true, failureCount: 0 });
+
+      db = new Database(files.dbPath, { readonly: true });
+      try {
+        expect(db.prepare(
+          "SELECT correct_count, wrong_count, from_wrong_note FROM questions WHERE id = 3650",
+        ).get()).toEqual({ correct_count: 7, wrong_count: 4, from_wrong_note: 1 });
+        expect((db.prepare(
+          "SELECT COUNT(*) AS count FROM question_attempts WHERE attempt_id = 'verify-5525984'",
+        ).get() as { count: number }).count).toBe(1);
+      } finally {
+        db.close();
+      }
+
+      const originalPlan = readFileSync(files.planPath);
+      const tamperedPlan = structuredClone(files.plan);
+      tamperedPlan.identity.operations.questionInserts[1].after.answer = "③";
+      writeEvidence(files.planPath, tamperedPlan);
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "MIGRATION_INVALID" }),
+      ]));
+      writeFileSync(files.planPath, originalPlan);
+    } finally {
+      rmSync(files.root, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("selects the exact 5578423 same-key audit during migration", async () => {
+    const entryId = "ebsi:5578423";
+    const spec = EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((candidate) => candidate.entryId === entryId)!;
+    const files = await migratedVerifierFixture(entryId);
+    const verify = () => verifyExamCorpus({
+      manifestPath: files.manifestPath,
+      dbPath: files.dbPath,
+      dataDir: files.dataDir,
+    });
+    try {
+      expect(files.plan.identity).toMatchObject({
+        beforeProjectionHash: spec.beforeProjectionHash,
+        afterProjectionHash: spec.afterProjectionHash,
+        stableAfterProjectionHash: "1624dda2e68cb2d901732286ac8bb0ad92740856fcde5e13ac4b374453a530c8",
+        afterSequences: { questions: 3649, bookItems: 7829 },
+        answerAudit: {
+          path: "answer-audit/v5-00e94aae43035db62fee1ddb79997058780a54a58b9bcdbe7350ecb36beea814.json",
+          sha256: "4a1bcc0ca1e5d6f479ba6f316289d1ee4de7a97fd8232d32097446eae4086a87",
+          effectiveCorpusHash: spec.effectiveCorpusHash,
+          effectiveSolutionCorpusHash: spec.effectiveSolutionCorpusHash,
+        },
+      });
+      expect(files.plan.identity.operations.questionUpdates).toHaveLength(7);
+      expect(files.plan.identity.operations.itemUpdates).toHaveLength(14);
+      expect(files.plan.identity.operations.questionInserts).toHaveLength(0);
+      expect(files.plan.identity.operations.itemInserts).toHaveLength(0);
+      const report = verify();
+      expect(report, JSON.stringify(report.failures, null, 2))
+        .toMatchObject({ ok: true, failureCount: 0, questions: { expected: 7, actual: 7 } });
+
+      const historicalProblemPath = join(
+        files.stateDir,
+        "problem-recoveries/" +
+          "v2-0005-0014-128751e9a46e78da7afa65f5cff3c679d694a9704a06fa91c1194f375cfddb3d.json",
+      );
+      const historicalProblemBytes = readFileSync(historicalProblemPath);
+      writeFileSync(historicalProblemPath, Buffer.concat([historicalProblemBytes, Buffer.from("tampered")]));
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "ANSWER_AUDIT_INVALID" }),
+      ]));
+      writeFileSync(historicalProblemPath, historicalProblemBytes);
+
+      const historicalClassificationPath = join(
+        files.stateDir,
+        "classification-recoveries/" +
+          "v2-0005-0014-5a76003ddc1f99328f3680768b909e18fbf007f9129950ca31c5d3641463708b-" +
+          "7bb7cb863c8c4855.json",
+      );
+      const historicalClassificationBytes = readFileSync(historicalClassificationPath);
+      rmSync(historicalClassificationPath);
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: "ANSWER_AUDIT_INVALID",
+          message: expect.stringContaining("missing artifact"),
+        }),
+      ]));
+      writeFileSync(historicalClassificationPath, historicalClassificationBytes);
+
+      const thirdRecoveryPath = join(
+        files.stateDir,
+        "problem-recoveries",
+        `v2-0005-0014-${"f".repeat(64)}.json`,
+      );
+      writeEvidence(thirdRecoveryPath, { version: 2, unexpected: true });
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: "ANSWER_AUDIT_INVALID",
+          message: expect.stringContaining("orphan, conflict, or missing"),
+        }),
+      ]));
+      rmSync(thirdRecoveryPath);
+
+      const historicalAuditPath = join(
+        files.stateDir,
+        "answer-audit/v5-841e6f0d22d791454ff7d37e9e702d22c981136e1408f3ef4d3af8f15213f56c.json",
+      );
+      const historicalAuditBytes = readFileSync(historicalAuditPath);
+      writeFileSync(historicalAuditPath, Buffer.concat([historicalAuditBytes, Buffer.from("tampered")]));
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "ANSWER_AUDIT_INVALID" }),
+      ]));
+      writeFileSync(historicalAuditPath, historicalAuditBytes);
+
+      const originalPlan = readFileSync(files.planPath);
+      const tamperedPlan = structuredClone(files.plan);
+      tamperedPlan.identity.answerAudit.path =
+        "answer-audit/v5-841e6f0d22d791454ff7d37e9e702d22c981136e1408f3ef4d3af8f15213f56c.json";
+      tamperedPlan.identity.answerAudit.sha256 =
+        "36ca283c14f6db268c370ce0158605c2a997aab42fa2f03dccb910ddf8d5c358";
       writeEvidence(files.planPath, tamperedPlan);
       expect(verify().failures).toEqual(expect.arrayContaining([
         expect.objectContaining({ code: "MIGRATION_INVALID" }),

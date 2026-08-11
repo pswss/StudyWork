@@ -4,10 +4,12 @@ import { createHash } from "node:crypto";
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  readlinkSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -46,6 +48,22 @@ const canonicalize = (value: unknown): unknown => {
 };
 const writeCanonical = (path: string, value: unknown) =>
   writeFileSync(path, `${JSON.stringify(canonicalize(value), null, 2)}\n`);
+
+function stateSnapshot(directory: string): Array<[string, string, string]> {
+  const snapshot: Array<[string, string, string]> = [];
+  const visit = (path: string, prefix: string) => {
+    for (const name of readdirSync(path).sort()) {
+      const child = join(path, name);
+      const relative = prefix ? `${prefix}/${name}` : name;
+      const stat = lstatSync(child);
+      if (stat.isSymbolicLink()) snapshot.push([relative, "symlink", readlinkSync(child)]);
+      else if (stat.isDirectory()) visit(child, relative);
+      else snapshot.push([relative, "file", sha256(child)]);
+    }
+  };
+  visit(directory, "");
+  return snapshot;
+}
 
 async function runMigration(dataDir: string): Promise<{ stdout: string; stderr: string }> {
   return execFileP(process.execPath, [
@@ -221,11 +239,18 @@ describe("existing corpus migration v1", () => {
       "ebsi:5734413",
       "ebsi:5656592",
       "ebsi:5577055",
+      "ebsi:5594500",
+      "ebsi:5525984",
+      "ebsi:5594501",
+      "ebsi:5769268",
+      "ebsi:5875877",
+      "ebsi:5578423",
+      "ebsi:5772823",
     ]);
     expect(canonicalEvidenceHash(EXISTING_CORPUS_MIGRATION_ALLOWLIST))
-      .toBe("8f3bd2de988e85c7b7c341508f4cfa90ac7997a8a00e067a9a8ceb4e67c71934");
+      .toBe("b36883e5558a211809420335ae95f5509f3b5b73acc4159542c1b0e130055921");
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.filter((spec) =>
-      !["ebsi:5695028", "ebsi:5853841", "ebsi:5577055"].includes(spec.entryId)
+      !["ebsi:5695028", "ebsi:5853841", "ebsi:5577055", "ebsi:5525984"].includes(spec.entryId)
     ).every((spec) =>
       spec.newKeys.length === 0 && spec.newQuestions.length === 0
     )).toBe(true);
@@ -481,8 +506,8 @@ describe("existing corpus migration v1", () => {
         .map((name) => [name, sha256(join(directory, name))]);
       expect(artifactHashes(join(stateDir, "answer-attestation")).filter(([name]) => name.startsWith("v5-")))
         .toEqual([[
-          "v5-b452290f13f1ebd058630975a6dd21594c414c5af9d92412fca9a77720874140.json",
-          "8225980875926868843160fc1695a16dd26ce6361443abfa459ff110c8d46b96",
+          "v5-3c09e21d193af325204407e66236d298e45df0a73b20a79866026f0ce9dca30b.json",
+          "314ee408a54ac59c584eb2b40ea3fd19a59b4db2f74107059159eaaeb6d09e7e",
         ]]);
       const snapshot = () => ({
         db: sha256(join(root, "studywork.db")),
@@ -511,6 +536,329 @@ describe("existing corpus migration v1", () => {
       } finally {
         db.close();
       }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it.each([{
+    entryId: "ebsi:5594500",
+    entryToken: "e9fcb8ccb0af1356a50a6de4",
+    oldReceiptSha256: "8a5cfda41b88f36a39634f4136314015e582c8b2331413382421b576f42f356d",
+    beforeProjectionHash: "c32e8d057c4f1b6e1398a8af37910670b6d91cd1bf4bb3c01a259c1063c4e0c6",
+    afterProjectionHash: "592e077a4415fc7c8e40ffbc220cc6cd8e0234459c4aaa825d26efe9a7257c13",
+    stableAfterProjectionHash: "eb2d05696156f56002a20ac6489a3301a10892753d1e42672d38eee1ac721fe1",
+    accepted: 3,
+    bookIds: [72], fileIds: [92, 93],
+    beforeQuestionIds: [2946, 2947, 2948],
+    beforeBookItemIds: [6422, 6423, 6424, 6425, 6426, 6427],
+  }, {
+    entryId: "ebsi:5525984",
+    entryToken: "7755c70fefaa45f755086e2b",
+    oldReceiptSha256: "b6cbf1e1874d3f996b911f0e2f9507855f5155b58b0dc31ad63b7682870fcb0f",
+    beforeProjectionHash: "2c2a65902b4e0c78d35545f25a36a018a8fb61f6386eb85eef95bb4bc1946fce",
+    afterProjectionHash: "74a78e48a28f366787238a8e9d901b73821ac7b4a23889002fc3e844ef2429c8",
+    stableAfterProjectionHash: "648bdd1108934d0840df9d6e235f7d24b3ad0a4b2688b40cba58e359ae1f15d0",
+    accepted: 13,
+    bookIds: [133, 134], fileIds: [214, 215, 216, 217],
+    beforeQuestionIds: [3504, 3505, 3506, 3507, 3508, 3509, 3510, 3511, 3512, 3513, 3514],
+    afterQuestionIds: [3504, 3505, 3506, 3507, 3508, 3509, 3510, 3511, 3512, 3513, 3514, 3650, 3651],
+    beforeBookItemIds: [7538, 7539, 7540, 7541, 7542, 7543, 7544, 7545, 7546, 7547, 7548, 7549, 7550, 7551, 7552, 7553, 7554, 7555, 7556, 7557, 7558, 7559],
+    afterBookItemIds: [7538, 7539, 7540, 7541, 7542, 7543, 7544, 7545, 7546, 7547, 7548, 7549, 7550, 7551, 7552, 7553, 7554, 7555, 7556, 7557, 7558, 7559, 7830, 7831, 7832, 7833],
+  }, {
+    entryId: "ebsi:5594501",
+    entryToken: "b395aca2790e257b1487b455",
+    oldReceiptSha256: "289407874ab8bef65e817189c07e03d55901aa44bee49deff7b9aa523dd907dc",
+    beforeProjectionHash: "99c8e405ccbd20c1bfbe76c10a67ceef75b8e3d0335e0edf8317525cd2ee0fe0",
+    afterProjectionHash: "834e5ab1c8c5db5e4958c49e3487754ee3de10dc3739c6d8ebe121841ca0e434",
+    stableAfterProjectionHash: "c5eb62809e631ac6fde2475b08880022fd504a7ab410c39638f003e5759df23d",
+    accepted: 9,
+    bookIds: [75, 76], fileIds: [98, 99, 100, 101],
+    beforeQuestionIds: [2957, 2958, 2959, 2960, 2961, 2962, 2963, 2964, 2965],
+    beforeBookItemIds: [6444, 6445, 6446, 6447, 6448, 6449, 6450, 6451, 6452, 6453, 6454, 6455, 6456, 6457, 6458, 6459, 6460, 6461],
+  }, {
+    entryId: "ebsi:5769268",
+    entryToken: "bc7655b894a573179fae1c73",
+    oldReceiptSha256: "e5ab9b993ac780ffb90d8b5f52bc5234a580e68ba69e7fc8000f072a2319dea6",
+    beforeProjectionHash: "beff875fcbb5f8b55181fe864243cb84c79bac2c675ad3b1b0cfe11432eff701",
+    afterProjectionHash: "22b67b72821fe5099dbd55ef89ce811ba1c7c3f155696e7d82210aa623c2659a",
+    stableAfterProjectionHash: "5bccbb7b61ba89b76b983b60f391f4027b7264090afe88798b1e27ab7e0a454d",
+    accepted: 13,
+    bookIds: [108, 109], fileIds: [164, 165, 166, 167],
+    beforeQuestionIds: [3272, 3273, 3274, 3275, 3276, 3277, 3278, 3279, 3280, 3281, 3282, 3283, 3284],
+    beforeBookItemIds: [7074, 7075, 7076, 7077, 7078, 7079, 7080, 7081, 7082, 7083, 7084, 7085, 7086, 7087, 7088, 7089, 7090, 7091, 7092, 7093, 7094, 7095, 7096, 7097, 7098, 7099],
+  }, {
+    entryId: "ebsi:5875877",
+    entryToken: "2df36741f509a5d174ef8538",
+    oldReceiptSha256: "3f017d124ca92ee3101fc2e79334f57b058b2f00418e2d1e272237b8a38af9ac",
+    beforeProjectionHash: "8e2516d4771eb9541d85f378f0b3628aa8399417130b72fa5db3017e161e33ff",
+    afterProjectionHash: "77d8e9f47fc9e85eb7cdac32f4c7608932c7a25e102893104aaf1ad3aa64af1f",
+    stableAfterProjectionHash: "cb39c754110e6408409e9c04307552c54d190bf4ebf90faa1e3358b9f2ecbf73",
+    accepted: 5,
+    bookIds: [125], fileIds: [198, 199],
+    beforeQuestionIds: [3451, 3452, 3453, 3454, 3455],
+    beforeBookItemIds: [7432, 7433, 7434, 7435, 7436, 7437, 7438, 7439, 7440, 7441],
+  }, {
+    entryId: "ebsi:5578423",
+    entryToken: "a8beae02eaa19479bb277017",
+    oldReceiptSha256: "99e7fa9f4461bb3617f15a4d150469a2e07ef44fc1c2e0c1c980d32eaa7aad57",
+    beforeProjectionHash: "23503a537254ebbe86097a178329946a6dd747122fbe67d557403aebe0aacb21",
+    afterProjectionHash: "d876cdad3af19a6f91fd9feafac2c7a1ef374596f3fdad6996932ac471e490b0",
+    stableAfterProjectionHash: "1624dda2e68cb2d901732286ac8bb0ad92740856fcde5e13ac4b374453a530c8",
+    accepted: 7,
+    bookIds: [60], fileIds: [68, 69],
+    beforeQuestionIds: [2843, 2844, 2845, 2846, 2847, 2848, 2849],
+    beforeBookItemIds: [6216, 6217, 6218, 6219, 6220, 6221, 6222, 6223, 6224, 6225, 6226, 6227, 6228, 6229],
+  }, {
+    entryId: "ebsi:5772823",
+    entryToken: "a6e8dc7eae6679300d9e03e2",
+    oldReceiptSha256: "a8371657db6c96eeb34b80740272a6a8d8ae47c464725dc138246bbf2bb64a2f",
+    beforeProjectionHash: "7d0a1b53be88801b1c2a2daf2c950799c5ac9f436c4142e685d64f69766d53e0",
+    afterProjectionHash: "f72f894947f3fc73d13b6055bda0beafd2f4a78a8c8b8c3c5575fefca2fb1529",
+    stableAfterProjectionHash: "7312b1bfbd2d7077ceb5a0a6fe69522a2b0f5442ed1099b58ecb0de0523d4d84",
+    accepted: 17,
+    bookIds: [110, 111], fileIds: [168, 169, 170, 171],
+    beforeQuestionIds: [3285, 3286, 3287, 3288, 3289, 3290, 3291, 3292, 3293, 3294, 3295, 3296, 3297, 3298, 3299, 3300, 3301],
+    beforeBookItemIds: [7100, 7101, 7102, 7103, 7104, 7105, 7106, 7107, 7108, 7109, 7110, 7111, 7112, 7113, 7114, 7115, 7116, 7117, 7118, 7119, 7120, 7121, 7122, 7123, 7124, 7125, 7126, 7127, 7128, 7129, 7130, 7131, 7132, 7133],
+  }])("migrates $entryId from its exact current audit and replays without AI", async (migration) => {
+    const root = mkdtempSync(join(tmpdir(), "studywork-audited-migration-"));
+    try {
+      const stateDir = await prepareSameKeySnapshot(root, migration);
+      const receiptPath = join(stateDir, "receipt.json");
+      const beforeGuard = { db: sha256(join(root, "studywork.db")), receipt: sha256(receiptPath) };
+      await expect(runNormalReplay(root, migration.entryId)).rejects.toMatchObject({
+        stderr: expect.stringContaining(migration.entryId === "ebsi:5525984"
+          ? "기존 체크포인트와 내용이 다릅니다"
+          : "기존 importer 문항이 변경되었거나 일부 삭제되었습니다"),
+      });
+      expect({ db: sha256(join(root, "studywork.db")), receipt: sha256(receiptPath) }).toEqual(beforeGuard);
+      expect(existsSync(join(stateDir, "migration-plans"))).toBe(false);
+      expect(existsSync(join(stateDir, "receipt-history"))).toBe(false);
+
+      expect((await runSameKeyMigration(root, migration)).stdout)
+        .toContain(`existing ${migration.entryId} ${migration.accepted}`);
+      const planName = readdirSync(join(stateDir, "migration-plans"))
+        .find((name) => /^v1-[a-f0-9]{64}\.json$/u.test(name))!;
+      const planPath = join(stateDir, "migration-plans", planName);
+      const plan = JSON.parse(readFileSync(planPath, "utf8"));
+      const spec = EXISTING_CORPUS_MIGRATION_ALLOWLIST.find(({ entryId }) => entryId === migration.entryId)!;
+      const afterQuestionIds = (
+        "afterQuestionIds" in migration ? migration.afterQuestionIds : undefined
+      ) ?? migration.beforeQuestionIds;
+      const afterBookItemIds = (
+        "afterBookItemIds" in migration ? migration.afterBookItemIds : undefined
+      ) ?? migration.beforeBookItemIds;
+      expect(plan.identity).toMatchObject({
+        receiptCore: { sha256: spec.receiptCoreSha256 },
+        answerAudit: {
+          path: spec.auditPath,
+          sha256: spec.auditSha256,
+          effectiveCorpusHash: spec.effectiveCorpusHash,
+          effectiveSolutionCorpusHash: spec.effectiveSolutionCorpusHash,
+        },
+        beforeProjectionHash: migration.beforeProjectionHash,
+        afterProjectionHash: migration.afterProjectionHash,
+        stableAfterProjectionHash: migration.stableAfterProjectionHash,
+        ownership: {
+          bookIds: migration.bookIds,
+          fileIds: migration.fileIds,
+          beforeQuestionIds: migration.beforeQuestionIds,
+          afterQuestionIds,
+          beforeBookItemIds: migration.beforeBookItemIds,
+          afterBookItemIds,
+        },
+      });
+      expect(plan.identity.beforeProjection.guards).toEqual({
+        attempts: 0,
+        materials: 0,
+        bookExtractionChunks: 0,
+        materialExtractionChunks: 0,
+      });
+      expect(plan.identity.operations.questionUpdates).toHaveLength(migration.beforeQuestionIds.length);
+      expect(plan.identity.operations.itemUpdates).toHaveLength(migration.beforeBookItemIds.length);
+      expect(plan.identity.operations.questionInserts.map(({ after }: { after: { id: number } }) => after.id))
+        .toEqual(afterQuestionIds.slice(migration.beforeQuestionIds.length));
+      expect(plan.identity.operations.itemInserts.map(({ after }: { after: { id: number } }) => after.id))
+        .toEqual(afterBookItemIds.slice(migration.beforeBookItemIds.length));
+      for (const operation of plan.identity.operations.questionUpdates) {
+        expect(() => assertMigrationAnswerEquivalent(operation.before, {
+          qtype: operation.after.qtype,
+          choices: operation.after.choices === null ? null : JSON.parse(operation.after.choices),
+          officialAnswer: operation.after.answer,
+        } as ImportedQuestion)).not.toThrow();
+      }
+
+      const artifactHashes = (directory: string) => readdirSync(directory).sort()
+        .map((name) => [name, sha256(join(directory, name))]);
+      const snapshot = () => ({
+        db: sha256(join(root, "studywork.db")),
+        receipt: sha256(receiptPath),
+        plan: sha256(planPath),
+        commits: artifactHashes(join(stateDir, "migration-commits")),
+        attestations: artifactHashes(join(stateDir, "answer-attestation")),
+      });
+      const migrated = snapshot();
+      for (let replay = 0; replay < 2; replay++) {
+        expect((await runSameKeyMigration(root, migration)).stdout)
+          .toContain(`existing ${migration.entryId} ${migration.accepted}`);
+      }
+      expect((await runNormalReplay(root, migration.entryId)).stdout)
+        .toContain(`existing ${migration.entryId} ${migration.accepted}`);
+      expect(snapshot()).toEqual(migrated);
+
+      const db = new Database(join(root, "studywork.db"), { readonly: true, fileMustExist: true });
+      try {
+        expect(db.pragma("quick_check", { simple: true })).toBe("ok");
+        const placeholders = migration.bookIds.map(() => "?").join(",");
+        expect((db.prepare(`SELECT id FROM questions WHERE book_id IN (${placeholders}) ORDER BY id`)
+          .all(...migration.bookIds) as Array<{ id: number }>).map(({ id }) => id)).toEqual(afterQuestionIds);
+        expect((db.prepare(`SELECT id FROM book_items WHERE book_id IN (${placeholders}) ORDER BY id`)
+          .all(...migration.bookIds) as Array<{ id: number }>).map(({ id }) => id)).toEqual(afterBookItemIds);
+      } finally {
+        db.close();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("preflights the inert 5578423 historical Q14 recovery before writes or AI", async () => {
+    const migration = {
+      entryId: "ebsi:5578423",
+      entryToken: "a8beae02eaa19479bb277017",
+      oldReceiptSha256: "99e7fa9f4461bb3617f15a4d150469a2e07ef44fc1c2e0c1c980d32eaa7aad57",
+      beforeProjectionHash: "23503a537254ebbe86097a178329946a6dd747122fbe67d557403aebe0aacb21",
+      afterProjectionHash: "d876cdad3af19a6f91fd9feafac2c7a1ef374596f3fdad6996932ac471e490b0",
+      stableAfterProjectionHash: "1624dda2e68cb2d901732286ac8bb0ad92740856fcde5e13ac4b374453a530c8",
+      accepted: 7,
+    } satisfies SameKeyMigrationCase;
+    const problemName =
+      "v2-0005-0014-128751e9a46e78da7afa65f5cff3c679d694a9704a06fa91c1194f375cfddb3d.json";
+    const classificationName =
+      "v2-0005-0014-5a76003ddc1f99328f3680768b909e18fbf007f9129950ca31c5d3641463708b-" +
+      "7bb7cb863c8c4855.json";
+    const currentAuditName =
+      "v5-00e94aae43035db62fee1ddb79997058780a54a58b9bcdbe7350ecb36beea814.json";
+    const historicalAuditName =
+      "v5-841e6f0d22d791454ff7d37e9e702d22c981136e1408f3ef4d3af8f15213f56c.json";
+    const cases: Array<{
+      label: string;
+      mutate: (root: string, stateDir: string) => void;
+    }> = [{
+      label: "partial recovery signal",
+      mutate: (_root, stateDir) => {
+        rmSync(join(stateDir, "receipt.json"));
+        rmSync(join(stateDir, "answer-audit"), { recursive: true });
+        rmSync(join(stateDir, "classification-recoveries"), { recursive: true });
+      },
+    }, {
+      label: "third v5 audit signal only",
+      mutate: (_root, stateDir) => {
+        const checkpoint = readFileSync(join(stateDir, "answer-audit", historicalAuditName));
+        rmSync(join(stateDir, "receipt.json"));
+        rmSync(join(stateDir, "problem-recoveries"), { recursive: true });
+        rmSync(join(stateDir, "classification-recoveries"), { recursive: true });
+        rmSync(join(stateDir, "answer-audit"), { recursive: true });
+        mkdirSync(join(stateDir, "answer-audit"));
+        writeFileSync(join(stateDir, "answer-audit", `v5-${"0".repeat(64)}.json`), checkpoint);
+      },
+    }, {
+      label: "tampered problem recovery",
+      mutate: (_root, stateDir) => {
+        const path = join(stateDir, "problem-recoveries", problemName);
+        const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+        checkpoint.unexpected = true;
+        writeCanonical(path, checkpoint);
+      },
+    }, {
+      label: "missing classification recovery",
+      mutate: (_root, stateDir) => rmSync(join(stateDir, "classification-recoveries", classificationName)),
+    }, {
+      label: "third same-key recovery",
+      mutate: (_root, stateDir) => cpSync(
+        join(stateDir, "problem-recoveries", problemName),
+        join(stateDir, "problem-recoveries", `v2-0005-0014-${"0".repeat(64)}.json`)
+      ),
+    }, {
+      label: "aliased recovery path",
+      mutate: (_root, stateDir) => {
+        const source = join(stateDir, "classification-recoveries", classificationName);
+        const alias = join(stateDir, "classification-recoveries",
+          `v2-0005-0014-${"a".repeat(64)}-7bb7cb863c8c4855.json`);
+        cpSync(source, alias);
+        rmSync(source);
+      },
+    }, {
+      label: "symlinked recovery",
+      mutate: (root, stateDir) => {
+        const source = join(stateDir, "problem-recoveries", problemName);
+        const outside = join(root, "outside-problem-recovery.json");
+        cpSync(source, outside);
+        rmSync(source);
+        symlinkSync(outside, source);
+      },
+    }, {
+      label: "junk recovery artifact",
+      mutate: (_root, stateDir) => writeFileSync(join(stateDir, "problem-recoveries", "junk.json"), "{}\n"),
+    }, {
+      label: "historical audit selected as current",
+      mutate: (_root, stateDir) => writeCanonical(
+        join(stateDir, "answer-audit", currentAuditName),
+        JSON.parse(readFileSync(join(stateDir, "answer-audit", historicalAuditName), "utf8"))
+      ),
+    }];
+
+    for (const testCase of cases) {
+      const root = mkdtempSync(join(tmpdir(), "studywork-5578423-history-preflight-"));
+      try {
+        const stateDir = await prepareSameKeySnapshot(root, migration);
+        testCase.mutate(root, stateDir);
+        const before = {
+          db: sha256(join(root, "studywork.db")),
+          state: stateSnapshot(stateDir),
+        };
+        await expect(runNormalReplay(root, migration.entryId), testCase.label).rejects.toMatchObject({
+          stderr: expect.stringContaining("migration historical"),
+        });
+        expect({ db: sha256(join(root, "studywork.db")), state: stateSnapshot(stateDir) }, testCase.label)
+          .toEqual(before);
+        for (const path of ["migration-plans", "receipt-history", "migration-commits"]) {
+          expect(existsSync(join(stateDir, path)), `${testCase.label}: ${path}`).toBe(false);
+        }
+        expect(existsSync(join(root, "backups")), `${testCase.label}: backups`).toBe(false);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  }, 120_000);
+
+  it("allows a pristine 5578423 state to begin extraction", async () => {
+    const migration = {
+      entryId: "ebsi:5578423",
+      entryToken: "a8beae02eaa19479bb277017",
+      oldReceiptSha256: "99e7fa9f4461bb3617f15a4d150469a2e07ef44fc1c2e0c1c980d32eaa7aad57",
+      beforeProjectionHash: "23503a537254ebbe86097a178329946a6dd747122fbe67d557403aebe0aacb21",
+      afterProjectionHash: "d876cdad3af19a6f91fd9feafac2c7a1ef374596f3fdad6996932ac471e490b0",
+      stableAfterProjectionHash: "1624dda2e68cb2d901732286ac8bb0ad92740856fcde5e13ac4b374453a530c8",
+      accepted: 7,
+    } satisfies SameKeyMigrationCase;
+    const root = mkdtempSync(join(tmpdir(), "studywork-5578423-pristine-"));
+    try {
+      const stateDir = await prepareSameKeySnapshot(root, migration);
+      for (const name of readdirSync(stateDir)) {
+        if (!["entry.json", "problem.pdf", "solution.pdf"].includes(name)) {
+          rmSync(join(stateDir, name), { recursive: true, force: true });
+        }
+      }
+      mkdirSync(join(stateDir, "answer-audit"));
+      writeFileSync(join(stateDir, "answer-audit", `v5-${"0".repeat(64)}.json.tmp`), "partial\n");
+      const error = await runNormalReplay(root, migration.entryId).then(
+        () => null,
+        (reason: { stderr?: string }) => reason
+      );
+      expect(error).not.toBeNull();
+      expect(error?.stderr).not.toContain("migration historical");
+      expect(existsSync(join(stateDir, "downloads.json"))).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -5031,6 +5031,11 @@ type PersistedTerminalRecoverySelection = {
   }>;
 };
 
+type ProblemRecoveryCoverageAuthority = Pick<
+  PersistedTerminalRecoverySelection,
+  "historicalPaths" | "exactRecoverySets"
+>;
+
 type PersistedTerminalRecoveryAuditAuthority = {
   pointer: EvidencePointer;
   digest: string;
@@ -5243,9 +5248,9 @@ function verifyProblemRecoveryCoverage(
   values: unknown[],
   stateDir: string,
   contract: VerificationContract,
-  persistedTerminalRecovery: PersistedTerminalRecoverySelection | null = null,
+  recoveryCoverageAuthority: ProblemRecoveryCoverageAuthority | null = null,
 ): void {
-  const historicalRecoveryPaths = persistedTerminalRecovery?.historicalPaths ?? new Set<string>();
+  const historicalRecoveryPaths = recoveryCoverageAuthority?.historicalPaths ?? new Set<string>();
   const declared = new Set<string>();
   const declaredCrop = new Set<string>();
   const declaredScope = new Set<string>();
@@ -5484,7 +5489,7 @@ function verifyProblemRecoveryCoverage(
   }
   const recoveryPathsByDirectory = new Map<string, string[]>();
   const isPinnedRecoveryPrefix = (path: string): boolean =>
-    persistedTerminalRecovery?.exactRecoverySets.some((exactSet) => {
+    recoveryCoverageAuthority?.exactRecoverySets.some((exactSet) => {
       const [page, number] = exactSet.key.split(":");
       return path.startsWith(`problem-recoveries/v2-${String(Number(page)).padStart(4, "0")}-` +
         `${String(Number(number)).padStart(4, "0")}-`)
@@ -5495,7 +5500,7 @@ function verifyProblemRecoveryCoverage(
     ["problem-recoveries", /^v[12]-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u],
     ["classification-recoveries", /^v[12]-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u],
   ] as const) {
-    const names = persistedTerminalRecovery
+    const names = recoveryCoverageAuthority
       ? strictRepairGraphNames(
           stateDir,
           directory,
@@ -5513,7 +5518,7 @@ function verifyProblemRecoveryCoverage(
       }
     }
   }
-  for (const exactSet of persistedTerminalRecovery?.exactRecoverySets ?? []) {
+  for (const exactSet of recoveryCoverageAuthority?.exactRecoverySets ?? []) {
     const [page, number] = exactSet.key.split(":");
     const suffix = `${String(Number(page)).padStart(4, "0")}-${String(Number(number)).padStart(4, "0")}-`;
     for (const [directory, expected] of [
@@ -9387,6 +9392,7 @@ function applyDeclaredRepairsV3(
   cache: EvidenceCache,
   contract: VerificationContract,
   auditAuthority: PersistedTerminalRecoveryAuditAuthority,
+  recoveryCoverageAuthority: ProblemRecoveryCoverageAuthority | null = null,
 ): Map<string, ClassifiedEvidence> {
   const persistedTerminalRecovery = persistedTerminalRecoverySelection(
     values,
@@ -9401,7 +9407,7 @@ function applyDeclaredRepairsV3(
     values,
     stateDir,
     contract,
-    persistedTerminalRecovery,
+    persistedTerminalRecovery ?? recoveryCoverageAuthority,
   );
   const rows = prepareV3RepairRows(values, stateDir, base, solutions);
   const persistedGraphSelection = verifyPersistedV2RepairGraphSelection(
@@ -9614,6 +9620,188 @@ function applyDeclaredRepairsV3(
     }
   }
   return records;
+}
+
+function verifyExistingMigrationHistoricalRecoveryAuthority(
+  audit: Record<string, unknown>,
+  auditPointer: EvidencePointer,
+  auditDigest: string,
+  stateDir: string,
+  entry: ManifestEntry,
+  problemEvidence: DownloadEvidence,
+  solutionEvidence: DownloadEvidence,
+  rulesDigest: string,
+  base: DecisionSummary,
+  solutions: Map<string, OfficialSolution>,
+  contract: VerificationContract,
+): ProblemRecoveryCoverageAuthority | null {
+  const spec = EXISTING_MIGRATION_HISTORICAL_RECOVERY;
+  if (entry.id !== spec.entryId) return null;
+  if (contract.auditVersion !== 5 || entryToken(entry) !== spec.entryToken
+    || problemEvidence.sha256 !== spec.sourceHash
+    || hashFile(confinedEvidencePath(
+      stateDir,
+      { path: "problem.pdf", sha256: spec.sourceHash },
+      "migration historical recovery source",
+    )) !== spec.sourceHash) {
+    throw new Error(`${entry.id}: migration historical recovery source/contract is stale`);
+  }
+
+  const exactSet = (actual: string[], expected: readonly string[], label: string): void => {
+    if (!isDeepStrictEqual(new Set(actual), new Set(expected))) {
+      throw new Error(`${label} has an orphan, conflict, or missing artifact`);
+    }
+  };
+  const problemPaths = strictRepairGraphNames(
+    stateDir,
+    "problem-recoveries",
+    "migration historical problem recovery",
+    (name) => /^v2-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name),
+  ).map((name) => `problem-recoveries/${name}`)
+    .filter((path) => path.startsWith("problem-recoveries/v2-0005-0014-"));
+  const classificationPaths = strictRepairGraphNames(
+    stateDir,
+    "classification-recoveries",
+    "migration historical classification recovery",
+    (name) => /^v2-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name),
+  ).map((name) => `classification-recoveries/${name}`)
+    .filter((path) => path.startsWith("classification-recoveries/v2-0005-0014-"));
+  const v5AuditPaths = strictRepairGraphNames(
+    stateDir,
+    "answer-audit",
+    "migration historical answer audit",
+    (name) => /^v[1-5]-[a-f0-9]{64}\.json$/u.test(name),
+  ).filter((name) => name.startsWith("v5-"))
+    .map((name) => `answer-audit/${name}`);
+  exactSet(problemPaths, [spec.problemRecoveryArtifact.path], "migration historical problem recovery");
+  exactSet(
+    classificationPaths,
+    [spec.classificationRecoveryArtifact.path],
+    "migration historical classification recovery",
+  );
+  exactSet(
+    v5AuditPaths,
+    [spec.currentAudit.path, spec.historicalAudit.path],
+    "migration historical answer audit",
+  );
+
+  const auditRepair = (value: Record<string, unknown>, label: string): Record<string, unknown> => {
+    if (!Array.isArray(value.repairs)) throw new Error(`${label} repairs are missing`);
+    const matches = value.repairs.map((repair, index) => object(repair, `${label}.repairs[${index}]`))
+      .filter((repair) => repair.key === spec.key);
+    if (matches.length !== 1) throw new Error(`${label} ${spec.key} repair is not unique`);
+    return matches[0];
+  };
+  if (!isDeepStrictEqual(auditPointer, {
+    path: spec.currentAudit.path,
+    sha256: spec.currentAudit.sha256,
+  }) || auditDigest !== spec.currentAudit.digest
+    || audit.effectiveCorpusHash !== spec.currentAudit.effectiveCorpusHash
+    || audit.effectiveSolutionCorpusHash !== spec.currentAudit.effectiveSolutionCorpusHash) {
+    throw new Error(`${entry.id}: migration current answer audit is not the selected authority`);
+  }
+  const currentRepair = auditRepair(audit, "migration current answer audit");
+  const currentRevision = object(currentRepair.revision, "migration current Q14 revision");
+  const currentClassificationRevision = object(
+    currentRevision.classificationArtifact,
+    "migration current Q14 classification revision",
+  );
+  if (canonicalEvidenceHash(currentRepair) !== spec.currentAudit.repairHash
+    || currentRevision.recovery !== undefined
+    || !isDeepStrictEqual(evidencePointer(
+      currentRevision.problemArtifact,
+      "migration current Q14 problem revision",
+    ), spec.currentAudit.revisionProblemArtifact)
+    || !isDeepStrictEqual(evidencePointer({
+      path: currentClassificationRevision.path,
+      sha256: currentClassificationRevision.sha256,
+    }, "migration current Q14 classification revision"), spec.currentAudit.revisionClassificationArtifact)) {
+    throw new Error(`${spec.key}: migration current revision authority is stale`);
+  }
+
+  const historicalPointer = {
+    path: spec.historicalAudit.path,
+    sha256: spec.historicalAudit.sha256,
+  };
+  const historicalAudit = readBoundEvidence(
+    stateDir,
+    historicalPointer,
+    "migration historical answer audit",
+  );
+  const { version: _version, auditDigest: historicalDigest, ...historicalBasis } = historicalAudit;
+  if (historicalAudit.version !== 5 || historicalAudit.entryId !== entry.id
+    || historicalAudit.problemHash !== spec.sourceHash
+    || historicalDigest !== spec.historicalAudit.digest
+    || historicalAudit.effectiveCorpusHash !== spec.historicalAudit.effectiveCorpusHash
+    || historicalAudit.effectiveSolutionCorpusHash !== spec.historicalAudit.effectiveSolutionCorpusHash
+    || canonicalEvidenceHash(historicalBasis) !== spec.historicalAudit.digest) {
+    throw new Error(`${entry.id}: migration historical answer audit envelope is stale`);
+  }
+  const historicalRepair = auditRepair(historicalAudit, "migration historical answer audit");
+  if (canonicalEvidenceHash(historicalRepair) !== spec.historicalAudit.repairHash) {
+    throw new Error(`${spec.key}: migration historical repair authority is stale`);
+  }
+
+  const historicalCache: EvidenceCache = new Map();
+  const historicalRecords = applyDeclaredRepairsV3(
+    historicalAudit.repairs as unknown[],
+    stateDir,
+    entry,
+    problemEvidence,
+    solutionEvidence,
+    rulesDigest,
+    base,
+    solutions,
+    historicalCache,
+    contract,
+    {
+      pointer: historicalPointer,
+      digest: spec.historicalAudit.digest,
+      effectiveCorpusHash: historicalAudit.effectiveCorpusHash,
+      terminalCheckpoints: historicalAudit.problemTerminalFidelityCheckpoints,
+    },
+  );
+  const historicalEffective = summarizeDecisions(historicalRecords, base.order, rulesDigest);
+  const historicalEffectiveHash = canonicalEvidenceHash(historicalEffective.order.map((key) => {
+    const record = historicalEffective.records.get(key)!;
+    return { question: record.question.evidence, classification: record.classification };
+  }));
+  if (historicalEffectiveHash !== spec.historicalAudit.effectiveCorpusHash) {
+    throw new Error(`${entry.id}: migration historical effective corpus is stale`);
+  }
+  const historicalRepairKeys = new Set((historicalAudit.repairs as unknown[]).map((value, index) =>
+    exactString(object(value, `migration historical repairs[${index}]`).key,
+      `migration historical repairs[${index}].key`)));
+  const historicalTerminal = verifyProblemTerminalFidelity(
+    stateDir,
+    entry,
+    problemEvidence,
+    historicalEffective,
+    historicalAudit,
+    historicalCache,
+    historicalRepairKeys,
+    contract,
+  );
+  const { itemHash: historicalItemHash, ...historicalCheckpoint } = spec.historicalAudit.finalTerminal;
+  const historicalItem = historicalTerminal.items.find((item) => item.key === spec.key);
+  if (!isDeepStrictEqual(historicalTerminal.checkpoints, [historicalCheckpoint])
+    || !historicalItem || canonicalEvidenceHash(historicalItem) !== historicalItemHash
+    || historicalItem.status !== "exact" || historicalItem.scopeDecision !== "reject"
+    || historicalItem.scopeConfidence < 0.9) {
+    throw new Error(`${spec.key}: migration historical final terminal authority is stale`);
+  }
+
+  return {
+    historicalPaths: new Set([
+      spec.problemRecoveryArtifact.path,
+      spec.classificationRecoveryArtifact.path,
+    ]),
+    exactRecoverySets: [{
+      key: spec.key,
+      problemPaths: new Set([spec.problemRecoveryArtifact.path]),
+      classificationPaths: new Set([spec.classificationRecoveryArtifact.path]),
+    }],
+  };
 }
 
 type SolutionFidelityInput = {
@@ -12725,6 +12913,19 @@ function verifyAnswerAudit(
     if (!isDeepStrictEqual(attestationBasis, expectedAttestationBasis)) {
       throw new Error("answer attestation does not exactly bind receipt/audit/repairs");
     }
+    const migrationHistoricalRecovery = verifyExistingMigrationHistoricalRecoveryAuthority(
+      audit,
+      auditPointer,
+      auditDigest,
+      stateDir,
+      entry,
+      problemEvidence,
+      solutionEvidence,
+      rulesDigest,
+      base,
+      solutions,
+      contract,
+    );
     const evidenceCache: EvidenceCache = new Map();
     const records = contract.auditVersion >= 3
       ? applyDeclaredRepairsV3(
@@ -12744,6 +12945,7 @@ function verifyAnswerAudit(
             effectiveCorpusHash: audit.effectiveCorpusHash,
             terminalCheckpoints: audit.problemTerminalFidelityCheckpoints,
           },
+          migrationHistoricalRecovery,
         )
       : (() => {
           const legacy = new Map(base.records);
@@ -13549,7 +13751,229 @@ const EXISTING_MIGRATION_ALLOWLIST = [{
     answer: "④ $\\sqrt[3]{2}$",
     solutionPage: 1,
   }],
+}, {
+  entryId: "ebsi:5594500",
+  entryToken: "e9fcb8ccb0af1356a50a6de4",
+  oldReceiptSha256: "8a5cfda41b88f36a39634f4136314015e582c8b2331413382421b576f42f356d",
+  receiptCoreSha256: "8a5cfda41b88f36a39634f4136314015e582c8b2331413382421b576f42f356d",
+  beforeProjectionHash: "c32e8d057c4f1b6e1398a8af37910670b6d91cd1bf4bb3c01a259c1063c4e0c6",
+  afterProjectionHash: "592e077a4415fc7c8e40ffbc220cc6cd8e0234459c4aaa825d26efe9a7257c13",
+  auditPath: "answer-audit/v5-1ea8994dca6c961a78178fa833c1889cc20706d64c81c11f5d8e20048e740a3e.json",
+  auditSha256: "beda5895554570baa0f115d85dc68819835cdc1e3076281d2f2f5442a8bbd9dc",
+  effectiveCorpusHash: "3afdc2e5f9b32575f91acf4a7d2b6a77198f61c797d2f2694c3131d63b0e7041",
+  effectiveSolutionCorpusHash: "979604ac94d4de200ef6ccc48ba4a3f9bdc41efd78547b772d9fa906d64593a7",
+  problemHash: "4d630cb1f52019a3d73d04ca377fe43409e34c6acdc8b86b115e4ac77c69366c",
+  solutionHash: "d42af5092d32cb18ae589858af7b790df4ab0dd6758cda62d9951241a0d0cdbb",
+  bookIds: [72],
+  fileIds: [92, 93],
+  questionIds: [2946, 2947, 2948],
+  bookItemIds: [6422, 6423, 6424, 6425, 6426, 6427],
+  newKeys: [],
+  newQuestions: [],
+}, {
+  entryId: "ebsi:5525984",
+  entryToken: "7755c70fefaa45f755086e2b",
+  oldReceiptSha256: "b6cbf1e1874d3f996b911f0e2f9507855f5155b58b0dc31ad63b7682870fcb0f",
+  receiptCoreSha256: "34c59e90557f5aff5b6fc422426a296901d0777b0d533a5d4220b5f4dc9277c1",
+  beforeProjectionHash: "2c2a65902b4e0c78d35545f25a36a018a8fb61f6386eb85eef95bb4bc1946fce",
+  afterProjectionHash: "74a78e48a28f366787238a8e9d901b73821ac7b4a23889002fc3e844ef2429c8",
+  auditPath: "answer-audit/v5-0aa599c8caf9abc8ee2136619658466958350b7a2725b93a9f42437e03140db1.json",
+  auditSha256: "a3135634f1f4c115fd284a104a4e8dd529a9b6b536c35c36da784530bff3d9b4",
+  effectiveCorpusHash: "1e076c1128fc58f956f12db80716af215f2cedf605c1816acc5e234d0c320021",
+  effectiveSolutionCorpusHash: "90a1214067bc39dfd0b3d20fe84bcfde48ab7923334d9d507dbdbb39bebfada9",
+  problemHash: "1621eca42821e5feccbb56604249cbcedd8adf6bae6109960f6c790a61c14ec1",
+  solutionHash: "a081092a68c797d8ae2d0becd0fd17d551c7d009f208c7ae9f32301a5531c687",
+  bookIds: [133, 134],
+  fileIds: [214, 215, 216, 217],
+  questionIds: [3504, 3505, 3506, 3507, 3508, 3509, 3510, 3511, 3512, 3513, 3514],
+  bookItemIds: [
+    7538, 7539, 7540, 7541, 7542, 7543, 7544, 7545, 7546, 7547, 7548,
+    7549, 7550, 7551, 7552, 7553, 7554, 7555, 7556, 7557, 7558, 7559,
+  ],
+  newKeys: ["10:25", "7:18"],
+  newQuestions: [{
+    key: "10:25",
+    targetSubject: "수학 - 수학Ⅰ·대수" as TargetSubject,
+    qtype: "short",
+    difficulty: "하",
+    question: "함수 $f(x)=\\dfrac{1}{2}x+2$에 대하여 $\\displaystyle\\sum_{k=1}^{15}f(2k)$의 값을 구하시오. [3점]",
+    answer: "150",
+    solutionPage: 8,
+  }, {
+    key: "7:18",
+    targetSubject: "수학 - 수학Ⅱ·미적분Ⅰ" as TargetSubject,
+    qtype: "mcq",
+    difficulty: "중",
+    question: "최고차항의 계수가 1인 이차함수 $f(x)$가\n\n" +
+      "$$\\lim_{x\\to a}\\frac{f(x)-(x-a)}{f(x)+(x-a)}=\\frac{3}{5}$$\n\n" +
+      "을 만족시킨다. 방정식 $f(x)=0$의 두 근을 $\\alpha$, $\\beta$라 할 때, " +
+      "$|\\alpha-\\beta|$의 값은? (단, $a$는 상수이다.) [4점]",
+    answer: "④",
+    solutionPage: 5,
+  }],
+}, {
+  entryId: "ebsi:5594501",
+  entryToken: "b395aca2790e257b1487b455",
+  oldReceiptSha256: "289407874ab8bef65e817189c07e03d55901aa44bee49deff7b9aa523dd907dc",
+  receiptCoreSha256: "289407874ab8bef65e817189c07e03d55901aa44bee49deff7b9aa523dd907dc",
+  beforeProjectionHash: "99c8e405ccbd20c1bfbe76c10a67ceef75b8e3d0335e0edf8317525cd2ee0fe0",
+  afterProjectionHash: "834e5ab1c8c5db5e4958c49e3487754ee3de10dc3739c6d8ebe121841ca0e434",
+  auditPath: "answer-audit/v5-47f3e1d06a7314a79714e1a3e2a3a729d0e0406a17f1d6ca0770f759602dac47.json",
+  auditSha256: "1a233022c7ab5d61adc6b5dc4078c5447b6ad8308e24f856f989e0157d1e3aec",
+  effectiveCorpusHash: "9899689cf6ebc256fbe32d7898c3cb29d0dabda066799ccbeaaf977c70894d31",
+  effectiveSolutionCorpusHash: "223013f3ef086c504c766419d0f94b000276ffca7b791e6c4eb8ffeb1274ba6c",
+  problemHash: "1cb11356d6410d0834283b73a3f2fdc6a26035d5639d14424e7118a07b10da87",
+  solutionHash: "595dd1c702145071c137e23b6b42d6ccf1189e050cd36510049b08c2f33bff36",
+  bookIds: [75, 76],
+  fileIds: [98, 99, 100, 101],
+  questionIds: [2957, 2958, 2959, 2960, 2961, 2962, 2963, 2964, 2965],
+  bookItemIds: [
+    6444, 6445, 6446, 6447, 6448, 6449, 6450, 6451, 6452,
+    6453, 6454, 6455, 6456, 6457, 6458, 6459, 6460, 6461,
+  ],
+  newKeys: [],
+  newQuestions: [],
+}, {
+  entryId: "ebsi:5769268",
+  entryToken: "bc7655b894a573179fae1c73",
+  oldReceiptSha256: "e5ab9b993ac780ffb90d8b5f52bc5234a580e68ba69e7fc8000f072a2319dea6",
+  receiptCoreSha256: "e5ab9b993ac780ffb90d8b5f52bc5234a580e68ba69e7fc8000f072a2319dea6",
+  beforeProjectionHash: "beff875fcbb5f8b55181fe864243cb84c79bac2c675ad3b1b0cfe11432eff701",
+  afterProjectionHash: "22b67b72821fe5099dbd55ef89ce811ba1c7c3f155696e7d82210aa623c2659a",
+  auditPath: "answer-audit/v5-f9f193620bfa21a32e82eb243065ab1edf814cef3a2559b7f33028edff6e089e.json",
+  auditSha256: "83924d33a5806eaf8df3fc52249f5d0abcf9db83b23c0704b7f44a387b8c9207",
+  effectiveCorpusHash: "3f0f4625f5ee5ba0c627c2655ae751e7fdbd334e49143b552b1280b71abbdda6",
+  effectiveSolutionCorpusHash: "62281ae18f8a3f54a40bac39ee759f599d713a3843942d7f845a5177d54508cb",
+  problemHash: "f0135f70b321bab2825a89c10ac97724d573793578cd2c872aaa342bd2ac179b",
+  solutionHash: "bb5b5d03101f67e1f56fe33870def9bd90d91892ed3ef893d9e6c7df4d90aa66",
+  bookIds: [108, 109],
+  fileIds: [164, 165, 166, 167],
+  questionIds: [3272, 3273, 3274, 3275, 3276, 3277, 3278, 3279, 3280, 3281, 3282, 3283, 3284],
+  bookItemIds: [
+    7074, 7075, 7076, 7077, 7078, 7079, 7080, 7081, 7082, 7083, 7084, 7085, 7086,
+    7087, 7088, 7089, 7090, 7091, 7092, 7093, 7094, 7095, 7096, 7097, 7098, 7099,
+  ],
+  newKeys: [],
+  newQuestions: [],
+}, {
+  entryId: "ebsi:5875877",
+  entryToken: "2df36741f509a5d174ef8538",
+  oldReceiptSha256: "3f017d124ca92ee3101fc2e79334f57b058b2f00418e2d1e272237b8a38af9ac",
+  receiptCoreSha256: "3f017d124ca92ee3101fc2e79334f57b058b2f00418e2d1e272237b8a38af9ac",
+  beforeProjectionHash: "8e2516d4771eb9541d85f378f0b3628aa8399417130b72fa5db3017e161e33ff",
+  afterProjectionHash: "77d8e9f47fc9e85eb7cdac32f4c7608932c7a25e102893104aaf1ad3aa64af1f",
+  auditPath: "answer-audit/v5-756d5760b1711c86280bf2a416b02410f3f9406825b949196dbb9dcc49a1b27a.json",
+  auditSha256: "2a8ac363c05b221e3e4b94c6be256363acbc465bd048d8ae979bd7961c311568",
+  effectiveCorpusHash: "17ca7ec78753ccaba65a5a5d2c764d467e14c738647f2197ad73d1db7b7cabe5",
+  effectiveSolutionCorpusHash: "54d13297d357b94c864b6aab8adb6857f1ed0725760bd3654d74653b50704aa2",
+  problemHash: "ff5e3ecc50294464bdab326d6ba9f8d1f8de3a1b77706a80db0ce718b98c1217",
+  solutionHash: "0247df4f3d1e2cdad51c5a34db6c811489bd74df70fdb8fa99d4c65439f8fe14",
+  bookIds: [125],
+  fileIds: [198, 199],
+  questionIds: [3451, 3452, 3453, 3454, 3455],
+  bookItemIds: [7432, 7433, 7434, 7435, 7436, 7437, 7438, 7439, 7440, 7441],
+  newKeys: [],
+  newQuestions: [],
+}, {
+  entryId: "ebsi:5578423",
+  entryToken: "a8beae02eaa19479bb277017",
+  oldReceiptSha256: "99e7fa9f4461bb3617f15a4d150469a2e07ef44fc1c2e0c1c980d32eaa7aad57",
+  receiptCoreSha256: "99e7fa9f4461bb3617f15a4d150469a2e07ef44fc1c2e0c1c980d32eaa7aad57",
+  beforeProjectionHash: "23503a537254ebbe86097a178329946a6dd747122fbe67d557403aebe0aacb21",
+  afterProjectionHash: "d876cdad3af19a6f91fd9feafac2c7a1ef374596f3fdad6996932ac471e490b0",
+  auditPath: "answer-audit/v5-00e94aae43035db62fee1ddb79997058780a54a58b9bcdbe7350ecb36beea814.json",
+  auditSha256: "4a1bcc0ca1e5d6f479ba6f316289d1ee4de7a97fd8232d32097446eae4086a87",
+  effectiveCorpusHash: "e7533bb091bda78609d51dc886f4e727562e2ac4a0824b04d9bae0bd273a35a9",
+  effectiveSolutionCorpusHash: "bd8bf015e9804eb15d00a30de2209f120a712fc93cb9aaafbbce0abec379b21c",
+  problemHash: "7b1b90b6152f9a7f83e8ff66753b2afd46efc14637e1535c35ced65ed572f3bb",
+  solutionHash: "f1d4889cd62c7266e55db807502756bc9c075abfc9dc79633a101f08713d5ee2",
+  bookIds: [60],
+  fileIds: [68, 69],
+  questionIds: [2843, 2844, 2845, 2846, 2847, 2848, 2849],
+  bookItemIds: [6216, 6217, 6218, 6219, 6220, 6221, 6222, 6223, 6224, 6225, 6226, 6227, 6228, 6229],
+  newKeys: [],
+  newQuestions: [],
+}, {
+  entryId: "ebsi:5772823",
+  entryToken: "a6e8dc7eae6679300d9e03e2",
+  oldReceiptSha256: "a8371657db6c96eeb34b80740272a6a8d8ae47c464725dc138246bbf2bb64a2f",
+  receiptCoreSha256: "a8371657db6c96eeb34b80740272a6a8d8ae47c464725dc138246bbf2bb64a2f",
+  beforeProjectionHash: "7d0a1b53be88801b1c2a2daf2c950799c5ac9f436c4142e685d64f69766d53e0",
+  afterProjectionHash: "f72f894947f3fc73d13b6055bda0beafd2f4a78a8c8b8c3c5575fefca2fb1529",
+  auditPath: "answer-audit/v5-68667b82446fce986db92d3c24be32331e0127efa1c584ad1475430f2cdd10ea.json",
+  auditSha256: "6ce9b35df28f12176b6febab2ac106e1489a1c7aa6ccfb453cb683b6d3d47007",
+  effectiveCorpusHash: "36b1b542ad89e681cd360877aa6279660dd1cd2863495ee806965096ca77386c",
+  effectiveSolutionCorpusHash: "6cee9490549baedb11a4788c4ead58d4990dc89c63562a6146790ea168e3d83e",
+  problemHash: "4c43873d3ee9d4daec707286d92db505918b75f9d03f0b84f7c076b646809a0a",
+  solutionHash: "a32e75ae0b54c72c5d1ce1aaf2ce9b05d74c88ab9f2756b65367f31f6223c863",
+  bookIds: [110, 111],
+  fileIds: [168, 169, 170, 171],
+  questionIds: [3285, 3286, 3287, 3288, 3289, 3290, 3291, 3292, 3293, 3294, 3295, 3296, 3297, 3298, 3299, 3300, 3301],
+  bookItemIds: [
+    7100, 7101, 7102, 7103, 7104, 7105, 7106, 7107, 7108, 7109, 7110, 7111, 7112, 7113,
+    7114, 7115, 7116, 7117, 7118, 7119, 7120, 7121, 7122, 7123, 7124, 7125, 7126, 7127,
+    7128, 7129, 7130, 7131, 7132, 7133,
+  ],
+  newKeys: [],
+  newQuestions: [],
 }] as const;
+
+const EXISTING_MIGRATION_HISTORICAL_RECOVERY = {
+  entryId: "ebsi:5578423",
+  entryToken: "a8beae02eaa19479bb277017",
+  key: "5:14",
+  sourceHash: "7b1b90b6152f9a7f83e8ff66753b2afd46efc14637e1535c35ced65ed572f3bb",
+  currentAudit: {
+    path: "answer-audit/v5-00e94aae43035db62fee1ddb79997058780a54a58b9bcdbe7350ecb36beea814.json",
+    sha256: "4a1bcc0ca1e5d6f479ba6f316289d1ee4de7a97fd8232d32097446eae4086a87",
+    digest: "00e94aae43035db62fee1ddb79997058780a54a58b9bcdbe7350ecb36beea814",
+    effectiveCorpusHash: "e7533bb091bda78609d51dc886f4e727562e2ac4a0824b04d9bae0bd273a35a9",
+    effectiveSolutionCorpusHash: "bd8bf015e9804eb15d00a30de2209f120a712fc93cb9aaafbbce0abec379b21c",
+    repairHash: "586755438bb766e88f55570c95ab77ae34283a987637998695ec65a583bbaa5c",
+    revisionProblemArtifact: {
+      path: "problem-revision-batches/" +
+        "v1-0001-0012-0005-c95393fd12b3dd309dc104f8eef18cc0fcd2450c80afb9e7935ad016aa30435b.json",
+      sha256: "b4d0678a23fccb09886c94de0de48299383271642bf29b1d5246b55973389097",
+    },
+    revisionClassificationArtifact: {
+      path: "classification-revision-batches/" +
+        "v1-0001-0012-e7b8a7bced05c225c663a08ecdd1cf123c0982a515f60a7546698050919595e2-" +
+        "7bb7cb863c8c4855.json",
+      sha256: "cb7cc97c0a994c053d7e6e0c9e802892a9126f9863a9109c45c55d01a9859d6a",
+    },
+  },
+  historicalAudit: {
+    path: "answer-audit/v5-841e6f0d22d791454ff7d37e9e702d22c981136e1408f3ef4d3af8f15213f56c.json",
+    sha256: "36ca283c14f6db268c370ce0158605c2a997aab42fa2f03dccb910ddf8d5c358",
+    digest: "841e6f0d22d791454ff7d37e9e702d22c981136e1408f3ef4d3af8f15213f56c",
+    effectiveCorpusHash: "3f5b099d16bd0e97a5366817a187941ce9ad6343b9f58f0dd5e0083cbcece934",
+    effectiveSolutionCorpusHash: "3f261d33e581a757910f4d1adcc55fdfce18b99e06f6f028cdbc7455df80a859",
+    repairHash: "f9238416ca49a14e07534d93b3eae342c54b5d7d72260f67f0259d5787e94bfc",
+    finalTerminal: {
+      path: "problem-terminal-fidelity/" +
+        "v2-0000-3f5b099d16bd0e97a5366817a187941ce9ad6343b9f58f0dd5e0083cbcece934-" +
+        "63d77badb25e691a60b69459dc4f3cae5060dd694b4eb0220e6af1db2e8123a7.json",
+      sha256: "edd12ebc9714abfe9f7a6fcf02e0125c9f5fd365930f840ca6d5c4ef60319d52",
+      from: 1,
+      to: 12,
+      ownedFrom: 1,
+      ownedTo: 12,
+      inputHash: "63d77badb25e691a60b69459dc4f3cae5060dd694b4eb0220e6af1db2e8123a7",
+      itemHash: "3be84dba08e27771c13278957d72adadbb5ad53ff02679a394a940504e8ad99f",
+    },
+  },
+  problemRecoveryArtifact: {
+    path: "problem-recoveries/" +
+      "v2-0005-0014-128751e9a46e78da7afa65f5cff3c679d694a9704a06fa91c1194f375cfddb3d.json",
+    sha256: "8b4673ef9d05cfd74f5f12e21a4940e1f49ed76e54b2d381041f74f866bf63dc",
+  },
+  classificationRecoveryArtifact: {
+    path: "classification-recoveries/" +
+      "v2-0005-0014-5a76003ddc1f99328f3680768b909e18fbf007f9129950ca31c5d3641463708b-" +
+      "7bb7cb863c8c4855.json",
+    sha256: "797c19d7909901cc90701c976e82a97ffccb4853d286575b915ab1462b31462f",
+  },
+} as const;
 
 export function existingCorpusMigrationAllowlistFingerprint(): string {
   return canonicalEvidenceHash(EXISTING_MIGRATION_ALLOWLIST);

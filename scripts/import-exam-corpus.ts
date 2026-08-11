@@ -430,7 +430,277 @@ export const EXISTING_CORPUS_MIGRATION_ALLOWLIST: readonly ExistingCorpusMigrati
     answer: "④ $\\sqrt[3]{2}$",
     solutionPage: 1,
   }],
+}, {
+  entryId: "ebsi:5594500",
+  entryToken: "e9fcb8ccb0af1356a50a6de4",
+  oldReceiptSha256: "8a5cfda41b88f36a39634f4136314015e582c8b2331413382421b576f42f356d",
+  receiptCoreSha256: "8a5cfda41b88f36a39634f4136314015e582c8b2331413382421b576f42f356d",
+  beforeProjectionHash: "c32e8d057c4f1b6e1398a8af37910670b6d91cd1bf4bb3c01a259c1063c4e0c6",
+  afterProjectionHash: "592e077a4415fc7c8e40ffbc220cc6cd8e0234459c4aaa825d26efe9a7257c13",
+  auditPath: "answer-audit/v5-1ea8994dca6c961a78178fa833c1889cc20706d64c81c11f5d8e20048e740a3e.json",
+  auditSha256: "beda5895554570baa0f115d85dc68819835cdc1e3076281d2f2f5442a8bbd9dc",
+  effectiveCorpusHash: "3afdc2e5f9b32575f91acf4a7d2b6a77198f61c797d2f2694c3131d63b0e7041",
+  effectiveSolutionCorpusHash: "979604ac94d4de200ef6ccc48ba4a3f9bdc41efd78547b772d9fa906d64593a7",
+  problemHash: "4d630cb1f52019a3d73d04ca377fe43409e34c6acdc8b86b115e4ac77c69366c",
+  solutionHash: "d42af5092d32cb18ae589858af7b790df4ab0dd6758cda62d9951241a0d0cdbb",
+  bookIds: [72],
+  fileIds: [92, 93],
+  questionIds: [2946, 2947, 2948],
+  bookItemIds: [6422, 6423, 6424, 6425, 6426, 6427],
+  newKeys: [],
+  newQuestions: [],
+}, {
+  entryId: "ebsi:5525984",
+  entryToken: "7755c70fefaa45f755086e2b",
+  oldReceiptSha256: "b6cbf1e1874d3f996b911f0e2f9507855f5155b58b0dc31ad63b7682870fcb0f",
+  receiptCoreSha256: "34c59e90557f5aff5b6fc422426a296901d0777b0d533a5d4220b5f4dc9277c1",
+  beforeProjectionHash: "2c2a65902b4e0c78d35545f25a36a018a8fb61f6386eb85eef95bb4bc1946fce",
+  afterProjectionHash: "74a78e48a28f366787238a8e9d901b73821ac7b4a23889002fc3e844ef2429c8",
+  auditPath: "answer-audit/v5-0aa599c8caf9abc8ee2136619658466958350b7a2725b93a9f42437e03140db1.json",
+  auditSha256: "a3135634f1f4c115fd284a104a4e8dd529a9b6b536c35c36da784530bff3d9b4",
+  effectiveCorpusHash: "1e076c1128fc58f956f12db80716af215f2cedf605c1816acc5e234d0c320021",
+  effectiveSolutionCorpusHash: "90a1214067bc39dfd0b3d20fe84bcfde48ab7923334d9d507dbdbb39bebfada9",
+  problemHash: "1621eca42821e5feccbb56604249cbcedd8adf6bae6109960f6c790a61c14ec1",
+  solutionHash: "a081092a68c797d8ae2d0becd0fd17d551c7d009f208c7ae9f32301a5531c687",
+  bookIds: [133, 134],
+  fileIds: [214, 215, 216, 217],
+  questionIds: [3504, 3505, 3506, 3507, 3508, 3509, 3510, 3511, 3512, 3513, 3514],
+  bookItemIds: [7538, 7539, 7540, 7541, 7542, 7543, 7544, 7545, 7546, 7547, 7548, 7549, 7550, 7551, 7552, 7553, 7554, 7555, 7556, 7557, 7558, 7559],
+  newKeys: ["10:25", "7:18"],
+  newQuestions: [{
+    key: "10:25",
+    targetSubject: "수학 - 수학Ⅰ·대수",
+    qtype: "short",
+    difficulty: "하",
+    question: "함수 $f(x)=\\dfrac{1}{2}x+2$에 대하여 $\\displaystyle\\sum_{k=1}^{15}f(2k)$의 값을 구하시오. [3점]",
+    answer: "150",
+    solutionPage: 8,
+  }, {
+    key: "7:18",
+    targetSubject: "수학 - 수학Ⅱ·미적분Ⅰ",
+    qtype: "mcq",
+    difficulty: "중",
+    question: "최고차항의 계수가 1인 이차함수 $f(x)$가\n\n$$\\lim_{x\\to a}\\frac{f(x)-(x-a)}{f(x)+(x-a)}=\\frac{3}{5}$$\n\n을 만족시킨다. 방정식 $f(x)=0$의 두 근을 $\\alpha$, $\\beta$라 할 때, $|\\alpha-\\beta|$의 값은? (단, $a$는 상수이다.) [4점]",
+    answer: "④",
+    solutionPage: 5,
+  }],
+}, {
+  entryId: "ebsi:5594501",
+  entryToken: "b395aca2790e257b1487b455",
+  oldReceiptSha256: "289407874ab8bef65e817189c07e03d55901aa44bee49deff7b9aa523dd907dc",
+  receiptCoreSha256: "289407874ab8bef65e817189c07e03d55901aa44bee49deff7b9aa523dd907dc",
+  beforeProjectionHash: "99c8e405ccbd20c1bfbe76c10a67ceef75b8e3d0335e0edf8317525cd2ee0fe0",
+  afterProjectionHash: "834e5ab1c8c5db5e4958c49e3487754ee3de10dc3739c6d8ebe121841ca0e434",
+  auditPath: "answer-audit/v5-47f3e1d06a7314a79714e1a3e2a3a729d0e0406a17f1d6ca0770f759602dac47.json",
+  auditSha256: "1a233022c7ab5d61adc6b5dc4078c5447b6ad8308e24f856f989e0157d1e3aec",
+  effectiveCorpusHash: "9899689cf6ebc256fbe32d7898c3cb29d0dabda066799ccbeaaf977c70894d31",
+  effectiveSolutionCorpusHash: "223013f3ef086c504c766419d0f94b000276ffca7b791e6c4eb8ffeb1274ba6c",
+  problemHash: "1cb11356d6410d0834283b73a3f2fdc6a26035d5639d14424e7118a07b10da87",
+  solutionHash: "595dd1c702145071c137e23b6b42d6ccf1189e050cd36510049b08c2f33bff36",
+  bookIds: [75, 76],
+  fileIds: [98, 99, 100, 101],
+  questionIds: [2957, 2958, 2959, 2960, 2961, 2962, 2963, 2964, 2965],
+  bookItemIds: [6444, 6445, 6446, 6447, 6448, 6449, 6450, 6451, 6452, 6453, 6454, 6455, 6456, 6457, 6458, 6459, 6460, 6461],
+  newKeys: [],
+  newQuestions: [],
+}, {
+  entryId: "ebsi:5769268",
+  entryToken: "bc7655b894a573179fae1c73",
+  oldReceiptSha256: "e5ab9b993ac780ffb90d8b5f52bc5234a580e68ba69e7fc8000f072a2319dea6",
+  receiptCoreSha256: "e5ab9b993ac780ffb90d8b5f52bc5234a580e68ba69e7fc8000f072a2319dea6",
+  beforeProjectionHash: "beff875fcbb5f8b55181fe864243cb84c79bac2c675ad3b1b0cfe11432eff701",
+  afterProjectionHash: "22b67b72821fe5099dbd55ef89ce811ba1c7c3f155696e7d82210aa623c2659a",
+  auditPath: "answer-audit/v5-f9f193620bfa21a32e82eb243065ab1edf814cef3a2559b7f33028edff6e089e.json",
+  auditSha256: "83924d33a5806eaf8df3fc52249f5d0abcf9db83b23c0704b7f44a387b8c9207",
+  effectiveCorpusHash: "3f0f4625f5ee5ba0c627c2655ae751e7fdbd334e49143b552b1280b71abbdda6",
+  effectiveSolutionCorpusHash: "62281ae18f8a3f54a40bac39ee759f599d713a3843942d7f845a5177d54508cb",
+  problemHash: "f0135f70b321bab2825a89c10ac97724d573793578cd2c872aaa342bd2ac179b",
+  solutionHash: "bb5b5d03101f67e1f56fe33870def9bd90d91892ed3ef893d9e6c7df4d90aa66",
+  bookIds: [108, 109],
+  fileIds: [164, 165, 166, 167],
+  questionIds: [3272, 3273, 3274, 3275, 3276, 3277, 3278, 3279, 3280, 3281, 3282, 3283, 3284],
+  bookItemIds: [7074, 7075, 7076, 7077, 7078, 7079, 7080, 7081, 7082, 7083, 7084, 7085, 7086, 7087, 7088, 7089, 7090, 7091, 7092, 7093, 7094, 7095, 7096, 7097, 7098, 7099],
+  newKeys: [],
+  newQuestions: [],
+}, {
+  entryId: "ebsi:5875877",
+  entryToken: "2df36741f509a5d174ef8538",
+  oldReceiptSha256: "3f017d124ca92ee3101fc2e79334f57b058b2f00418e2d1e272237b8a38af9ac",
+  receiptCoreSha256: "3f017d124ca92ee3101fc2e79334f57b058b2f00418e2d1e272237b8a38af9ac",
+  beforeProjectionHash: "8e2516d4771eb9541d85f378f0b3628aa8399417130b72fa5db3017e161e33ff",
+  afterProjectionHash: "77d8e9f47fc9e85eb7cdac32f4c7608932c7a25e102893104aaf1ad3aa64af1f",
+  auditPath: "answer-audit/v5-756d5760b1711c86280bf2a416b02410f3f9406825b949196dbb9dcc49a1b27a.json",
+  auditSha256: "2a8ac363c05b221e3e4b94c6be256363acbc465bd048d8ae979bd7961c311568",
+  effectiveCorpusHash: "17ca7ec78753ccaba65a5a5d2c764d467e14c738647f2197ad73d1db7b7cabe5",
+  effectiveSolutionCorpusHash: "54d13297d357b94c864b6aab8adb6857f1ed0725760bd3654d74653b50704aa2",
+  problemHash: "ff5e3ecc50294464bdab326d6ba9f8d1f8de3a1b77706a80db0ce718b98c1217",
+  solutionHash: "0247df4f3d1e2cdad51c5a34db6c811489bd74df70fdb8fa99d4c65439f8fe14",
+  bookIds: [125],
+  fileIds: [198, 199],
+  questionIds: [3451, 3452, 3453, 3454, 3455],
+  bookItemIds: [7432, 7433, 7434, 7435, 7436, 7437, 7438, 7439, 7440, 7441],
+  newKeys: [],
+  newQuestions: [],
+}, {
+  entryId: "ebsi:5578423",
+  entryToken: "a8beae02eaa19479bb277017",
+  oldReceiptSha256: "99e7fa9f4461bb3617f15a4d150469a2e07ef44fc1c2e0c1c980d32eaa7aad57",
+  receiptCoreSha256: "99e7fa9f4461bb3617f15a4d150469a2e07ef44fc1c2e0c1c980d32eaa7aad57",
+  beforeProjectionHash: "23503a537254ebbe86097a178329946a6dd747122fbe67d557403aebe0aacb21",
+  afterProjectionHash: "d876cdad3af19a6f91fd9feafac2c7a1ef374596f3fdad6996932ac471e490b0",
+  auditPath: "answer-audit/v5-00e94aae43035db62fee1ddb79997058780a54a58b9bcdbe7350ecb36beea814.json",
+  auditSha256: "4a1bcc0ca1e5d6f479ba6f316289d1ee4de7a97fd8232d32097446eae4086a87",
+  effectiveCorpusHash: "e7533bb091bda78609d51dc886f4e727562e2ac4a0824b04d9bae0bd273a35a9",
+  effectiveSolutionCorpusHash: "bd8bf015e9804eb15d00a30de2209f120a712fc93cb9aaafbbce0abec379b21c",
+  problemHash: "7b1b90b6152f9a7f83e8ff66753b2afd46efc14637e1535c35ced65ed572f3bb",
+  solutionHash: "f1d4889cd62c7266e55db807502756bc9c075abfc9dc79633a101f08713d5ee2",
+  bookIds: [60],
+  fileIds: [68, 69],
+  questionIds: [2843, 2844, 2845, 2846, 2847, 2848, 2849],
+  bookItemIds: [6216, 6217, 6218, 6219, 6220, 6221, 6222, 6223, 6224, 6225, 6226, 6227, 6228, 6229],
+  newKeys: [],
+  newQuestions: [],
+}, {
+  entryId: "ebsi:5772823",
+  entryToken: "a6e8dc7eae6679300d9e03e2",
+  oldReceiptSha256: "a8371657db6c96eeb34b80740272a6a8d8ae47c464725dc138246bbf2bb64a2f",
+  receiptCoreSha256: "a8371657db6c96eeb34b80740272a6a8d8ae47c464725dc138246bbf2bb64a2f",
+  beforeProjectionHash: "7d0a1b53be88801b1c2a2daf2c950799c5ac9f436c4142e685d64f69766d53e0",
+  afterProjectionHash: "f72f894947f3fc73d13b6055bda0beafd2f4a78a8c8b8c3c5575fefca2fb1529",
+  auditPath: "answer-audit/v5-68667b82446fce986db92d3c24be32331e0127efa1c584ad1475430f2cdd10ea.json",
+  auditSha256: "6ce9b35df28f12176b6febab2ac106e1489a1c7aa6ccfb453cb683b6d3d47007",
+  effectiveCorpusHash: "36b1b542ad89e681cd360877aa6279660dd1cd2863495ee806965096ca77386c",
+  effectiveSolutionCorpusHash: "6cee9490549baedb11a4788c4ead58d4990dc89c63562a6146790ea168e3d83e",
+  problemHash: "4c43873d3ee9d4daec707286d92db505918b75f9d03f0b84f7c076b646809a0a",
+  solutionHash: "a32e75ae0b54c72c5d1ce1aaf2ce9b05d74c88ab9f2756b65367f31f6223c863",
+  bookIds: [110, 111],
+  fileIds: [168, 169, 170, 171],
+  questionIds: [3285, 3286, 3287, 3288, 3289, 3290, 3291, 3292, 3293, 3294, 3295, 3296, 3297, 3298, 3299, 3300, 3301],
+  bookItemIds: [7100, 7101, 7102, 7103, 7104, 7105, 7106, 7107, 7108, 7109, 7110, 7111, 7112, 7113, 7114, 7115, 7116, 7117, 7118, 7119, 7120, 7121, 7122, 7123, 7124, 7125, 7126, 7127, 7128, 7129, 7130, 7131, 7132, 7133],
+  newKeys: [],
+  newQuestions: [],
 }] as const;
+
+const EXISTING_CORPUS_MIGRATION_HISTORICAL_RECOVERY = {
+  entryId: "ebsi:5578423",
+  entryToken: "a8beae02eaa19479bb277017",
+  key: "5:14",
+  sourcePage: 5,
+  contextFrom: 1,
+  contextTo: 12,
+  sourceHash: "7b1b90b6152f9a7f83e8ff66753b2afd46efc14637e1535c35ced65ed572f3bb",
+  currentAudit: {
+    path: "answer-audit/v5-00e94aae43035db62fee1ddb79997058780a54a58b9bcdbe7350ecb36beea814.json",
+    sha256: "4a1bcc0ca1e5d6f479ba6f316289d1ee4de7a97fd8232d32097446eae4086a87",
+    digest: "00e94aae43035db62fee1ddb79997058780a54a58b9bcdbe7350ecb36beea814",
+    effectiveCorpusHash: "e7533bb091bda78609d51dc886f4e727562e2ac4a0824b04d9bae0bd273a35a9",
+    effectiveSolutionCorpusHash: "bd8bf015e9804eb15d00a30de2209f120a712fc93cb9aaafbbce0abec379b21c",
+    repairHash: "586755438bb766e88f55570c95ab77ae34283a987637998695ec65a583bbaa5c",
+    revisionProblemArtifact: {
+      path: "problem-revision-batches/" +
+        "v1-0001-0012-0005-c95393fd12b3dd309dc104f8eef18cc0fcd2450c80afb9e7935ad016aa30435b.json",
+      sha256: "b4d0678a23fccb09886c94de0de48299383271642bf29b1d5246b55973389097",
+    },
+    revisionClassificationArtifact: {
+      path: "classification-revision-batches/" +
+        "v1-0001-0012-e7b8a7bced05c225c663a08ecdd1cf123c0982a515f60a7546698050919595e2-" +
+        "7bb7cb863c8c4855.json",
+      sha256: "cb7cc97c0a994c053d7e6e0c9e802892a9126f9863a9109c45c55d01a9859d6a",
+    },
+  },
+  historicalAudit: {
+    path: "answer-audit/v5-841e6f0d22d791454ff7d37e9e702d22c981136e1408f3ef4d3af8f15213f56c.json",
+    sha256: "36ca283c14f6db268c370ce0158605c2a997aab42fa2f03dccb910ddf8d5c358",
+    digest: "841e6f0d22d791454ff7d37e9e702d22c981136e1408f3ef4d3af8f15213f56c",
+    effectiveCorpusHash: "3f5b099d16bd0e97a5366817a187941ce9ad6343b9f58f0dd5e0083cbcece934",
+    effectiveSolutionCorpusHash: "3f261d33e581a757910f4d1adcc55fdfce18b99e06f6f028cdbc7455df80a859",
+    repairHash: "f9238416ca49a14e07534d93b3eae342c54b5d7d72260f67f0259d5787e94bfc",
+    finalTerminal: {
+      path: "problem-terminal-fidelity/" +
+        "v2-0000-3f5b099d16bd0e97a5366817a187941ce9ad6343b9f58f0dd5e0083cbcece934-" +
+        "63d77badb25e691a60b69459dc4f3cae5060dd694b4eb0220e6af1db2e8123a7.json",
+      sha256: "edd12ebc9714abfe9f7a6fcf02e0125c9f5fd365930f840ca6d5c4ef60319d52",
+      from: 1,
+      to: 12,
+      ownedFrom: 1,
+      ownedTo: 12,
+      inputHash: "63d77badb25e691a60b69459dc4f3cae5060dd694b4eb0220e6af1db2e8123a7",
+      itemHash: "3be84dba08e27771c13278957d72adadbb5ad53ff02679a394a940504e8ad99f",
+    },
+  },
+  baseProblemRepairArtifact: {
+    path: "problem-repair-batches/" +
+      "v2-0001-0012-dd7891b2f99f58e4bc2b9eb0b9a3c37d9b54fd3ae3d636d2e83ae122f60e0319.json",
+    sha256: "43e3e8a684ff71e51bc03696cb0ee8d6ff852310aed6fe5ad92dfea286271c15",
+    itemHash: "886aad9a19cb7363d247ee555605d874f9ab8adcf43a1e976e204d5dc4218bc7",
+  },
+  baseClassificationRepairArtifact: {
+    path: "classification-repair-batches/" +
+      "v1-0001-0012-d5329e5c8ae2c1695fcef08251c8834b05fde23f1f529153be6677e895877107-" +
+      "7bb7cb863c8c4855.json",
+    sha256: "7d07d23655ed9b2ae8950d4f8b96489d33a21b4ae450746262ef32955357b7cd",
+    itemHash: "a0e51f423bc7afbfdd7edc8bb1f5177e526758b325de2989dcd18770b88808b0",
+  },
+  revisionProblemArtifact: {
+    path: "problem-revision-batches/" +
+      "v1-0001-0012-0005-dd7db9197afb8e1c74d22274449ca2fc2886d1c6f5ba43561bcba9834d5faf98.json",
+    sha256: "4750b12e5c831bf2f637e49e78af95321a649a093ab411f730129607221f5eed",
+    itemHash: "fc34dd3a2b8a28f5149bb433652cec9f2877b4cd8e6a362add3b14dbd342c527",
+  },
+  revisionClassificationArtifact: {
+    path: "classification-revision-batches/" +
+      "v1-0001-0012-cb026235f308a773bf141fb65ef513c55845508320cc6fd7667aad8bf40ea5b1-" +
+      "7bb7cb863c8c4855.json",
+    sha256: "ad6c2e41959f7d657050665034b6df0ecb7641b9c38587459fcf716e230f49ab",
+    itemHash: "0050f80cc99ae98af39614e650f6139f2349905e7c755d514c249ca98c87461c",
+  },
+  revisionTrigger: {
+    evidenceHash: "ccccb3998990fb5d6037b1ab6f24431ec816001e054068b416a9a0d5a2aa7ba3",
+    terminalCheckpoint: {
+      path: "problem-terminal-fidelity/" +
+        "v2-0000-1100855537c7a25dfad0f391884e96909ed84879576ecb61c5c542505ed7de81-" +
+        "0493595d89c576537b4656cd206b7debf2d2249921fb79fa8f1f37c18d9d4568.json",
+      sha256: "c2e1394746652b9c44c44a87307a0d93de27e700418a32bfd5b996169f64902b",
+      from: 1,
+      to: 12,
+      ownedFrom: 1,
+      ownedTo: 12,
+      inputHash: "0493595d89c576537b4656cd206b7debf2d2249921fb79fa8f1f37c18d9d4568",
+    },
+    terminalItemHash: "cc6116b029d676c09927d268e65bef9eb3db7798642d15e31e883b17fe70f4cc",
+  },
+  recoveryTrigger: {
+    evidenceHash: "879cb5f1e15378e5cbb3bd46ea8693b712b05e7479d8826d90bd2ee2506b6528",
+    preRecoveryEffectiveCorpusHash: "0ca6af5c2bc52257e87a33c3bbe5709265cc55108dba5510f458be0b7cbc9adc",
+    terminalCheckpoint: {
+      path: "problem-terminal-fidelity/" +
+        "v2-0000-0ca6af5c2bc52257e87a33c3bbe5709265cc55108dba5510f458be0b7cbc9adc-" +
+        "11f5adc2d6b3ae11be4501e3778b34b581f272a4f1a3ccb6e6a9262d5d101fab.json",
+      sha256: "ad1388266e090ba155c5be5a05ead47e126360501dadd1406741fb2305c7e952",
+      from: 1,
+      to: 12,
+      ownedFrom: 1,
+      ownedTo: 12,
+      inputHash: "11f5adc2d6b3ae11be4501e3778b34b581f272a4f1a3ccb6e6a9262d5d101fab",
+    },
+    terminalItemHash: "e17846969c5b80bba199bea3438c049f5f1776493722b2c3a4133b86d674cabc",
+  },
+  problemRecoveryArtifact: {
+    path: "problem-recoveries/" +
+      "v2-0005-0014-128751e9a46e78da7afa65f5cff3c679d694a9704a06fa91c1194f375cfddb3d.json",
+    sha256: "8b4673ef9d05cfd74f5f12e21a4940e1f49ed76e54b2d381041f74f866bf63dc",
+    basisDigest: "128751e9a46e78da7afa65f5cff3c679d694a9704a06fa91c1194f375cfddb3d",
+    itemHash: "c19f90862e8cb5ad42237478624709d16b5d3efd3a1e83088a94277457e593ec",
+  },
+  classificationRecoveryArtifact: {
+    path: "classification-recoveries/" +
+      "v2-0005-0014-5a76003ddc1f99328f3680768b909e18fbf007f9129950ca31c5d3641463708b-" +
+      "7bb7cb863c8c4855.json",
+    sha256: "797c19d7909901cc90701c976e82a97ffccb4853d286575b915ab1462b31462f",
+    basisDigest: "5a76003ddc1f99328f3680768b909e18fbf007f9129950ca31c5d3641463708b",
+    itemHash: "d836f91d13d23a06f50f07835f4d8022ad51c89c3e07b54c0c0f5a3571810ad6",
+  },
+} as const;
 
 const execFileP = promisify(execFile);
 
@@ -7836,6 +8106,487 @@ function pinnedTerminalRecoveryItem(
     scopeConfidence: row.scopeConfidence,
     scopeEvidence: exactString(row.scopeEvidence, `${label}.scopeEvidence`, 2000),
   };
+}
+
+async function assertExistingMigrationHistoricalRecoveryAuthority(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  stateDir: string
+): Promise<void> {
+  const spec = EXISTING_CORPUS_MIGRATION_HISTORICAL_RECOVERY;
+  if (entry.id !== spec.entryId) return;
+  const stateNames = new Set(readdirSync(stateDir));
+  const directoryHasSignal = (name: string, matches: (child: string) => boolean) => {
+    if (!stateNames.has(name)) return false;
+    const directory = join(stateDir, name);
+    const stat = lstatSync(directory);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) return true;
+    return readdirSync(directory).some((child) => !child.endsWith(".tmp") && matches(child));
+  };
+  const hasPersistedSignal = stateNames.has("receipt.json") ||
+    directoryHasSignal("answer-audit", (name) => /^v5-[a-f0-9]{64}\.json$/u.test(name)) ||
+    directoryHasSignal("problem-recoveries", (name) => name.startsWith("v2-0005-0014-")) ||
+    directoryHasSignal("classification-recoveries", (name) => name.startsWith("v2-0005-0014-"));
+  if (!hasPersistedSignal) return;
+  const sourcePath = confinedStateFile(stateDir, "problem.pdf", "migration historical recovery source");
+  if (
+    entryToken(entry) !== spec.entryToken || problem.sha256 !== spec.sourceHash ||
+    await sha256File(sourcePath) !== spec.sourceHash
+  ) throw new Error(`${entry.id} migration historical recovery source가 다릅니다`);
+
+  const exactSet = (actual: string[], expected: readonly string[], label: string) => {
+    const expectedSet = new Set(expected);
+    const actualSet = new Set(actual);
+    const extras = [...actualSet].filter((path) => !expectedSet.has(path));
+    const missing = [...expectedSet].filter((path) => !actualSet.has(path));
+    if (extras.length > 0 || missing.length > 0) {
+      throw new Error(`${label} orphan/conflict: extra=${extras.join(",") || "-"}, ` +
+        `missing=${missing.join(",") || "-"}`);
+    }
+  };
+  const problemRecoveries = strictArtifactNames(
+    join(stateDir, "problem-recoveries"),
+    "migration historical problem recovery",
+    (name) => /^v2-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
+  ).map((name) => `problem-recoveries/${name}`)
+    .filter((path) => path.startsWith("problem-recoveries/v2-0005-0014-"));
+  const classificationRecoveries = strictArtifactNames(
+    join(stateDir, "classification-recoveries"),
+    "migration historical classification recovery",
+    (name) => /^v2-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
+  ).map((name) => `classification-recoveries/${name}`)
+    .filter((path) => path.startsWith("classification-recoveries/v2-0005-0014-"));
+  exactSet(problemRecoveries, [spec.problemRecoveryArtifact.path], "migration historical problem recovery");
+  exactSet(
+    classificationRecoveries,
+    [spec.classificationRecoveryArtifact.path],
+    "migration historical classification recovery"
+  );
+  const auditPaths = strictArtifactNames(
+    join(stateDir, "answer-audit"),
+    "migration historical answer audit",
+    (name) => /^v[1-5]-[a-f0-9]{64}\.json$/u.test(name)
+  ).filter((name) => name.startsWith("v5-")).map((name) => `answer-audit/${name}`);
+  exactSet(
+    auditPaths,
+    [spec.currentAudit.path, spec.historicalAudit.path],
+    "migration historical answer audit"
+  );
+
+  const validateAudit = async (pin: typeof spec.currentAudit | typeof spec.historicalAudit) => {
+    const audit = await pinnedCanonicalCheckpoint(stateDir, pin, "migration historical answer audit");
+    const { version: _version, auditDigest, ...basis } = audit;
+    if (
+      audit.version !== ANSWER_AUDIT_VERSION || audit.entryId !== entry.id || audit.problemHash !== spec.sourceHash ||
+      audit.effectiveCorpusHash !== pin.effectiveCorpusHash ||
+      audit.effectiveSolutionCorpusHash !== pin.effectiveSolutionCorpusHash || auditDigest !== pin.digest ||
+      canonicalEvidenceHash(basis) !== pin.digest || pin.path !== `answer-audit/v${ANSWER_AUDIT_VERSION}-${pin.digest}.json`
+    ) throw new Error(`${entry.id} migration historical answer audit envelope가 다릅니다`);
+    return audit;
+  };
+  const currentAudit = await validateAudit(spec.currentAudit);
+  const historicalAudit = await validateAudit(spec.historicalAudit);
+  const repairFor = (audit: Record<string, unknown>, label: string) => {
+    const repairs = Array.isArray(audit.repairs)
+      ? audit.repairs.map((value, index) => object(value, `${label}.repairs[${index}]`))
+      : [];
+    const matches = repairs.filter((repair) => repair.key === spec.key);
+    if (matches.length !== 1) throw new Error(`${label} ${spec.key} repair가 유일하지 않습니다`);
+    return matches[0];
+  };
+  const currentRepair = repairFor(currentAudit, "current answer audit");
+  const historicalRepair = repairFor(historicalAudit, "historical answer audit");
+  const currentRevision = object(currentRepair.revision, "current Q14 revision");
+  const historicalRevision = object(historicalRepair.revision, "historical Q14 revision");
+  if (
+    canonicalEvidenceHash(currentRepair) !== spec.currentAudit.repairHash ||
+    canonicalEvidenceHash(historicalRepair) !== spec.historicalAudit.repairHash || "recovery" in currentRevision ||
+    canonicalEvidenceHash(currentRevision.problemArtifact) !==
+      canonicalEvidenceHash(spec.currentAudit.revisionProblemArtifact) ||
+    canonicalEvidenceHash(currentRevision.classificationArtifact) !== canonicalEvidenceHash({
+      ...spec.currentAudit.revisionClassificationArtifact,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    }) ||
+    object(historicalRevision.problemArtifact, "historical revision problem").path ===
+      spec.currentAudit.revisionProblemArtifact.path ||
+    object(historicalRevision.classificationArtifact, "historical revision classification").path ===
+      spec.currentAudit.revisionClassificationArtifact.path
+  ) throw new Error(`${spec.key} migration current/historical lineage가 다릅니다`);
+
+  const itemFrom = (checkpoint: Record<string, unknown>, itemHash: string, label: string): QuizItemEx => {
+    const matches = restoredSparseQuizItems(checkpoint.items).filter((item) => questionKey(item) === spec.key);
+    if (matches.length !== 1 || canonicalEvidenceHash(matches[0]) !== itemHash) {
+      throw new Error(`${label} item이 유일하지 않거나 hash가 다릅니다`);
+    }
+    return matches[0];
+  };
+  const decisionFrom = (
+    checkpoint: Record<string, unknown>,
+    itemHash: string,
+    label: string
+  ): ClassificationDecision => {
+    const raw = Array.isArray(checkpoint.items) ? checkpoint.items : [];
+    const matches = raw.filter((value) => object(value, `${label} item`).key === spec.key);
+    if (matches.length !== 1) throw new Error(`${label} item이 유일하지 않습니다`);
+    const decision = parseHistoricalDecision(matches[0], spec.key, `${label} item`);
+    if (canonicalEvidenceHash(decision) !== itemHash) throw new Error(`${label} item hash가 다릅니다`);
+    return decision;
+  };
+  const baseProblemCheckpoint = await pinnedCanonicalCheckpoint(
+    stateDir, spec.baseProblemRepairArtifact, "migration historical base problem repair"
+  );
+  const baseQuestion = itemFrom(
+    baseProblemCheckpoint, spec.baseProblemRepairArtifact.itemHash, "migration historical base problem repair"
+  );
+  const baseClassificationCheckpoint = await pinnedCanonicalCheckpoint(
+    stateDir, spec.baseClassificationRepairArtifact, "migration historical base classification repair"
+  );
+  decisionFrom(
+    baseClassificationCheckpoint,
+    spec.baseClassificationRepairArtifact.itemHash,
+    "migration historical base classification repair"
+  );
+
+  const terminalMember = async (
+    pin: typeof spec.revisionTrigger | typeof spec.recoveryTrigger,
+    effectiveCorpusHash: string,
+    question: QuizItemEx,
+    label: string
+  ) => {
+    const checkpoint = await pinnedCanonicalCheckpoint(stateDir, pin.terminalCheckpoint, label);
+    const inputs = Array.isArray(checkpoint.inputs)
+      ? checkpoint.inputs.map((value, index) => object(value, `${label}.inputs[${index}]`))
+      : [];
+    const rawItems = Array.isArray(checkpoint.items) ? checkpoint.items : [];
+    const inputMatches = inputs.filter((input) => input.key === spec.key);
+    const itemMatches = rawItems.filter((item) => object(item, `${label} item`).key === spec.key);
+    const terminalItem = itemMatches.length === 1
+      ? pinnedTerminalRecoveryItem(itemMatches[0], spec.key, `${label} item`)
+      : null;
+    if (
+      checkpoint.version !== PROBLEM_TERMINAL_FIDELITY_VERSION || checkpoint.entryId !== entry.id ||
+      checkpoint.sourceHash !== spec.sourceHash || checkpoint.effectiveCorpusHash !== effectiveCorpusHash ||
+      checkpoint.from !== pin.terminalCheckpoint.from || checkpoint.to !== pin.terminalCheckpoint.to ||
+      checkpoint.ownedFrom !== pin.terminalCheckpoint.ownedFrom ||
+      checkpoint.ownedTo !== pin.terminalCheckpoint.ownedTo ||
+      checkpoint.inputHash !== pin.terminalCheckpoint.inputHash ||
+      checkpoint.inputHash !== canonicalEvidenceHash(inputs) || inputMatches.length !== 1 || !terminalItem ||
+      canonicalEvidenceHash(inputMatches[0]) !== canonicalEvidenceHash(problemTerminalInput(question)) ||
+      canonicalEvidenceHash(terminalItem) !== pin.terminalItemHash || terminalItem.status !== "mismatch" ||
+      terminalItem.scopeDecision !== "reject" || terminalItem.scopeConfidence < 0.9 ||
+      sha256Text(terminalItem.evidence) !== pin.evidenceHash ||
+      checkpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+      checkpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+      checkpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+      checkpoint.scopePromptDigest !== PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST ||
+      checkpoint.model !== IMPORT_MODEL || checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+    ) throw new Error(`${label} full envelope/member가 다릅니다`);
+    return terminalItem;
+  };
+
+  await terminalMember(
+    spec.revisionTrigger,
+    "1100855537c7a25dfad0f391884e96909ed84879576ecb61c5c542505ed7de81",
+    baseQuestion,
+    "migration historical revision trigger"
+  );
+  const revisionTrigger = {
+    kind: "terminal" as const,
+    terminalCheckpoint: spec.revisionTrigger.terminalCheckpoint,
+    terminalItemHash: spec.revisionTrigger.terminalItemHash,
+    evidenceHash: spec.revisionTrigger.evidenceHash,
+  };
+  const revisionMember = {
+    key: spec.key,
+    printedNumber: "14",
+    sourcePage: spec.sourcePage,
+    baseProblemRepairArtifact: {
+      path: spec.baseProblemRepairArtifact.path,
+      sha256: spec.baseProblemRepairArtifact.sha256,
+    },
+    baseProblemRepairItemHash: spec.baseProblemRepairArtifact.itemHash,
+    baseClassificationRepairArtifact: {
+      path: spec.baseClassificationRepairArtifact.path,
+      sha256: spec.baseClassificationRepairArtifact.sha256,
+    },
+    baseClassificationRepairItemHash: spec.baseClassificationRepairArtifact.itemHash,
+    baseQuestionHash: spec.baseProblemRepairArtifact.itemHash,
+    baseClassificationHash: spec.baseClassificationRepairArtifact.itemHash,
+    trigger: revisionTrigger,
+  };
+  const revisionMembersDigest = canonicalEvidenceHash([revisionMember]);
+  const revisionProblemCheckpoint = await pinnedCanonicalCheckpoint(
+    stateDir, spec.revisionProblemArtifact, "migration historical problem revision"
+  );
+  const revisedQuestion = itemFrom(
+    revisionProblemCheckpoint, spec.revisionProblemArtifact.itemHash, "migration historical problem revision"
+  );
+  if (
+    spec.revisionProblemArtifact.path !== `problem-revision-batches/v${PROBLEM_REVISION_BATCH_VERSION}-` +
+      `0001-0012-0005-${revisionMembersDigest}.json` ||
+    revisionProblemCheckpoint.version !== PROBLEM_REVISION_BATCH_VERSION ||
+    revisionProblemCheckpoint.entryId !== entry.id || revisionProblemCheckpoint.sourceHash !== spec.sourceHash ||
+    revisionProblemCheckpoint.contextFrom !== spec.contextFrom || revisionProblemCheckpoint.contextTo !== spec.contextTo ||
+    revisionProblemCheckpoint.sourcePage !== spec.sourcePage ||
+    revisionProblemCheckpoint.membersDigest !== revisionMembersDigest ||
+    canonicalEvidenceHash(revisionProblemCheckpoint.members) !== canonicalEvidenceHash([revisionMember]) ||
+    revisionProblemCheckpoint.batchPromptVersion !== TARGETED_PROBLEM_BATCH_VERSION ||
+    revisionProblemCheckpoint.batchPromptDigest !== TARGETED_PROBLEM_BATCH_PROMPT_DIGEST ||
+    revisionProblemCheckpoint.revisionPromptVersion !== TARGETED_PROBLEM_REVISION_VERSION ||
+    revisionProblemCheckpoint.revisionPromptDigest !== TARGETED_PROBLEM_BATCH_REVISION_PROMPT_DIGEST ||
+    revisionProblemCheckpoint.model !== IMPORT_MODEL ||
+    revisionProblemCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
+  ) throw new Error(`${spec.key} migration historical problem revision basis가 다릅니다`);
+
+  const revisionClassificationMember = {
+    key: spec.key,
+    problemAuthority: {
+      key: spec.key,
+      path: spec.revisionProblemArtifact.path,
+      sha256: spec.revisionProblemArtifact.sha256,
+      itemHash: spec.revisionProblemArtifact.itemHash,
+    },
+    effectiveQuestionHash: spec.revisionProblemArtifact.itemHash,
+    baseClassificationRepairArtifact: {
+      path: spec.baseClassificationRepairArtifact.path,
+      sha256: spec.baseClassificationRepairArtifact.sha256,
+    },
+    baseClassificationRepairItemHash: spec.baseClassificationRepairArtifact.itemHash,
+    triggerHash: canonicalEvidenceHash(revisionTrigger),
+  };
+  const revisionOverlayDigest = canonicalEvidenceHash([revisionClassificationMember]);
+  const revisionClassificationCheckpoint = await pinnedCanonicalCheckpoint(
+    stateDir, spec.revisionClassificationArtifact, "migration historical classification revision"
+  );
+  const revisedClassification = decisionFrom(
+    revisionClassificationCheckpoint,
+    spec.revisionClassificationArtifact.itemHash,
+    "migration historical classification revision"
+  );
+  if (
+    spec.revisionClassificationArtifact.path !== `classification-revision-batches/` +
+      `v${CLASSIFICATION_REVISION_BATCH_VERSION}-0001-0012-${revisionOverlayDigest}-${CLASSIFIER_DIGEST}.json` ||
+    revisionClassificationCheckpoint.version !== CLASSIFICATION_REVISION_BATCH_VERSION ||
+    revisionClassificationCheckpoint.entryId !== entry.id ||
+    revisionClassificationCheckpoint.sourceHash !== spec.sourceHash ||
+    revisionClassificationCheckpoint.contextFrom !== spec.contextFrom ||
+    revisionClassificationCheckpoint.contextTo !== spec.contextTo ||
+    revisionClassificationCheckpoint.overlayDigest !== revisionOverlayDigest ||
+    canonicalEvidenceHash(revisionClassificationCheckpoint.members) !==
+      canonicalEvidenceHash([revisionClassificationMember]) ||
+    revisionClassificationCheckpoint.classifierVersion !== CLASSIFIER_VERSION ||
+    revisionClassificationCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+    revisionClassificationCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+    revisionClassificationCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+    revisionClassificationCheckpoint.model !== IMPORT_MODEL ||
+    revisionClassificationCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+    revisedClassification.transcription_status !== "exact"
+  ) throw new Error(`${spec.key} migration historical classification revision basis가 다릅니다`);
+  if (
+    canonicalEvidenceHash(historicalRepair.problemArtifact) !== canonicalEvidenceHash({
+      path: spec.baseProblemRepairArtifact.path,
+      sha256: spec.baseProblemRepairArtifact.sha256,
+    }) ||
+    historicalRepair.problemArtifactItemHash !== spec.baseProblemRepairArtifact.itemHash ||
+    canonicalEvidenceHash(historicalRepair.classificationArtifact) !== canonicalEvidenceHash({
+      path: spec.baseClassificationRepairArtifact.path,
+      sha256: spec.baseClassificationRepairArtifact.sha256,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    }) ||
+    historicalRepair.classificationArtifactItemHash !== spec.baseClassificationRepairArtifact.itemHash ||
+    canonicalEvidenceHash(historicalRevision.problemArtifact) !== canonicalEvidenceHash({
+      path: spec.revisionProblemArtifact.path,
+      sha256: spec.revisionProblemArtifact.sha256,
+    }) ||
+    historicalRevision.problemArtifactItemHash !== spec.revisionProblemArtifact.itemHash ||
+    canonicalEvidenceHash(historicalRevision.classificationArtifact) !== canonicalEvidenceHash({
+      path: spec.revisionClassificationArtifact.path,
+      sha256: spec.revisionClassificationArtifact.sha256,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    }) ||
+    historicalRevision.classificationArtifactItemHash !== spec.revisionClassificationArtifact.itemHash ||
+    canonicalEvidenceHash(historicalRevision.trigger) !== canonicalEvidenceHash(revisionTrigger)
+  ) throw new Error(`${spec.key} migration historical audit revision binding이 다릅니다`);
+
+  const recoveryTriggerItem = await terminalMember(
+    spec.recoveryTrigger,
+    spec.recoveryTrigger.preRecoveryEffectiveCorpusHash,
+    revisedQuestion,
+    "migration historical recovery trigger"
+  );
+  const recoveryBasis = {
+    baseProblemRepairArtifact: {
+      path: spec.baseProblemRepairArtifact.path,
+      sha256: spec.baseProblemRepairArtifact.sha256,
+    },
+    baseProblemRepairItemHash: spec.baseProblemRepairArtifact.itemHash,
+    baseClassificationRepairArtifact: {
+      path: spec.baseClassificationRepairArtifact.path,
+      sha256: spec.baseClassificationRepairArtifact.sha256,
+    },
+    baseClassificationRepairItemHash: spec.baseClassificationRepairArtifact.itemHash,
+    baseProblemRevisionArtifact: {
+      path: spec.revisionProblemArtifact.path,
+      sha256: spec.revisionProblemArtifact.sha256,
+    },
+    baseProblemRevisionItemHash: spec.revisionProblemArtifact.itemHash,
+    baseClassificationRevisionArtifact: {
+      path: spec.revisionClassificationArtifact.path,
+      sha256: spec.revisionClassificationArtifact.sha256,
+    },
+    baseClassificationRevisionItemHash: spec.revisionClassificationArtifact.itemHash,
+    baseQuestionHash: spec.revisionProblemArtifact.itemHash,
+    baseClassificationHash: spec.revisionClassificationArtifact.itemHash,
+    key: spec.key,
+    printedNumber: "14",
+    sourcePage: spec.sourcePage,
+    contextFrom: spec.contextFrom,
+    contextTo: spec.contextTo,
+    sourceHash: spec.sourceHash,
+    trigger: {
+      kind: "terminal" as const,
+      terminalCheckpoint: spec.recoveryTrigger.terminalCheckpoint,
+      terminalItem: recoveryTriggerItem,
+      terminalItemHash: spec.recoveryTrigger.terminalItemHash,
+      evidenceHash: spec.recoveryTrigger.evidenceHash,
+      preRecoveryEffectiveCorpusHash: spec.recoveryTrigger.preRecoveryEffectiveCorpusHash,
+    },
+  };
+  const problemRecoveryCheckpoint = await pinnedCanonicalCheckpoint(
+    stateDir, spec.problemRecoveryArtifact, "migration historical problem recovery"
+  );
+  const recoveredQuestion = restoredQuizItems([problemRecoveryCheckpoint.item])[0];
+  if (
+    canonicalEvidenceHash(recoveryBasis) !== spec.problemRecoveryArtifact.basisDigest ||
+    spec.problemRecoveryArtifact.path !== `problem-recoveries/v${PROBLEM_TERMINAL_RECOVERY_VERSION}-` +
+      `0005-0014-${spec.problemRecoveryArtifact.basisDigest}.json` ||
+    problemRecoveryCheckpoint.version !== PROBLEM_TERMINAL_RECOVERY_VERSION ||
+    problemRecoveryCheckpoint.entryId !== entry.id ||
+    problemRecoveryCheckpoint.basisDigest !== spec.problemRecoveryArtifact.basisDigest ||
+    canonicalEvidenceHash(problemRecoveryCheckpoint.basis) !== canonicalEvidenceHash(recoveryBasis) ||
+    problemRecoveryCheckpoint.promptVersion !== TARGETED_PROBLEM_RECOVERY_VERSION ||
+    problemRecoveryCheckpoint.promptDigest !== TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST ||
+    problemRecoveryCheckpoint.model !== IMPORT_MODEL ||
+    problemRecoveryCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+    canonicalEvidenceHash(recoveredQuestion) !== spec.problemRecoveryArtifact.itemHash
+  ) throw new Error(`${spec.key} migration historical problem recovery basis가 다릅니다`);
+
+  const classificationRecoveryBasis = {
+    ...recoveryBasis,
+    problemArtifact: {
+      path: spec.problemRecoveryArtifact.path,
+      sha256: spec.problemRecoveryArtifact.sha256,
+    },
+    problemArtifactItemHash: spec.problemRecoveryArtifact.itemHash,
+    effectiveQuestionHash: spec.problemRecoveryArtifact.itemHash,
+  };
+  const classificationRecoveryCheckpoint = await pinnedCanonicalCheckpoint(
+    stateDir, spec.classificationRecoveryArtifact, "migration historical classification recovery"
+  );
+  const recoveredClassification = decisionFrom(
+    classificationRecoveryCheckpoint,
+    spec.classificationRecoveryArtifact.itemHash,
+    "migration historical classification recovery"
+  );
+  if (
+    canonicalEvidenceHash(classificationRecoveryBasis) !== spec.classificationRecoveryArtifact.basisDigest ||
+    spec.classificationRecoveryArtifact.path !== `classification-recoveries/` +
+      `v${CLASSIFICATION_TERMINAL_RECOVERY_VERSION}-0005-0014-` +
+      `${spec.classificationRecoveryArtifact.basisDigest}-${CLASSIFIER_DIGEST}.json` ||
+    classificationRecoveryCheckpoint.version !== CLASSIFICATION_TERMINAL_RECOVERY_VERSION ||
+    classificationRecoveryCheckpoint.entryId !== entry.id ||
+    classificationRecoveryCheckpoint.basisDigest !== spec.classificationRecoveryArtifact.basisDigest ||
+    canonicalEvidenceHash(classificationRecoveryCheckpoint.basis) !==
+      canonicalEvidenceHash(classificationRecoveryBasis) ||
+    classificationRecoveryCheckpoint.classifierVersion !== CLASSIFIER_VERSION ||
+    classificationRecoveryCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+    classificationRecoveryCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+    classificationRecoveryCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+    classificationRecoveryCheckpoint.recoveryPromptVersion !== TARGETED_PROBLEM_RECOVERY_VERSION ||
+    classificationRecoveryCheckpoint.recoveryPromptDigest !== TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST ||
+    classificationRecoveryCheckpoint.model !== IMPORT_MODEL ||
+    classificationRecoveryCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+    recoveredClassification.transcription_status !== "exact"
+  ) throw new Error(`${spec.key} migration historical classification recovery basis가 다릅니다`);
+
+  const historicalRecovery = object(historicalRevision.recovery, "historical Q14 recovery");
+  if (
+    canonicalEvidenceHash(historicalRecovery.problemArtifact) !== canonicalEvidenceHash({
+      path: spec.problemRecoveryArtifact.path,
+      sha256: spec.problemRecoveryArtifact.sha256,
+    }) ||
+    historicalRecovery.problemArtifactItemHash !== spec.problemRecoveryArtifact.itemHash ||
+    canonicalEvidenceHash(historicalRecovery.classificationArtifact) !== canonicalEvidenceHash({
+      path: spec.classificationRecoveryArtifact.path,
+      sha256: spec.classificationRecoveryArtifact.sha256,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      recoveryPromptVersion: TARGETED_PROBLEM_RECOVERY_VERSION,
+      recoveryPromptDigest: TARGETED_PROBLEM_RECOVERY_PROMPT_DIGEST,
+    }) ||
+    historicalRecovery.classificationArtifactItemHash !== spec.classificationRecoveryArtifact.itemHash ||
+    historicalRecovery.effectiveQuestionHash !== spec.problemRecoveryArtifact.itemHash ||
+    historicalRecovery.effectiveClassificationHash !== spec.classificationRecoveryArtifact.itemHash ||
+    canonicalEvidenceHash(historicalRecovery.trigger) !== canonicalEvidenceHash(recoveryBasis.trigger)
+  ) throw new Error(`${spec.key} migration historical audit recovery binding이 다릅니다`);
+
+  const finalTerminal = await pinnedCanonicalCheckpoint(
+    stateDir, spec.historicalAudit.finalTerminal, "migration historical final terminal"
+  );
+  const finalInputs = Array.isArray(finalTerminal.inputs)
+    ? finalTerminal.inputs.map((value, index) => object(value, `historical final input ${index}`))
+    : [];
+  const rawFinalItems = Array.isArray(finalTerminal.items) ? finalTerminal.items : [];
+  const finalInputMatches = finalInputs.filter((input) => input.key === spec.key);
+  const finalItemMatches = rawFinalItems.filter((item) => object(item, "historical final item").key === spec.key);
+  const finalItem = finalItemMatches.length === 1
+    ? pinnedTerminalRecoveryItem(finalItemMatches[0], spec.key, "historical final item")
+    : null;
+  const auditTerminalPointers = Array.isArray(historicalAudit.problemTerminalFidelityCheckpoints)
+    ? historicalAudit.problemTerminalFidelityCheckpoints
+    : [];
+  const auditTerminalItems = Array.isArray(historicalAudit.problemTerminalFidelityItems)
+    ? historicalAudit.problemTerminalFidelityItems.map((item) => {
+        const key = exactString(object(item, "historical audit terminal item").key, "historical audit terminal key", 100);
+        return pinnedTerminalRecoveryItem(item, key, `historical audit terminal item ${key}`);
+      })
+    : [];
+  if (
+    finalTerminal.version !== PROBLEM_TERMINAL_FIDELITY_VERSION || finalTerminal.entryId !== entry.id ||
+    finalTerminal.sourceHash !== spec.sourceHash ||
+    finalTerminal.effectiveCorpusHash !== spec.historicalAudit.effectiveCorpusHash ||
+    finalTerminal.inputHash !== spec.historicalAudit.finalTerminal.inputHash ||
+    finalTerminal.inputHash !== canonicalEvidenceHash(finalInputs) || finalInputMatches.length !== 1 || !finalItem ||
+    canonicalEvidenceHash(finalInputMatches[0]) !== canonicalEvidenceHash(problemTerminalInput(recoveredQuestion)) ||
+    canonicalEvidenceHash(finalItem) !== spec.historicalAudit.finalTerminal.itemHash ||
+    finalItem.status !== "exact" || finalItem.scopeDecision !== "reject" || finalItem.scopeConfidence < 0.9 ||
+    canonicalEvidenceHash(auditTerminalPointers) !== canonicalEvidenceHash([{
+      path: spec.historicalAudit.finalTerminal.path,
+      sha256: spec.historicalAudit.finalTerminal.sha256,
+      from: spec.historicalAudit.finalTerminal.from,
+      to: spec.historicalAudit.finalTerminal.to,
+      ownedFrom: spec.historicalAudit.finalTerminal.ownedFrom,
+      ownedTo: spec.historicalAudit.finalTerminal.ownedTo,
+      inputHash: spec.historicalAudit.finalTerminal.inputHash,
+    }]) ||
+    canonicalEvidenceHash(auditTerminalItems.find((item) => item.key === spec.key)) !==
+      spec.historicalAudit.finalTerminal.itemHash
+  ) throw new Error(`${spec.key} migration historical final terminal binding이 다릅니다`);
+  await assertProblemTerminalFidelityEvidence(
+    stateDir,
+    entry.id,
+    spec.sourceHash,
+    spec.historicalAudit.effectiveCorpusHash,
+    auditTerminalPointers as ProblemTerminalFidelityCheckpoint[],
+    auditTerminalItems
+  );
 }
 
 async function preflightPersistedTerminalRecoveryHydration(
@@ -18328,6 +19079,7 @@ async function processEntry(
   }
   const problem = await downloadPdf(entry.problemPdfUrl, entry.sourcePageUrl, join(stateDir, "problem.pdf"));
   const solution = await downloadPdf(entry.solutionPdfUrl, entry.sourcePageUrl, join(stateDir, "solution.pdf"));
+  await assertExistingMigrationHistoricalRecoveryAuthority(entry, problem, stateDir);
   writeImmutableJson(join(stateDir, "downloads.json"), {
     version: 2,
     problem: {
