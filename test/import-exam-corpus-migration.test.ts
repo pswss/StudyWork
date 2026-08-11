@@ -58,17 +58,24 @@ async function runMigration(dataDir: string): Promise<{ stdout: string; stderr: 
   ], { cwd: repository, timeout: 30_000 });
 }
 
-async function runNormalReplay(dataDir: string): Promise<{ stdout: string; stderr: string }> {
+async function runNormalReplay(
+  dataDir: string,
+  entryId = "ebsi:5695028"
+): Promise<{ stdout: string; stderr: string }> {
   const manifest = JSON.parse(readFileSync(join(sourceData, "ebsi-exam-manifest.json"), "utf8"));
   const path = join(dataDir, "single-entry-manifest.json");
   writeFileSync(path, JSON.stringify({
     schemaVersion: 2,
-    entries: manifest.entries.filter((entry: { id: string }) => entry.id === "ebsi:5695028"),
+    entries: manifest.entries.filter((entry: { id: string }) => entry.id === entryId),
   }));
   return execFileP(process.execPath, [
     "--import", "tsx", "scripts/import-exam-corpus.ts",
     "--manifest", path, "--data-dir", dataDir, "--commit",
-  ], { cwd: repository, timeout: 30_000 });
+  ], {
+    cwd: repository,
+    timeout: 30_000,
+    env: { ...process.env, STUDYWORK_CODEX_BIN: "/usr/bin/false" },
+  });
 }
 
 type SameKeyMigrationCase = {
@@ -212,9 +219,10 @@ describe("existing corpus migration v1", () => {
       "ebsi:5642949",
       "ebsi:5642950",
       "ebsi:5734413",
+      "ebsi:5656592",
     ]);
     expect(canonicalEvidenceHash(EXISTING_CORPUS_MIGRATION_ALLOWLIST))
-      .toBe("69eff851d2ed87d7a9f1b9873a630df0fb523417b66a326164e1c1949548be32");
+      .toBe("7d1dec918258b8bef4381940d367b5c0f3e110ab771eeef1d9bb03ca353e4ee5");
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.filter((spec) =>
       spec.entryId !== "ebsi:5695028" && spec.entryId !== "ebsi:5853841"
     ).every((spec) =>
@@ -234,7 +242,14 @@ describe("existing corpus migration v1", () => {
         }],
       });
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((spec) => spec.entryId === "ebsi:5656592"))
-      .toBeUndefined();
+      .toMatchObject({
+        entryToken: "c83035d36ef8d2b8f1bfe856",
+        oldReceiptSha256: "39a7e7a753e8c29d9dae9bde1707fc3cab85f6614e21b8d26f46e81873874b7e",
+        beforeProjectionHash: "a3305a7556bb63f334cf825e3ca14007b4a310cbb30e20595dd76d7e6ea7ee88",
+        afterProjectionHash: "7e14938c29994f017201b9246298d1f4f3aec79c8b2a98b4e95b1a32e810244f",
+        newKeys: [],
+        newQuestions: [],
+      });
     expect(() => selectExistingMigrationPlan([{
       identity: { entryId: "ebsi:stale", oldReceipt: { sha256: oldReceiptSha } },
     }], "ebsi:5695028", oldReceiptSha)).toThrow("충돌");
@@ -295,6 +310,95 @@ describe("existing corpus migration v1", () => {
       }
     }
   );
+
+  it("migrates 5656592 from the exact current audit and replays without AI", async () => {
+    const migration = {
+      entryId: "ebsi:5656592",
+      entryToken: "c83035d36ef8d2b8f1bfe856",
+      oldReceiptSha256: "39a7e7a753e8c29d9dae9bde1707fc3cab85f6614e21b8d26f46e81873874b7e",
+      beforeProjectionHash: "a3305a7556bb63f334cf825e3ca14007b4a310cbb30e20595dd76d7e6ea7ee88",
+      afterProjectionHash: "7e14938c29994f017201b9246298d1f4f3aec79c8b2a98b4e95b1a32e810244f",
+      stableAfterProjectionHash: "c252907104678e4473da17a3fc3f2810745f36645f1400af5ff203e72901bb21",
+      accepted: 4,
+    } satisfies SameKeyMigrationCase;
+    const root = mkdtempSync(join(tmpdir(), "studywork-5656592-migration-"));
+    try {
+      const stateDir = await prepareSameKeySnapshot(root, migration);
+      const receiptPath = join(stateDir, "receipt.json");
+      const beforeGuard = { db: sha256(join(root, "studywork.db")), receipt: sha256(receiptPath) };
+      await expect(runNormalReplay(root, migration.entryId)).rejects.toMatchObject({
+        stderr: expect.stringContaining("기존 importer 문항이 변경되었거나 일부 삭제되었습니다"),
+      });
+      expect({ db: sha256(join(root, "studywork.db")), receipt: sha256(receiptPath) }).toEqual(beforeGuard);
+      expect(existsSync(join(stateDir, "migration-plans"))).toBe(false);
+      expect(existsSync(join(stateDir, "receipt-history"))).toBe(false);
+
+      const first = await runSameKeyMigration(root, migration);
+      expect(first.stdout).toContain("existing ebsi:5656592 4");
+      const planName = readdirSync(join(stateDir, "migration-plans"))
+        .find((name) => /^v1-[a-f0-9]{64}\.json$/u.test(name))!;
+      const planPath = join(stateDir, "migration-plans", planName);
+      const plan = JSON.parse(readFileSync(planPath, "utf8"));
+      expect(plan.identity).toMatchObject({
+        beforeProjectionHash: migration.beforeProjectionHash,
+        afterProjectionHash: migration.afterProjectionHash,
+        stableAfterProjectionHash: migration.stableAfterProjectionHash,
+        ownership: {
+          bookIds: [130],
+          fileIds: [208, 209],
+          beforeQuestionIds: [3487, 3488, 3489, 3490],
+          afterQuestionIds: [3487, 3488, 3489, 3490],
+          beforeBookItemIds: [7504, 7505, 7506, 7507, 7508, 7509, 7510, 7511],
+          afterBookItemIds: [7504, 7505, 7506, 7507, 7508, 7509, 7510, 7511],
+        },
+      });
+      expect(plan.identity.beforeProjection.guards).toEqual({
+        attempts: 0,
+        materials: 0,
+        bookExtractionChunks: 0,
+        materialExtractionChunks: 0,
+      });
+      expect(plan.identity.operations.questionUpdates).toHaveLength(4);
+      expect(plan.identity.operations.itemUpdates).toHaveLength(8);
+      expect(plan.identity.operations.questionInserts).toHaveLength(0);
+      expect(plan.identity.operations.itemInserts).toHaveLength(0);
+      for (const operation of plan.identity.operations.questionUpdates) {
+        expect(() => assertMigrationAnswerEquivalent(operation.before, {
+          qtype: operation.after.qtype,
+          choices: operation.after.choices === null ? null : JSON.parse(operation.after.choices),
+          officialAnswer: operation.after.answer,
+        } as ImportedQuestion)).not.toThrow();
+      }
+      const artifactHashes = (directory: string) => readdirSync(directory).sort()
+        .map((name) => [name, sha256(join(directory, name))]);
+      const snapshot = () => ({
+        db: sha256(join(root, "studywork.db")),
+        receipt: sha256(receiptPath),
+        plan: sha256(planPath),
+        commits: artifactHashes(join(stateDir, "migration-commits")),
+        attestations: artifactHashes(join(stateDir, "answer-attestation")),
+      });
+      const migrated = snapshot();
+      for (let replay = 0; replay < 2; replay++) {
+        expect((await runSameKeyMigration(root, migration)).stdout).toContain("existing ebsi:5656592 4");
+      }
+      expect((await runNormalReplay(root, migration.entryId)).stdout).toContain("existing ebsi:5656592 4");
+      expect(snapshot()).toEqual(migrated);
+
+      const db = new Database(join(root, "studywork.db"), { readonly: true, fileMustExist: true });
+      try {
+        expect(db.pragma("quick_check", { simple: true })).toBe("ok");
+        expect((db.prepare("SELECT id FROM questions WHERE book_id = 130 ORDER BY id").all() as Array<{ id: number }>)
+          .map(({ id }) => id)).toEqual([3487, 3488, 3489, 3490]);
+        expect((db.prepare("SELECT id FROM book_items WHERE book_id = 130 ORDER BY id").all() as Array<{ id: number }>)
+          .map(({ id }) => id)).toEqual([7504, 7505, 7506, 7507, 7508, 7509, 7510, 7511]);
+      } finally {
+        db.close();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 120_000);
 
   it("adds the one pinned 5853841 question and replays without AI", async () => {
     const migration = {

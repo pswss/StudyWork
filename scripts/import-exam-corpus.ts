@@ -384,6 +384,25 @@ export const EXISTING_CORPUS_MIGRATION_ALLOWLIST: readonly ExistingCorpusMigrati
   bookItemIds: Array.from({ length: 24 }, (_, index) => 6986 + index),
   newKeys: [],
   newQuestions: [],
+}, {
+  entryId: "ebsi:5656592",
+  entryToken: "c83035d36ef8d2b8f1bfe856",
+  oldReceiptSha256: "39a7e7a753e8c29d9dae9bde1707fc3cab85f6614e21b8d26f46e81873874b7e",
+  receiptCoreSha256: "39a7e7a753e8c29d9dae9bde1707fc3cab85f6614e21b8d26f46e81873874b7e",
+  beforeProjectionHash: "a3305a7556bb63f334cf825e3ca14007b4a310cbb30e20595dd76d7e6ea7ee88",
+  afterProjectionHash: "7e14938c29994f017201b9246298d1f4f3aec79c8b2a98b4e95b1a32e810244f",
+  auditPath: "answer-audit/v5-b8e7b69c44cf1cfb5d4527d7d25a9f062db5bdd9ce645244ccc2f46b6acbca7a.json",
+  auditSha256: "74ed4b805d9d0055b66e91a805e55cb801fed7b92c86de8e5e07b88aea09c838",
+  effectiveCorpusHash: "fd27b3f4d9b4d9224c116326f7f5e9892d58dabf928cfecd838a260c93c14cbf",
+  effectiveSolutionCorpusHash: "df8aeef359887dbd10d4d282f70c27aaab1091da0d78d428d0768816db835d58",
+  problemHash: "b7c932cdae76d06eb9d2efd1dc52f4f48faa378c47a0c1bf573fe90bf3b88ee1",
+  solutionHash: "e29e208c8d8320c0c80bea34e4b738aa5d166d9a9094f1a0f06fefef64c9cd0a",
+  bookIds: [130],
+  fileIds: [208, 209],
+  questionIds: [3487, 3488, 3489, 3490],
+  bookItemIds: [7504, 7505, 7506, 7507, 7508, 7509, 7510, 7511],
+  newKeys: [],
+  newQuestions: [],
 }] as const;
 
 const execFileP = promisify(execFile);

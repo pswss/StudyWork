@@ -9880,7 +9880,7 @@ describe("exam corpus verifier", () => {
 
   it("keeps the exact existing-corpus migration allowlist aligned with the importer", () => {
     expect(existingCorpusMigrationAllowlistFingerprint())
-      .toBe("69eff851d2ed87d7a9f1b9873a630df0fb523417b66a326164e1c1949548be32");
+      .toBe("7d1dec918258b8bef4381940d367b5c0f3e110ab771eeef1d9bb03ca353e4ee5");
     expect(existingCorpusMigrationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(EXISTING_CORPUS_MIGRATION_ALLOWLIST));
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.map((spec) => spec.entryId)).toEqual([
@@ -9895,6 +9895,7 @@ describe("exam corpus verifier", () => {
       "ebsi:5642949",
       "ebsi:5642950",
       "ebsi:5734413",
+      "ebsi:5656592",
     ]);
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.filter((spec) =>
       spec.entryId !== "ebsi:5695028" && spec.entryId !== "ebsi:5853841"
@@ -9908,8 +9909,18 @@ describe("exam corpus verifier", () => {
           answer: "①",
         })],
       });
-    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.some((spec) => spec.entryId === "ebsi:5656592"))
-      .toBe(false);
+    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((spec) => spec.entryId === "ebsi:5656592"))
+      .toMatchObject({
+        entryToken: "c83035d36ef8d2b8f1bfe856",
+        oldReceiptSha256: "39a7e7a753e8c29d9dae9bde1707fc3cab85f6614e21b8d26f46e81873874b7e",
+        beforeProjectionHash: "a3305a7556bb63f334cf825e3ca14007b4a310cbb30e20595dd76d7e6ea7ee88",
+        afterProjectionHash: "7e14938c29994f017201b9246298d1f4f3aec79c8b2a98b4e95b1a32e810244f",
+        auditSha256: "74ed4b805d9d0055b66e91a805e55cb801fed7b92c86de8e5e07b88aea09c838",
+        questionIds: [3487, 3488, 3489, 3490],
+        bookItemIds: [7504, 7505, 7506, 7507, 7508, 7509, 7510, 7511],
+        newKeys: [],
+        newQuestions: [],
+      });
   });
 
   it.skipIf(
@@ -10310,6 +10321,124 @@ describe("exam corpus verifier", () => {
       });
       expect(report, JSON.stringify(report.failures, null, 2))
         .toMatchObject({ ok: true, failureCount: 0, questions: { expected: 12, actual: 12 } });
+    } finally {
+      rmSync(files.root, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("verifies the completed 5656592 hydrated-recovery migration and stable replay", async () => {
+    const entryId = "ebsi:5656592";
+    const spec = EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((candidate) => candidate.entryId === entryId)!;
+    const files = await migratedVerifierFixture(entryId);
+    const verify = () => verifyExamCorpus({
+      manifestPath: files.manifestPath,
+      dbPath: files.dbPath,
+      dataDir: files.dataDir,
+    });
+    try {
+      expect(files.plan.identity).toMatchObject({
+        beforeProjectionHash: spec.beforeProjectionHash,
+        afterProjectionHash: spec.afterProjectionHash,
+        stableAfterProjectionHash: "c252907104678e4473da17a3fc3f2810745f36645f1400af5ff203e72901bb21",
+        answerAudit: {
+          path: spec.auditPath,
+          sha256: spec.auditSha256,
+          effectiveCorpusHash: spec.effectiveCorpusHash,
+          effectiveSolutionCorpusHash: spec.effectiveSolutionCorpusHash,
+        },
+        ownership: {
+          bookIds: [130],
+          fileIds: [208, 209],
+          beforeQuestionIds: [3487, 3488, 3489, 3490],
+          afterQuestionIds: [3487, 3488, 3489, 3490],
+          beforeBookItemIds: [7504, 7505, 7506, 7507, 7508, 7509, 7510, 7511],
+          afterBookItemIds: [7504, 7505, 7506, 7507, 7508, 7509, 7510, 7511],
+        },
+      });
+      expect(files.plan.identity.operations.questionUpdates).toHaveLength(4);
+      expect(files.plan.identity.operations.itemUpdates).toHaveLength(8);
+      expect(files.plan.identity.operations.questionInserts).toHaveLength(0);
+      expect(files.plan.identity.operations.itemInserts).toHaveLength(0);
+
+      const initial = verify();
+      expect(initial, JSON.stringify(initial.failures, null, 2))
+        .toMatchObject({ ok: true, failureCount: 0, questions: { expected: 4, actual: 4 } });
+
+      let db = new Database(files.dbPath);
+      try {
+        expect(db.prepare(
+          "SELECT id, book_id, src_page, printed_number, difficulty, question, answer "
+          + "FROM questions WHERE id = 3488",
+        ).get()).toEqual({
+          id: 3488,
+          book_id: 130,
+          src_page: 4,
+          printed_number: "11",
+          difficulty: "중",
+          question: "$0\\le x\\le \\pi$일 때, 방정식 "
+            + "$(\\sin x+\\cos x)^2=\\sqrt{3}\\sin x+1$의 모든 실근의 합은? [3점]",
+          answer: "① $\\frac{7}{6}\\pi$",
+        });
+        expect((db.prepare(
+          "SELECT COUNT(*) AS count FROM questions WHERE book_id = 130 AND printed_number = '15'",
+        ).get() as { count: number }).count).toBe(0);
+        db.prepare(
+          "UPDATE questions SET correct_count = 5, wrong_count = 2, from_wrong_note = 1 WHERE id = 3488",
+        ).run();
+        db.prepare(
+          "INSERT INTO question_attempts (question_id, attempt_id, correct) "
+          + "VALUES (3488, 'verify-5656592', 1)",
+        ).run();
+      } finally {
+        db.close();
+      }
+
+      const explicit = await execFileP(process.execPath, [
+        "--import", "tsx", "scripts/import-exam-corpus.ts",
+        "--manifest", "data/ebsi-exam-manifest.json",
+        "--data-dir", files.dataDir,
+        "--commit",
+        "--migrate-existing", entryId,
+        "--expect-receipt-sha256", spec.oldReceiptSha256,
+      ], {
+        cwd: migrationRepository,
+        timeout: 60_000,
+        env: { ...process.env, STUDYWORK_CODEX_BIN: "/usr/bin/false" },
+      });
+      expect(explicit.stdout).toContain("existing ebsi:5656592 4");
+      const normal = await execFileP(process.execPath, [
+        "--import", "tsx", "scripts/import-exam-corpus.ts",
+        "--manifest", files.manifestPath,
+        "--data-dir", files.dataDir,
+        "--commit",
+      ], {
+        cwd: migrationRepository,
+        timeout: 60_000,
+        env: { ...process.env, STUDYWORK_CODEX_BIN: "/usr/bin/false" },
+      });
+      expect(normal.stdout).toContain("existing ebsi:5656592 4");
+      expect(verify()).toMatchObject({ ok: true, failureCount: 0 });
+
+      db = new Database(files.dbPath, { readonly: true });
+      try {
+        expect(db.prepare(
+          "SELECT correct_count, wrong_count, from_wrong_note FROM questions WHERE id = 3488",
+        ).get()).toEqual({ correct_count: 5, wrong_count: 2, from_wrong_note: 1 });
+        expect((db.prepare(
+          "SELECT COUNT(*) AS count FROM question_attempts WHERE attempt_id = 'verify-5656592'",
+        ).get() as { count: number }).count).toBe(1);
+      } finally {
+        db.close();
+      }
+
+      const originalPlan = readFileSync(files.planPath);
+      const tamperedPlan = structuredClone(files.plan);
+      tamperedPlan.identity.answerAudit.effectiveCorpusHash = "0".repeat(64);
+      writeEvidence(files.planPath, tamperedPlan);
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "MIGRATION_INVALID" }),
+      ]));
+      writeFileSync(files.planPath, originalPlan);
     } finally {
       rmSync(files.root, { recursive: true, force: true });
     }
