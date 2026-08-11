@@ -2832,6 +2832,14 @@ const Q43_45_5525982_FIGURE_DESCRIPTION =
   "‘관소로 돌아와서 회환(回還) 날짜 택일하니’까지를 묶는다. 두 괄호는 위에서 아래로 " +
   "[A], [B] 순서이며 서로 겹치지 않는다.";
 
+const Q8_5525982_FIGURE_DESCRIPTION =
+  "공식 3쪽 왼쪽 초고에는 오른쪽으로 열린 세로 묶음 괄호가 정확히 두 개 있다. " +
+  "[A]는 ‘우리는 인터넷, 신문, 잡지 등의 다양한 매체를 이용하면서 수많은 광고에 노출된다.’부터 " +
+  "‘새로운 광고 기법이 등장하고 있다.’까지 첫 문단 전체를 묶는다. " +
+  "[B]는 ‘신문이나 잡지 등에서 새롭게 사용되는 광고 기법으로 기사형 광고를 들 수 있다.’부터 " +
+  "‘글 말미에 ‘글 ○○○ 기자’와 같은 표현도 사용하지 못하도록 되어 있다.’까지 기사형 광고 문단 전체를 묶는다. " +
+  "두 괄호는 위에서 아래로 [A], [B] 순서이며 서로 겹치지 않고 각각 정확히 한 번 나타난다.";
+
 const Q43_FAILED_QUESTION = [
   "다음 글을 읽고 물음에 답하시오.",
   "",
@@ -3462,6 +3470,101 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     figureDescription: Q43_45_5525982_FIGURE_DESCRIPTION,
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_literature",
+  },
+  {
+    allowlistId: "ebsi-5525982-q8-manual-v1",
+    entryId: "ebsi:5525982",
+    key: "4:8",
+    sourcePage: 4,
+    sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "7d39ae1a99aa29102479ab0be361e01a364f2bf655bb770b81ccedec0f2f45a7",
+    dpi: 600,
+    failedQuestionHash: "36e1747efaf51d29ed27eda862928d50f00b8705e30bc427b50ceffbe5389d3f",
+    failedClassificationHash: "0225162de779aabf5a2d33a13dce45b8d4caa559629a8c86bbb4f28fa5e8a7ef",
+    failedClassificationEvidenceHash: "dcae3ceedcd059c86f843342b0b96dd530d94c92e2f96c87ae9ecb08eda913bf",
+    views: [
+      { sourcePage: 3, label: "p3 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 3, label: "p3 left shared plan and draft with A-B brackets", rect: [0.07, 0.12, 0.50, 0.93] },
+      { sourcePage: 4, label: "p4 left Q8 stem and choices", rect: [0.07, 0.11, 0.50, 0.42] },
+    ],
+    requiredTokens: [
+      "[6 ~ 8] 다음을 읽고 물음에 답하시오.", "매체 이용자들이 거부감 없이",
+      "기사형 광고는 기사처럼 보이는 광고를 말한다.", "[A]", "[B]",
+      "㉠을 바탕으로 초고의 마지막 문단을 완성하고자 한다.",
+      "⑤ 광고를 유용한 정보인 것처럼 오인하게 만들어", "오른쪽으로 열린 세로 묶음 괄호가 정확히 두 개",
+    ],
+    replacements: [{
+      field: "question",
+      from: "다음을 읽고 물음에 답하시오.",
+      to: "[6 ~ 8] 다음을 읽고 물음에 답하시오.",
+      count: 1,
+    }, {
+      field: "question",
+      from: "매체 이용자들의 거부감 없이",
+      to: "매체 이용자들이 거부감 없이",
+      count: 1,
+    }, {
+      field: "question",
+      from: "기존 광고와 달리 기사형 광고는 기사처럼 보이기 위해",
+      to: "기존 광고와 달리 기사형 광고는 기사처럼 보이는 광고를 말한다. " +
+        "기사형 광고는 기사처럼 보이기 위해",
+      count: 1,
+    }],
+    figure: true,
+    figureDescription: Q8_5525982_FIGURE_DESCRIPTION,
+    expectedDecision: "reject",
+  },
+  {
+    allowlistId: "ebsi-5525982-q16-manual-v1",
+    entryId: "ebsi:5525982",
+    key: "6:16",
+    sourcePage: 6,
+    sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "fffa54caf1c174259e9914a5be82e0751f054525623e27722590a529e25e152d",
+    dpi: 600,
+    failedQuestionHash: "24a18e38193f474dc03c320cf23acdf0c9d65119cf6dbb544f7a087aa0bc37e8",
+    failedClassificationHash: "a04918ecb73de9e05f9690ca49b47cacebac182104bb940c737c781fdaa9f24a",
+    failedClassificationEvidenceHash: "cc321d059544786219adbd588e6e74b0e797a737085c5612f76591fe689716ad",
+    views: [
+      { sourcePage: 6, label: "p6 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 6, label: "p6 left shared passage start", rect: [0.07, 0.42, 0.50, 0.96] },
+      { sourcePage: 6, label: "p6 right passage continuation and Q16", rect: [0.50, 0.12, 0.95, 0.86] },
+    ],
+    requiredTokens: [
+      "[16 ~ 20] 다음 글을 읽고 물음에 답하시오.", "논리학 지식처럼", "경험을 통한 시험의 대상",
+      "㉢ 도달한다", "선택하겠지만 실용적 필요", "윗글을 바탕으로 할 때",
+      "② 경험을 통하지 않고 가설을 시험할 수 있는가?",
+    ],
+    replacements: [{
+      field: "question",
+      from: "다음 글을 읽고 물음에 답하시오.",
+      to: "[16 ~ 20] 다음 글을 읽고 물음에 답하시오.",
+      count: 1,
+    }, {
+      field: "question",
+      from: "논리학적 지식",
+      to: "논리학 지식",
+      count: 3,
+    }, {
+      field: "question",
+      from: "경험을 통해 시험의 대상",
+      to: "경험을 통한 시험의 대상",
+      count: 1,
+    }, {
+      field: "question",
+      from: "㉣ 도달한다",
+      to: "㉢ 도달한다",
+      count: 1,
+    }, {
+      field: "question",
+      from: "선택하지만 실용적 필요",
+      to: "선택하겠지만 실용적 필요",
+      count: 1,
+    }],
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
   },
 ] as const;
 
@@ -11860,6 +11963,10 @@ function isQ43To45ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean 
   return spec.entryId === "ebsi:5525982" && ["16:43", "16:44", "16:45"].includes(spec.key);
 }
 
+function isQ8Q16ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5525982" && ["4:8", "6:16"].includes(spec.key);
+}
+
 async function restoredPinnedManualRecovery(
   entry: CorpusManifestEntry,
   stateDir: string,
@@ -12018,16 +12125,24 @@ async function restoredPinnedManualRecovery(
   return { failed: { question, classification }, parent };
 }
 
-async function preflightQ43To45ProblemManualBatch(
+async function preflightProblemManualBatch(
   entry: CorpusManifestEntry,
   problem: PdfEvidence,
-  stateDir: string
+  stateDir: string,
+  requestedSpec: ProblemManualAdjudicationSpec
 ): Promise<void> {
-  const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(isQ43To45ManualBatchSpec);
+  const predicate = isQ43To45ManualBatchSpec(requestedSpec)
+    ? isQ43To45ManualBatchSpec
+    : isQ8Q16ManualBatchSpec(requestedSpec)
+      ? isQ8Q16ManualBatchSpec
+      : null;
+  if (!predicate) return;
+  const expectedCount = predicate === isQ43To45ManualBatchSpec ? 3 : 2;
+  const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(predicate);
   if (
-    specs.length !== 3 || problem.sha256 !== specs[0].sourceHash ||
+    specs.length !== expectedCount || problem.sha256 !== specs[0].sourceHash ||
     await sha256File(problem.path) !== problem.sha256
-  ) throw new Error("16:43-45 manual batch source/allowlist가 다릅니다");
+  ) throw new Error(`${requestedSpec.key} manual batch source/allowlist가 다릅니다`);
   const restored = [] as Array<{
     spec: ProblemManualAdjudicationSpec;
     failed: ClassifiedQuestion;
@@ -12056,9 +12171,7 @@ export async function adjudicateProblemManual(
     problem.sha256
   );
   if (!spec) throw new Error(`${questionKey(failed.question)} manual adjudication allowlist에 없습니다`);
-  if (isQ43To45ManualBatchSpec(spec)) {
-    await preflightQ43To45ProblemManualBatch(entry, problem, stateDir);
-  }
+  await preflightProblemManualBatch(entry, problem, stateDir, spec);
   const result = await adjudicateProblemManualOne(entry, problem, stateDir, failed, parentRecovery, false);
   if (!result) throw new Error(`${questionKey(failed.question)} manual adjudication child가 없습니다`);
   return result;
