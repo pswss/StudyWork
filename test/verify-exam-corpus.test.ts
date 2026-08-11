@@ -9454,6 +9454,9 @@ async function persistedTerminalRecoveryFixture() {
   const stateDir = join(dataDir, "import-exam-corpus", token(entryValue.entry.id, 24));
   cpSync(PERSISTED_TERMINAL_RECOVERY_STATE, stateDir, { recursive: true });
   rmSync(join(stateDir, "receipt.json"), { force: true });
+  for (const directory of ["migration-plans", "migration-commits", "receipt-history"]) {
+    rmSync(join(stateDir, directory), { recursive: true, force: true });
+  }
   const attestationDirectory = join(stateDir, "answer-attestation");
   if (existsSync(attestationDirectory)) {
     for (const name of readdirSync(attestationDirectory)) {
@@ -9880,7 +9883,7 @@ describe("exam corpus verifier", () => {
 
   it("keeps the exact existing-corpus migration allowlist aligned with the importer", () => {
     expect(existingCorpusMigrationAllowlistFingerprint())
-      .toBe("7d1dec918258b8bef4381940d367b5c0f3e110ab771eeef1d9bb03ca353e4ee5");
+      .toBe("8f3bd2de988e85c7b7c341508f4cfa90ac7997a8a00e067a9a8ceb4e67c71934");
     expect(existingCorpusMigrationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(EXISTING_CORPUS_MIGRATION_ALLOWLIST));
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.map((spec) => spec.entryId)).toEqual([
@@ -9896,9 +9899,10 @@ describe("exam corpus verifier", () => {
       "ebsi:5642950",
       "ebsi:5734413",
       "ebsi:5656592",
+      "ebsi:5577055",
     ]);
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.filter((spec) =>
-      spec.entryId !== "ebsi:5695028" && spec.entryId !== "ebsi:5853841"
+      !["ebsi:5695028", "ebsi:5853841", "ebsi:5577055"].includes(spec.entryId)
     ).every((spec) => spec.newKeys.length === 0 && spec.newQuestions.length === 0)).toBe(true);
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((spec) => spec.entryId === "ebsi:5853841"))
       .toMatchObject({
@@ -9920,6 +9924,22 @@ describe("exam corpus verifier", () => {
         bookItemIds: [7504, 7505, 7506, 7507, 7508, 7509, 7510, 7511],
         newKeys: [],
         newQuestions: [],
+      });
+    expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((spec) => spec.entryId === "ebsi:5577055"))
+      .toMatchObject({
+        entryToken: "b4eeaf53cd6024aa180d1f37",
+        oldReceiptSha256: "51f5f9415746cfbc8c87bb20bf691ae66ca15e93e4f1ca31a2746c925988bdec",
+        receiptCoreSha256: "51d06f30a79670ee20019ac8ed3911d1fac73070170ca9a53a081213279f5bd2",
+        beforeProjectionHash: "f9f8d0c5b200aa6e7147ff9a6f5397b04e95f9e4b59062fae64667676f9c5a3b",
+        afterProjectionHash: "2fe1f7dbc05af37cf42099082dd1e80ae5fe3e91500c5ec73590b87800931030",
+        questionIds: [3491, 3492, 3493, 3494, 3495],
+        bookItemIds: [7512, 7513, 7514, 7515, 7516, 7517, 7518, 7519, 7520, 7521],
+        newKeys: ["2:5"],
+        newQuestions: [expect.objectContaining({
+          key: "2:5",
+          difficulty: "중",
+          answer: "④ $\\sqrt[3]{2}$",
+        })],
       });
   });
 
@@ -10292,6 +10312,151 @@ describe("exam corpus verifier", () => {
       const originalPlan = readFileSync(files.planPath);
       const tamperedPlan = structuredClone(files.plan);
       tamperedPlan.identity.operations.questionInserts[0].after.question = "tampered inserted question";
+      writeEvidence(files.planPath, tamperedPlan);
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "MIGRATION_INVALID" }),
+      ]));
+      writeFileSync(files.planPath, originalPlan);
+    } finally {
+      rmSync(files.root, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("verifies the completed 5577055 Q5 migration and stable replay", async () => {
+    const entryId = "ebsi:5577055";
+    const spec = EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((candidate) => candidate.entryId === entryId)!;
+    const files = await migratedVerifierFixture(entryId);
+    const verify = () => verifyExamCorpus({
+      manifestPath: files.manifestPath,
+      dbPath: files.dbPath,
+      dataDir: files.dataDir,
+    });
+    try {
+      expect(files.plan.identity).toMatchObject({
+        receiptCore: { sha256: spec.receiptCoreSha256 },
+        beforeProjectionHash: spec.beforeProjectionHash,
+        afterProjectionHash: spec.afterProjectionHash,
+        stableAfterProjectionHash: "e0eed6170c486eb248909bb422905caf569f9246f8b9fa75c5df6e5d796f4947",
+        afterSequences: { questions: 3649, bookItems: 7829 },
+        answerAudit: {
+          path: spec.auditPath,
+          sha256: spec.auditSha256,
+          effectiveCorpusHash: spec.effectiveCorpusHash,
+          effectiveSolutionCorpusHash: spec.effectiveSolutionCorpusHash,
+        },
+        ownership: {
+          bookIds: [131],
+          fileIds: [210, 211],
+          beforeQuestionIds: [3491, 3492, 3493, 3494, 3495],
+          afterQuestionIds: [3491, 3492, 3493, 3494, 3495, 3649],
+          beforeBookItemIds: [7512, 7513, 7514, 7515, 7516, 7517, 7518, 7519, 7520, 7521],
+          afterBookItemIds: [7512, 7513, 7514, 7515, 7516, 7517, 7518, 7519, 7520, 7521, 7828, 7829],
+        },
+      });
+      expect(files.plan.identity.operations.questionUpdates).toHaveLength(5);
+      expect(files.plan.identity.operations.itemUpdates).toHaveLength(10);
+      expect(files.plan.identity.operations.questionInserts).toHaveLength(1);
+      expect(files.plan.identity.operations.itemInserts).toHaveLength(2);
+      expect(files.plan.identity.operations.questionInserts[0].after).toMatchObject({
+        id: 3649,
+        src_page: 2,
+        printed_number: "5",
+        difficulty: "중",
+        question: "좌표평면에서 곡선 $y=a^x$을 직선 $y=x$에 대하여 대칭이동한 곡선이 점 $(2,3)$을 지날 때, 양수 $a$의 값은? [3점]",
+        answer: "④ $\\sqrt[3]{2}$",
+      });
+      expect(files.plan.identity.operations.itemInserts.map(
+        (item: { after: { id: number } }) => item.after.id,
+      )).toEqual([7828, 7829]);
+
+      const attestationPath = join(
+        files.stateDir,
+        "answer-attestation/v5-b452290f13f1ebd058630975a6dd21594c414c5af9d92412fca9a77720874140.json",
+      );
+      expect(hash(readFileSync(attestationPath)))
+        .toBe("8225980875926868843160fc1695a16dd26ce6361443abfa459ff110c8d46b96");
+      expect(JSON.parse(readFileSync(attestationPath, "utf8")).answerAudit).toMatchObject({
+        path: spec.auditPath,
+        sha256: spec.auditSha256,
+        effectiveCorpusHash: spec.effectiveCorpusHash,
+        effectiveSolutionCorpusHash: spec.effectiveSolutionCorpusHash,
+      });
+      const initial = verify();
+      expect(initial, JSON.stringify(initial.failures, null, 2))
+        .toMatchObject({ ok: true, failureCount: 0, questions: { expected: 6, actual: 6 } });
+
+      let db = new Database(files.dbPath);
+      try {
+        expect(db.prepare(
+          "SELECT id, book_id, src_page, printed_number, difficulty, question, answer "
+          + "FROM questions WHERE id = 3649",
+        ).get()).toEqual({
+          id: 3649,
+          book_id: 131,
+          src_page: 2,
+          printed_number: "5",
+          difficulty: "중",
+          question: "좌표평면에서 곡선 $y=a^x$을 직선 $y=x$에 대하여 대칭이동한 곡선이 "
+            + "점 $(2,3)$을 지날 때, 양수 $a$의 값은? [3점]",
+          answer: "④ $\\sqrt[3]{2}$",
+        });
+        expect((db.prepare("SELECT id FROM book_items WHERE id IN (7828, 7829) ORDER BY id")
+          .all() as Array<{ id: number }>).map((row) => row.id)).toEqual([7828, 7829]);
+        expect((db.prepare(
+          "SELECT COUNT(*) AS count FROM questions WHERE book_id = 131 AND src_page = 4 AND printed_number = '11'",
+        ).get() as { count: number }).count).toBe(0);
+        db.prepare(
+          "UPDATE questions SET correct_count = 6, wrong_count = 2, from_wrong_note = 1 WHERE id = 3649",
+        ).run();
+        db.prepare(
+          "INSERT INTO question_attempts (question_id, attempt_id, correct) "
+          + "VALUES (3649, 'verify-5577055', 1)",
+        ).run();
+      } finally {
+        db.close();
+      }
+
+      const explicit = await execFileP(process.execPath, [
+        "--import", "tsx", "scripts/import-exam-corpus.ts",
+        "--manifest", "data/ebsi-exam-manifest.json",
+        "--data-dir", files.dataDir,
+        "--commit",
+        "--migrate-existing", entryId,
+        "--expect-receipt-sha256", spec.oldReceiptSha256,
+      ], {
+        cwd: migrationRepository,
+        timeout: 60_000,
+        env: { ...process.env, STUDYWORK_CODEX_BIN: "/usr/bin/false" },
+      });
+      expect(explicit.stdout).toContain("existing ebsi:5577055 6");
+      const normal = await execFileP(process.execPath, [
+        "--import", "tsx", "scripts/import-exam-corpus.ts",
+        "--manifest", files.manifestPath,
+        "--data-dir", files.dataDir,
+        "--commit",
+      ], {
+        cwd: migrationRepository,
+        timeout: 60_000,
+        env: { ...process.env, STUDYWORK_CODEX_BIN: "/usr/bin/false" },
+      });
+      expect(normal.stdout).toContain("existing ebsi:5577055 6");
+      expect(verify()).toMatchObject({ ok: true, failureCount: 0 });
+
+      db = new Database(files.dbPath, { readonly: true });
+      try {
+        expect(db.prepare(
+          "SELECT correct_count, wrong_count, from_wrong_note FROM questions WHERE id = 3649",
+        ).get()).toEqual({ correct_count: 6, wrong_count: 2, from_wrong_note: 1 });
+        expect((db.prepare(
+          "SELECT COUNT(*) AS count FROM question_attempts WHERE attempt_id = 'verify-5577055'",
+        ).get() as { count: number }).count).toBe(1);
+      } finally {
+        db.close();
+      }
+
+      const originalPlan = readFileSync(files.planPath);
+      const tamperedPlan = structuredClone(files.plan);
+      tamperedPlan.identity.operations.questionInserts[0].after.difficulty = "하";
       writeEvidence(files.planPath, tamperedPlan);
       expect(verify().failures).toEqual(expect.arrayContaining([
         expect.objectContaining({ code: "MIGRATION_INVALID" }),
@@ -12517,13 +12682,13 @@ describe("exam corpus verifier", () => {
         baseRawAnswerHash: "1b65c648e3566876e3af03395e859b3c4d2ff8768568d590f7cf76172b2d5839",
         effectiveRawAnswerHash: "18eb660efcd50dde8e19c9c890afe1d9b15fb7a53f6746488c65e9468ecc9cf9",
         repairArtifact: {
-          path: "solution-repairs/v1-0001-0005-47f0cfc2c451d8a9f0e8f753750cf2d20d2f7755d0bd12de92437f9012998fde.json",
-          sha256: "59c2173978252b6686e1409955cb9ea4ac85171b1c1e6ff41e2e69df2ad5b492",
+          path: "solution-repairs/v1-0001-0005-503522063111526052881ef4eb8db6478fe722378a5929e7f1f291ddd332c89c.json",
+          sha256: "7c1b9043891bc1518420dc91cc243a4ed26fd3c58fcc4a0387448296d334d7da",
         },
         fidelityArtifact: {
-          path: "solution-fidelity-repairs/v1-0001-0005-47f0cfc2c451d8a9f0e8f753750cf2d20d2f7755d0bd12de92437f9012998fde-" +
+          path: "solution-fidelity-repairs/v1-0001-0005-503522063111526052881ef4eb8db6478fe722378a5929e7f1f291ddd332c89c-" +
             "6fd09d50cd90a6e59e7a39a7fa298d3df7b330826138f2b295c26bdcaae087b6.json",
-          sha256: "20a556867a816fd1083183a62ac557e666800c1c185650fad131f1602fa4e003",
+          sha256: "5eca6afeb6edd5d5f24eda35b74d9505428b2b3a9c0a7337fdd8581aed959755",
         },
       });
       expect(audit.solutionFidelityItems.find((item: { key: string }) => item.key === "2:5"))

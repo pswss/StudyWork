@@ -275,18 +275,24 @@ describe.skipIf(!available)("persisted v2 repair graph hydration", () => {
     const stateDir = join(root, "import-exam-corpus", terminalRecoveryCase.token);
     mkdirSync(join(root, "import-exam-corpus"), { recursive: true });
     cpSync(join(liveRoot, terminalRecoveryCase.token), stateDir, { recursive: true });
+    const planName = readdirSync(join(stateDir, "migration-plans"))
+      .find((name) => /^v1-[a-f0-9]{64}\.json$/u.test(name))!;
+    const plan = JSON.parse(readFileSync(join(stateDir, "migration-plans", planName), "utf8"));
+    const history = JSON.parse(readFileSync(join(stateDir, plan.identity.receiptHistory.path), "utf8"));
+    writeCanonical(join(stateDir, "receipt.json"), history.receipt.value);
+    for (const directory of ["migration-plans", "migration-commits", "receipt-history"]) {
+      rmSync(join(stateDir, directory), { recursive: true, force: true });
+    }
+    for (const name of readdirSync(join(stateDir, "answer-attestation"))) {
+      if (name.startsWith("v5-")) rmSync(join(stateDir, "answer-attestation", name));
+    }
     mkdirSync(join(root, "files", "corpus"), { recursive: true });
     cpSync(
       join(sourceData, "files", "corpus", terminalRecoveryCase.token),
       join(root, "files", "corpus", terminalRecoveryCase.token),
       { recursive: true }
     );
-    const sourceDb = new Database(join(sourceData, "studywork.db"), { readonly: true, fileMustExist: true });
-    try {
-      await sourceDb.backup(join(root, "studywork.db"));
-    } finally {
-      sourceDb.close();
-    }
+    cpSync(join(sourceData, plan.backup.path), join(root, "studywork.db"));
     const entry = JSON.parse(readFileSync(join(stateDir, "entry.json"), "utf8")).entry;
     const manifestPath = join(root, "manifest.json");
     writeCanonical(manifestPath, { schemaVersion: 2, entries: [entry] });

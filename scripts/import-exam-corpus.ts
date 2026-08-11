@@ -403,6 +403,33 @@ export const EXISTING_CORPUS_MIGRATION_ALLOWLIST: readonly ExistingCorpusMigrati
   bookItemIds: [7504, 7505, 7506, 7507, 7508, 7509, 7510, 7511],
   newKeys: [],
   newQuestions: [],
+}, {
+  entryId: "ebsi:5577055",
+  entryToken: "b4eeaf53cd6024aa180d1f37",
+  oldReceiptSha256: "51f5f9415746cfbc8c87bb20bf691ae66ca15e93e4f1ca31a2746c925988bdec",
+  receiptCoreSha256: "51d06f30a79670ee20019ac8ed3911d1fac73070170ca9a53a081213279f5bd2",
+  beforeProjectionHash: "f9f8d0c5b200aa6e7147ff9a6f5397b04e95f9e4b59062fae64667676f9c5a3b",
+  afterProjectionHash: "2fe1f7dbc05af37cf42099082dd1e80ae5fe3e91500c5ec73590b87800931030",
+  auditPath: "answer-audit/v5-393814389a75988dfefa8d34407cb9652bd0700c5e213e1291fc232896047992.json",
+  auditSha256: "956737ec5dfb7bd68bfda2e6b50f72b0af7cde55d29fd99b832bcf245234dfc5",
+  effectiveCorpusHash: "8e22bc17f58eb8cc8e9138389ec705646ccdbd8a375cd46d52a8a6c33637cafe",
+  effectiveSolutionCorpusHash: "ac739fc7566ed2daeb1740af79c518c336c7c1087f3a6414f360e8eeb8bcf84d",
+  problemHash: "b4381bc3b831323375b2c4a25319d308185c930be5d2e3b07dfc28e7646a5fde",
+  solutionHash: "1753328f4b4360a9d81312d0d1610c7a11063bbefeeb1e1fd286d54c601ec5fa",
+  bookIds: [131],
+  fileIds: [210, 211],
+  questionIds: [3491, 3492, 3493, 3494, 3495],
+  bookItemIds: [7512, 7513, 7514, 7515, 7516, 7517, 7518, 7519, 7520, 7521],
+  newKeys: ["2:5"],
+  newQuestions: [{
+    key: "2:5",
+    targetSubject: "수학 - 수학Ⅰ·대수",
+    qtype: "mcq",
+    difficulty: "중",
+    question: "좌표평면에서 곡선 $y=a^x$을 직선 $y=x$에 대하여 대칭이동한 곡선이 점 $(2,3)$을 지날 때, 양수 $a$의 값은? [3점]",
+    answer: "④ $\\sqrt[3]{2}$",
+    solutionPage: 1,
+  }],
 }] as const;
 
 const execFileP = promisify(execFile);

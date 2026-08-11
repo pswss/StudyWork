@@ -115,6 +115,16 @@ function snapshot(root: string): Record<string, string> {
   ]));
 }
 
+function removePersistedQ5SolutionRepair(root: string): void {
+  for (const directory of ["solution-repairs", "solution-fidelity-repairs"]) {
+    const path = join(root, directory);
+    if (!existsSync(path)) continue;
+    for (const name of readdirSync(path)) {
+      if (/^v1-0001-0005-/u.test(name)) rmSync(join(path, name));
+    }
+  }
+}
+
 describe.skipIf(!available)("Q11 scope box revision", () => {
   it("pins an exact box-only correction", () => {
     expect(PROBLEM_SCOPE_BOX_REVISION_VERSION).toBe(1);
@@ -192,6 +202,7 @@ describe.skipIf(!available)("Q11 scope box revision", () => {
     const root = mkdtempSync(join(tmpdir(), "studywork-q11-terminal-scope-"));
     roots.push(root);
     cpSync(liveState, root, { recursive: true });
+    removePersistedQ5SolutionRepair(root);
     const initial = fixtureInputs(root);
     const receipt = JSON.parse(readFileSync(join(root, "receipt.json"), "utf8"));
     const solutionByNumber = new Map(initial.solutions.map((item) => [String(Number(item.number)), item]));
@@ -526,6 +537,7 @@ describe.skipIf(!available)("Q11 scope box revision", () => {
     const root = mkdtempSync(join(tmpdir(), "studywork-q11-scope-box-"));
     roots.push(root);
     cpSync(liveState, root, { recursive: true });
+    removePersistedQ5SolutionRepair(root);
     for (const directory of [
       "problem-scope-box-evidence",
       "problem-scope-box-revisions",

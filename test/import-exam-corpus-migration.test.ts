@@ -220,11 +220,12 @@ describe("existing corpus migration v1", () => {
       "ebsi:5642950",
       "ebsi:5734413",
       "ebsi:5656592",
+      "ebsi:5577055",
     ]);
     expect(canonicalEvidenceHash(EXISTING_CORPUS_MIGRATION_ALLOWLIST))
-      .toBe("7d1dec918258b8bef4381940d367b5c0f3e110ab771eeef1d9bb03ca353e4ee5");
+      .toBe("8f3bd2de988e85c7b7c341508f4cfa90ac7997a8a00e067a9a8ceb4e67c71934");
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.filter((spec) =>
-      spec.entryId !== "ebsi:5695028" && spec.entryId !== "ebsi:5853841"
+      !["ebsi:5695028", "ebsi:5853841", "ebsi:5577055"].includes(spec.entryId)
     ).every((spec) =>
       spec.newKeys.length === 0 && spec.newQuestions.length === 0
     )).toBe(true);
@@ -392,6 +393,121 @@ describe("existing corpus migration v1", () => {
           .map(({ id }) => id)).toEqual([3487, 3488, 3489, 3490]);
         expect((db.prepare("SELECT id FROM book_items WHERE book_id = 130 ORDER BY id").all() as Array<{ id: number }>)
           .map(({ id }) => id)).toEqual([7504, 7505, 7506, 7507, 7508, 7509, 7510, 7511]);
+      } finally {
+        db.close();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  it("adds the source-grounded 5577055 Q5 and replays without AI", async () => {
+    const migration = {
+      entryId: "ebsi:5577055",
+      entryToken: "b4eeaf53cd6024aa180d1f37",
+      oldReceiptSha256: "51f5f9415746cfbc8c87bb20bf691ae66ca15e93e4f1ca31a2746c925988bdec",
+      beforeProjectionHash: "f9f8d0c5b200aa6e7147ff9a6f5397b04e95f9e4b59062fae64667676f9c5a3b",
+      afterProjectionHash: "2fe1f7dbc05af37cf42099082dd1e80ae5fe3e91500c5ec73590b87800931030",
+      stableAfterProjectionHash: "e0eed6170c486eb248909bb422905caf569f9246f8b9fa75c5df6e5d796f4947",
+      accepted: 6,
+    } satisfies SameKeyMigrationCase;
+    const root = mkdtempSync(join(tmpdir(), "studywork-5577055-migration-"));
+    try {
+      const stateDir = await prepareSameKeySnapshot(root, migration);
+      const receiptPath = join(stateDir, "receipt.json");
+      const beforeGuard = { db: sha256(join(root, "studywork.db")), receipt: sha256(receiptPath) };
+      await expect(runNormalReplay(root, migration.entryId)).rejects.toMatchObject({
+        stderr: expect.stringContaining("기존 체크포인트와 내용이 다릅니다"),
+      });
+      expect({ db: sha256(join(root, "studywork.db")), receipt: sha256(receiptPath) }).toEqual(beforeGuard);
+      expect(existsSync(join(stateDir, "migration-plans"))).toBe(false);
+      expect(existsSync(join(stateDir, "receipt-history"))).toBe(false);
+
+      expect((await runSameKeyMigration(root, migration)).stdout).toContain("existing ebsi:5577055 6");
+      const planName = readdirSync(join(stateDir, "migration-plans"))
+        .find((name) => /^v1-[a-f0-9]{64}\.json$/u.test(name))!;
+      const planPath = join(stateDir, "migration-plans", planName);
+      const plan = JSON.parse(readFileSync(planPath, "utf8"));
+      expect(plan.identity).toMatchObject({
+        receiptCore: {
+          sha256: "51d06f30a79670ee20019ac8ed3911d1fac73070170ca9a53a081213279f5bd2",
+        },
+        answerAudit: {
+          path: "answer-audit/v5-393814389a75988dfefa8d34407cb9652bd0700c5e213e1291fc232896047992.json",
+          sha256: "956737ec5dfb7bd68bfda2e6b50f72b0af7cde55d29fd99b832bcf245234dfc5",
+          effectiveCorpusHash: "8e22bc17f58eb8cc8e9138389ec705646ccdbd8a375cd46d52a8a6c33637cafe",
+          effectiveSolutionCorpusHash: "ac739fc7566ed2daeb1740af79c518c336c7c1087f3a6414f360e8eeb8bcf84d",
+        },
+        beforeProjectionHash: migration.beforeProjectionHash,
+        afterProjectionHash: migration.afterProjectionHash,
+        stableAfterProjectionHash: migration.stableAfterProjectionHash,
+        ownership: {
+          bookIds: [131],
+          fileIds: [210, 211],
+          beforeQuestionIds: [3491, 3492, 3493, 3494, 3495],
+          afterQuestionIds: [3491, 3492, 3493, 3494, 3495, 3649],
+          beforeBookItemIds: [7512, 7513, 7514, 7515, 7516, 7517, 7518, 7519, 7520, 7521],
+          afterBookItemIds: [7512, 7513, 7514, 7515, 7516, 7517, 7518, 7519, 7520, 7521, 7828, 7829],
+        },
+      });
+      expect(plan.identity.beforeProjection.guards).toEqual({
+        attempts: 0,
+        materials: 0,
+        bookExtractionChunks: 0,
+        materialExtractionChunks: 0,
+      });
+      expect(plan.identity.operations.questionUpdates).toHaveLength(5);
+      expect(plan.identity.operations.itemUpdates).toHaveLength(10);
+      expect(plan.identity.operations.questionInserts).toHaveLength(1);
+      expect(plan.identity.operations.itemInserts).toHaveLength(2);
+      for (const operation of plan.identity.operations.questionUpdates) {
+        expect(() => assertMigrationAnswerEquivalent(operation.before, {
+          qtype: operation.after.qtype,
+          choices: operation.after.choices === null ? null : JSON.parse(operation.after.choices),
+          officialAnswer: operation.after.answer,
+        } as ImportedQuestion)).not.toThrow();
+      }
+      expect(plan.identity.operations.questionInserts[0].after).toMatchObject({
+        id: 3649,
+        src_page: 2,
+        printed_number: "5",
+        difficulty: "중",
+        question: "좌표평면에서 곡선 $y=a^x$을 직선 $y=x$에 대하여 대칭이동한 곡선이 점 $(2,3)$을 지날 때, 양수 $a$의 값은? [3점]",
+        answer: "④ $\\sqrt[3]{2}$",
+      });
+      expect(plan.identity.operations.itemInserts.map((item: { after: { id: number } }) => item.after.id))
+        .toEqual([7828, 7829]);
+      const artifactHashes = (directory: string) => readdirSync(directory).sort()
+        .map((name) => [name, sha256(join(directory, name))]);
+      expect(artifactHashes(join(stateDir, "answer-attestation")).filter(([name]) => name.startsWith("v5-")))
+        .toEqual([[
+          "v5-b452290f13f1ebd058630975a6dd21594c414c5af9d92412fca9a77720874140.json",
+          "8225980875926868843160fc1695a16dd26ce6361443abfa459ff110c8d46b96",
+        ]]);
+      const snapshot = () => ({
+        db: sha256(join(root, "studywork.db")),
+        receipt: sha256(receiptPath),
+        plan: sha256(planPath),
+        commits: artifactHashes(join(stateDir, "migration-commits")),
+        attestations: artifactHashes(join(stateDir, "answer-attestation")),
+      });
+      const migrated = snapshot();
+      for (let replay = 0; replay < 2; replay++) {
+        expect((await runSameKeyMigration(root, migration)).stdout).toContain("existing ebsi:5577055 6");
+      }
+      expect((await runNormalReplay(root, migration.entryId)).stdout).toContain("existing ebsi:5577055 6");
+      expect(snapshot()).toEqual(migrated);
+
+      const db = new Database(join(root, "studywork.db"), { readonly: true, fileMustExist: true });
+      try {
+        expect(db.pragma("quick_check", { simple: true })).toBe("ok");
+        expect((db.prepare("SELECT id FROM questions WHERE book_id = 131 ORDER BY id").all() as Array<{ id: number }>)
+          .map(({ id }) => id)).toEqual([3491, 3492, 3493, 3494, 3495, 3649]);
+        expect((db.prepare("SELECT id FROM book_items WHERE book_id = 131 ORDER BY id").all() as Array<{ id: number }>)
+          .map(({ id }) => id)).toEqual([7512, 7513, 7514, 7515, 7516, 7517, 7518, 7519, 7520, 7521, 7828, 7829]);
+        expect((db.prepare(
+          "SELECT COUNT(*) AS count FROM questions WHERE book_id = 131 AND src_page = 4 AND printed_number = '11'"
+        ).get() as { count: number }).count).toBe(0);
       } finally {
         db.close();
       }
