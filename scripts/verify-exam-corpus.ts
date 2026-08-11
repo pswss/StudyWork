@@ -294,6 +294,11 @@ const PROBLEM_SCOPE_BOX_REVISION_CORRECTION_DIGEST =
 const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION = 1;
 const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST =
   "e92ed29fdd979e63d56635b2f7c99284ad01f14893384e680acd150cb2a29728";
+const PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_VERSION = 1;
+const PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_DIGEST =
+  "bc625c2e3b1b7006d184e14a7f1fc298a3788617c639bcd131483d7c23177a06";
+const CURRICULUM_RULES_SHA256 =
+  "7bb7cb863c8c4855f042419fbbaac4426aafb513d8bbb00fd35f5afa1a2d1932";
 const PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST =
   "28434a9872d33e0ef364b6030c6f32b4a51cab9182a9d6c372f225884794d7e9";
 const PROBLEM_MANUAL_CORRECTION_DIGEST =
@@ -647,6 +652,20 @@ type ProblemTerminalFidelityAdjudicationSpec = {
   failedScopeEvidenceHash: string;
   failedStatus?: ProblemTerminalFidelityItem["status"];
   expectedScopeDecision?: ProblemTerminalFidelityItem["scopeDecision"];
+  policyRevision?: ProblemTerminalFidelityPolicyRevisionSpec;
+};
+
+type ProblemTerminalFidelityPolicyRevisionSpec = {
+  allowlistId: string;
+  parentAdjudicationArtifactPath: string;
+  parentAdjudicationArtifactHash: string;
+  parentAdjudicationBasisDigest: string;
+  parentAdjudicationItemHash: string;
+  parentAdjudicationEvidenceHash: string;
+  parentAdjudicationScopeEvidenceHash: string;
+  parentAdjudicationPromptHash: string;
+  curriculumRulesHash: string;
+  expectedItem: ProblemTerminalFidelityItem;
 };
 
 const PROBLEM_SCOPE_ADJUDICATION_ALLOWLIST: readonly ProblemScopeAdjudicationSpec[] = [{
@@ -1659,6 +1678,27 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedScopeEvidenceHash: "ef60f9062f16b23ec37ff90ffbbefd571f2e9fe089bee6c4e36f73fa73abb00d",
   failedStatus: "exact",
   expectedScopeDecision: "reject",
+  policyRevision: {
+    allowlistId: "ebsi-5577055-q11-terminal-policy-v1",
+    parentAdjudicationArtifactPath: "problem-terminal-fidelity-adjudications/" +
+      "v1-0004-0011-130fa62fabd4fc9a4155ee9db259f5dbf62c37388ea1c8f18b45487c616c34ec.json",
+    parentAdjudicationArtifactHash: "1c9344123c2e44c087fad301f24b749e0b6cc9e073c5107747648c3115209e5b",
+    parentAdjudicationBasisDigest: "130fa62fabd4fc9a4155ee9db259f5dbf62c37388ea1c8f18b45487c616c34ec",
+    parentAdjudicationItemHash: "c5178e409cb5d1eb55df1bd399a28959d36c87d6ec18447b1aa6e066043ede01",
+    parentAdjudicationEvidenceHash: "4961042d4ffa5e11127d5c0277725a6c20787a04f7a5ef542d30d9c449fc7c00",
+    parentAdjudicationScopeEvidenceHash: "0e9cccf3e4269d1967336c5592e9940b5199e7b156a26f979cefac8873499b2e",
+    parentAdjudicationPromptHash: "482e7929de8eadfc297e5e5abad97749d9308c3bb56cb6f0ccf839bc99f8442b",
+    curriculumRulesHash: CURRICULUM_RULES_SHA256,
+    expectedItem: {
+      key: "4:11",
+      status: "exact",
+      evidence: "공식 문제 4쪽 픽셀의 문항·그래프·조건·선택지와 확장된 box가 모두 일치한다.",
+      scopeDecision: "reject",
+      scopeConfidence: 1,
+      scopeEvidence: "공식 문제 4쪽과 해설 1쪽 픽셀은 로그함수와 함께 선분의 중점·길이 및 좌표 계산을 " +
+        "필수로 사용한다. 적용 중인 교육과정 규칙은 좌표기하와 로그의 결합을 제외 대상으로 명시한다.",
+    },
+  },
 }] as const;
 
 export function manualAdjudicationAllowlistFingerprint(): string {
@@ -3134,6 +3174,13 @@ function verifyProblemTerminalFidelityCheckpoint(
   return items;
 }
 
+function problemTerminalFidelityAdjudicationBaseSpec(
+  spec: ProblemTerminalFidelityAdjudicationSpec,
+): Omit<ProblemTerminalFidelityAdjudicationSpec, "policyRevision"> {
+  const { policyRevision: _policyRevision, ...base } = spec;
+  return base;
+}
+
 function verifyProblemTerminalFidelityAdjudications(
   stateDir: string,
   entry: ManifestEntry,
@@ -3317,7 +3364,8 @@ function verifyProblemTerminalFidelityAdjudications(
       );
     }
 
-    const adjudication = object(rawAdjudication, `${key}.terminalAdjudication`);
+    const adjudicationEnvelope = object(rawAdjudication, `${key}.terminalAdjudication`);
+    const { policyRevision: rawPolicyRevision, ...adjudication } = adjudicationEnvelope;
     const failedTerminalCheckpoint = problemTerminalFidelityCheckpoint(
       adjudication.failedTerminalCheckpoint,
       `${key}.terminalAdjudication.failedTerminalCheckpoint`,
@@ -3411,7 +3459,7 @@ function verifyProblemTerminalFidelityAdjudications(
       failedTerminalItemHash: spec.failedItemHash,
       failedEvidenceHash: spec.failedEvidenceHash,
       failedScopeEvidenceHash: spec.failedScopeEvidenceHash,
-      adjudicationSpecHash: canonicalEvidenceHash(spec),
+      adjudicationSpecHash: canonicalEvidenceHash(problemTerminalFidelityAdjudicationBaseSpec(spec)),
     };
     const basisDigest = canonicalEvidenceHash(commonBasis);
     const expectedPath = `problem-terminal-fidelity-adjudications/` +
@@ -3485,7 +3533,7 @@ function verifyProblemTerminalFidelityAdjudications(
       failedTerminalItemHash: spec.failedItemHash,
       failedEvidenceHash: spec.failedEvidenceHash,
       failedScopeEvidenceHash: spec.failedScopeEvidenceHash,
-      adjudicationSpecHash: canonicalEvidenceHash(spec),
+      adjudicationSpecHash: canonicalEvidenceHash(problemTerminalFidelityAdjudicationBaseSpec(spec)),
       adjudicationArtifact: {
         ...adjudicationArtifact,
         version: PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION,
@@ -3493,12 +3541,150 @@ function verifyProblemTerminalFidelityAdjudications(
       },
       adjudicationItemHash: canonicalEvidenceHash(item),
     };
+    const policy = spec.policyRevision;
+    const validPolicyParent = policy !== undefined
+      && adjudicationArtifact.path === policy.parentAdjudicationArtifactPath
+      && adjudicationArtifact.sha256 === policy.parentAdjudicationArtifactHash
+      && basisDigest === policy.parentAdjudicationBasisDigest
+      && canonicalEvidenceHash(item) === policy.parentAdjudicationItemHash
+      && sha256(item.evidence) === policy.parentAdjudicationEvidenceHash
+      && item.scopeEvidence !== undefined
+      && sha256(item.scopeEvidence) === policy.parentAdjudicationScopeEvidenceHash
+      && item.status === "exact" && item.scopeDecision === "accept" && item.scopeConfidence >= 0.9;
     if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)
       || !isDeepStrictEqual(adjudication, expectedEvidence)
-      || item.key !== key || !isExpectedItem(spec, item)) {
+      || item.key !== key || (!isExpectedItem(spec, item) && !validPolicyParent)) {
       throw new Error(`${key}: terminal fidelity adjudication checkpoint/evidence is stale`);
     }
-    overlays.set(key, item);
+    if (!policy) {
+      if (rawPolicyRevision !== undefined) {
+        throw new Error(`${key}: terminal fidelity policy revision is not allowlisted`);
+      }
+      overlays.set(key, item);
+      continue;
+    }
+    if (!validPolicyParent || rawPolicyRevision === undefined
+      || policy.curriculumRulesHash !== CURRICULUM_RULES_SHA256
+      || canonicalEvidenceHash(policy.expectedItem) !==
+        "de7aeb740bdd1028513cccee841db5363464896d49a7ac98ad06cb6b17460e44"
+      || !isExpectedItem(spec, policy.expectedItem)) {
+      throw new Error(`${key}: terminal fidelity policy revision parent/spec is stale`);
+    }
+    const solutionSourceEvidence = { path: "solution.pdf", sha256: solutionSourceHash };
+    const solutionPath = confinedEvidencePath(
+      stateDir,
+      solutionSourceEvidence,
+      `${key} terminal fidelity policy solution source`,
+    );
+    if (hashFile(solutionPath) !== solutionSourceHash || !parentScopeAdjudication || !parentScopeBox) {
+      throw new Error(`${key}: terminal fidelity policy source authority is stale`);
+    }
+    const parentAdjudicationAuthorityHash = canonicalEvidenceHash(expectedEvidence);
+    const policyBasis = {
+      allowlistId: policy.allowlistId,
+      entryId: entry.id,
+      key,
+      sourcePage: spec.sourcePage,
+      sourceHash: problemEvidence.sha256,
+      solutionSourceHash,
+      parentAdjudication: expectedEvidence,
+      parentAdjudicationAuthorityHash,
+      parentAdjudicationArtifact: expectedEvidence.adjudicationArtifact,
+      parentAdjudicationBasisDigest: policy.parentAdjudicationBasisDigest,
+      parentAdjudicationItem: item,
+      parentAdjudicationItemHash: policy.parentAdjudicationItemHash,
+      parentAdjudicationEvidenceHash: policy.parentAdjudicationEvidenceHash,
+      parentAdjudicationScopeEvidenceHash: policy.parentAdjudicationScopeEvidenceHash,
+      parentAdjudicationPromptHash: policy.parentAdjudicationPromptHash,
+      parentScopeBoxEvidenceHash: spec.parentScopeBoxEvidenceHash,
+      parentClassificationHash: spec.parentClassificationHash,
+      problemSourceEvidence: sourceEvidence,
+      solutionSourceEvidence,
+      baseSolutionCheckpoint: parentScopeAdjudication.baseSolutionCheckpoint,
+      baseSolutionItemHash: parentScopeAdjudication.baseSolutionItemHash,
+      solutionContextFrom: parentScopeAdjudication.solutionContextFrom,
+      solutionContextTo: parentScopeAdjudication.solutionContextTo,
+      curriculumRulesHash: policy.curriculumRulesHash,
+      policySpecHash: canonicalEvidenceHash(policy),
+      expectedItem: policy.expectedItem,
+    };
+    const policyBasisDigest = canonicalEvidenceHash(policyBasis);
+    const expectedPolicyPath = `problem-terminal-fidelity-policy-revisions/` +
+      `v${PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_VERSION}-` +
+      `${String(spec.sourcePage).padStart(4, "0")}-${current.question.printedNumber.padStart(4, "0")}-` +
+      `${policyBasisDigest}.json`;
+    const policyEvidence = object(rawPolicyRevision, `${key}.terminalAdjudication.policyRevision`);
+    const policyArtifactEnvelope = object(
+      policyEvidence.policyArtifact,
+      `${key}.terminalAdjudication.policyRevision.policyArtifact`,
+    );
+    const policyArtifact = evidencePointer({
+      path: policyArtifactEnvelope.path,
+      sha256: policyArtifactEnvelope.sha256,
+    }, `${key}.terminalAdjudication.policyRevision.policyArtifact`);
+    if (policyArtifact.path !== expectedPolicyPath
+      || policyArtifactEnvelope.version !== PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_VERSION
+      || policyArtifactEnvelope.policyDigest !== PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_DIGEST) {
+      throw new Error(`${key}: terminal fidelity policy revision artifact envelope is stale`);
+    }
+    const policyCheckpoint = readBoundEvidenceCached(
+      cache,
+      stateDir,
+      policyArtifact,
+      `${key} terminal fidelity policy revision`,
+    );
+    const policyItem = parseProblemTerminalFidelityItem(
+      policyCheckpoint.item,
+      `${key}.terminalAdjudication.policyRevision.item`,
+      contract,
+    );
+    const expectedPolicyCheckpoint = {
+      version: PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_VERSION,
+      entryId: entry.id,
+      basisDigest: policyBasisDigest,
+      basis: policyBasis,
+      policyDigest: PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_DIGEST,
+      item: policy.expectedItem,
+    };
+    const expectedPolicyEvidence = {
+      allowlistId: policy.allowlistId,
+      key,
+      sourcePage: spec.sourcePage,
+      sourceHash: problemEvidence.sha256,
+      solutionSourceHash,
+      parentAdjudicationArtifact: expectedEvidence.adjudicationArtifact,
+      parentAdjudicationBasisDigest: policy.parentAdjudicationBasisDigest,
+      parentAdjudicationItemHash: policy.parentAdjudicationItemHash,
+      parentAdjudicationAuthorityHash,
+      parentAdjudicationEvidenceHash: policy.parentAdjudicationEvidenceHash,
+      parentAdjudicationScopeEvidenceHash: policy.parentAdjudicationScopeEvidenceHash,
+      parentAdjudicationPromptHash: policy.parentAdjudicationPromptHash,
+      parentScopeBoxEvidenceHash: spec.parentScopeBoxEvidenceHash,
+      parentClassificationHash: spec.parentClassificationHash,
+      problemSourceEvidence: sourceEvidence,
+      solutionSourceEvidence,
+      baseSolutionCheckpoint: parentScopeAdjudication.baseSolutionCheckpoint,
+      baseSolutionItemHash: parentScopeAdjudication.baseSolutionItemHash,
+      solutionContextFrom: parentScopeAdjudication.solutionContextFrom,
+      solutionContextTo: parentScopeAdjudication.solutionContextTo,
+      curriculumRulesHash: policy.curriculumRulesHash,
+      policySpecHash: canonicalEvidenceHash(policy),
+      policyArtifact: {
+        ...policyArtifact,
+        version: PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_VERSION,
+        policyDigest: PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_DIGEST,
+      },
+      policyItemHash: canonicalEvidenceHash(policy.expectedItem),
+    };
+    if (!isDeepStrictEqual(policyCheckpoint, expectedPolicyCheckpoint)
+      || !isDeepStrictEqual(policyItem, policy.expectedItem)
+      || !isDeepStrictEqual(adjudicationEnvelope, {
+        ...expectedEvidence,
+        policyRevision: expectedPolicyEvidence,
+      })) {
+      throw new Error(`${key}: terminal fidelity policy revision checkpoint/evidence is stale`);
+    }
+    overlays.set(key, policyItem);
   }
   return overlays;
 }
@@ -5069,6 +5255,7 @@ function verifyProblemRecoveryCoverage(
   const declaredManual = new Set<string>();
   const declaredScopeBox = new Set<string>();
   const declaredTerminalAdjudication = new Set<string>();
+  const declaredTerminalPolicyRevision = new Set<string>();
   for (const [index, value] of values.entries()) {
     const repair = object(value, `answer audit repairs[${index}]`);
     if (repair.terminalAdjudication !== undefined) {
@@ -5091,6 +5278,24 @@ function verifyProblemRecoveryCoverage(
         throw new Error(`${pointer.path}: duplicate terminal fidelity adjudication authority`);
       }
       declaredTerminalAdjudication.add(pointer.path);
+      if (adjudication.policyRevision !== undefined) {
+        const policyRevision = object(
+          adjudication.policyRevision,
+          `answer audit repairs[${index}].terminalAdjudication.policyRevision`,
+        );
+        const policyEnvelope = object(
+          policyRevision.policyArtifact,
+          `answer audit repairs[${index}].terminalAdjudication.policyRevision.policyArtifact`,
+        );
+        const policyPointer = evidencePointer({
+          path: policyEnvelope.path,
+          sha256: policyEnvelope.sha256,
+        }, `answer audit repairs[${index}].terminalAdjudication.policyRevision.policyArtifact`);
+        if (declaredTerminalPolicyRevision.has(policyPointer.path)) {
+          throw new Error(`${policyPointer.path}: duplicate terminal fidelity policy revision authority`);
+        }
+        declaredTerminalPolicyRevision.add(policyPointer.path);
+      }
     }
     if (repair.scopeAdjudication !== undefined) {
       if (contract.auditVersion !== 5 || repair.revision !== undefined) {
@@ -5536,6 +5741,40 @@ function verifyProblemRecoveryCoverage(
   for (const path of declaredTerminalAdjudication) {
     if (!existsSync(join(stateDir, path))) {
       throw new Error(`${path}: declared terminal fidelity adjudication artifact is missing`);
+    }
+  }
+  const policyRevisionDirectory = join(stateDir, "problem-terminal-fidelity-policy-revisions");
+  if (existsSync(policyRevisionDirectory)) {
+    const expectedDirectory = resolve(realpathSync(stateDir), "problem-terminal-fidelity-policy-revisions");
+    if (lstatSync(policyRevisionDirectory).isSymbolicLink()
+      || !lstatSync(policyRevisionDirectory).isDirectory()
+      || realpathSync(policyRevisionDirectory) !== expectedDirectory) {
+      throw new Error(
+        "problem-terminal-fidelity-policy-revisions: policy revision directory must be a confined regular directory",
+      );
+    }
+    for (const entry of readdirSync(policyRevisionDirectory, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name))) {
+      if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
+      if (!entry.isFile() || entry.isSymbolicLink()) {
+        throw new Error(
+          `problem-terminal-fidelity-policy-revisions/${entry.name}: policy revision artifact must be a regular file`,
+        );
+      }
+      if (!/^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(entry.name)) {
+        throw new Error(
+          `problem-terminal-fidelity-policy-revisions/${entry.name}: malformed policy revision artifact name`,
+        );
+      }
+      const path = `problem-terminal-fidelity-policy-revisions/${entry.name}`;
+      if (!declaredTerminalPolicyRevision.has(path)) {
+        throw new Error(`${path}: policy revision artifact is not declared by the terminal audit`);
+      }
+    }
+  }
+  for (const path of declaredTerminalPolicyRevision) {
+    if (!existsSync(join(stateDir, path))) {
+      throw new Error(`${path}: declared terminal fidelity policy revision artifact is missing`);
     }
   }
 }
@@ -12263,9 +12502,11 @@ function selectVerificationContract(
     "problem-scope-box-revisions",
     "classification-scope-box-revisions",
     "problem-terminal-fidelity-adjudications",
+    "problem-terminal-fidelity-policy-revisions",
   ].some((directory) => {
     const absolute = join(stateDir, directory);
-    if (directory.startsWith("problem-scope-box-") || directory === "classification-scope-box-revisions") {
+    if (directory.startsWith("problem-scope-box-") || directory === "classification-scope-box-revisions"
+      || directory === "problem-terminal-fidelity-policy-revisions") {
       try {
         const info = lstatSync(absolute);
         if (info.isSymbolicLink() || !info.isDirectory()

@@ -75,6 +75,7 @@ import {
   buildCorpusReceipt,
   CLASSIFIER_DIGEST,
   CLASSIFIER_VERSION,
+  CURRICULUM_RULES_SHA256,
   commitCorpusEntry,
   EXISTING_CORPUS_MIGRATION_ALLOWLIST,
   parseCorpusManifest,
@@ -83,6 +84,8 @@ import {
   PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST,
   PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST,
   PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION,
+  PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_DIGEST,
+  PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_VERSION,
   PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST,
   PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST,
   PROBLEM_MANUAL_CORRECTION_DIGEST,
@@ -9565,7 +9568,7 @@ async function scopeBoxRevisionFixture() {
     "problem-scope-box-evidence",
     "problem-scope-box-revisions",
     "classification-scope-box-revisions",
-    "problem-terminal-fidelity-adjudications",
+    "problem-terminal-fidelity-policy-revisions",
     "solution-repairs",
     "solution-fidelity-repairs",
   ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
@@ -9616,16 +9619,7 @@ async function scopeBoxRevisionFixture() {
     }
     if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
       if (request.prompt.includes("Final question:\n")) {
-        const [item] = JSON.parse(request.prompt.split("Final question:\n")[1]) as Array<{ key: string }>;
-        expect(item.key).toBe("4:11");
-        return { text: JSON.stringify([{
-          key: item.key,
-          status: "exact",
-          evidence: "공식 4쪽 crop의 전체 문항·그래프·선택지가 정확히 일치한다.",
-          scopeDecision: "reject",
-          scopeConfidence: 0.99,
-          scopeEvidence: "공식 해설은 로그함수와 제외 대상 좌표기하의 중점·선분 길이를 함께 사용한다.",
-        }]) };
+        throw new Error("persisted Q11 terminal child must be revised without AI");
       }
       const items = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{ key: string }>;
       return { text: JSON.stringify(items.map((item) => {
@@ -9927,7 +9921,7 @@ describe("exam corpus verifier", () => {
     expect(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST)
       .toBe("e92ed29fdd979e63d56635b2f7c99284ad01f14893384e680acd150cb2a29728");
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("8ad306a8309677e671e8ee185cf622f4cfd8bc93d03f790d27ddf4ab83992b4b");
+      .toBe("4730069a30de1275f2f1fa7e21bd6faa396b5a61de11b1b0dbe95946815aaa25");
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST));
 
@@ -12237,9 +12231,21 @@ describe("exam corpus verifier", () => {
     expect(scopeBoxRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST));
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("8ad306a8309677e671e8ee185cf622f4cfd8bc93d03f790d27ddf4ab83992b4b");
+      .toBe("4730069a30de1275f2f1fa7e21bd6faa396b5a61de11b1b0dbe95946815aaa25");
     const terminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((spec) =>
       spec.entryId === "ebsi:5577055" && spec.key === "4:11")!;
+    const policySpec = terminalSpec.policyRevision!;
+    expect(canonicalEvidenceHash(terminalSpec))
+      .toBe("a531a5213f2f9e4a53efde1dede0eb33795a4bd0ee47f18799520e2b98a4b9de");
+    expect(PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_VERSION).toBe(1);
+    expect(PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_DIGEST)
+      .toBe("bc625c2e3b1b7006d184e14a7f1fc298a3788617c639bcd131483d7c23177a06");
+    expect(CURRICULUM_RULES_SHA256)
+      .toBe("7bb7cb863c8c4855f042419fbbaac4426aafb513d8bbb00fd35f5afa1a2d1932");
+    expect(canonicalEvidenceHash(policySpec))
+      .toBe("455633dfd7fddebed531ba15e5b5609c898f511e0e4b86e6fe39b691ddb1a037");
+    expect(canonicalEvidenceHash(policySpec.expectedItem))
+      .toBe("de7aeb740bdd1028513cccee841db5363464896d49a7ac98ad06cb6b17460e44");
     const parentQuestion = JSON.parse(readFileSync(join(
       Q11_SCOPE_STATE,
       PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST[0].parentRecoveryProblemArtifactPath,
@@ -12326,8 +12332,49 @@ describe("exam corpus verifier", () => {
           solutionContextFrom: 1,
           solutionContextTo: 5,
         },
-        items: [{ key: "4:11", status: "exact", scopeDecision: "reject" }],
+        items: [{ key: "4:11", status: "exact", scopeDecision: "accept" }],
       });
+      expect(canonicalEvidenceHash(terminalChild)).toBe(policySpec.parentAdjudicationArtifactHash);
+      const policyEvidence = q11Repair.terminalAdjudication.policyRevision;
+      expect(policyEvidence).toMatchObject({
+        allowlistId: policySpec.allowlistId,
+        parentAdjudicationArtifact: {
+          path: policySpec.parentAdjudicationArtifactPath,
+          sha256: policySpec.parentAdjudicationArtifactHash,
+        },
+        parentAdjudicationItemHash: policySpec.parentAdjudicationItemHash,
+        parentAdjudicationPromptHash: policySpec.parentAdjudicationPromptHash,
+        parentClassificationHash: terminalSpec.parentClassificationHash,
+        curriculumRulesHash: CURRICULUM_RULES_SHA256,
+        policyArtifact: {
+          path: "problem-terminal-fidelity-policy-revisions/" +
+            "v1-0004-0011-11a179d21a920cd7fada79aa98a3f448c4aaef000ec690f5e60133366b09b748.json",
+          sha256: "b2ae59bbaa67a9d762000865bc4ef34af97267e9064dd0adedd17e46802a1cdd",
+          version: 1,
+          policyDigest: PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_DIGEST,
+        },
+        policyItemHash: canonicalEvidenceHash(policySpec.expectedItem),
+      });
+      const policyPath = join(files.stateDir, policyEvidence.policyArtifact.path);
+      const policyBytes = readFileSync(policyPath);
+      const policyCheckpoint = JSON.parse(policyBytes.toString("utf8"));
+      expect(policyCheckpoint).toMatchObject({
+        version: 1,
+        policyDigest: PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_DIGEST,
+        item: policySpec.expectedItem,
+        basis: {
+          parentAdjudicationItemHash: policySpec.parentAdjudicationItemHash,
+          parentAdjudicationPromptHash: policySpec.parentAdjudicationPromptHash,
+          parentClassificationHash: terminalSpec.parentClassificationHash,
+          curriculumRulesHash: CURRICULUM_RULES_SHA256,
+          baseSolutionItemHash: terminalSpec.baseSolutionItemHash,
+          solutionContextFrom: 1,
+          solutionContextTo: 5,
+        },
+      });
+      expect(canonicalEvidenceHash(policyCheckpoint))
+        .toBe("b2ae59bbaa67a9d762000865bc4ef34af97267e9064dd0adedd17e46802a1cdd");
+      expect(JSON.stringify(policyCheckpoint)).not.toContain("1=a-b");
       const failedTerminal = JSON.parse(readFileSync(join(files.stateDir, terminalSpec.failedTerminalPath), "utf8"));
       expect(failedTerminal.items.find((item: { key: string }) => item.key === "4:11"))
         .toMatchObject({ status: "exact", scopeDecision: "accept" });
@@ -12380,6 +12427,35 @@ describe("exam corpus verifier", () => {
       expect(verifyExamCorpus(files).failures.some((failure) =>
         failure.code === "ANSWER_AUDIT_INVALID")).toBe(true);
       writeFileSync(cropPdfPath, cropPdfBytes);
+
+      writeFileSync(policyPath, Buffer.concat([policyBytes, Buffer.from("tampered")]));
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("policy revision"))).toBe(true);
+      writeFileSync(policyPath, policyBytes);
+
+      rmSync(policyPath);
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("missing"))).toBe(true);
+      writeFileSync(policyPath, policyBytes);
+
+      const policyDirectory = join(files.stateDir, "problem-terminal-fidelity-policy-revisions");
+      const policyOrphan = join(
+        policyDirectory,
+        `v1-0004-0011-${"4".repeat(64)}.json`,
+      );
+      writeJson(policyOrphan, {});
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
+      rmSync(policyOrphan);
+
+      const policySymlink = join(
+        policyDirectory,
+        `v1-0004-0011-${"5".repeat(64)}.json`,
+      );
+      symlinkSync(policyPath, policySymlink);
+      expect(verifyExamCorpus(files).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("regular file"))).toBe(true);
+      rmSync(policySymlink);
 
       rmSync(terminalChildPath);
       expect(verifyExamCorpus(files).failures.some((failure) =>
@@ -12516,6 +12592,32 @@ describe("exam corpus verifier", () => {
       rmSync(omittedChild.root, { recursive: true, force: true });
     }
 
+    const stalePolicy = await scopeBoxRevisionFixture();
+    try {
+      rewriteTerminalAdjudicationAuthority(stalePolicy, (currentAudit) => {
+        currentAudit.repairs.find((value: { key: string }) => value.key === "4:11")
+          .terminalAdjudication.policyRevision.parentAdjudicationPromptHash = "0".repeat(64);
+      });
+      expect(verifyExamCorpus(stalePolicy).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("policy revision"))).toBe(true);
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(stalePolicy.root, { recursive: true, force: true });
+    }
+
+    const noThirdPolicy = await scopeBoxRevisionFixture();
+    try {
+      rewriteTerminalAdjudicationAuthority(noThirdPolicy, (currentAudit) => {
+        currentAudit.repairs.find((value: { key: string }) => value.key === "4:11")
+          .terminalAdjudication.policyRevision.policyRevision = {};
+      });
+      expect(verifyExamCorpus(noThirdPolicy).failures.some((failure) =>
+        failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("policy revision"))).toBe(true);
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(noThirdPolicy.root, { recursive: true, force: true });
+    }
+
     const parentTamper = await scopeBoxRevisionFixture();
     try {
       rewriteTerminalAdjudicationAuthority(parentTamper, (currentAudit) => {
@@ -12605,6 +12707,30 @@ describe("exam corpus verifier", () => {
     expect(verificationContractAuditVersionForTest(terminalChildFallback.stateDirs.math)).toBe(5);
     expect(verifyExamCorpus(terminalChildFallback).failures.some((failure) =>
       failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
+
+    const policyFallback = fixture();
+    const policySignalDirectory = join(
+      policyFallback.stateDirs.math,
+      "problem-terminal-fidelity-policy-revisions",
+    );
+    mkdirSync(policySignalDirectory, { recursive: true });
+    writeJson(join(policySignalDirectory, `v1-0004-0011-${"6".repeat(64)}.json`), {});
+    expect(verificationContractAuditVersionForTest(policyFallback.stateDirs.math)).toBe(5);
+    expect(verifyExamCorpus(policyFallback).failures.some((failure) =>
+      failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
+
+    const policySymlinkFallback = fixture();
+    const policyOutside = mkdtempSync(join(tmpdir(), "verify-policy-empty-signal-"));
+    const policySignalPath = join(
+      policySymlinkFallback.stateDirs.math,
+      "problem-terminal-fidelity-policy-revisions",
+    );
+    symlinkSync(policyOutside, policySignalPath);
+    expect(verificationContractAuditVersionForTest(policySymlinkFallback.stateDirs.math)).toBe(5);
+    expect(verifyExamCorpus(policySymlinkFallback).failures.some((failure) =>
+      failure.code === "ANSWER_ATTESTATION_MISSING")).toBe(true);
+    rmSync(policySignalPath);
+    rmSync(policyOutside, { recursive: true, force: true });
 
     const emptySymlinkFallback = fixture();
     const outside = mkdtempSync(join(tmpdir(), "verify-scope-box-empty-signal-"));

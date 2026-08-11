@@ -14,6 +14,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
+import Database from "better-sqlite3";
 import { PDFDocument } from "pdf-lib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -27,10 +28,13 @@ import type { QuizItemEx, SolutionItem } from "../src/claude";
 import {
   CLASSIFIER_DIGEST,
   CLASSIFIER_VERSION,
+  CURRICULUM_RULES_SHA256,
   PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST,
   PROBLEM_SCOPE_BOX_REVISION_PROMPT_DIGEST,
   PROBLEM_SCOPE_BOX_REVISION_VERSION,
   PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST,
+  PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_DIGEST,
+  PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_VERSION,
   applyAllowlistedProblemScopeBoxRevision,
   assertNoCommittedReceiptForFilteredResult,
   assertNoReceiptResultConflict,
@@ -140,6 +144,28 @@ describe.skipIf(!available)("Q11 scope box revision", () => {
     );
     expect(corrected).toEqual({ ...parent, box: [0.12, 0.36] });
     expect(canonicalEvidenceHash(corrected)).toBe(PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST[0].correctedQuestionHash);
+    const policy = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((spec) =>
+      spec.entryId === "ebsi:5577055" && spec.key === "4:11"
+    )!.policyRevision!;
+    expect(PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_VERSION).toBe(1);
+    expect(PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_DIGEST)
+      .toBe("bc625c2e3b1b7006d184e14a7f1fc298a3788617c639bcd131483d7c23177a06");
+    expect(CURRICULUM_RULES_SHA256).toBe(
+      "7bb7cb863c8c4855f042419fbbaac4426aafb513d8bbb00fd35f5afa1a2d1932"
+    );
+    expect(policy).toMatchObject({
+      parentAdjudicationArtifactHash: "1c9344123c2e44c087fad301f24b749e0b6cc9e073c5107747648c3115209e5b",
+      parentAdjudicationBasisDigest: "130fa62fabd4fc9a4155ee9db259f5dbf62c37388ea1c8f18b45487c616c34ec",
+      parentAdjudicationItemHash: "c5178e409cb5d1eb55df1bd399a28959d36c87d6ec18447b1aa6e066043ede01",
+      parentAdjudicationPromptHash: "482e7929de8eadfc297e5e5abad97749d9308c3bb56cb6f0ccf839bc99f8442b",
+      expectedItem: { key: "4:11", status: "exact", scopeDecision: "reject", scopeConfidence: 1 },
+    });
+    expect(canonicalEvidenceHash(policy)).toBe(
+      "455633dfd7fddebed531ba15e5b5609c898f511e0e4b86e6fe39b691ddb1a037"
+    );
+    expect(canonicalEvidenceHash(policy.expectedItem)).toBe(
+      "de7aeb740bdd1028513cccee841db5363464896d49a7ac98ad06cb6b17460e44"
+    );
   });
 
   it("rejects a missing pinned scope parent before AI or writes", async () => {
@@ -162,7 +188,7 @@ describe.skipIf(!available)("Q11 scope box revision", () => {
     expect(snapshot(root)).toEqual(before);
   });
 
-  it("resolves the final Q11 scope disagreement from scope-box and solution evidence", async () => {
+  it("deterministically revises the persisted Q11 terminal policy and replays without AI", async () => {
     const root = mkdtempSync(join(tmpdir(), "studywork-q11-terminal-scope-"));
     roots.push(root);
     cpSync(liveState, root, { recursive: true });
@@ -257,19 +283,32 @@ describe.skipIf(!available)("Q11 scope box revision", () => {
     };
 
     await expect(run()).rejects.toThrow("seeded crash after Q11 terminal child");
-    expect(calls.child).toBe(1);
+    expect(calls.child).toBe(0);
     expect(calls.solutionRepair).toBe(1);
     const childDirectory = join(root, "problem-terminal-fidelity-adjudications");
+    const policyDirectory = join(root, "problem-terminal-fidelity-policy-revisions");
     expect(readdirSync(childDirectory)).toHaveLength(1);
+    expect(readdirSync(policyDirectory)).toHaveLength(1);
 
     crashSolutionRepair = false;
     calls.child = 0;
     calls.solution = 0;
     calls.solutionRepair = 0;
     calls.semantic = 0;
-    const result = await run();
+    let result = await run();
     expect(calls.child).toBe(0);
     expect(calls.solutionRepair).toBe(1);
+    const seededAdjudication = result.repairs.find((repair) => repair.key === "4:11")!.terminalAdjudication!;
+    const parentChildPath = join(root, seededAdjudication.adjudicationArtifact.path);
+    const parentChildBytes = readFileSync(parentChildPath);
+    const policyPath = join(root, seededAdjudication.policyRevision!.policyArtifact.path);
+    rmSync(policyPath);
+    rmSync(join(root, result.auditPath!));
+    providerMock.complete.mockReset().mockRejectedValue(new Error("AI must not run"));
+    result = await run();
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(readFileSync(parentChildPath)).toEqual(parentChildBytes);
+    expect(readdirSync(policyDirectory)).toHaveLength(1);
     expect(result.problemTerminalFidelityItems).toHaveLength(30);
     expect(result.problemTerminalFidelityItems.find((item) => item.key === "4:11")).toMatchObject({
       status: "exact",
@@ -299,27 +338,67 @@ describe.skipIf(!available)("Q11 scope box revision", () => {
       baseSolutionItemHash: "ccf1b5bb896164a0466f3b1cd7d3a32463b07b0e640f952c05d14fb04dd74646",
       solutionContextFrom: 1,
       solutionContextTo: 5,
+      policyRevision: {
+        parentAdjudicationArtifact: { sha256: "1c9344123c2e44c087fad301f24b749e0b6cc9e073c5107747648c3115209e5b" },
+        parentAdjudicationItemHash: "c5178e409cb5d1eb55df1bd399a28959d36c87d6ec18447b1aa6e066043ede01",
+        parentAdjudicationPromptHash: "482e7929de8eadfc297e5e5abad97749d9308c3bb56cb6f0ccf839bc99f8442b",
+        parentClassificationHash: terminalSpec.parentClassificationHash,
+        curriculumRulesHash: CURRICULUM_RULES_SHA256,
+        policyArtifact: {
+          path: "problem-terminal-fidelity-policy-revisions/" +
+            "v1-0004-0011-11a179d21a920cd7fada79aa98a3f448c4aaef000ec690f5e60133366b09b748.json",
+          sha256: "b2ae59bbaa67a9d762000865bc4ef34af97267e9064dd0adedd17e46802a1cdd",
+        },
+      },
     });
     const childPath = join(root, terminalAdjudication.adjudicationArtifact.path);
     const childBytes = readFileSync(childPath);
     const childCheckpoint = JSON.parse(childBytes.toString("utf8"));
-    expect(childCheckpoint.items[0]).toMatchObject({ status: "exact", scopeDecision: "reject" });
+    expect(childCheckpoint.items[0]).toMatchObject({ status: "exact", scopeDecision: "accept" });
     expect(childCheckpoint.basis).toMatchObject({
       parentScopeAdjudicationHash: terminalSpec.parentScopeAdjudicationHash,
       parentScopeBoxEvidenceHash: terminalSpec.parentScopeBoxEvidenceHash,
       solutionContextFrom: 1,
       solutionContextTo: 5,
     });
+    const policyBytes = readFileSync(join(root, terminalAdjudication.policyRevision!.policyArtifact.path));
+    const policyCheckpoint = JSON.parse(policyBytes.toString("utf8"));
+    expect(policyCheckpoint).toMatchObject({
+      version: 1,
+      policyDigest: PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_DIGEST,
+      item: { key: "4:11", status: "exact", scopeDecision: "reject", scopeConfidence: 1 },
+      basis: {
+        parentAdjudicationItemHash: terminalSpec.policyRevision!.parentAdjudicationItemHash,
+        parentAdjudicationPromptHash: terminalSpec.policyRevision!.parentAdjudicationPromptHash,
+        parentClassificationHash: terminalSpec.parentClassificationHash,
+        curriculumRulesHash: CURRICULUM_RULES_SHA256,
+        baseSolutionItemHash: terminalSpec.baseSolutionItemHash,
+      },
+    });
+    expect(JSON.stringify(policyCheckpoint)).not.toContain("1=a-b");
     expect(result.auditPath).toMatch(/^answer-audit\/v5-/u);
     const audit = JSON.parse(readFileSync(join(root, result.auditPath!), "utf8"));
     expect(audit.repairs.find((repair: { key: string }) => repair.key === "4:11"))
-      .toMatchObject({ terminalAdjudication: { parentKind: "scope-box" } });
+      .toMatchObject({ terminalAdjudication: { parentKind: "scope-box", policyRevision: {
+        policyItemHash: canonicalEvidenceHash(terminalSpec.policyRevision!.expectedItem),
+      } } });
     expect(matchOfficialSolutions(
       initial.entry,
       result.classified,
       result.solutions,
       baseDifficultyByQuestionKey(initial.classified)
     ).some((item) => item.printedNumber === "11")).toBe(false);
+    const db = new Database(join(process.cwd(), "data/studywork.db"), { readonly: true, fileMustExist: true });
+    try {
+      expect(db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM questions q
+        JOIN books b ON b.id = q.book_id
+        WHERE b.title = ? AND q.printed_number = '11'
+      `).get("2017년 · 고3 3월 학평(서울) 수학가형")).toEqual({ count: 0 });
+    } finally {
+      db.close();
+    }
     expect((await writeAnswerAttestation(
       root,
       initial.entry.id,
@@ -329,15 +408,85 @@ describe.skipIf(!available)("Q11 scope box revision", () => {
       result
     )).path).toMatch(/^answer-attestation\/v5-/u);
 
-    providerMock.complete.mockReset().mockRejectedValue(new Error("replay AI call"));
+    const stable = snapshot(root);
     const replay = await run();
     expect(replay.auditHash).toBe(result.auditHash);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    await writeAnswerAttestation(
+      root,
+      initial.entry.id,
+      initial.problem.sha256,
+      initial.solution.sha256,
+      receipt,
+      replay
+    );
+    expect(snapshot(root)).toEqual(stable);
+
+    const policyTamper = JSON.parse(policyBytes.toString("utf8"));
+    policyTamper.unexpected = true;
+    writeFileSync(policyPath, `${JSON.stringify(policyTamper, null, 2)}\n`);
+    await expect(run()).rejects.toThrow(/terminal fidelity policy revision checkpoint/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    writeFileSync(policyPath, policyBytes);
+
+    const stalePolicy = JSON.parse(policyBytes.toString("utf8"));
+    stalePolicy.basis.parentAdjudicationPromptHash =
+      "a2cf5f5f61e7e171f763151f36c9d16f6c7d0f3df6c7d520024a32003fecf4b0";
+    writeFileSync(policyPath, `${JSON.stringify(stalePolicy, null, 2)}\n`);
+    await expect(run()).rejects.toThrow(/terminal fidelity policy revision checkpoint/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    writeFileSync(policyPath, policyBytes);
+
+    rmSync(policyPath);
+    await expect(writeAnswerAttestation(
+      root,
+      initial.entry.id,
+      initial.problem.sha256,
+      initial.solution.sha256,
+      receipt,
+      result
+    )).rejects.toThrow(/terminal fidelity policy revision authority/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    writeFileSync(policyPath, policyBytes);
+
+    const policyOrphan = join(
+      policyDirectory,
+      "v1-0004-0011-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json"
+    );
+    writeFileSync(policyOrphan, "{}\n");
+    const beforePolicyOrphan = snapshot(root);
+    await expect(run()).rejects.toThrow(/terminal fidelity policy revision orphan\/conflict/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(snapshot(root)).toEqual(beforePolicyOrphan);
+    rmSync(policyOrphan);
+
+    const policySymlink = join(
+      policyDirectory,
+      "v1-0004-0011-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.json"
+    );
+    symlinkSync(policyPath, policySymlink);
+    await expect(run()).rejects.toThrow(/terminal fidelity policy revision 파일이 유효하지 않습니다/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    rmSync(policySymlink);
+
+    const nestedThird = structuredClone(result);
+    const nestedPolicy = nestedThird.repairs.find((repair) => repair.key === "4:11")!
+      .terminalAdjudication!.policyRevision!;
+    (nestedPolicy as typeof nestedPolicy & { policyRevision?: unknown }).policyRevision = {};
+    await expect(writeAnswerAttestation(
+      root,
+      initial.entry.id,
+      initial.problem.sha256,
+      initial.solution.sha256,
+      receipt,
+      nestedThird
+    )).rejects.toThrow(/terminal fidelity adjudication checkpoint\/evidence|policy revision authority/u);
     expect(providerMock.complete).not.toHaveBeenCalled();
 
     const tampered = JSON.parse(childBytes.toString("utf8"));
     tampered.unexpected = true;
     writeFileSync(childPath, `${JSON.stringify(tampered, null, 2)}\n`);
-    await expect(run()).rejects.toThrow(/terminal fidelity adjudication checkpoint\/evidence/u);
+    await expect(run()).rejects.toThrow(/terminal fidelity adjudication checkpoint/u);
     expect(providerMock.complete).not.toHaveBeenCalled();
     writeFileSync(childPath, childBytes);
 
@@ -381,7 +530,9 @@ describe.skipIf(!available)("Q11 scope box revision", () => {
       "problem-scope-box-evidence",
       "problem-scope-box-revisions",
       "classification-scope-box-revisions",
-    ]) rmSync(join(root, directory), { recursive: true });
+      "problem-terminal-fidelity-adjudications",
+      "problem-terminal-fidelity-policy-revisions",
+    ]) rmSync(join(root, directory), { recursive: true, force: true });
     const terminalDirectory = join(root, "problem-terminal-fidelity");
     for (const name of readdirSync(terminalDirectory)) {
       const checkpoint = JSON.parse(readFileSync(join(terminalDirectory, name), "utf8"));
