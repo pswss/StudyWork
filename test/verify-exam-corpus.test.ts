@@ -269,6 +269,10 @@ const Q8_Q16_MANUAL_SPECS = ["4:8", "6:16"].map((key) =>
   PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
     spec.entryId === "ebsi:5525982" && spec.key === key)!,
 );
+const Q17_Q20_MANUAL_SPECS = ["7:17", "7:20"].map((key) =>
+  PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
+    spec.entryId === "ebsi:5525982" && spec.key === key)!,
+);
 const Q8_TERMINAL_ADJUDICATION_STATE = join(
   process.cwd(),
   "data/import-exam-corpus/7755c70fefaa45f755086e2b",
@@ -9625,6 +9629,56 @@ async function q8Q16ManualAuthorityFixture() {
   }));
 }
 
+async function q17Q20ManualAuthorityFixture() {
+  const stateDir = mkdtempSync(join(tmpdir(), "verify-q17-q20-manual-authority-"));
+  cpSync(Q27_MANUAL_STATE, stateDir, { recursive: true });
+  for (const directory of [
+    "problem-manual-evidence",
+    "problem-manual-adjudications",
+    "classification-manual-adjudications",
+    "problem-manual-revisions",
+    "classification-manual-revisions",
+  ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
+  const rows = Q17_Q20_MANUAL_SPECS.map((spec) => ({
+    spec,
+    ...pinnedManualRecoveryParent(stateDir, spec),
+  }));
+  providerMock.complete.mockReset();
+  for (const row of rows) {
+    providerMock.complete.mockResolvedValueOnce({ text: JSON.stringify([{
+      key: row.spec.key,
+      decision: "accept",
+      canonical_subject: "korean_reading",
+      curriculum_course: "독서와 작문",
+      domain: row.spec.key === "7:17"
+        ? "독서: 사실적·추론적 읽기 및 논증의 개념 관계 파악"
+        : "독서·문맥적 어휘 의미 파악",
+      achievement_codes: row.spec.key === "7:17" ? ["12독작01-03", "12독작01-04"] : ["12독작01-03"],
+      confidence: 0.99,
+      reason_codes: ["NONFICTION_READING", "SOURCE_EXACT"],
+      transcription_status: "exact",
+      transcription_evidence: `공식 6~7쪽의 공통 지문, ${row.spec.key.split(":")[1]}번 발문과 다섯 선택지가 일치한다.`,
+    }]) });
+    const adjudicated = await adjudicateProblemManual(
+      row.input.entry,
+      row.input.problem,
+      stateDir,
+      row.failed,
+      row.parent,
+    );
+    Object.assign(row, { adjudicated });
+  }
+  expect(providerMock.complete).toHaveBeenCalledTimes(2);
+  providerMock.complete.mockReset();
+  return rows.map((row) => ({
+    ...row,
+    adjudicated: (row as typeof row & {
+      adjudicated: Awaited<ReturnType<typeof adjudicateProblemManual>>;
+    }).adjudicated,
+    stateDir,
+  }));
+}
+
 function withOnlyManualArtifactsForKey<T>(stateDir: string, key: string, run: () => T): T {
   const number = key.split(":")[1]!.padStart(4, "0");
   const renamed: Array<{ from: string; to: string }> = [];
@@ -12680,11 +12734,13 @@ describe("exam corpus verifier", () => {
       || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
   )("verifies the exact Q27 recovery-parent manual authority without claiming downstream completion", async () => {
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("fe8516451df56c3030a821886a42a93d1fa88dc87529060bd608f835bc0dc990");
+      .toBe("219a859d0ab52014822efa602cc0e090f5d0f31551502386d8ab6e775ed7c53a");
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 11)))
       .toBe("7851318ea1e176be603db1f2679081e16ef222d90ff704e39dce8d47db446268");
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 13)))
+      .toBe("fe8516451df56c3030a821886a42a93d1fa88dc87529060bd608f835bc0dc990");
     const files = await q27ManualAuthorityFixture();
     const verify = (
       manualAdjudication: unknown = files.adjudicated.evidence,
@@ -12833,11 +12889,13 @@ describe("exam corpus verifier", () => {
       || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
   )("verifies the exact Q43-Q45 shared-passage manual authorities without inventing a terminal", async () => {
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("fe8516451df56c3030a821886a42a93d1fa88dc87529060bd608f835bc0dc990");
+      .toBe("219a859d0ab52014822efa602cc0e090f5d0f31551502386d8ab6e775ed7c53a");
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 11)))
       .toBe("7851318ea1e176be603db1f2679081e16ef222d90ff704e39dce8d47db446268");
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 13)))
+      .toBe("fe8516451df56c3030a821886a42a93d1fa88dc87529060bd608f835bc0dc990");
     const expectedRows = new Map([
       ["16:43", {
         row: "fc841055b1d90f58e118b165cc00b356aff8f0ead1de89b30bdeee54a61846f1",
@@ -12986,11 +13044,13 @@ describe("exam corpus verifier", () => {
       || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
   )("verifies the exact Q8/Q16 manual pair while Q15 remains normal exact rejection authority", async () => {
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("fe8516451df56c3030a821886a42a93d1fa88dc87529060bd608f835bc0dc990");
+      .toBe("219a859d0ab52014822efa602cc0e090f5d0f31551502386d8ab6e775ed7c53a");
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 11)))
       .toBe("7851318ea1e176be603db1f2679081e16ef222d90ff704e39dce8d47db446268");
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 13)))
+      .toBe("fe8516451df56c3030a821886a42a93d1fa88dc87529060bd608f835bc0dc990");
     const expectedRows = new Map([
       ["4:8", {
         row: "106ddb3c73dd5a2f12005c1bfe51eaa15830a89ee8dabaa82f14fe3ef5384cdf",
@@ -13122,6 +13182,183 @@ describe("exam corpus verifier", () => {
       )).toThrow(/allowlist/u);
       expect(readdirSync(join(rows[0].stateDir, "problem-manual-adjudications"))
         .some((name) => name.includes("-0015-"))).toBe(false);
+      expect(existsSync(join(rows[0].stateDir, "answer-audit"))).toBe(false);
+      expect(existsSync(join(rows[0].stateDir, "answer-attestation"))).toBe(false);
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(rows[0].stateDir, { recursive: true, force: true });
+    }
+  }, 180_000);
+
+  it.skipIf(
+    !existsSync(join(Q27_MANUAL_STATE, "problem.pdf"))
+      || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
+  )("verifies the exact Q17/Q20 manual pair while Q18/Q19 stay exact without manual children", async () => {
+    expect(manualAdjudicationAllowlistFingerprint())
+      .toBe("219a859d0ab52014822efa602cc0e090f5d0f31551502386d8ab6e775ed7c53a");
+    expect(manualAdjudicationAllowlistFingerprint())
+      .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 13)))
+      .toBe("fe8516451df56c3030a821886a42a93d1fa88dc87529060bd608f835bc0dc990");
+    const expectedRows = new Map([
+      ["7:17", {
+        row: "3b387191b6f43e3d83babbf0068ce1fb3a9e52bd3c9ba7f835964ee543facb64",
+        spec: "7bdf1e88f8f56e2c1a581afa6bd529a8dea7f43bd7a56e94125fa482c209fe96",
+        item: "3d94de928dd1b8d443edcc908486bc81af356e352ea7edea32ee1f43166ef0be",
+        lastCropHash: "b69ac51723f8e8e62ac7fa4f0404e522ed15a818eab2074ea70c450d11da85dd",
+        lastCropHeight: 2680,
+      }],
+      ["7:20", {
+        row: "4aad2f6a1d34af97338b72d86559472a0de7c6641d7ef643aae7819a1f0c232b",
+        spec: "2fa15fb8b4490a51b19e8c1a71591694d9049cecb83b5cf952b858633b5d76d5",
+        item: "1106e5ec6656305c38b4b58770b4acfa0e3e7a6a6d2ee412d10e86e8b99f75c0",
+        lastCropHash: "082e73f5f9917837562c97b338381be35acf16a6501a8fe510ec8827a3063211",
+        lastCropHeight: 894,
+      }],
+    ]);
+    for (const spec of Q17_Q20_MANUAL_SPECS) {
+      expect(canonicalEvidenceHash(spec)).toBe(expectedRows.get(spec.key)!.row);
+    }
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.some((spec) =>
+      spec.entryId === "ebsi:5525982" && ["7:18", "7:19"].includes(spec.key))).toBe(false);
+
+    const rows = await q17Q20ManualAuthorityFixture();
+    const verify = (
+      row: (typeof rows)[number],
+      manualAdjudication: unknown = row.adjudicated.evidence,
+      parentRecovery: Record<string, unknown> = row.parent as unknown as Record<string, unknown>,
+      failedClassification: unknown = row.failed.classification,
+    ) => withOnlyManualArtifactsForKey(row.stateDir, row.spec.key, () =>
+      verifyProblemManualAdjudicationForTest({
+        stateDir: row.stateDir,
+        entry: row.input.entry,
+        problemEvidence: row.input.problem,
+        parentRecovery,
+        failedQuestion: row.failed.question,
+        failedClassification,
+        manualAdjudication,
+      }));
+
+    try {
+      for (const row of rows) {
+        const expected = expectedRows.get(row.spec.key)!;
+        expect(row.failed.classification.transcription_status).toBe("mismatch");
+        const verified = verify(row) as {
+          question: QuizItemEx;
+          classification: ClassificationDecision;
+          evidence: Record<string, any>;
+        };
+        expect(canonicalEvidenceHash(verified.question)).toBe(expected.item);
+        expect(verified.evidence).toMatchObject({
+          allowlistId: row.spec.allowlistId,
+          parentRecoveryEvidenceHash: row.spec.parentRecoveryEvidenceHash,
+          correctionSpecHash: expected.spec,
+          problemArtifactItemHash: expected.item,
+        });
+        expect(verified.evidence.cropViews.map((view: { pixelSha256: string }) => view.pixelSha256)).toEqual([
+          "af81d940bb74a611b249ff861be8a8e95eaa719f8a1978258f37e37ffd3d347e",
+          "c52268ed7672f99284b07b36a6bfc7375d5cb203a651c0fa90a25edd06e353d1",
+          "3ddfb710dfa5d8576496b6b37d43c90e53b2eab196db181439f60343e7da6d95",
+          expected.lastCropHash,
+        ]);
+        expect(verified.evidence.cropViews[3]).toMatchObject({
+          pixelWidth: 3018,
+          pixelHeight: expected.lastCropHeight,
+        });
+        expect(verified.classification).toMatchObject({
+          key: row.spec.key,
+          decision: "accept",
+          canonical_subject: "korean_reading",
+          transcription_status: "exact",
+        });
+      }
+
+      const q17 = verify(rows[0]) as { question: QuizItemEx };
+      expect(q17.question.question).toContain("[16 ~ 20] 다음 글을 읽고 물음에 답하시오.");
+      expect(q17.question.question.match(/논리학 지식/gu)).toHaveLength(3);
+      expect(q17.question.question).toContain("경험을 통한 시험의 대상");
+      expect(q17.question.question).toContain("이 둘을 서로 대체하더라도");
+      expect(q17.question.question).toContain("선택하겠지만 실용적 필요");
+      expect(q17.question.choices?.[2]).toContain("근본적으로 다르다고 한다.");
+
+      const q20 = verify(rows[1]) as { question: QuizItemEx };
+      expect(q20.question.question).toContain("[16 ~ 20] 다음 글을 읽고 물음에 답하시오.");
+      expect(q20.question.question).toContain("문맥상 ㉢과 바꿔 쓰기에 가장 적절한 것은?");
+      expect(q20.question.answer).toBe(rows[1].failed.question.answer);
+      expect(q20.question.choices).toEqual(rows[1].failed.question.choices);
+
+      expect(() => verify(rows[0], rows[1].adjudicated.evidence))
+        .toThrow(/allowlist\/parent authority/u);
+      expect(() => verify(rows[1], rows[1].adjudicated.evidence,
+        rows[0].parent as unknown as Record<string, unknown>))
+        .toThrow(/allowlist\/parent authority/u);
+
+      const wrongStatus = structuredClone(rows[0].failed.classification);
+      wrongStatus.transcription_status = "exact";
+      expect(() => verify(rows[0], rows[0].adjudicated.evidence,
+        rows[0].parent as unknown as Record<string, unknown>, wrongStatus))
+        .toThrow(/allowlisted exhausted recovery status/u);
+
+      const missingPath = join(rows[1].stateDir, rows[1].adjudicated.evidence.classificationArtifact.path);
+      const missingBytes = readFileSync(missingPath);
+      rmSync(missingPath);
+      expect(() => verify(rows[1])).toThrow();
+      writeFileSync(missingPath, missingBytes);
+
+      const cropPath = join(rows[0].stateDir, rows[0].adjudicated.evidence.cropViews[3].artifact.path);
+      const cropBytes = readFileSync(cropPath);
+      writeFileSync(cropPath, Buffer.concat([cropBytes, Buffer.from("tampered")]));
+      expect(() => verify(rows[0])).toThrow(/hash mismatch/u);
+      writeFileSync(cropPath, cropBytes);
+
+      withOnlyManualArtifactsForKey(rows[0].stateDir, rows[0].spec.key, () => {
+        const orphanPath = join(
+          rows[0].stateDir,
+          "classification-manual-adjudications",
+          `v1-0007-0017-${"1".repeat(64)}-${DIGEST}.json`,
+        );
+        writeJson(orphanPath, {});
+        try {
+          expect(() => verifyProblemManualAdjudicationForTest({
+            stateDir: rows[0].stateDir,
+            entry: rows[0].input.entry,
+            problemEvidence: rows[0].input.problem,
+            parentRecovery: rows[0].parent as unknown as Record<string, unknown>,
+            failedQuestion: rows[0].failed.question,
+            failedClassification: rows[0].failed.classification,
+            manualAdjudication: rows[0].adjudicated.evidence,
+          })).toThrow(/not declared/u);
+        } finally {
+          rmSync(orphanPath);
+        }
+      });
+
+      for (const key of ["7:18", "7:19"]) {
+        const number = key.split(":")[1]!.padStart(4, "0");
+        const classificationName = readdirSync(join(rows[0].stateDir, "classification-recoveries"))
+          .find((name) => name.startsWith(`v1-0007-${number}-`))!;
+        const classification = JSON.parse(readFileSync(
+          join(rows[0].stateDir, "classification-recoveries", classificationName),
+          "utf8",
+        )).items[0];
+        expect(classification.transcription_status).toBe("exact");
+        const problemName = readdirSync(join(rows[0].stateDir, "problem-recoveries"))
+          .find((name) => name.startsWith(`v1-0007-${number}-`))!;
+        const problem = JSON.parse(readFileSync(
+          join(rows[0].stateDir, "problem-recoveries", problemName),
+          "utf8",
+        )).item;
+        expect(() => applyAllowlistedProblemManualCorrection(
+          rows[0].input.entry.id,
+          rows[0].input.problem.sha256,
+          problem,
+        )).toThrow(/allowlist/u);
+        expect(readdirSync(join(rows[0].stateDir, "problem-manual-adjudications"))
+          .some((name) => name.includes(`-${number}-`))).toBe(false);
+      }
+
+      expect(readdirSync(join(rows[0].stateDir, "problem-recoveries"))
+        .some((name) => name.startsWith("v1-0009-0023-"))).toBe(false);
       expect(existsSync(join(rows[0].stateDir, "answer-audit"))).toBe(false);
       expect(existsSync(join(rows[0].stateDir, "answer-attestation"))).toBe(false);
     } finally {

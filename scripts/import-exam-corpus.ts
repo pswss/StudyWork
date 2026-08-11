@@ -3566,6 +3566,119 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_reading",
   },
+  {
+    allowlistId: "ebsi-5525982-q17-manual-v1",
+    entryId: "ebsi:5525982",
+    key: "7:17",
+    sourcePage: 7,
+    sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "b9964bc828b45a8bb91ab4526563ffb8060cb197afb34581485673858507f6e6",
+    dpi: 600,
+    failedQuestionHash: "2961d438f823a77f24b5d2a557d1a458b3fb9e4059d61ce1784cf426b7d61a3b",
+    failedClassificationHash: "1f11fe03c8627db721349974c02efb37dcc8887a09102fc73c8dfa8a5e20c3d7",
+    failedClassificationEvidenceHash: "e4ec1367011c9214f11e0f1b473471e10432efda7fd424bd723159cd9c5d04ee",
+    views: [
+      { sourcePage: 6, label: "p6 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 6, label: "p6 left shared passage start", rect: [0.07, 0.42, 0.50, 0.96] },
+      { sourcePage: 6, label: "p6 right shared passage continuation", rect: [0.50, 0.12, 0.95, 0.86] },
+      { sourcePage: 7, label: "p7 Q17 stem and choices", rect: [0.07, 0.12, 0.50, 0.39] },
+    ],
+    requiredTokens: [
+      "[16 ~ 20] 다음 글을 읽고 물음에 답하시오.", "논리학 지식처럼", "경험을 통한 시험의 대상",
+      "이 둘을 서로 대체하더라도", "선택하겠지만 실용적 필요",
+      "윗글에 대해 이해한 내용으로 가장 적절한 것은?",
+      "③ 콰인은 관찰과 실험에 의존하는 지식이 관찰과 실험에 의존하지 않는 지식과 " +
+        "근본적으로 다르다고 한다.",
+    ],
+    replacements: [{
+      field: "question",
+      from: "다음 글을 읽고 물음에 답하시오.",
+      to: "[16 ~ 20] 다음 글을 읽고 물음에 답하시오.",
+      count: 1,
+    }, {
+      field: "question",
+      from: "논리학적 지식",
+      to: "논리학 지식",
+      count: 2,
+    }, {
+      field: "question",
+      from: "경험을 통해 시험의 대상",
+      to: "경험을 통한 시험의 대상",
+      count: 1,
+    }, {
+      field: "question",
+      from: "이 둘은 서로 대체하더라도",
+      to: "이 둘을 서로 대체하더라도",
+      count: 1,
+    }, {
+      field: "question",
+      from: "선택하지만 실용적 필요",
+      to: "선택하겠지만 실용적 필요",
+      count: 1,
+    }, {
+      field: "choices",
+      from: "③ 콰인은 관찰과 실험에 의존하는 지식이 관찰과 실험에 의존하지 않는 지식과 " +
+        "근본적으로 다르다고 본다.",
+      to: "③ 콰인은 관찰과 실험에 의존하는 지식이 관찰과 실험에 의존하지 않는 지식과 " +
+        "근본적으로 다르다고 한다.",
+      count: 1,
+    }],
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5525982-q20-manual-v1",
+    entryId: "ebsi:5525982",
+    key: "7:20",
+    sourcePage: 7,
+    sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "720f3d723b4939d8d80b7a8e21e10a0559a1034872510206e3b91469d7dbe830",
+    dpi: 600,
+    failedQuestionHash: "08d90afec9e8002f03d8e7ed6edcfbf6a7a38330a93db371499d1557157b8c33",
+    failedClassificationHash: "33703a3302a8882fb0f331127c8bb558108cce8989d0ecd58f952d75b7404f25",
+    failedClassificationEvidenceHash: "1bc85b3151066b5cf2faecdb50588a88c62e50cd7ec72f06883a52a52c61803a",
+    views: [
+      { sourcePage: 6, label: "p6 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 6, label: "p6 left shared passage start", rect: [0.07, 0.42, 0.50, 0.96] },
+      { sourcePage: 6, label: "p6 right shared passage continuation", rect: [0.50, 0.12, 0.95, 0.86] },
+      { sourcePage: 7, label: "p7 Q20 stem and choices", rect: [0.07, 0.82, 0.50, 0.91] },
+    ],
+    requiredTokens: [
+      "[16 ~ 20] 다음 글을 읽고 물음에 답하시오.", "논리학 지식처럼", "경험을 통한 시험의 대상",
+      "이 둘을 서로 대체하더라도", "선택하겠지만 실용적 필요",
+      "문맥상 ㉢과 바꿔 쓰기에 가장 적절한 것은?", "② 다다른다",
+    ],
+    replacements: [{
+      field: "question",
+      from: "다음 글을 읽고 물음에 답하시오.",
+      to: "[16 ~ 20] 다음 글을 읽고 물음에 답하시오.",
+      count: 1,
+    }, {
+      field: "question",
+      from: "논리학적 지식",
+      to: "논리학 지식",
+      count: 2,
+    }, {
+      field: "question",
+      from: "경험을 통해 시험의 대상",
+      to: "경험을 통한 시험의 대상",
+      count: 1,
+    }, {
+      field: "question",
+      from: "이 둘은 서로 대체하더라도",
+      to: "이 둘을 서로 대체하더라도",
+      count: 1,
+    }, {
+      field: "question",
+      from: "선택하지만 실용적 필요",
+      to: "선택하겠지만 실용적 필요",
+      count: 1,
+    }],
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
 ] as const;
 
 export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
@@ -11967,6 +12080,10 @@ function isQ8Q16ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5525982" && ["4:8", "6:16"].includes(spec.key);
 }
 
+function isQ17Q20ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5525982" && ["7:17", "7:20"].includes(spec.key);
+}
+
 async function restoredPinnedManualRecovery(
   entry: CorpusManifestEntry,
   stateDir: string,
@@ -12135,7 +12252,9 @@ async function preflightProblemManualBatch(
     ? isQ43To45ManualBatchSpec
     : isQ8Q16ManualBatchSpec(requestedSpec)
       ? isQ8Q16ManualBatchSpec
-      : null;
+      : isQ17Q20ManualBatchSpec(requestedSpec)
+        ? isQ17Q20ManualBatchSpec
+        : null;
   if (!predicate) return;
   const expectedCount = predicate === isQ43To45ManualBatchSpec ? 3 : 2;
   const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(predicate);
