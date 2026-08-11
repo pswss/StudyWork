@@ -496,7 +496,7 @@ type ProblemRepairPositiveScopeAdjudicationSpec = ProblemScopeAdjudicationSpec &
 };
 
 type ProblemManualReplacement = {
-  field: "question" | "figure_description";
+  field: "question" | "choices" | "figure_description";
   from: string;
   to: string;
   count: number;
@@ -504,6 +504,7 @@ type ProblemManualReplacement = {
 
 type ProblemManualAdjudicationSpec = ProblemCropAdjudicationSpec & {
   parentKind: "recovery" | "crop";
+  parentRecoveryEvidenceHash?: string;
   dpi?: number;
   failedQuestionHash: string;
   failedClassificationHash: string;
@@ -821,6 +822,180 @@ const Q9_WRITING_PLAN_FIGURE_DESCRIPTION =
   "제시’와 ⓑ ‘실천 권유하기’, 오른쪽 ‘개념’ 가지에는 ⓔ ‘학자들의 견해 비교’, 왼쪽 아래 ‘강연’ " +
   "가지에는 ⓒ ‘강연 핵심 요약’과 ⓓ ‘강연을 들은 후 변화된 생각’이 연결되어 있다. ⓐ, ⓑ, ⓒ, " +
   "ⓓ, ⓔ는 각각 정확히 한 번 보인다.";
+
+const Q27_FAILED_QUESTION = [
+  "(가)",
+  "",
+  "만약에 나라는 사람을 유심히 들여다본다고 하자",
+  "그러면 나는 내가 시와는 반역된 생활을 하고 있다는 것을",
+  "알 것이다",
+  "",
+  "먼 산정에 서 있는 마음으로 나의 자식과 나의 아내와",
+  "그 주위에 놓인 잡스러운 물건들을 본다",
+  "",
+  "그리고",
+  "나는 이미 정해진 물체만을 보기로 결심하고 있는데",
+  "만약에 또 어느 나의 친구가 와서 나의 꿈을 깨워 주고",
+  "나의 그릇됨을 꾸짖어 주어도 좋다",
+  "",
+  "함부로 흘리는 피가 싫어서",
+  "이지러 낡아빠진 생활을 하는 것은 아니라라",
+  "먼지 낀 잡초 우에",
+  "잠자는 구름이여",
+  "고생도 마음대로 할 수 없는 세상에서는",
+  "철 늦은 거미같이 존재 없이 살기도 어려운 일",
+  "",
+  "[A]",
+  "방 두 칸과 마루 한 칸과 말쑥한 부엌과 애처로운 처를",
+  "거느리고",
+  "외양만이라도 남과 같이 살아간다는 것이 이다지도 쑥스러울 수가 있을까",
+  "",
+  "시를 배반하고 사는 마음이여",
+  "자기의 나체를 더듬어 보고 살펴볼 수 없는 시인처럼 비참한",
+  "사람이 또 어디 있을까",
+  "거리에 나와서 집을 보고 집에 앉아서 거리를 그리던 어리석음도 이제는 모두 사라졌나 보다",
+  "날아간 제비와 같이",
+  "",
+  "날아간 제비와 같이 자국도 꿈도 없이",
+  "어디로인지 알 수 없으나",
+  "어디로이든 가야 할 반역의 정신",
+  "",
+  "나는 지금 산정에 있다 ―",
+  "시를 반역한 죄로",
+  "이 메마른 산정에서 오랫동안 꿈도 없이 바라보아야 할 구름",
+  "그리고 그 구름의 파수병인 나.",
+  "",
+  "― 김수영, 「구름의 파수병」 ―",
+  "",
+  "(가)를 이해한 내용으로 적절하지 않은 것은?",
+].join("\n");
+
+const Q27_CORRECTED_QUESTION = [
+  "[27 ~ 32] 다음 글을 읽고 물음에 답하시오.",
+  "",
+  "(가)",
+  "만약에 나라는 사람을 유심히 들여다본다고 하자",
+  "그러면 나는 내가 시와는 반역된 생활을 하고 있다는 것을",
+  "알 것이다",
+  "",
+  "먼 산정에 서 있는 마음으로 나의 자식과 나의 아내와",
+  "그 주위에 놓인 잡스러운 물건들을 본다",
+  "",
+  "그리고",
+  "나는 이미 정해진 물체만을 보기로 결심하고 있는데",
+  "만약에 또 어느 나의 친구가 와서 나의 꿈을 깨워 주고",
+  "나의 그릇됨을 꾸짖어 주어도 좋다",
+  "",
+  "함부로 흘리는 피가 싫어서",
+  "이다지 낡아빠진 생활을 하는 것은 아니리라",
+  "먼지 낀 잡초 우에",
+  "잠자는 구름이여",
+  "고생도 마음대로 할 수 없는 세상에서는",
+  "철 늦은 거미같이 존재 없이 살기도 어려운 일",
+  "",
+  "[A]",
+  "방 두 칸과 마루 한 칸과 말쑥한 부엌과 애처로운 처를",
+  "거느리고",
+  "외양만이라도 남과 같이 살아간다는 것이 이다지도 쑥스러울 수가 있을까",
+  "",
+  "시를 배반하고 사는 마음이여",
+  "자기의 나체를 더듬어 보고 살펴볼 수 없는 시인처럼 비참한",
+  "사람이 또 어디 있을까",
+  "거리에 나와서 집을 보고 집에 앉아서 거리를 그리던 어리석음도 이제는 모두 사라졌나 보다",
+  "날아간 제비와 같이",
+  "",
+  "날아간 제비와 같이 자국도 꿈도 없이",
+  "어디로인지 알 수 없으나",
+  "어디로이든 가야 할 반역의 정신",
+  "",
+  "나는 지금 산정에 있다 ―",
+  "시를 반역한 죄로",
+  "이 메마른 산정에서 오랫동안 꿈도 없이 바라보아야 할 구름",
+  "그리고 그 구름의 파수병인 나.",
+  "",
+  "- 김수영, ｢구름의 파수병｣ -",
+  "",
+  "(나)",
+  "함이정 : 처녀 때 난 생각했었지. 영리하고 듬직한 아들 하나 있으면 얼마나 좋을까…… 기쁜 일 슬픈 일 뭐든지 의논할 수 있는 내 아들…… 그러다가 너를 느꼈고…… 네 느낌과 이야기하길 즐겼다. 사람들은 나 혼자 중얼중얼거린다고 괴상하게 보더라. 사실은 너와 나, 둘이서 함께 말하고 있었는데…….",
+  "조숭인 : 처음부터 다시 이야기해 주세요, 어머니.",
+  "함이정 : 처음부터……?",
+  "조숭인 : 네. 제가 태어나기 전, 어머니의 처녀 시절부터요. 그때 두 분 아버지의 관계는 어땠죠?",
+  "함이정 : 그땐 좋았다. 두 분 다 우리 집에서 가족처럼 살면서, 우리 아버님한테 불상 제작을 배우는 제자였지. 그런데 어느 날, 스승인 아버님이 불상 제작장에 가 보니까 두 제자들이 자릴 비우고 없었어. 몹시 화가 난 아버님은 집 안으로 들어와 제자들의 이름을 부르셨지. “동연아! 서연아!” 아버님 목소리가 어찌나 쩌렁쩌렁 울렸는지, 천 리 밖까지 들릴 것 같더라.",
+  "",
+  "(조명, 밝게 변화한다. ⓐ 한가운데 펼쳐 있던 천막이 접혀지면서 무대 천장 위로 올라간다. 함묘진의 집. 함묘진이 성난 모습으로 등장한다. 함이정과 조숭인은 서연의 관, 촛대, 향로 등을 무대 밖으로 갖고 나간다.)",
+  "",
+  "함묘진 : 동연아! 서연아! 어디 있느냐?",
+  "함이정 : (무대 밖에서) 여긴 없어요, 아버지.",
+  "함묘진 : 여기 집 안에도 없다……?",
+  "함이정 : (무대 밖에서) 내가 나가서 찾아올까요?",
+  "함묘진 : 넌 가만 있거라. (다시 외쳐 부른다.) 동연아! 서연아!",
+  "",
+  "(ⓑ 상복을 벗고 밝은 색 옷을 입은 함이정과 조숭인, 무대 안으로 나온다.)",
+  "",
+  "조숭인 : 할아버지 목청은 왜 저렇게 커요?",
+  "함이정 : 귀머거리도 들을 정도야. 그치?",
+  "함묘진 : 동연아! 서연아!",
+  "",
+  "(동연과 서연, 등장한다. 그들은 당황한 모습으로 함묘진 앞에 선다.)",
+  "",
+  "동연, 서연 : 부르셨습니까?",
+  "함묘진 : 작업장엔 너희들이 없더구나!",
+  "동연 : 죄송합니다. 잠깐 밖에 나가 있었습니다.",
+  "함묘진 : 밖에는 왜?",
+  "동연 : 말다툼 때문에…… 서로 의견이 달라서요.",
+  "함묘진 : 말다툼?",
+  "동연 : 네.",
+  "함묘진 : 서연아, 네가 다툰 이유를 말해 봐라.",
+  "서연 : 송구스럽습니다…….",
+  "함묘진 : 너흰 생각도 행동도 똑같았다. 그런 너희들이 말다툼을 하다니, 도대체 다르다면 뭐가 달랐더냐?",
+  "서연 : 동연은 부처의 모습을 만들면, 그 모습 속에 부처의 마음도 있다고 했습니다.",
+  "함묘진 : 그런데, 너는?",
+  "서연 : 그런데 저는…… 부처의 모습을 만들어도, 부처의 마음이 그 안에 없다면 무슨 소용이 있겠는가 했습니다.",
+  "동연 : 사부님, 서연을 꾸짖어 주십시오. 서연은 쓸데없는 주장으로 저를 괴롭힙니다.",
+  "",
+  "(중략)",
+  "",
+  "(서연과 함이정, 일어선다. 돌부처를 만들면서 길을 따라간다. 물 흐르는 소리가 점점 가깝게 들려온다. ⓒ 조명, 개울물의 흐름을 나타낸다.)",
+  "",
+  "함이정 : 개울물이에요, 서연 오빠. 여기서 길은 끊겼어요.",
+  "서연 : (개울가로 다가가서 두 손으로 물을 떠서 마시며) 너도 마시렴. 목마를 텐데…….",
+  "[B]",
+  "함이정 : (서연 곁으로 가서 개울물을 바라본다.) 물 위에 비쳐 보여요, 우리 얼굴이…… 얼굴 뒤엔 구름이…… 구름 뒤엔 하늘이……. (물을 떠서 마신다.) 물이 맑고 시원해요.",
+  "",
+  "(서연, 장난스럽게 개울물을 마치 눈덩이처럼 뭉치는 동작을 한다.)",
+  "",
+  "함이정 : 오빠…… 뭘 하는 거죠?",
+  "서연 : 물부처를 만든다.",
+  "함이정 : 물부처요?",
+  "서연 : 돌로도 부처님을 만드는데, 물이라고 안 될 건 없지.",
+  "",
+  "(서연, 흐르는 물 속으로 들어가 물로 만든 부처를 세워 놓는다. 부처의 느낌은 남고 형태는 사라진다.)",
+  "",
+  "함이정 : 오빠, 이쪽으로 나와요.",
+  "서연 : (개울물을 건너가며) 난 이제 저쪽으로 간다.",
+  "함이정 : 서연 오빠…….",
+  "서연 : 넌 나중에 건너와.",
+  "함이정 : (손을 흔든다.) 그래요, 오빠…… 먼저 가요. 나는 나중에…….",
+  "",
+  "(서연과 함이정, 잠시 개울물 양쪽에서 서로를 바라본다. ⓓ 조숭인이 피아노 앞에 앉아 건반을 두드리며 작곡 중이다. 개울물 건너쪽, 눈부시도록 밝아진다. 때를 놓치지 않으려는 듯 함묘진이 다급하게 휠체어 바퀴를 굴리면서 들어온다. 그는 피아노 옆을 지나 개울물을 건너간다. / 코러스(돌부처)들, 개울물을 건너가는 서연을 배웅하듯이, 따라가듯이, 마중하듯이, 서연과 함께 어우러져 춤을 추며 간다. 개울 저쪽, 눈부시도록 빛이 밝다. ⓔ 함묘진이 다급하게 휠체어 바퀴를 굴리며 들어온다.)",
+  "",
+  "조숭인 : 할아버지, 어딜 그렇게 급히 가세요?",
+  "함묘진 : 극락문이 열렸다! 극락문이 열렸어!",
+  "",
+  "(함묘진, 휠체어에서 일어난다. 그는 서연의 뒤를 따라 빛 안으로 들어간다. 무대 조명, 변화한다. 동연, 등장한다. 그는 조숭인에게 다가와서 전보 용지를 내놓는다.)",
+  "",
+  "- 이강백, ｢느낌, 극락같은｣ -",
+  "",
+  "27. (가)를 이해한 내용으로 적절하지 않은 것은?",
+].join("\n");
+
+const Q27_FIGURE_DESCRIPTION =
+  "공식 10쪽 왼쪽 (가)의 ‘방 두 칸과 마루 한 칸과 말쑥한 부엌과 애처로운 처를’부터 " +
+  "‘외양만이라도 남과 같이 살아간다는 것이 이다지도 쑥스러울 수가 있을까’까지의 오른쪽에는 " +
+  "왼쪽으로 열린 세로 묶음 괄호 [A]가 하나 있다. 공식 11쪽 왼쪽 (나)의 함이정 대사 ‘물 위에 " +
+  "비쳐 보여요, 우리 얼굴이……’부터 ‘물이 맑고 시원해요.’까지의 오른쪽에는 같은 모양의 세로 " +
+  "묶음 괄호 [B]가 하나 있다. [A]와 [B]는 각각 정확히 한 번 보이며, 두 괄호는 29번에서 두 " +
+  "부분을 비교하는 표지이다.";
 
 const Q43_FAILED_QUESTION = [
   "다음 글을 읽고 물음에 답하시오.",
@@ -1281,6 +1456,50 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     }],
     figure: true,
     figureDescription: Q43_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  },
+  {
+    allowlistId: "ebsi-5525982-q27-manual-v1",
+    entryId: "ebsi:5525982",
+    key: "11:27",
+    sourcePage: 11,
+    sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "186e1381194aab5765fc72d88fb3e9a85901867d4a398588c7e38aa7f463dfdb",
+    dpi: 600,
+    failedQuestionHash: "11c3fa247bebf72d1991540323f100af892ebc44cb36c2afa945ddcadd3524fd",
+    failedClassificationHash: "c3897a3e3da84d3821a60e35531c9628644c089511f7247fdebfaa474e00e533",
+    failedClassificationEvidenceHash: "1dd2fef4a66d356b6887c6d07b5eec3ea226531a9b83040741b68ed63cec58fc",
+    views: [
+      { sourcePage: 10, label: "p10 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 10, label: "p10 left (가) and start of (나)", rect: [0.07, 0.11, 0.50, 0.96] },
+      { sourcePage: 10, label: "p10 right (나) continuation", rect: [0.50, 0.11, 0.95, 0.97] },
+      { sourcePage: 11, label: "p11 left (나) continuation and Q27", rect: [0.07, 0.10, 0.50, 0.97] },
+    ],
+    requiredTokens: [
+      "[27 ~ 32] 다음 글을 읽고 물음에 답하시오.",
+      "이다지 낡아빠진 생활을 하는 것은 아니리라", "- 김수영, ｢구름의 파수병｣ -",
+      "함이정", "조숭인", "ⓐ", "ⓑ", "(중략)", "ⓒ", "ⓓ", "ⓔ",
+      "때를 놓치지 않으려는 듯", "- 이강백, ｢느낌, 극락같은｣ -",
+      "27. (가)를 이해한 내용으로 적절하지 않은 것은?",
+      "③ 화자는 ‘고생도 마음대로 할 수 없는 세상’에서 ‘존재 없이’ 살아가는 것이 어렵다고 느끼고 있다.",
+      "왼쪽으로 열린 세로 묶음 괄호 [A]", "같은 모양의 세로 묶음 괄호 [B]",
+      "[A]와 [B]는 각각 정확히 한 번",
+    ],
+    replacements: [{
+      field: "question",
+      from: Q27_FAILED_QUESTION,
+      to: Q27_CORRECTED_QUESTION,
+      count: 1,
+    }, {
+      field: "choices",
+      from: "③ 화자는 ‘고생도 마음대로 할 수 없는 세상’에서 ‘존재 없이 살아가는 것이 어렵다’고 느끼고 있다.",
+      to: "③ 화자는 ‘고생도 마음대로 할 수 없는 세상’에서 ‘존재 없이’ 살아가는 것이 어렵다고 느끼고 있다.",
+      count: 1,
+    }],
+    figure: true,
+    figureDescription: Q27_FIGURE_DESCRIPTION,
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_literature",
   },
@@ -5244,6 +5463,50 @@ function persistedTerminalRecoverySelection(
   };
 }
 
+function verifyProblemManualArtifactInventory(stateDir: string, declaredManual: ReadonlySet<string>): void {
+  for (const [directory, patterns] of [
+    ["problem-manual-evidence", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.pdf$/u,
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}-view-\d{2}\.png$/u,
+    ]],
+    ["problem-manual-adjudications", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
+    ]],
+    ["classification-manual-adjudications", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u,
+    ]],
+    ["problem-manual-revisions", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
+    ]],
+    ["classification-manual-revisions", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u,
+    ]],
+  ] as const) {
+    const absolute = join(stateDir, directory);
+    if (!existsSync(absolute)) continue;
+    for (const entry of readdirSync(absolute, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name))) {
+      if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
+      if (!entry.isFile() || entry.isSymbolicLink()) {
+        throw new Error(`${directory}/${entry.name}: manual adjudication artifact must be a regular file`);
+      }
+      if (!patterns.some((pattern) => pattern.test(entry.name))) {
+        throw new Error(`${directory}/${entry.name}: malformed manual adjudication artifact name`);
+      }
+      const path = `${directory}/${entry.name}`;
+      if (!declaredManual.has(path)) {
+        throw new Error(`${path}: manual adjudication artifact is not declared by the terminal audit`);
+      }
+    }
+  }
+  for (const path of declaredManual) {
+    if (!existsSync(join(stateDir, path))) {
+      throw new Error(`${path}: declared manual adjudication artifact is missing`);
+    }
+  }
+}
+
 function verifyProblemRecoveryCoverage(
   values: unknown[],
   stateDir: string,
@@ -5681,47 +5944,7 @@ function verifyProblemRecoveryCoverage(
       throw new Error(`${path}: declared scope box artifact is missing`);
     }
   }
-  for (const [directory, patterns] of [
-    ["problem-manual-evidence", [
-      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
-      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.pdf$/u,
-      /^v1-\d{4}-\d{4}-[a-f0-9]{64}-view-\d{2}\.png$/u,
-    ]],
-    ["problem-manual-adjudications", [
-      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
-    ]],
-    ["classification-manual-adjudications", [
-      /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u,
-    ]],
-    ["problem-manual-revisions", [
-      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
-    ]],
-    ["classification-manual-revisions", [
-      /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u,
-    ]],
-  ] as const) {
-    const absolute = join(stateDir, directory);
-    if (!existsSync(absolute)) continue;
-    for (const entry of readdirSync(absolute, { withFileTypes: true })
-      .sort((left, right) => left.name.localeCompare(right.name))) {
-      if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
-      if (!entry.isFile() || entry.isSymbolicLink()) {
-        throw new Error(`${directory}/${entry.name}: manual adjudication artifact must be a regular file`);
-      }
-      if (!patterns.some((pattern) => pattern.test(entry.name))) {
-        throw new Error(`${directory}/${entry.name}: malformed manual adjudication artifact name`);
-      }
-      const path = `${directory}/${entry.name}`;
-      if (!declaredManual.has(path)) {
-        throw new Error(`${path}: manual adjudication artifact is not declared by the terminal audit`);
-      }
-    }
-  }
-  for (const path of declaredManual) {
-    if (!existsSync(join(stateDir, path))) {
-      throw new Error(`${path}: declared manual adjudication artifact is missing`);
-    }
-  }
+  verifyProblemManualArtifactInventory(stateDir, declaredManual);
   const terminalAdjudicationDirectory = join(stateDir, "problem-terminal-fidelity-adjudications");
   if (existsSync(terminalAdjudicationDirectory)) {
     for (const entry of readdirSync(terminalAdjudicationDirectory, { withFileTypes: true })
@@ -6008,6 +6231,9 @@ function problemManualCorrectionSpecHash(spec: ProblemManualAdjudicationSpec): s
   return canonicalEvidenceHash({
     allowlistId: spec.allowlistId,
     parentKind: spec.parentKind,
+    ...(spec.parentRecoveryEvidenceHash
+      ? { parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash }
+      : {}),
     views: spec.views,
     ...(spec.dpi ? { dpi: spec.dpi } : {}),
     requiredTokens: spec.requiredTokens,
@@ -6058,15 +6284,25 @@ function applyProblemManualRevision(
   }
   const corrected = structuredClone(failed.evidence);
   const replacement = spec.replacement;
-  const current = replacement.field === "question"
-    ? exactString(corrected.question, `${failed.key}.manualRevision.question`)
-    : corrected.figure_description === null
-      ? ""
-      : exactString(corrected.figure_description, `${failed.key}.manualRevision.figure_description`);
-  if (exactOccurrenceCount(current, replacement.from) !== replacement.count) {
-    throw new Error(`${failed.key}: manual revision replacement occurrence is stale`);
+  if (replacement.field === "choices") {
+    const choices = Array.isArray(corrected.choices) ? corrected.choices : [];
+    if (choices.reduce((count, choice) =>
+      count + exactOccurrenceCount(exactString(choice, `${failed.key}.manualRevision.choice`), replacement.from), 0)
+      !== replacement.count) {
+      throw new Error(`${failed.key}: manual revision replacement occurrence is stale`);
+    }
+    corrected.choices = choices.map((choice) => choice.split(replacement.from).join(replacement.to));
+  } else {
+    const current = replacement.field === "question"
+      ? exactString(corrected.question, `${failed.key}.manualRevision.question`)
+      : corrected.figure_description === null
+        ? ""
+        : exactString(corrected.figure_description, `${failed.key}.manualRevision.figure_description`);
+    if (exactOccurrenceCount(current, replacement.from) !== replacement.count) {
+      throw new Error(`${failed.key}: manual revision replacement occurrence is stale`);
+    }
+    corrected[replacement.field] = current.split(replacement.from).join(replacement.to);
   }
-  corrected[replacement.field] = current.split(replacement.from).join(replacement.to);
   const question = parseProblem(corrected, `${failed.key} allowlisted manual revision`);
   if (question.key !== failed.key || question.page !== spec.sourcePage) {
     throw new Error(`${failed.key}: manual revision changed the immutable identity`);
@@ -6084,6 +6320,16 @@ function applyProblemManualCorrection(
   }
   const corrected = structuredClone(failed.evidence);
   for (const replacement of spec.replacements) {
+    if (replacement.field === "choices") {
+      const choices = Array.isArray(corrected.choices) ? corrected.choices : [];
+      if (choices.reduce((count, choice) =>
+        count + exactOccurrenceCount(exactString(choice, `${failed.key}.manual.choice`), replacement.from), 0)
+        !== replacement.count) {
+        throw new Error(`${failed.key}: manual replacement occurrence is stale: ${replacement.from}`);
+      }
+      corrected.choices = choices.map((choice) => choice.split(replacement.from).join(replacement.to));
+      continue;
+    }
     const current = replacement.field === "question"
       ? exactString(corrected.question, `${failed.key}.manual.question`)
       : corrected.figure_description === null
@@ -6702,6 +6948,8 @@ function verifyProblemManualAdjudication(
     || manual.printedNumber !== failedQuestion.printedNumber || manual.sourcePage !== spec.sourcePage
     || manual.sourceHash !== problemEvidence.sha256
     || manual.parentRecoveryEvidenceHash !== parentRecoveryEvidenceHash
+    || (spec.parentRecoveryEvidenceHash !== undefined
+      && parentRecoveryEvidenceHash !== spec.parentRecoveryEvidenceHash)
     || manual.parentCropAdjudicationHash !== parentCropAdjudicationHash
     || manual.failedQuestionHash !== spec.failedQuestionHash
     || manual.failedQuestionHash !== canonicalEvidenceHash(failedQuestion.evidence)
@@ -7034,6 +7282,63 @@ function verifyProblemManualAdjudication(
     };
   }
   return { question, classification, evidence };
+}
+
+export function verifyProblemManualAdjudicationForTest(input: {
+  stateDir: string;
+  entry: unknown;
+  problemEvidence: unknown;
+  parentRecovery: Record<string, unknown>;
+  failedQuestion: unknown;
+  failedClassification: unknown;
+  manualAdjudication: unknown;
+}): { question: unknown; classification: unknown; evidence: unknown } {
+  const entry = input.entry as ManifestEntry;
+  const problemEvidence = input.problemEvidence as DownloadEvidence;
+  const question = parseProblem(input.failedQuestion, "manual adjudication test question");
+  const classification = parseClassificationEvidence(
+    input.failedClassification,
+    question,
+    entry,
+    "manual adjudication test classification",
+  );
+  const manual = input.manualAdjudication as Record<string, any>;
+  const classificationArtifact = object(
+    manual.classificationArtifact,
+    "manual adjudication test classification artifact",
+  );
+  const verified = verifyProblemManualAdjudication(
+    input.manualAdjudication,
+    input.parentRecovery,
+    question,
+    classification,
+    input.stateDir,
+    entry,
+    problemEvidence,
+    exactString(classificationArtifact.rulesDigest, "manual adjudication test rulesDigest"),
+    new Map(),
+    CURRENT_CONTRACT,
+  );
+  const declaredManual = new Set<string>([
+    manual.problemArtifact.path,
+    manual.classificationArtifact.path,
+    ...(String(manual.cropEvidenceArtifact.path).startsWith("problem-manual-evidence/")
+      ? [
+          manual.cropEvidenceArtifact.path,
+          manual.cropEvidencePdf.path,
+          ...manual.cropViews.map((view: Record<string, any>) => view.artifact.path),
+        ]
+      : []),
+    ...(manual.revision
+      ? [manual.revision.problemArtifact.path, manual.revision.classificationArtifact.path]
+      : []),
+  ]);
+  verifyProblemManualArtifactInventory(input.stateDir, declaredManual);
+  return {
+    question: verified.question.evidence,
+    classification: verified.classification,
+    evidence: verified.evidence,
+  };
 }
 
 function problemScopeAdjudicationSpec(

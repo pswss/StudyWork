@@ -64,12 +64,14 @@ import {
   terminalFidelityAdjudicationAllowlistFingerprint,
   TARGET_SUBJECTS,
   verifyExamCorpus,
+  verifyProblemManualAdjudicationForTest,
   verifyPersistedProblemRepairOverlapForTest,
   verificationContractAuditVersionForTest,
 } from "../scripts/verify-exam-corpus";
 import {
   applyAllowlistedProblemManualCorrection,
   applyAllowlistedProblemManualRevision,
+  adjudicateProblemManual,
   auditAcceptedSolutions,
   baseDifficultyByQuestionKey,
   buildCorpusReceipt,
@@ -116,7 +118,9 @@ import {
   resolveOfficialAnswer,
   writeAnswerAttestation,
   type ClassifiedQuestion,
+  type ClassificationDecision,
   type PdfEvidence,
+  type ProblemRecoveryEvidence,
 } from "../scripts/import-exam-corpus";
 import type { QuizItemEx, SolutionItem } from "../src/claude";
 
@@ -254,6 +258,9 @@ const Q9_WRITING_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec)
 const Q43_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/4745f3573f575a93f6adcccb");
 const Q43_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5577054" && spec.key === "16:43")!;
+const Q27_MANUAL_STATE = join(process.cwd(), "data/import-exam-corpus/bb876a67170089dfb2022f47");
+const Q27_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
+  spec.entryId === "ebsi:5525982" && spec.key === "11:27")!;
 const Q8_TERMINAL_ADJUDICATION_STATE = join(
   process.cwd(),
   "data/import-exam-corpus/7755c70fefaa45f755086e2b",
@@ -797,6 +804,19 @@ async function migratedVerifierFixture(entryId = migrationEntryId): Promise<{
       join(stateDir, "receipt-history", `v1-${oldReceiptSha256}.json`), "utf8",
     ));
     writeEvidence(join(stateDir, "receipt.json"), history.receipt.value);
+    if (entryId === "ebsi:5578423") {
+      cpSync(
+        join(
+          migrationSourceData,
+          "backups/exam-corpus-migration-v1-7755c70fefaa45f755086e2b-" +
+            "d1fb3cb33d9920c9975b6eb7862a52fe59a7534191f4193772a352bce00ee102.db",
+        ),
+        join(dataDir, "studywork.db"),
+      );
+      rmSync(join(stateDir, "migration-plans"), { recursive: true, force: true });
+      rmSync(join(stateDir, "receipt-history"), { recursive: true, force: true });
+      rmSync(join(dataDir, "backups"), { recursive: true, force: true });
+    }
     rmSync(join(stateDir, "migration-commits"), { recursive: true, force: true });
     rmSync(join(stateDir, "answer-attestation"), { recursive: true, force: true });
   } else {
@@ -9334,6 +9354,105 @@ function terminalAdjudicationInputs(stateDir: string) {
   return { entry, problem, solution, classified, solutions };
 }
 
+function q27ExactRecoveryParent(stateDir: string): {
+  input: ReturnType<typeof terminalAdjudicationInputs>;
+  failed: ClassifiedQuestion;
+  parent: ProblemRecoveryEvidence;
+} {
+  const input = terminalAdjudicationInputs(stateDir);
+  const problemRelativePath =
+    "problem-recoveries/v1-0011-0027-e2d59ea1699886f21ab5218fd221a8fa05f0beb46a1782ed48c9ec9cb583541c.json";
+  const classificationRelativePath =
+    "classification-recoveries/v1-0011-0027-9cae9db11869c6adbd575b6ee6b08ce51d75c483e3897a8afe1b698044223551-" +
+    "7bb7cb863c8c4855.json";
+  const problemCheckpoint = JSON.parse(readFileSync(join(stateDir, problemRelativePath), "utf8"));
+  const classificationCheckpoint = JSON.parse(
+    readFileSync(join(stateDir, classificationRelativePath), "utf8"),
+  );
+  const basis = problemCheckpoint.basis;
+  const question = problemCheckpoint.item as QuizItemEx;
+  const classification = classificationCheckpoint.items[0] as ClassificationDecision;
+  const parent: ProblemRecoveryEvidence = {
+    key: basis.key,
+    printedNumber: basis.printedNumber,
+    sourcePage: basis.sourcePage,
+    sourceHash: basis.sourceHash,
+    contextFrom: basis.contextFrom,
+    contextTo: basis.contextTo,
+    baseProblemRepairArtifact: basis.baseProblemRepairArtifact,
+    baseProblemRepairItemHash: basis.baseProblemRepairItemHash,
+    baseClassificationRepairArtifact: basis.baseClassificationRepairArtifact,
+    baseClassificationRepairItemHash: basis.baseClassificationRepairItemHash,
+    baseProblemRevisionArtifact: basis.baseProblemRevisionArtifact,
+    baseProblemRevisionItemHash: basis.baseProblemRevisionItemHash,
+    baseClassificationRevisionArtifact: basis.baseClassificationRevisionArtifact,
+    baseClassificationRevisionItemHash: basis.baseClassificationRevisionItemHash,
+    problemArtifact: {
+      path: problemRelativePath,
+      sha256: "28ed8a585e6bac2b0de42cc1a252b780b75c7c8dfc171ff5e19569b97d865ffe",
+    },
+    problemArtifactItemHash: canonicalEvidenceHash(question),
+    classificationArtifact: {
+      path: classificationRelativePath,
+      sha256: "7d6c1b764a2b3d9e4e4c777c2d3a2c06ff930f9f7c329b9309ef9dd3a80d0454",
+      rulesDigest: classificationCheckpoint.rulesDigest,
+      transcriptionGateVersion: classificationCheckpoint.transcriptionGateVersion,
+      transcriptionPromptDigest: classificationCheckpoint.transcriptionPromptDigest,
+      recoveryPromptVersion: classificationCheckpoint.recoveryPromptVersion,
+      recoveryPromptDigest: classificationCheckpoint.recoveryPromptDigest,
+    },
+    classificationArtifactItemHash: canonicalEvidenceHash(classification),
+    failedClassificationEvidenceHash: basis.failedClassificationEvidenceHash,
+    baseQuestionHash: basis.baseQuestionHash,
+    effectiveQuestionHash: canonicalEvidenceHash(question),
+    baseClassificationHash: basis.baseClassificationHash,
+    effectiveClassificationHash: canonicalEvidenceHash(classification),
+  };
+  expect(canonicalEvidenceHash(parent))
+    .toBe("186e1381194aab5765fc72d88fb3e9a85901867d4a398588c7e38aa7f463dfdb");
+  return { input, failed: { question, classification }, parent };
+}
+
+async function q27ManualAuthorityFixture() {
+  const stateDir = mkdtempSync(join(tmpdir(), "verify-q27-manual-authority-"));
+  cpSync(Q27_MANUAL_STATE, stateDir, { recursive: true });
+  for (const directory of [
+    "problem-manual-evidence",
+    "problem-manual-adjudications",
+    "classification-manual-adjudications",
+    "problem-manual-revisions",
+    "classification-manual-revisions",
+  ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
+  const { input, failed, parent } = q27ExactRecoveryParent(stateDir);
+  providerMock.complete.mockReset();
+  providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+    expect(request.schema?.name).toBe("studywork_exam_corpus_classification");
+    expect(request.prompt).toContain("이다지 낡아빠진 생활을 하는 것은 아니리라");
+    expect(request.prompt).toContain("‘존재 없이’ 살아가는 것이 어렵다고");
+    return { text: JSON.stringify([{
+      key: Q27_MANUAL_SPEC.key,
+      decision: "accept",
+      canonical_subject: "korean_literature",
+      curriculum_course: "문학",
+      domain: "현대시의 화자와 자기 성찰 및 시어의 의미 이해",
+      achievement_codes: ["12문학01-01", "12문학01-03"],
+      confidence: 0.99,
+      reason_codes: ["IN_SCOPE_KOREAN_LITERATURE", "MODERN_POETRY_COMPREHENSION"],
+      transcription_status: "exact",
+      transcription_evidence: "공식 10~11쪽의 (가), (나), Q27과 다섯 선택지가 모두 일치한다.",
+    }]) };
+  });
+  const adjudicated = await adjudicateProblemManual(
+    input.entry,
+    input.problem,
+    stateDir,
+    failed,
+    parent,
+  );
+  providerMock.complete.mockReset();
+  return { stateDir, input, failed, parent, adjudicated };
+}
+
 async function terminalAdjudicationFixture() {
   const root = mkdtempSync(join(tmpdir(), "verify-terminal-adjudication-"));
   const dataDir = join(root, "data");
@@ -9344,7 +9463,12 @@ async function terminalAdjudicationFixture() {
   const stateDir = join(dataDir, "import-exam-corpus", token(entryValue.entry.id, 24));
   cpSync(Q8_TERMINAL_ADJUDICATION_STATE, stateDir, { recursive: true });
   rmSync(join(stateDir, "receipt.json"), { force: true });
-  rmSync(join(stateDir, "problem-terminal-fidelity-adjudications"), { recursive: true, force: true });
+  for (const directory of [
+    "problem-terminal-fidelity-adjudications",
+    "migration-plans",
+    "migration-commits",
+    "receipt-history",
+  ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
   for (const [directory, pattern] of [
     ["answer-audit", /^v5-/u],
     ["answer-attestation", /^v5-/u],
@@ -12353,6 +12477,122 @@ describe("exam corpus verifier", () => {
     expect(verifyExamCorpus(orphan.files).failures.some((failure) =>
       failure.code === "ANSWER_AUDIT_INVALID" && failure.message.includes("not declared"))).toBe(true);
   });
+
+  it.skipIf(
+    !existsSync(join(Q27_MANUAL_STATE, "problem.pdf"))
+      || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
+  )("verifies the exact Q27 recovery-parent manual authority without claiming downstream completion", async () => {
+    expect(manualAdjudicationAllowlistFingerprint())
+      .toBe("42a5a82dcb88e409ed0904ed1c7ce44e790b710fc1645bb5ecb31af4bc8eb65d");
+    expect(manualAdjudicationAllowlistFingerprint())
+      .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
+    const files = await q27ManualAuthorityFixture();
+    const verify = (
+      manualAdjudication: unknown = files.adjudicated.evidence,
+      parentRecovery: Record<string, unknown> = files.parent as unknown as Record<string, unknown>,
+      failedQuestion: unknown = files.failed.question,
+    ) => verifyProblemManualAdjudicationForTest({
+      stateDir: files.stateDir,
+      entry: files.input.entry,
+      problemEvidence: files.input.problem,
+      parentRecovery,
+      failedQuestion,
+      failedClassification: files.failed.classification,
+      manualAdjudication,
+    });
+
+    try {
+      const verified = verify() as {
+        question: QuizItemEx;
+        classification: ClassificationDecision;
+        evidence: Record<string, any>;
+      };
+      expect(canonicalEvidenceHash(verified.question))
+        .toBe("0364d049bef73773465b13f09fa2f234e9c7fc4ef4f9f9bdefeef0a8692c457b");
+      expect(verified.question.question).toContain("[27 ~ 32] 다음 글을 읽고 물음에 답하시오.");
+      expect(verified.question.question).toContain("이다지 낡아빠진 생활을 하는 것은 아니리라");
+      expect(verified.question.question).toContain("함이정 : 처녀 때 난 생각했었지.");
+      expect(verified.question.question).not.toMatch(/이지러 낡아빠진|아니라라/u);
+      expect(verified.question.choices?.[2]).toBe(
+        "③ 화자는 ‘고생도 마음대로 할 수 없는 세상’에서 ‘존재 없이’ 살아가는 것이 어렵다고 느끼고 있다.",
+      );
+      expect(verified.question.figure_description).toContain("왼쪽으로 열린 세로 묶음 괄호 [A]");
+      expect(verified.question.figure_description).toContain("같은 모양의 세로 묶음 괄호 [B]");
+      expect(verified.classification).toMatchObject({
+        key: Q27_MANUAL_SPEC.key,
+        decision: "accept",
+        canonical_subject: "korean_literature",
+        curriculum_course: "문학",
+        transcription_status: "exact",
+      });
+      expect(verified.evidence).toMatchObject({
+        allowlistId: Q27_MANUAL_SPEC.allowlistId,
+        parentRecoveryEvidenceHash: Q27_MANUAL_SPEC.parentRecoveryEvidenceHash,
+        problemArtifactItemHash: "0364d049bef73773465b13f09fa2f234e9c7fc4ef4f9f9bdefeef0a8692c457b",
+        cropViews: Q27_MANUAL_SPEC.views.map((view) => expect.objectContaining(view)),
+      });
+      expect(verified.evidence.problemArtifact.path)
+        .toMatch(/^problem-manual-adjudications\/v1-0011-0027-[a-f0-9]{64}\.json$/u);
+      expect(verified.evidence.classificationArtifact.path)
+        .toMatch(/^classification-manual-adjudications\/v1-0011-0027-[a-f0-9]{64}-7bb7cb863c8c4855\.json$/u);
+      expect(readdirSync(join(files.stateDir, "problem-manual-evidence"))
+        .filter((name) => !name.endsWith(".tmp"))).toHaveLength(6);
+
+      const wrongParent = structuredClone(files.parent) as unknown as Record<string, unknown>;
+      wrongParent.effectiveQuestionHash = "0".repeat(64);
+      expect(() => verify(files.adjudicated.evidence, wrongParent))
+        .toThrow(/allowlist\/parent authority/u);
+
+      const wrongChoiceSpec = structuredClone(files.adjudicated.evidence) as Record<string, any>;
+      wrongChoiceSpec.correctionSpecHash = "0".repeat(64);
+      expect(() => verify(wrongChoiceSpec)).toThrow(/allowlist\/parent authority/u);
+
+      const problemPath = join(files.stateDir, files.adjudicated.evidence.problemArtifact.path);
+      const problemBytes = readFileSync(problemPath);
+      writeFileSync(problemPath, Buffer.concat([problemBytes, Buffer.from("tampered")]));
+      expect(() => verify()).toThrow(/hash mismatch/u);
+      writeFileSync(problemPath, problemBytes);
+
+      const cropPath = join(files.stateDir, files.adjudicated.evidence.cropViews[0].artifact.path);
+      const cropBytes = readFileSync(cropPath);
+      writeFileSync(cropPath, Buffer.concat([cropBytes, Buffer.from("tampered")]));
+      expect(() => verify()).toThrow(/hash mismatch/u);
+      writeFileSync(cropPath, cropBytes);
+
+      const classificationPath = join(
+        files.stateDir,
+        files.adjudicated.evidence.classificationArtifact.path,
+      );
+      const classificationBytes = readFileSync(classificationPath);
+      rmSync(classificationPath);
+      expect(() => verify()).toThrow();
+      writeFileSync(classificationPath, classificationBytes);
+
+      const orphanPath = join(
+        files.stateDir,
+        "problem-manual-adjudications",
+        `v1-0011-0027-${"1".repeat(64)}.json`,
+      );
+      writeJson(orphanPath, {});
+      expect(() => verify()).toThrow(/not declared/u);
+      rmSync(orphanPath);
+
+      const secondChildPath = join(
+        files.stateDir,
+        "classification-manual-adjudications",
+        `v1-0011-0027-${"2".repeat(64)}-${DIGEST}.json`,
+      );
+      writeJson(secondChildPath, {});
+      expect(() => verify()).toThrow(/not declared/u);
+      rmSync(secondChildPath);
+
+      expect(existsSync(join(files.stateDir, "answer-audit"))).toBe(false);
+      expect(existsSync(join(files.stateDir, "answer-attestation"))).toBe(false);
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(files.stateDir, { recursive: true, force: true });
+    }
+  }, 120_000);
 
   it("keeps the repair-scope allowlist byte-aligned with the importer", () => {
     expect(repairScopeAdjudicationAllowlistFingerprint())
