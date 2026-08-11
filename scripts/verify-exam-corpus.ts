@@ -2979,6 +2979,30 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
     "① $\\dfrac{3(3\\sqrt{3}-\\pi)}{11}$", "⑤ $\\dfrac{4(3\\sqrt{3}-\\pi)}{11}$",
   ],
   expectedDecision: "reject",
+}, {
+  allowlistId: "ebsi-5525982-q32-manual-revision-v1",
+  parentAllowlistId: "ebsi-5525982-q32-manual-v1",
+  entryId: "ebsi:5525982",
+  key: "12:32",
+  sourcePage: 12,
+  sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+  failedQuestionHash: "e3f26787b00f65c346910a688088f941dce1b8b872e330491da0b61a8e3f5269",
+  failedClassificationHash: "cf31dadc1233e5aef9e940d882a54c316fb1398c18f520d242103a40c8033ae3",
+  failedClassificationEvidenceHash: "5ee5ce7694d4178d8047f9d1e30e326058c1af244e43eaacb11aad257d0abc18",
+  replacement: {
+    field: "question",
+    from: "함이정 : (서연 곁으로 가서 개울물을 바라본다.) 물 위에 비쳐 보여요, 우리 얼굴이…… " +
+      "얼굴 뒤엔 구름이…… 구름 뒤엔 하늘이……. (물을 떠서 마신다.) 물이 맑고 시원해요.",
+    to: "함이정 : (서연 곁으로 가서 개울물을 바라본다). 물 위에 비쳐 보여요, 우리 얼굴이…… " +
+      "얼굴 뒤엔 구름이…… 구름 뒤엔 하늘이……. (물을 떠서 마신다). 물이 맑고 시원해요.",
+    count: 1,
+  },
+  requiredTokens: [
+    "(서연 곁으로 가서 개울물을 바라본다).", "(물을 떠서 마신다).",
+    "32. (나)의 등장인물에 대한 이해로 적절하지 않은 것은?", "이야기 속의 인물들을", "조숭인",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
 }] as const;
 
 const PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST: readonly ProblemScopeBoxRevisionSpec[] = [{

@@ -4573,6 +4573,30 @@ export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSp
     "① $\\dfrac{3(3\\sqrt{3}-\\pi)}{11}$", "⑤ $\\dfrac{4(3\\sqrt{3}-\\pi)}{11}$",
   ],
   expectedDecision: "reject",
+}, {
+  allowlistId: "ebsi-5525982-q32-manual-revision-v1",
+  parentAllowlistId: "ebsi-5525982-q32-manual-v1",
+  entryId: "ebsi:5525982",
+  key: "12:32",
+  sourcePage: 12,
+  sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+  failedQuestionHash: "e3f26787b00f65c346910a688088f941dce1b8b872e330491da0b61a8e3f5269",
+  failedClassificationHash: "cf31dadc1233e5aef9e940d882a54c316fb1398c18f520d242103a40c8033ae3",
+  failedClassificationEvidenceHash: "5ee5ce7694d4178d8047f9d1e30e326058c1af244e43eaacb11aad257d0abc18",
+  replacement: {
+    field: "question",
+    from: "함이정 : (서연 곁으로 가서 개울물을 바라본다.) 물 위에 비쳐 보여요, 우리 얼굴이…… " +
+      "얼굴 뒤엔 구름이…… 구름 뒤엔 하늘이……. (물을 떠서 마신다.) 물이 맑고 시원해요.",
+    to: "함이정 : (서연 곁으로 가서 개울물을 바라본다). 물 위에 비쳐 보여요, 우리 얼굴이…… " +
+      "얼굴 뒤엔 구름이…… 구름 뒤엔 하늘이……. (물을 떠서 마신다). 물이 맑고 시원해요.",
+    count: 1,
+  },
+  requiredTokens: [
+    "(서연 곁으로 가서 개울물을 바라본다).", "(물을 떠서 마신다).",
+    "32. (나)의 등장인물에 대한 이해로 적절하지 않은 것은?", "이야기 속의 인물들을", "조숭인",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
 }] as const;
 
 export const PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST: readonly ProblemScopeBoxRevisionSpec[] = [{
@@ -12741,8 +12765,9 @@ async function reviseProblemManualAdjudication(
   failed: ClassifiedQuestion,
   prepared: PreparedProblemCropEvidence,
   parentManual: ProblemManualAdjudicationEvidence,
-  spec: ProblemManualRevisionSpec
-): Promise<{ classified: ClassifiedQuestion; evidence: ProblemManualRevisionEvidence }> {
+  spec: ProblemManualRevisionSpec,
+  existingOnly: boolean
+): Promise<{ classified: ClassifiedQuestion; evidence: ProblemManualRevisionEvidence } | null> {
   const key = questionKey(failed.question);
   const parentManualEvidenceHash = canonicalEvidenceHash(parentManual);
   const correctionSpecHash = problemManualRevisionCorrectionSpecHash(spec);
@@ -12794,25 +12819,11 @@ async function reviseProblemManualAdjudication(
     correctionDigest: PROBLEM_MANUAL_REVISION_CORRECTION_DIGEST,
     item: corrected,
   };
-  if (existsSync(problemPath)) {
-    const checkpoint = object(JSON.parse(readFileSync(
-      confinedStateFile(stateDir, problemRelativePath, "problem manual revision"),
-      "utf8"
-    )), problemRelativePath);
-    if (canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(expectedProblemCheckpoint)) {
-      throw new Error(`기존 problem manual revision이 exact envelope와 다릅니다: ${problemRelativePath}`);
-    }
-  } else {
-    await writeImmutableEvidence(problemPath, expectedProblemCheckpoint);
-  }
-  const problemSha = await sha256File(problemPath);
-  if (problemSha !== canonicalEvidenceHash(expectedProblemCheckpoint)) {
-    throw new Error(`${key} problem manual revision hash가 다릅니다`);
-  }
+  const expectedProblemSha = canonicalEvidenceHash(expectedProblemCheckpoint);
   const problemItemHash = canonicalEvidenceHash(corrected);
   const classificationBasis = {
     ...commonBasis,
-    problemArtifact: { path: problemRelativePath, sha256: problemSha },
+    problemArtifact: { path: problemRelativePath, sha256: expectedProblemSha },
     problemArtifactItemHash: problemItemHash,
     effectiveQuestionHash: problemItemHash,
   };
@@ -12821,13 +12832,50 @@ async function reviseProblemManualAdjudication(
     `v${CLASSIFICATION_MANUAL_REVISION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
     `${parentManual.printedNumber.padStart(4, "0")}-${classificationBasisDigest}-${CLASSIFIER_DIGEST}.json`;
   const classificationPath = join(stateDir, classificationRelativePath);
+  const prefix = `v${PROBLEM_MANUAL_REVISION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+    `${parentManual.printedNumber.padStart(4, "0")}-`;
+  const problemNames = strictArtifactNames(
+    join(stateDir, "problem-manual-revisions"),
+    "problem manual revision",
+    (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
+  ).filter((name) => name.startsWith(prefix));
+  const classificationNames = strictArtifactNames(
+    join(stateDir, "classification-manual-revisions"),
+    "classification manual revision",
+    (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
+  ).filter((name) => name.startsWith(prefix));
+  const expectedProblemName = problemRelativePath.slice(problemRelativePath.lastIndexOf("/") + 1);
+  const expectedClassificationName = classificationRelativePath.slice(classificationRelativePath.lastIndexOf("/") + 1);
+  if (
+    problemNames.length > 1 || classificationNames.length > 1 ||
+    (classificationNames.length > 0 && problemNames.length === 0) ||
+    problemNames.some((name) => name !== expectedProblemName) ||
+    classificationNames.some((name) => name !== expectedClassificationName)
+  ) throw new Error(`${key} manual revision preflight orphan/conflict`);
+
+  if (problemNames.length === 1) {
+    const checkpoint = object(JSON.parse(readFileSync(
+      confinedStateFile(stateDir, problemRelativePath, "problem manual revision"),
+      "utf8"
+    )), problemRelativePath);
+    if (canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(expectedProblemCheckpoint)) {
+      throw new Error(`기존 problem manual revision이 exact envelope와 다릅니다: ${problemRelativePath}`);
+    }
+  } else {
+    if (existingOnly) return null;
+    await writeImmutableEvidence(problemPath, expectedProblemCheckpoint);
+  }
+  const problemSha = await sha256File(problemPath);
+  if (problemSha !== expectedProblemSha) {
+    throw new Error(`${key} problem manual revision hash가 다릅니다`);
+  }
   const mappingNote = `${PROBLEM_MANUAL_ADJUDICATION_RULES} Nested deterministic manual revision. Evidence mapping: ` +
     parentManual.cropViews.map((view, index) =>
       `view ${index + 1}=${view.label}, original page ${view.sourcePage}`
     ).join("; ") + `. Required source anchors: ${spec.requiredTokens.join(" | ")}.`;
   let classification: ClassificationDecision;
   let classificationCheckpoint: Record<string, unknown>;
-  if (existsSync(classificationPath)) {
+  if (classificationNames.length === 1) {
     classificationCheckpoint = object(JSON.parse(readFileSync(confinedStateFile(
       stateDir,
       classificationRelativePath,
@@ -12835,6 +12883,7 @@ async function reviseProblemManualAdjudication(
     ), "utf8")), classificationRelativePath);
     classification = parseDecisions(classificationCheckpoint.items, [corrected], entry)[0];
   } else {
+    if (existingOnly) return null;
     classification = (await classifyQuestions(
       entry,
       prepared.pdf.absolutePath,
@@ -13245,18 +13294,21 @@ async function adjudicateProblemManualOne(
       "classification manual adjudication",
       (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
     ).filter((name) => name.startsWith(prefix));
-    const revisionCount = [
-      ...strictArtifactNames(
-        join(stateDir, "problem-manual-revisions"),
-        "problem manual revision",
-        (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
-      ),
-      ...strictArtifactNames(
-        join(stateDir, "classification-manual-revisions"),
-        "classification manual revision",
-        (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
-      ),
-    ].filter((name) => name.startsWith(prefix)).length;
+    const revisionProblemNames = strictArtifactNames(
+      join(stateDir, "problem-manual-revisions"),
+      "problem manual revision",
+      (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
+    ).filter((name) => name.startsWith(prefix));
+    const revisionClassificationNames = strictArtifactNames(
+      join(stateDir, "classification-manual-revisions"),
+      "classification manual revision",
+      (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
+    ).filter((name) => name.startsWith(prefix));
+    const hasRevision = revisionProblemNames.length > 0 || revisionClassificationNames.length > 0;
+    const revisionSpecs = PROBLEM_MANUAL_REVISION_ALLOWLIST.filter((candidate) =>
+      candidate.entryId === entry.id && candidate.key === key && candidate.sourcePage === sourcePage &&
+      candidate.sourceHash === problem.sha256 && candidate.parentAllowlistId === spec.allowlistId
+    );
     const evidenceBasis = {
       allowlistId: spec.allowlistId,
       entryId: entry.id,
@@ -13278,7 +13330,12 @@ async function adjudicateProblemManualOne(
     const hasEvidenceCheckpoint = evidenceNames.includes(`${evidenceStem}.json`);
     if (
       evidenceExtras.length > 0 || pinnedProblemNames.length > 1 || pinnedClassificationNames.length > 1 ||
-      revisionCount > 0 || (!hasEvidenceCheckpoint && (
+      revisionProblemNames.length > 1 || revisionClassificationNames.length > 1 ||
+      (revisionClassificationNames.length > 0 && revisionProblemNames.length === 0) ||
+      (hasRevision && (
+        revisionSpecs.length !== 1 || !hasEvidenceCheckpoint ||
+        pinnedProblemNames.length !== 1 || pinnedClassificationNames.length !== 1
+      )) || (!hasEvidenceCheckpoint && (
         pinnedProblemNames.length > 0 || pinnedClassificationNames.length > 0
       )) || (pinnedProblemNames.length === 0 && pinnedClassificationNames.length > 0)
     ) throw new Error(`${key} manual adjudication preflight orphan/conflict`);
@@ -13542,8 +13599,10 @@ async function adjudicateProblemManualOne(
       failedManual,
       prepared,
       evidence,
-      revisionSpec
+      revisionSpec,
+      existingOnly
     );
+    if (!revised) return null;
     return { classified: revised.classified, evidence: { ...evidence, revision: revised.evidence } };
   }
   return { classified: { question: corrected, classification }, evidence };
