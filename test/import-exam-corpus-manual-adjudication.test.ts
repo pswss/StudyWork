@@ -8,7 +8,9 @@ import {
   readFileSync,
   readlinkSync,
   readdirSync,
+  renameSync,
   rmSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -29,11 +31,14 @@ import {
   CLASSIFIER_VERSION,
   PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST,
   PROBLEM_MANUAL_REVISION_ALLOWLIST,
+  PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST,
   TRANSCRIPTION_GATE_VERSION,
   TRANSCRIPTION_PROMPT_DIGEST,
+  actionableTerminalFidelityIssues,
   adjudicateProblemManual,
   applyAllowlistedProblemManualCorrection,
   applyAllowlistedProblemManualRevision,
+  applyAllowlistedProblemManualSourceRevision,
   assertProblemManualAdjudicationAuthority,
   canonicalEvidenceHash,
   parseCorpusManifest,
@@ -42,6 +47,7 @@ import {
   type ClassificationDecision,
   type ClassifiedQuestion,
   type PdfEvidence,
+  type ProblemRepairEvidence,
   type ProblemRecoveryEvidence,
 } from "../scripts/import-exam-corpus";
 
@@ -49,6 +55,7 @@ const q27LiveState = join(process.cwd(), "data/import-exam-corpus/bb876a67170089
 const q30Q42ManualKeys: readonly string[] = [
   "11:30", "12:31", "12:32", "14:37", "15:38", "15:40", "15:41", "15:42",
 ];
+const newTrueRepairManualKeys: readonly string[] = ["7:18", "7:19", "15:39"];
 
 let root = "";
 afterEach(() => {
@@ -102,7 +109,12 @@ function removeManualRevisionArtifacts(stateDir: string, keys: string[]): void {
     const [page, number] = key.split(":");
     return `v1-${page.padStart(4, "0")}-${number.padStart(4, "0")}-`;
   });
-  for (const directory of ["problem-manual-revisions", "classification-manual-revisions"]) {
+  for (const directory of [
+    "problem-manual-revisions",
+    "classification-manual-revisions",
+    "problem-manual-second-revisions",
+    "classification-manual-second-revisions",
+  ]) {
     const path = join(stateDir, directory);
     if (!existsSync(path)) continue;
     for (const name of readdirSync(path)) {
@@ -236,6 +248,26 @@ function q17ExactRecoveryParent(stateDir: string) {
   );
 }
 
+function q18ExactRecoveryParent(stateDir: string) {
+  return exactRecoveryParent(
+    stateDir,
+    "problem-recoveries/v1-0007-0018-06e7d73768f018b14074754f24be4edcd44a0a827db48396f395f94619ff3295.json",
+    "classification-recoveries/v1-0007-0018-95b1d6ac2ac315fed53bda0ecabd427e47b721b40a535d93d2a61aee091a863c-" +
+      "7bb7cb863c8c4855.json",
+    "c6e1102de25e6a751905958d31ea19375646a90d5d7e3b717d7d55bddaffbb70"
+  );
+}
+
+function q19ExactRecoveryParent(stateDir: string) {
+  return exactRecoveryParent(
+    stateDir,
+    "problem-recoveries/v1-0007-0019-bbe87d7965f3ce7da4bfa1293717753d036729a8e02e8646c2ebf471518ca7f9.json",
+    "classification-recoveries/v1-0007-0019-0389ce2367e4a98832a6f3fc9f7e75f54866d4110cc4528a16f4273a24025765-" +
+      "7bb7cb863c8c4855.json",
+    "dab952b2960c489006f15751116dcc7b1e8d6e9326a4278a0fd81991f8b5a50c"
+  );
+}
+
 function q20ExactRecoveryParent(stateDir: string) {
   return exactRecoveryParent(
     stateDir,
@@ -323,6 +355,16 @@ function q38ExactRecoveryParent(stateDir: string) {
     "classification-recoveries/v1-0015-0038-d19e2d9e8533fb8b35cd703c2bbf78763c3366a5bcc08ab94a2d745936355de9-" +
       "7bb7cb863c8c4855.json",
     "59a322acdb5c3211a6a26e34c906b1510533f08d7ca95cccf756d01b3e5604a8"
+  );
+}
+
+function q39ExactRecoveryParent(stateDir: string) {
+  return exactRecoveryParent(
+    stateDir,
+    "problem-recoveries/v1-0015-0039-5f748be0e1d0c6866ae0bfa5cb116ba08d55c50ba907341481a590f04f90a195.json",
+    "classification-recoveries/v1-0015-0039-1814765b3829514aeca357a4ab758b8c0a3172ac73db22bab914b5a590b7f60f-" +
+      "7bb7cb863c8c4855.json",
+    "c4f86ad116cf248fafcb360795081c949cd2442ed9c5375c56d5748385fdf25f"
   );
 }
 
@@ -1042,7 +1084,7 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
 }
 
 describe("exact allowlisted problem manual adjudication", () => {
-  it("pins the twenty-six audited sources and exhausted child hashes", () => {
+  it("pins the twenty-nine audited sources and exhausted child hashes", () => {
     expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.map((item) => ({
       entryId: item.entryId,
       key: item.key,
@@ -1232,6 +1274,27 @@ describe("exact allowlisted problem manual adjudication", () => {
       sourceHash: cases[25].sourceHash,
       parentKind: "recovery",
       failedQuestionHash: "190871a47391d12bc13e3cba9fadc51f92640021482be78947420e95d89fe34d",
+    }, {
+      entryId: "ebsi:5525982",
+      key: "7:18",
+      sourcePage: 7,
+      sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+      parentKind: "recovery",
+      failedQuestionHash: "745287373aa1ae4b0b3b722379531007f6dcac703bebddbb3305b32bdfc0163c",
+    }, {
+      entryId: "ebsi:5525982",
+      key: "7:19",
+      sourcePage: 7,
+      sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+      parentKind: "recovery",
+      failedQuestionHash: "f6442fc7394763ffb573b62c1294bb25aba603bbadcd4bc332447aa2c426f46e",
+    }, {
+      entryId: "ebsi:5525982",
+      key: "15:39",
+      sourcePage: 15,
+      sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+      parentKind: "recovery",
+      failedQuestionHash: "b0f2287b7c860d7e5141198fb5f343a4f2498cc001e5bd16956f5ccc0f6987da",
     }]);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 11)))
       .toBe("7851318ea1e176be603db1f2679081e16ef222d90ff704e39dce8d47db446268");
@@ -1239,8 +1302,10 @@ describe("exact allowlisted problem manual adjudication", () => {
       .toBe("fe8516451df56c3030a821886a42a93d1fa88dc87529060bd608f835bc0dc990");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 15)))
       .toBe("219a859d0ab52014822efa602cc0e090f5d0f31551502386d8ab6e775ed7c53a");
-    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 26)))
       .toBe("4d844c71cc01ae752974edb5941ed475d80e76dd03bb5ee1a51a7b256512bb80");
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
+      .toBe("0b5d7d19255cd91566a55b289b11f8a9460a3014a06f255f9a266ebd62980cf9");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 18)))
       .toBe("463fceef246487e1ec791ffb0489048f874cd5944d946f9c6d819f3fd3c76eda");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST[11]))
@@ -1266,12 +1331,15 @@ describe("exact allowlisted problem manual adjudication", () => {
       "352f1f625a2b842cd8cfb55b3b16442aa7610cba84e9134f8cb234ecf0c20eca",
       "17d17089a45be6edc291d7d5489176dcd18d00007589089db657ae618e71f593",
       "44900a00af38a5de0486bf115b0f1e928b5ee111f9df7f9ce3749b9beb416b83",
+      "27f57efde1618ebb4403d334979d92d525b274e891d5be9c6f87b1299c9a0628",
+      "a694fcf5c3308d1b4b4938cbae48325ad675722cb4e467ed0c39188b99632c7a",
+      "a7dbfce35c74df5e429cf0acbda8289bb5210e043202eb674775d2d200e042bd",
     ]);
   });
 
   it.skipIf(!existsSync(q30ManualProblemPath) || !existsSync(q18ManualProblemPath) ||
     !existsSync(q32ManualProblemPath))(
-    "pins and applies the Q30/Q18/Q32 nested manual revisions",
+    "pins and applies the Q30/Q18/Q32 nested manual revisions and Q32 source reversion",
     () => {
     expect(PROBLEM_MANUAL_REVISION_ALLOWLIST).toEqual([expect.objectContaining({
       allowlistId: "ebsi-5578421-q30-manual-revision-v1",
@@ -1365,7 +1433,150 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(q32Revised.question).not.toContain("물을 떠서 마신다.)");
     expect(canonicalEvidenceHash(q32Revised))
       .toBe("e3649d8930138bdc731c8642e24507e5d98f12da8d83503877ef92c3f31981bb");
+    expect(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST).toEqual([expect.objectContaining({
+      allowlistId: "ebsi-5525982-q32-manual-source-revision-v1",
+      parentRevisionAllowlistId: "ebsi-5525982-q32-manual-revision-v1",
+      parentRevisionEvidenceHash: "944ad7e2ab07ffff727e3ac8923cfbee5b9e0499610a82eca37ccd7309c0abbd",
+      failedQuestionHash: "e3649d8930138bdc731c8642e24507e5d98f12da8d83503877ef92c3f31981bb",
+      failedClassificationHash: "e052bfaae96839742bad356f8235d214202d18baeb4bf3cc24d7e485b8042e2b",
+      failedClassificationEvidenceHash: "d403219ab15a4d2584fb01f1abbed234cc824de7a7ef2df1e75f433c7442b205",
+    })]);
+    expect(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.map(canonicalEvidenceHash)).toEqual([
+      "e6287eb8f4eaef8f24099c08afc13d077ad7792a1345f0296b7ce39fa4b07d39",
+    ]);
+    const q32SourceRevised = applyAllowlistedProblemManualSourceRevision(
+      "ebsi:5525982",
+      "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+      "ebsi-5525982-q32-manual-revision-v1",
+      q32Revised
+    );
+    expect(canonicalEvidenceHash(q32SourceRevised))
+      .toBe("e3f26787b00f65c346910a688088f941dce1b8b872e330491da0b61a8e3f5269");
+    expect(q32SourceRevised).toEqual(q32Parent);
   });
+
+  it.skipIf(!existsSync(join(
+    q27LiveState,
+    "problem-terminal-fidelity/v2-0000-01acbf628ec2f45a8c7024b7851c396c3e9b5ad12c59480ec573ecb8e6d5028e-" +
+      "4bc1636d679f790075a71a3f79c5a35e522dac90ccb5c40d60137fadb952dd22.json"
+  )))("partitions only Q8 and Q23 out of the pinned 01ac terminal issues", () => {
+    const terminal = JSON.parse(readFileSync(join(
+      q27LiveState,
+      "problem-terminal-fidelity/v2-0000-01acbf628ec2f45a8c7024b7851c396c3e9b5ad12c59480ec573ecb8e6d5028e-" +
+        "4bc1636d679f790075a71a3f79c5a35e522dac90ccb5c40d60137fadb952dd22.json"
+    ), "utf8")) as { items: Array<{ key: string; status: string }> };
+    const terminalIssues = terminal.items.filter((item) => item.status !== "exact").map((item) => item.key);
+    expect(terminalIssues).toEqual([
+      "4:8", "7:18", "7:19", "9:21", "9:22", "9:23", "9:24", "9:25", "9:26", "12:32", "15:39",
+    ]);
+    const deferred = new Set(["4:8", "9:23"]);
+    expect(actionableTerminalFidelityIssues(terminalIssues, deferred)).toEqual([
+      "7:18", "7:19", "9:21", "9:22", "9:24", "9:25", "9:26", "12:32", "15:39",
+    ]);
+    expect(() => actionableTerminalFidelityIssues(["4:8", "9:23"], deferred))
+      .toThrow("terminal fidelity 최종 adjudication 대기: 4:8, 9:23");
+    expect(() => actionableTerminalFidelityIssues(["4:8"], deferred))
+      .toThrow("deferred terminal fidelity issue가 terminal issue 집합에 없습니다");
+  });
+
+  it.skipIf(!existsSync(join(q27LiveState, "problem.pdf")))(
+    "completes true repairs without touching Q8 or Q23 before the fresh terminal boundary",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-terminal-defer-live-"));
+    cpSync(q27LiveState, root, { recursive: true });
+    const terminalRelativePath =
+      "problem-terminal-fidelity/v2-0000-01acbf628ec2f45a8c7024b7851c396c3e9b5ad12c59480ec573ecb8e6d5028e-" +
+      "4bc1636d679f790075a71a3f79c5a35e522dac90ccb5c40d60137fadb952dd22.json";
+    expect(hash(readFileSync(join(root, terminalRelativePath))))
+      .toBe("3a44b3aaf83126f90c7ec8f5fd7cc1d15f5c9e9d48420fc9bd2f21b542765b48");
+    const deferredSnapshot = () => stateSnapshot(root).filter(([path]) =>
+      /v1-0004-0008-|v1-0009-0023-/u.test(path) ||
+      path.startsWith("problem-terminal-fidelity-adjudications/") ||
+      path.startsWith("problem-terminal-fidelity-policy-revisions/")
+    );
+    const before = deferredSnapshot();
+    const terminalBefore = stateSnapshot(join(root, "problem-terminal-fidelity"));
+    const providerCalls: Array<{ schema: string; requested: string[] }> = [];
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      const schema = request.schema?.name ?? "unknown";
+      if (schema === "studywork_exam_corpus_classification") {
+        const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
+          key: string;
+          question: string;
+        }>;
+        const requested = items.map((item) => item.key);
+        providerCalls.push({ schema, requested });
+        expect(requested.every((key) => ["7:18", "7:19", "12:32", "15:39"].includes(key))).toBe(true);
+        return { text: JSON.stringify(items.map((item) => ({
+          key: item.key,
+          decision: "accept",
+          canonical_subject: item.key === "12:32" ? "korean_literature" : "korean_reading",
+          curriculum_course: item.key === "12:32" ? "문학" : "독서와 작문",
+          domain: item.key === "12:32" ? "희곡의 인물과 극적 기능" : "비문학 제시문의 추론적 읽기",
+          achievement_codes: [item.key === "12:32" ? "12문학01-03" : "12독작01-04"],
+          confidence: 0.99,
+          reason_codes: ["SOURCE_EXACT"],
+          transcription_status: "exact",
+          transcription_evidence: `공식 source pixel과 ${item.key} 전체 문항이 일치한다.`,
+        }))) };
+      }
+      if (schema === "studywork_exam_corpus_problem_terminal_fidelity") {
+        providerCalls.push({ schema, requested: [] });
+        const items = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{
+          key: string;
+          question: string;
+        }>;
+        expect(items).toHaveLength(45);
+        expect(new Set(items.map((item) => item.key)).size).toBe(45);
+        expect(items.find((item) => item.key === "4:8")?.question)
+          .toContain("기사형 광고는 기사처럼 보이는 광고를 말한다.");
+        expect(items.find((item) => item.key === "7:18")?.question)
+          .toContain("경험을 통한 시험의 대상");
+        expect(items.find((item) => item.key === "7:19")?.question)
+          .toContain("선택하겠지만 실용적 필요");
+        expect(items.find((item) => item.key === "12:32")?.question)
+          .toContain("(물을 떠서 마신다.) 물이 맑고 시원해요.");
+        expect(items.find((item) => item.key === "15:39")?.question)
+          .toContain("39. [가]를 바탕으로 <보기>의 상황을 이해한 내용으로 적절한 것은?");
+        expect(items.find((item) => item.key === "9:23")?.question)
+          .toContain("이들 간의 대립 구도 하에서 전개되는 이야기는");
+        expect(items.find((item) => item.key === "9:23")?.question)
+          .toContain("외적의 침략이나 이념 갈등과 같은 공동체 사이의 갈등");
+        throw new Error("seeded fresh true-repair terminal boundary");
+      }
+      if (schema !== "studywork_file_quiz_items") {
+        providerCalls.push({ schema, requested: [] });
+        throw new Error(`unexpected defer-gate provider call: ${schema}`);
+      }
+      const single = request.prompt.match(/printed problem (\d+) starting on page (\d+)/u);
+      const batch = request.prompt.match(/printed problems: ([^\n.]+)/u);
+      const requested = single
+        ? [`${single[2]}:${single[1]}`]
+        : (batch?.[1].match(/\d+/gu) ?? []).map((number) => `9:${number}`);
+      providerCalls.push({ schema, requested });
+      throw new Error("unexpected generic recovery before fresh true-repair terminal");
+    });
+    const input = q27FixtureInputs(root);
+    await expect(repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions
+    )).rejects.toThrow("seeded fresh true-repair terminal boundary");
+    expect(providerCalls.length).toBeGreaterThan(0);
+    const requested = [...new Set(providerCalls
+      .filter((call) => call.schema === "studywork_exam_corpus_classification")
+      .flatMap((call) => call.requested))].sort();
+    expect(requested).toEqual([
+      "12:32", "15:39", "7:18", "7:19",
+    ]);
+    expect(requested).not.toContain("4:8");
+    expect(requested).not.toContain("9:23");
+    expect(deferredSnapshot()).toEqual(before);
+    expect(stateSnapshot(join(root, "problem-terminal-fidelity"))).toEqual(terminalBefore);
+  }, 300_000);
 
   it.skipIf(!available)("applies the exhaustive Q34 literal correction to the pinned crop child", () => {
     const corrected = applyAllowlistedProblemManualCorrection(cases[0].entryId, cases[0].sourceHash, itemAt(0));
@@ -1571,9 +1782,45 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(q20.question).toContain("[16 ~ 20] 다음 글을 읽고 물음에 답하시오.");
     expect(q20.question).toContain("문맥상 ㉢과 바꿔 쓰기에 가장 적절한 것은?");
     expect(q20.figure).toBe(false);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.some((item) =>
-      item.entryId === "ebsi:5525982" && ["7:18", "7:19"].includes(item.key)))
-      .toBe(false);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((item) =>
+      item.entryId === "ebsi:5525982" && ["7:18", "7:19"].includes(item.key)
+    ).every((item) => item.failedStatus === "exact")).toBe(true);
+  });
+
+  it.skipIf(!existsSync(join(q27LiveState, "problem.pdf")))(
+    "restores the source-exact Q18, Q19, and Q39 from exact recovery parents",
+    () => {
+    const rows = [
+      [q18ExactRecoveryParent(q27LiveState).failed, "e6f77c8aa3a10c5549e95eb6d3b3974587b2b3a16db009fb483ad9099943417f"],
+      [q19ExactRecoveryParent(q27LiveState).failed, "64e29a3f28bad8602f35bcbf89542202e7b5cc4a587ed586474626a0085090d4"],
+      [q39ExactRecoveryParent(q27LiveState).failed, "45089f6c171df3fa64b68ec782741ee58212d249566ce43837941f204e9780cf"],
+    ] as const;
+    for (const [failed, expectedHash] of rows) {
+      const corrected = applyAllowlistedProblemManualCorrection(
+        "ebsi:5525982",
+        "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+        failed.question
+      );
+      expect(canonicalEvidenceHash(corrected)).toBe(expectedHash);
+      expect(corrected.choices).toEqual(failed.question.choices);
+      expect(corrected.answer).toBe(failed.question.answer);
+      expect(corrected.figure).toBe(false);
+    }
+    const q18 = applyAllowlistedProblemManualCorrection(
+      "ebsi:5525982",
+      "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+      rows[0][0].question
+    );
+    expect(q18.question).toContain("기존의 지식과 M에 열을 가했다는 조건");
+    expect(q18.question).toContain("경험을 통한 시험의 대상");
+    expect(q18.question).toContain("선택하겠지만 실용적 필요");
+    const q39 = applyAllowlistedProblemManualCorrection(
+      "ebsi:5525982",
+      "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+      rows[2][0].question
+    );
+    expect(q39.question).toContain("[37~42] 다음 글을 읽고 물음에 답하시오.");
+    expect(q39.question).toContain("39. [가]를 바탕으로 <보기>의 상황을 이해한 내용으로 적절한 것은?");
   });
 
   it.skipIf(!available)("restores the exact Q23, Q28, and Q29 literature items", () => {
@@ -1649,8 +1896,8 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(corrected[6].answer).not.toContain("‘중요한 사항’");
     expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((item) =>
       item.entryId === "ebsi:5525982" && item.failedStatus === "exact").map((item) => item.key).sort())
-      .toEqual(["11:30", "14:37", "16:43"]);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.some((item) => item.key === "15:39")).toBe(false);
+      .toEqual(["11:30", "14:37", "15:39", "16:43", "7:18", "7:19"]);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.some((item) => item.key === "15:39")).toBe(true);
   });
 
   it.skipIf(!existsSync(join(q27LiveState, "problem.pdf")))(
@@ -1658,8 +1905,9 @@ describe("exact allowlisted problem manual adjudication", () => {
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-q30-q42-manual-live-"));
     cpSync(q27LiveState, root, { recursive: true });
-    const keys = ["11:30", "12:31", "12:32", "14:37", "15:38", "15:40", "15:41", "15:42"];
+    const keys = [...q30Q42ManualKeys, ...newTrueRepairManualKeys];
     removeManualArtifacts(root, keys);
+    removeManualRevisionArtifacts(root, ["12:32"]);
     for (const directory of ["answer-audit", "answer-attestation"]) {
       rmSync(join(root, directory), { recursive: true, force: true });
     }
@@ -1667,7 +1915,8 @@ describe("exact allowlisted problem manual adjudication", () => {
     const parents = [
       q30ExactRecoveryParent(root), q31ExactRecoveryParent(root), q32ExactRecoveryParent(root),
       q37ExactRecoveryParent(root), q38ExactRecoveryParent(root), q40ExactRecoveryParent(root),
-      q41ExactRecoveryParent(root), q42ExactRecoveryParent(root),
+      q41ExactRecoveryParent(root), q42ExactRecoveryParent(root), q18ExactRecoveryParent(root),
+      q19ExactRecoveryParent(root), q39ExactRecoveryParent(root),
     ];
     const calls = { classification: [] as string[], terminal: 0, downstream: [] as string[] };
     let crashKey: string | null = "12:31";
@@ -1684,7 +1933,9 @@ describe("exact allowlisted problem manual adjudication", () => {
         calls.classification.push(item.key);
         if (item.key === crashKey) throw new Error("seeded Q31 manual classification crash");
         const literature = ["11:30", "12:31", "12:32"].includes(item.key);
-        expect(item.question).toContain(`${item.key.split(":")[1]}.`);
+        if (!newTrueRepairManualKeys.includes(item.key)) {
+          expect(item.question).toContain(`${item.key.split(":")[1]}.`);
+        }
         if (literature) expect(item.figure_description).toContain("세로 묶음 괄호 [A]");
         else expect(item.figure_description).toBeNull();
         return { text: JSON.stringify([{
@@ -1740,7 +1991,9 @@ describe("exact allowlisted problem manual adjudication", () => {
     crashKey = null;
     calls.classification = [];
     for (const row of parents) await expect(runChild(row)).resolves.toBeDefined();
-    expect(calls.classification).toEqual(["12:31", "12:32", "14:37", "15:38", "15:40", "15:41", "15:42"]);
+    expect(calls.classification).toEqual([
+      "12:31", "12:32", "14:37", "15:38", "15:40", "15:41", "15:42", "7:18", "7:19", "15:39",
+    ]);
 
     const beforeReplay = stateSnapshot(root).filter(([path]) => path.includes("manual"));
     calls.classification = [];
@@ -1808,7 +2061,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       })]);
     }
     expect(readdirSync(join(root, "problem-manual-adjudications"))
-      .some((name) => name.startsWith("v1-0015-0039-"))).toBe(false);
+      .some((name) => name.startsWith("v1-0015-0039-"))).toBe(true);
 
     removeManualArtifacts(root, ["12:31"]);
     const q32Child = join(root, "problem-manual-adjudications", readdirSync(
@@ -1846,7 +2099,7 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 300_000);
 
   it.skipIf(!existsSync(q32ManualProblemPath))(
-    "crash-resumes the pinned Q32 manual revision and opens the fresh terminal without sibling writes",
+    "crash-resumes the pinned Q32 source reversion before the next true repair without sibling writes",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-q32-manual-revision-live-"));
     cpSync(q27LiveState, root, { recursive: true });
@@ -1862,8 +2115,13 @@ describe("exact allowlisted problem manual adjudication", () => {
     const expectedClassificationRelativePath =
       "classification-manual-revisions/v1-0012-0032-e0cf084146f55db4994304b3ddb21a1a57e563ea052d32951ebd2be286c4f860-" +
       "7bb7cb863c8c4855.json";
-    const calls = { classification: 0, terminal: 0 };
-    let crash = true;
+    const firstRevisionClassification = JSON.parse(readFileSync(
+      join(q27LiveState, expectedClassificationRelativePath), "utf8"
+    )).items[0] as ClassificationDecision;
+    expect(canonicalEvidenceHash(firstRevisionClassification))
+      .toBe("e052bfaae96839742bad356f8235d214202d18baeb4bf3cc24d7e485b8042e2b");
+    const calls = { firstRevision: 0, sourceRevision: 0, terminal: 0 };
+    let crashStage: "first" | "source" | null = "first";
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       if (request.schema?.name === "studywork_exam_corpus_classification") {
         const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
@@ -1872,15 +2130,24 @@ describe("exact allowlisted problem manual adjudication", () => {
           choices: string[] | null;
         }>;
         expect(items).toHaveLength(1);
+        if (["7:18", "7:19", "15:39"].includes(items[0].key)) {
+          throw new Error(`seeded next true repair boundary: ${items[0].key}`);
+        }
         expect(items[0].key).toBe("12:32");
-        expect(items[0].question).toContain("(서연 곁으로 가서 개울물을 바라본다). 물 위에 비쳐 보여요");
-        expect(items[0].question).toContain("(물을 떠서 마신다). 물이 맑고 시원해요.");
-        expect(items[0].question).not.toContain("개울물을 바라본다.)");
-        expect(items[0].question).not.toContain("물을 떠서 마신다.)");
         expect(items[0].choices?.[1]).toContain("이야기 속의 인물들을");
         expect(request.prompt).not.toContain("parent manual classification");
-        calls.classification++;
-        if (crash) throw new Error("seeded Q32 manual revision classification crash");
+        const sourceCorrect = items[0].question.includes("개울물을 바라본다.)");
+        if (!sourceCorrect) {
+          expect(items[0].question).toContain("(서연 곁으로 가서 개울물을 바라본다). 물 위에 비쳐 보여요");
+          expect(items[0].question).toContain("(물을 떠서 마신다). 물이 맑고 시원해요.");
+          calls.firstRevision++;
+          if (crashStage === "first") throw new Error("seeded Q32 first revision classification crash");
+          return { text: JSON.stringify([firstRevisionClassification]) };
+        }
+        expect(items[0].question).toContain("(서연 곁으로 가서 개울물을 바라본다.) 물 위에 비쳐 보여요");
+        expect(items[0].question).toContain("(물을 떠서 마신다.) 물이 맑고 시원해요.");
+        calls.sourceRevision++;
+        if (crashStage === "source") throw new Error("seeded Q32 source revision classification crash");
         return { text: JSON.stringify([{
           key: "12:32",
           decision: "accept",
@@ -1891,7 +2158,7 @@ describe("exact allowlisted problem manual adjudication", () => {
           confidence: 0.99,
           reason_codes: ["SOURCE_EXACT", "IN_SCOPE_KOREAN_LITERATURE"],
           transcription_status: "exact",
-          transcription_evidence: "공식 p10~p12의 전체 지문·32번 발문·선택지 및 마침표 위치가 일치한다.",
+          transcription_evidence: "공식 p10~p12의 전체 지문과 괄호 안 마침표, 32번 발문·선택지가 일치한다.",
         }]) };
       }
       if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
@@ -1903,10 +2170,10 @@ describe("exact allowlisted problem manual adjudication", () => {
         expect(items).toHaveLength(45);
         expect(new Set(items.map((item) => item.key)).size).toBe(45);
         const q32Input = items.find((item) => item.key === "12:32")!;
-        expect(q32Input.question).toContain("(서연 곁으로 가서 개울물을 바라본다). 물 위에 비쳐 보여요");
-        expect(q32Input.question).toContain("(물을 떠서 마신다). 물이 맑고 시원해요.");
-        expect(q32Input.question).not.toContain("개울물을 바라본다.)");
-        expect(q32Input.question).not.toContain("물을 떠서 마신다.)");
+        expect(q32Input.question).toContain("(서연 곁으로 가서 개울물을 바라본다.) 물 위에 비쳐 보여요");
+        expect(q32Input.question).toContain("(물을 떠서 마신다.) 물이 맑고 시원해요.");
+        expect(q32Input.question).not.toContain("개울물을 바라본다). 물 위에");
+        expect(q32Input.question).not.toContain("물을 떠서 마신다). 물이");
         throw new Error("seeded fresh Q32 revision terminal boundary");
       }
       throw new Error(`unexpected Q32 revision AI call: ${request.schema?.name ?? "unknown"}`);
@@ -1915,8 +2182,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       input.entry, input.problem, root, q32.failed, q32.parent
     );
 
-    await expect(runQ32()).rejects.toThrow("seeded Q32 manual revision classification crash");
-    expect(calls).toEqual({ classification: 1, terminal: 0 });
+    await expect(runQ32()).rejects.toThrow("seeded Q32 first revision classification crash");
+    expect(calls).toEqual({ firstRevision: 1, sourceRevision: 0, terminal: 0 });
     expect(readdirSync(join(root, "problem-manual-revisions"))
       .filter((name) => name.startsWith("v1-0012-0032-"))).toEqual([
         expectedProblemRelativePath.slice(expectedProblemRelativePath.lastIndexOf("/") + 1),
@@ -1929,22 +2196,47 @@ describe("exact allowlisted problem manual adjudication", () => {
       .toBe("61e238a6d6456ce690cd951c6a6572dc3c8b1821bb1bbbd60ae6bbdff180b85d");
 
     const partialSnapshot = stateSnapshot(root).filter(([path]) => path.includes("manual"));
-    calls.classification = 0;
+    calls.firstRevision = 0;
+    calls.sourceRevision = 0;
     providerMock.complete.mockClear();
     await expect(adjudicateProblemManual(
       input.entry, input.problem, root, q31.failed, q31.parent
     )).resolves.toBeDefined();
     expect(providerMock.complete).not.toHaveBeenCalled();
-    expect(calls).toEqual({ classification: 0, terminal: 0 });
+    expect(calls).toEqual({ firstRevision: 0, sourceRevision: 0, terminal: 0 });
     expect(stateSnapshot(root).filter(([path]) => path.includes("manual"))).toEqual(partialSnapshot);
 
-    crash = false;
-    calls.classification = 0;
+    crashStage = "source";
+    calls.firstRevision = 0;
+    calls.sourceRevision = 0;
+    await expect(runQ32()).rejects.toThrow("seeded Q32 source revision classification crash");
+    expect(calls).toEqual({ firstRevision: 1, sourceRevision: 1, terminal: 0 });
+    const sourceProblemNames = readdirSync(join(root, "problem-manual-second-revisions"))
+      .filter((name) => name.startsWith("v1-0012-0032-"));
+    expect(sourceProblemNames).toHaveLength(1);
+    expect(existsSync(join(root, "classification-manual-second-revisions"))
+      ? readdirSync(join(root, "classification-manual-second-revisions"))
+        .filter((name) => name.startsWith("v1-0012-0032-"))
+      : []).toEqual([]);
+
+    const sourcePartialSnapshot = stateSnapshot(root).filter(([path]) => path.includes("manual"));
+    calls.firstRevision = 0;
+    calls.sourceRevision = 0;
+    providerMock.complete.mockClear();
+    await expect(adjudicateProblemManual(
+      input.entry, input.problem, root, q31.failed, q31.parent
+    )).resolves.toBeDefined();
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root).filter(([path]) => path.includes("manual"))).toEqual(sourcePartialSnapshot);
+
+    crashStage = null;
+    calls.firstRevision = 0;
+    calls.sourceRevision = 0;
     const completed = await runQ32();
-    expect(calls).toEqual({ classification: 1, terminal: 0 });
+    expect(calls).toEqual({ firstRevision: 0, sourceRevision: 1, terminal: 0 });
     expect(completed).toMatchObject({
       classified: {
-        question: { question: expect.stringContaining("(물을 떠서 마신다). 물이 맑고 시원해요.") },
+        question: { question: expect.stringContaining("(물을 떠서 마신다.) 물이 맑고 시원해요.") },
         classification: {
           key: "12:32", decision: "accept", canonical_subject: "korean_literature",
           curriculum_course: "문학", transcription_status: "exact",
@@ -1964,21 +2256,112 @@ describe("exact allowlisted problem manual adjudication", () => {
           },
           problemArtifactItemHash: "e3649d8930138bdc731c8642e24507e5d98f12da8d83503877ef92c3f31981bb",
           classificationArtifact: { path: expectedClassificationRelativePath },
+          sourceRevision: {
+            allowlistId: "ebsi-5525982-q32-manual-source-revision-v1",
+            parentRevisionAllowlistId: "ebsi-5525982-q32-manual-revision-v1",
+            parentRevisionEvidenceHash: "944ad7e2ab07ffff727e3ac8923cfbee5b9e0499610a82eca37ccd7309c0abbd",
+            failedQuestionHash: "e3649d8930138bdc731c8642e24507e5d98f12da8d83503877ef92c3f31981bb",
+            failedClassificationHash: "e052bfaae96839742bad356f8235d214202d18baeb4bf3cc24d7e485b8042e2b",
+            problemArtifact: {
+              path: "problem-manual-second-revisions/v1-0012-0032-" +
+                "e552ab3ccd06391eea7e158d8ebe790e89d43c2d948ac37ce23b2f8e26f98908.json",
+              sha256: "ef11be1c9a5f89ef09b8ef5b2dc8c3c0a2c77e15235cafd5e8f72a17512aab48",
+            },
+            problemArtifactItemHash: "e3f26787b00f65c346910a688088f941dce1b8b872e330491da0b61a8e3f5269",
+            classificationArtifact: {
+              path: "classification-manual-second-revisions/v1-0012-0032-" +
+                "b6ec6b2d5612e39892068bb88795cd99f41a7677a2d0a6245899f43e70d873f6-" +
+                "7bb7cb863c8c4855.json",
+              sha256: "aa3166e4d66c67062b2ad7242523485f55dae112ec6da4d598e39aa4a2a5e55f",
+            },
+            classificationArtifactItemHash:
+              "bf7df2cec149ca24ef79b89754d21c4906621e4c02a2314ca215ff336be1cc47",
+          },
         },
       },
     });
 
     const completedSnapshot = stateSnapshot(root).filter(([path]) => path.includes("manual"));
-    calls.classification = 0;
+    calls.firstRevision = 0;
+    calls.sourceRevision = 0;
     await expect(runQ32()).resolves.toEqual(completed);
-    expect(calls).toEqual({ classification: 0, terminal: 0 });
+    expect(calls).toEqual({ firstRevision: 0, sourceRevision: 0, terminal: 0 });
     expect(stateSnapshot(root).filter(([path]) => path.includes("manual"))).toEqual(completedSnapshot);
+
+    const sourceEvidence = completed.evidence.revision?.sourceRevision;
+    expect(sourceEvidence).toBeDefined();
+    const sourceProblemPath = join(root, sourceEvidence!.problemArtifact.path);
+    const sourceClassificationPath = join(root, sourceEvidence!.classificationArtifact.path);
+    const sourceProblemBytes = readFileSync(sourceProblemPath);
+    const sourceClassificationBytes = readFileSync(sourceClassificationPath);
+    writeFileSync(sourceProblemPath, Buffer.concat([sourceProblemBytes, Buffer.from(" ")]));
+    let sourceBefore = stateSnapshot(root);
+    providerMock.complete.mockClear();
+    await expect(adjudicateProblemManual(
+      input.entry, input.problem, root, q31.failed, q31.parent
+    )).rejects.toThrow(/problem manual second revision/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root)).toEqual(sourceBefore);
+    writeFileSync(sourceProblemPath, sourceProblemBytes);
+
+    writeFileSync(sourceClassificationPath, Buffer.concat([
+      sourceClassificationBytes,
+      Buffer.from(" "),
+    ]));
+    sourceBefore = stateSnapshot(root);
+    providerMock.complete.mockClear();
+    await expect(runQ32()).rejects.toThrow(/classification manual second revision hash/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root)).toEqual(sourceBefore);
+    writeFileSync(sourceClassificationPath, sourceClassificationBytes);
+
+    const sourceProblemDirectory = join(root, "problem-manual-second-revisions");
+    const relocatedSourceProblemDirectory = join(root, "problem-manual-second-revisions-relocated");
+    renameSync(sourceProblemDirectory, relocatedSourceProblemDirectory);
+    symlinkSync(relocatedSourceProblemDirectory, sourceProblemDirectory);
+    sourceBefore = stateSnapshot(root);
+    providerMock.complete.mockClear();
+    await expect(runQ32()).rejects.toThrow(/problem manual second revision 디렉터리가 유효하지 않습니다/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root)).toEqual(sourceBefore);
+    unlinkSync(sourceProblemDirectory);
+    renameSync(relocatedSourceProblemDirectory, sourceProblemDirectory);
+
+    const sourceAlias = join(
+      root,
+      "problem-manual-second-revisions",
+      `v1-0012-0032-${"f".repeat(64)}.json`
+    );
+    writeFileSync(sourceAlias, sourceProblemBytes);
+    sourceBefore = stateSnapshot(root);
+    providerMock.complete.mockClear();
+    await expect(runQ32()).rejects.toThrow(/12:32 manual adjudication preflight orphan\/conflict/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root)).toEqual(sourceBefore);
+    unlinkSync(sourceAlias);
+
+    symlinkSync(sourceProblemPath, sourceAlias);
+    sourceBefore = stateSnapshot(root);
+    providerMock.complete.mockClear();
+    await expect(runQ32()).rejects.toThrow(/problem manual second revision 파일이 유효하지 않습니다/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root)).toEqual(sourceBefore);
+    unlinkSync(sourceAlias);
+
+    unlinkSync(sourceProblemPath);
+    sourceBefore = stateSnapshot(root);
+    providerMock.complete.mockClear();
+    await expect(runQ32()).rejects.toThrow(/manual adjudication preflight orphan\/conflict/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root)).toEqual(sourceBefore);
+    writeFileSync(sourceProblemPath, sourceProblemBytes);
+    writeFileSync(sourceClassificationPath, sourceClassificationBytes);
 
     const beforeTerminal = stateSnapshot(join(root, "problem-terminal-fidelity"));
     await expect(repairAndAuditOfficialAnswers(
       input.entry, input.problem, input.solution, root, input.classified, input.solutions
-    )).rejects.toThrow("seeded fresh Q32 revision terminal boundary");
-    expect(calls).toEqual({ classification: 0, terminal: 1 });
+    )).rejects.toThrow(/^seeded next true repair boundary: (?:7:18|7:19|15:39)$/u);
+    expect(calls).toEqual({ firstRevision: 0, sourceRevision: 0, terminal: 0 });
     expect(stateSnapshot(join(root, "problem-terminal-fidelity"))).toEqual(beforeTerminal);
     expect(existsSync(join(root, "answer-audit"))).toBe(false);
     expect(existsSync(join(root, "answer-attestation"))).toBe(false);
@@ -2011,6 +2394,171 @@ describe("exact allowlisted problem manual adjudication", () => {
     await expect(runQ32()).rejects.toThrow(/12:32 manual adjudication preflight orphan\/conflict/u);
     expect(providerMock.complete).not.toHaveBeenCalled();
     expect(stateSnapshot(root)).toEqual(before);
+    writeFileSync(revisionProblemPath, revisionProblemBytes);
+
+    const q32Prefix = "v1-0012-0032-";
+    for (const directory of [
+      "problem-manual-evidence",
+      "problem-manual-adjudications",
+      "classification-manual-adjudications",
+      "problem-manual-revisions",
+      "classification-manual-revisions",
+      "problem-manual-second-revisions",
+      "classification-manual-second-revisions",
+    ]) {
+      const path = join(root, directory);
+      if (!existsSync(path)) continue;
+      for (const name of readdirSync(path)) {
+        if (!name.startsWith(q32Prefix)) rmSync(join(path, name));
+      }
+    }
+    const authorityRepair = {
+      key: "12:32",
+      revision: {
+        recovery: {
+          ...q32.parent,
+          manualAdjudication: completed.evidence,
+        },
+      },
+    } as unknown as ProblemRepairEvidence;
+    await expect(assertProblemManualAdjudicationAuthority(root, [authorityRepair])).resolves.toBeUndefined();
+    const tamperedAuthorityRepair = structuredClone(authorityRepair);
+    tamperedAuthorityRepair.revision!.recovery!.manualAdjudication!.revision!.sourceRevision!
+      .parentRevisionEvidenceHash = "0".repeat(64);
+    await expect(assertProblemManualAdjudicationAuthority(root, [tamperedAuthorityRepair]))
+      .rejects.toThrow("12:32 manual source revision evidence가 parent/allowlist와 다릅니다");
+  }, 300_000);
+
+  it.skipIf(!existsSync(join(q27LiveState, "problem.pdf")))(
+    "crash-resumes exact-parent Q18-Q19-Q39 children and preflights the whole true-repair set",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-q18-q19-q39-manual-live-"));
+    cpSync(q27LiveState, root, { recursive: true });
+    removeManualArtifacts(root, ["7:18", "7:19", "15:39"]);
+    const input = q27FixtureInputs(root);
+    const rows = [q18ExactRecoveryParent(root), q19ExactRecoveryParent(root), q39ExactRecoveryParent(root)];
+    const calls: string[] = [];
+    let crashKey: string | null = "7:19";
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      expect(request.schema?.name).toBe("studywork_exam_corpus_classification");
+      const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
+        key: string;
+        question: string;
+        choices: string[] | null;
+      }>;
+      expect(items).toHaveLength(1);
+      const item = items[0];
+      expect(["7:18", "7:19", "15:39"]).toContain(item.key);
+      calls.push(item.key);
+      if (item.key === "7:18" || item.key === "7:19") {
+        expect(item.question).toContain("[16 ~ 20] 다음 글을 읽고 물음에 답하시오.");
+        expect(item.question).toContain("기존의 지식과 M에 열을 가했다는 조건");
+        expect(item.question).toContain("경험을 통한 시험의 대상");
+        expect(item.question).toContain("선택하겠지만 실용적 필요");
+      } else {
+        expect(item.question).toContain("[37~42] 다음 글을 읽고 물음에 답하시오.");
+        expect(item.question).toContain("39. [가]를 바탕으로 <보기>의 상황을 이해한 내용으로 적절한 것은?");
+      }
+      if (item.key === crashKey) throw new Error("seeded exact-parent true repair classification crash");
+      return { text: JSON.stringify([{
+        key: item.key,
+        decision: "accept",
+        canonical_subject: "korean_reading",
+        curriculum_course: "독서와 작문",
+        domain: "비문학 제시문의 추론적·비판적 읽기",
+        achievement_codes: ["12독작01-04"],
+        confidence: 0.99,
+        reason_codes: ["SOURCE_EXACT", "IN_SCOPE_KOREAN_READING"],
+        transcription_status: "exact",
+        transcription_evidence: `공식 source pixel과 ${item.key} 전체 지문·발문·선지가 일치한다.`,
+      }]) };
+    });
+    const run = (index: number) => adjudicateProblemManual(
+      input.entry,
+      input.problem,
+      root,
+      rows[index].failed,
+      rows[index].parent
+    );
+
+    await expect(run(0)).resolves.toMatchObject({
+      classified: { classification: { key: "7:18", transcription_status: "exact", decision: "accept" } },
+    });
+    await expect(run(1)).rejects.toThrow("seeded exact-parent true repair classification crash");
+    expect(calls).toEqual(["7:18", "7:19"]);
+    expect(readdirSync(join(root, "problem-manual-adjudications"))
+      .filter((name) => name.startsWith("v1-0007-0019-"))).toHaveLength(1);
+    expect(readdirSync(join(root, "classification-manual-adjudications"))
+      .filter((name) => name.startsWith("v1-0007-0019-"))).toHaveLength(0);
+
+    crashKey = null;
+    await expect(run(2)).resolves.toMatchObject({
+      classified: { classification: { key: "15:39", transcription_status: "exact", decision: "accept" } },
+    });
+    await expect(run(1)).resolves.toMatchObject({
+      classified: { classification: { key: "7:19", transcription_status: "exact", decision: "accept" } },
+    });
+    expect(calls).toEqual(["7:18", "7:19", "15:39", "7:19"]);
+
+    const expected = new Map<string, { itemHash: string; views: string[] }>([
+      ["7:18", {
+        itemHash: "e6f77c8aa3a10c5549e95eb6d3b3974587b2b3a16db009fb483ad9099943417f",
+        views: [
+          "af81d940bb74a611b249ff861be8a8e95eaa719f8a1978258f37e37ffd3d347e",
+          "c52268ed7672f99284b07b36a6bfc7375d5cb203a651c0fa90a25edd06e353d1",
+          "3ddfb710dfa5d8576496b6b37d43c90e53b2eab196db181439f60343e7da6d95",
+          "e72ccd39610a51f98718e7b542d3c5d91f9354f1eb10b53d39ca6af88ac0d525",
+        ],
+      }],
+      ["7:19", {
+        itemHash: "64e29a3f28bad8602f35bcbf89542202e7b5cc4a587ed586474626a0085090d4",
+        views: [
+          "af81d940bb74a611b249ff861be8a8e95eaa719f8a1978258f37e37ffd3d347e",
+          "c52268ed7672f99284b07b36a6bfc7375d5cb203a651c0fa90a25edd06e353d1",
+          "3ddfb710dfa5d8576496b6b37d43c90e53b2eab196db181439f60343e7da6d95",
+          "abd329f03c55a66e582ca236eeba453f7c214315abefb41fdbd5dd36cab7f9a9",
+        ],
+      }],
+      ["15:39", {
+        itemHash: "45089f6c171df3fa64b68ec782741ee58212d249566ce43837941f204e9780cf",
+        views: [
+          "f040b886b1427ed078054e833d489891f27b0d99b5c16cd70e7e4066e766483a",
+          "53a758c22f1823ff10bbc7361f9f37e40c46bdd2f57d353feb01bb2c6c8b2a3d",
+          "f9638782429e6b95df53473a371cda77c80ad1e3a283f57cd9a2ee4635f42343",
+          "2a6bbacc283df55dacf030d892013dcf9c7a62fdc543f8fd58fea9d97f8575a5",
+        ],
+      }],
+    ]);
+    for (const [key, authority] of expected) {
+      const [page, number] = key.split(":");
+      const prefix = `v1-${page.padStart(4, "0")}-${number.padStart(4, "0")}-`;
+      const name = readdirSync(join(root, "problem-manual-adjudications"))
+        .find((candidate) => candidate.startsWith(prefix))!;
+      const checkpoint = JSON.parse(readFileSync(join(root, "problem-manual-adjudications", name), "utf8"));
+      expect(canonicalEvidenceHash(checkpoint.item)).toBe(authority.itemHash);
+      expect(checkpoint.basis.cropViews.map((view: { pixelSha256: string }) => view.pixelSha256))
+        .toEqual(authority.views);
+    }
+
+    const completedSnapshot = stateSnapshot(root).filter(([path]) => path.includes("manual"));
+    calls.length = 0;
+    for (let index = 0; index < rows.length; index++) await expect(run(index)).resolves.toBeDefined();
+    expect(calls).toEqual([]);
+    expect(stateSnapshot(root).filter(([path]) => path.includes("manual"))).toEqual(completedSnapshot);
+
+    const q39ProblemPath = join(root, "problem-manual-adjudications", readdirSync(
+      join(root, "problem-manual-adjudications")
+    ).find((name) => name.startsWith("v1-0015-0039-"))!);
+    const q39Bytes = readFileSync(q39ProblemPath);
+    removeManualArtifacts(root, ["7:18"]);
+    writeFileSync(q39ProblemPath, Buffer.concat([q39Bytes, Buffer.from(" ")]));
+    const before = stateSnapshot(root);
+    calls.length = 0;
+    providerMock.complete.mockClear();
+    await expect(run(0)).rejects.toThrow(/15:39 manual adjudication hash가 다릅니다/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+    expect(stateSnapshot(root)).toEqual(before);
   }, 300_000);
 
   it.skipIf(!existsSync(join(q27LiveState, "problem.pdf")))(
@@ -2023,7 +2571,9 @@ describe("exact allowlisted problem manual adjudication", () => {
       rmSync(join(root, directory), { recursive: true, force: true });
     }
     const calls = { classification: [] as string[], extraction: [] as string[], terminal: 0 };
-    const laterManualKeys = ["7:17", "7:18", "7:20", "9:23", "11:28", "11:29", ...q30Q42ManualKeys];
+    const laterManualKeys = [
+      "7:17", "7:20", "9:23", "11:28", "11:29", ...q30Q42ManualKeys, ...newTrueRepairManualKeys,
+    ];
     let crashKey: string | null = "6:16";
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       if (request.schema?.name === "studywork_exam_corpus_classification") {
@@ -2113,7 +2663,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     };
 
     await expect(run()).rejects.toThrow(
-      /seeded Q16 manual classification crash|unrelated persisted (?:manual )?blocker: (?:7:(?:17|18|20)|9:23|11:(?:28|29|30)|12:(?:31|32)|14:37|15:(?:38|40|41|42))/u
+      /seeded Q16 manual classification crash|unrelated persisted (?:manual )?blocker: (?:7:(?:17|18|19|20)|9:23|11:(?:28|29|30)|12:(?:31|32)|14:37|15:(?:38|39|40|41|42))/u
     );
     expect([...calls.classification].sort()).toEqual(["4:8", "6:16"]);
     expect(calls.extraction.length).toBeGreaterThan(0);
@@ -2135,7 +2685,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     calls.classification = [];
     calls.extraction = [];
     await expect(run()).rejects.toThrow(
-      /unrelated persisted (?:manual )?blocker: (?:7:(?:17|18|20)|9:23|11:(?:28|29|30)|12:(?:31|32)|14:37|15:(?:38|40|41|42))/u
+      /unrelated persisted (?:manual )?blocker: (?:7:(?:17|18|19|20)|9:23|11:(?:28|29|30)|12:(?:31|32)|14:37|15:(?:38|39|40|41|42))/u
     );
     expect(calls.classification).toEqual(["6:16"]);
     expect(calls.extraction.length).toBeGreaterThan(0);
@@ -2225,7 +2775,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     calls.extraction = [];
     calls.terminal = 0;
     await expect(run()).rejects.toThrow(
-      /unrelated persisted (?:manual )?blocker: (?:7:(?:17|18|20)|9:23|11:(?:28|29|30)|12:(?:31|32)|14:37|15:(?:38|40|41|42))/u
+      /unrelated persisted (?:manual )?blocker: (?:7:(?:17|18|19|20)|9:23|11:(?:28|29|30)|12:(?:31|32)|14:37|15:(?:38|39|40|41|42))/u
     );
     expect(calls.classification).toEqual([]);
     expect(calls.extraction.length).toBeGreaterThan(0);
@@ -2384,9 +2934,12 @@ describe("exact allowlisted problem manual adjudication", () => {
       "unrelated classification blocker: 11:29",
       "11:28 final source-grounded recovery도 exact가 아닙니다",
       ...q30Q42ManualKeys.map((key) => `unrelated classification blocker: ${key}`),
+      ...newTrueRepairManualKeys.map((key) => `unrelated classification blocker: ${key}`),
     ]).toContain(boundaryMessage);
     expect(calls.unrelated.length).toBeGreaterThan(0);
-    expect(calls.unrelated.every((key) => ["9:23", "11:28", "11:29", ...q30Q42ManualKeys].includes(key)))
+    expect(calls.unrelated.every((key) => [
+      "9:23", "11:28", "11:29", ...q30Q42ManualKeys, ...newTrueRepairManualKeys,
+    ].includes(key)))
       .toBe(true);
     expect(calls.terminal).toBe(0);
 
@@ -2434,7 +2987,15 @@ describe("exact allowlisted problem manual adjudication", () => {
         transcription_status: "exact",
       });
     }
-    expect(readdirSync(join(root, "problem-manual-adjudications"))
+    const trueRepairProblemKeys = ["7:18", "7:19"].filter((key) => {
+      const number = key.split(":")[1].padStart(4, "0");
+      return readdirSync(join(root, "problem-manual-adjudications"))
+        .some((name) => name.startsWith(`v1-0007-${number}-`));
+    });
+    expect(trueRepairProblemKeys).toEqual([
+      ...new Set(calls.unrelated.filter((key) => ["7:18", "7:19"].includes(key))),
+    ].sort());
+    expect(readdirSync(join(root, "classification-manual-adjudications"))
       .some((name) => /v1-0007-001[89]-/u.test(name))).toBe(false);
 
     const childSnapshot = stateSnapshot(root).filter(([path]) => path.includes("manual"));
@@ -2581,8 +3142,10 @@ describe("exact allowlisted problem manual adjudication", () => {
       "15:41 final source-grounded recovery도 exact가 아닙니다",
       "15:42 final source-grounded recovery도 exact가 아닙니다",
       ...q30Q42ManualKeys.map((key) => `unrelated classification blocker: ${key}`),
+      ...newTrueRepairManualKeys.map((key) => `unrelated classification blocker: ${key}`),
     ]).toContain(boundary);
-    expect(calls.unrelated.every((key) => q30Q42ManualKeys.includes(key))).toBe(true);
+    expect(calls.unrelated.every((key) => [...q30Q42ManualKeys, ...newTrueRepairManualKeys].includes(key)))
+      .toBe(true);
     expect(calls.terminal).toBe(0);
 
     const expected = [{
@@ -2873,7 +3436,11 @@ describe("exact allowlisted problem manual adjudication", () => {
         expect(inputs).toHaveLength(1);
         const item = inputs[0];
         const key = item.key;
-        if (["4:8", "6:16", "7:17", "7:20", "9:23", "11:28", "11:29", ...q30Q42ManualKeys].includes(key)) {
+        if ([
+          "4:8", "6:16", "7:17", "7:20", "9:23", "11:28", "11:29",
+          ...q30Q42ManualKeys,
+          ...newTrueRepairManualKeys,
+        ].includes(key)) {
           calls.unrelatedClassification.push(key);
           throw new Error(`unrelated persisted manual blocker: ${key}`);
         }
@@ -2935,7 +3502,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     };
 
     await expect(run()).rejects.toThrow(
-      /seeded 16:44 manual classification crash|unrelated persisted (?:manual )?blocker: (?:4:8|6:16|7:(?:17|18|20)|9:23|11:(?:28|29|30)|12:(?:31|32)|14:37|15:(?:38|40|41|42))/u
+      /seeded 16:44 manual classification crash|unrelated persisted (?:manual )?blocker: (?:4:8|6:16|7:(?:17|18|19|20)|9:23|11:(?:28|29|30)|12:(?:31|32)|14:37|15:(?:38|39|40|41|42))/u
     );
     expect(calls.extraction.every((key) => !["16:43", "16:44", "16:45"].includes(key))).toBe(true);
     expect(calls.terminal).toBe(0);
@@ -2962,7 +3529,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     calls.unrelatedClassification = [];
     calls.extraction = [];
     await expect(run()).rejects.toThrow(
-      /unrelated persisted (?:manual )?blocker: (?:4:8|6:16|7:(?:17|18|20)|9:23|11:(?:28|29|30)|12:(?:31|32)|14:37|15:(?:38|40|41|42))/u
+      /unrelated persisted (?:manual )?blocker: (?:4:8|6:16|7:(?:17|18|19|20)|9:23|11:(?:28|29|30)|12:(?:31|32)|14:37|15:(?:38|39|40|41|42))/u
     );
     expect(calls.classification).toEqual(["16:44"]);
     expect(calls.unrelatedClassification.length + calls.extraction.length).toBeGreaterThan(0);
@@ -3000,7 +3567,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     calls.unrelatedClassification = [];
     calls.extraction = [];
     await expect(run()).rejects.toThrow(
-      /unrelated persisted (?:manual )?blocker: (?:4:8|6:16|7:(?:17|18|20)|9:23|11:(?:28|29|30)|12:(?:31|32)|14:37|15:(?:38|40|41|42))/u
+      /unrelated persisted (?:manual )?blocker: (?:4:8|6:16|7:(?:17|18|19|20)|9:23|11:(?:28|29|30)|12:(?:31|32)|14:37|15:(?:38|39|40|41|42))/u
     );
     expect(calls.classification).toEqual([]);
     expect(calls.unrelatedClassification.length + calls.extraction.length).toBeGreaterThan(0);

@@ -107,6 +107,8 @@ export const PROBLEM_MANUAL_ADJUDICATION_VERSION = 1;
 export const CLASSIFICATION_MANUAL_ADJUDICATION_VERSION = 1;
 export const PROBLEM_MANUAL_REVISION_VERSION = 1;
 export const CLASSIFICATION_MANUAL_REVISION_VERSION = 1;
+export const PROBLEM_MANUAL_SOURCE_REVISION_VERSION = 1;
+export const CLASSIFICATION_MANUAL_SOURCE_REVISION_VERSION = 1;
 export const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION = 1;
 export const PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_VERSION = 1;
 export const SOLUTION_FIDELITY_VERSION = 1;
@@ -1371,6 +1373,42 @@ export type ProblemManualRevisionEvidence = {
   effectiveQuestionHash: string;
   baseClassificationHash: string;
   effectiveClassificationHash: string;
+  sourceRevision?: ProblemManualSourceRevisionEvidence;
+};
+
+export type ProblemManualSourceRevisionEvidence = {
+  allowlistId: string;
+  parentRevisionAllowlistId: string;
+  key: string;
+  printedNumber: string;
+  sourcePage: number;
+  sourceHash: string;
+  parentRevisionEvidenceHash: string;
+  parentProblemArtifact: EvidencePointer;
+  parentProblemArtifactItemHash: string;
+  parentClassificationArtifact: EvidencePointer;
+  parentClassificationArtifactItemHash: string;
+  failedQuestionHash: string;
+  failedClassificationHash: string;
+  failedClassificationEvidenceHash: string;
+  correctionSpecHash: string;
+  problemArtifact: EvidencePointer & {
+    correctionVersion: number;
+    correctionDigest: string;
+  };
+  problemArtifactItemHash: string;
+  classificationArtifact: EvidencePointer & {
+    rulesDigest: string;
+    transcriptionGateVersion: number;
+    transcriptionPromptDigest: string;
+    sourceRevisionVersion: number;
+    sourceRevisionPromptDigest: string;
+  };
+  classificationArtifactItemHash: string;
+  baseQuestionHash: string;
+  effectiveQuestionHash: string;
+  baseClassificationHash: string;
+  effectiveClassificationHash: string;
 };
 
 export type ProblemScopeAdjudicationEvidence = {
@@ -2163,6 +2201,14 @@ export const PROBLEM_MANUAL_REVISION_PROMPT_DIGEST = sha256Text(
 export const PROBLEM_MANUAL_REVISION_CORRECTION_DIGEST = sha256Text(
   `${PROBLEM_MANUAL_REVISION_VERSION}\ncount-checked-literal-manual-child-revision`
 );
+export const PROBLEM_MANUAL_SOURCE_REVISION_PROMPT_DIGEST = sha256Text(
+  `${PROBLEM_MANUAL_SOURCE_REVISION_VERSION}\nsource-correcting-second-manual-revision\n` +
+  `${PROBLEM_MANUAL_ADJUDICATION_RULES}\n${TRANSCRIPTION_GATE_VERSION}\n` +
+  `${TRANSCRIPTION_GATE_RULES}\n${CURRICULUM_RULES}`
+);
+export const PROBLEM_MANUAL_SOURCE_REVISION_CORRECTION_DIGEST = sha256Text(
+  `${PROBLEM_MANUAL_SOURCE_REVISION_VERSION}\ncount-checked-source-correcting-second-manual-revision`
+);
 export const PROBLEM_SCOPE_BOX_REVISION_RULES = `
 The attached image-only evidence contains one exact official problem crop followed by its official solution context.
 The supplied item differs from its pinned parent only by an allowlisted vertical figure box expansion. Independently
@@ -2219,6 +2265,23 @@ type ProblemManualAdjudicationSpec = ProblemCropAdjudicationSpec & {
 type ProblemManualRevisionSpec = {
   allowlistId: string;
   parentAllowlistId: string;
+  entryId: string;
+  key: string;
+  sourcePage: number;
+  sourceHash: string;
+  failedQuestionHash: string;
+  failedClassificationHash: string;
+  failedClassificationEvidenceHash: string;
+  replacement: ProblemManualReplacement;
+  requiredTokens: string[];
+  expectedDecision: "accept" | "reject";
+  expectedCanonicalSubject?: CanonicalSubject;
+};
+
+type ProblemManualSourceRevisionSpec = {
+  allowlistId: string;
+  parentRevisionAllowlistId: string;
+  parentRevisionEvidenceHash: string;
   entryId: string;
   key: string;
   sourcePage: number;
@@ -3061,6 +3124,28 @@ const Q41_5525982_CORRECTED_QUESTION = Q37_42_5525982_PASSAGE +
   "고지하지 않았다는 사실을 뒤늦게 알고 해지권을 행사할 수 있는 기간 내에 보험금 반환을 청구했다.";
 const Q42_5525982_CORRECTED_QUESTION = Q37_42_5525982_PASSAGE +
   "\n\n42. ⓐ~ⓔ를 사용하여 만든 문장으로 적절하지 않은 것은?";
+
+const Q39_5525982_FAILED_PASSAGE = [
+  "[가]",
+  "위험 공동체의 구성원이 납부하는 보험료와 지급받는 보험금은 그 위험 공동체의 사고 발생 확률을 " +
+    "근거로 산정된다. 특정 사고가 발생할 확률은 정확히 알 수 없지만 그동안 발생된 사고를 바탕으로 " +
+    "그 확률을 예측한다면 관찰 대상이 많아짐에 따라 실제 사고 발생 확률에 근접하게 된다. 본래 보험 " +
+    "가입의 목적은 금전적 이득을 취하는 데 있는 것이 아니라 장래의 경제적 손실을 보상받는 데 있으므로 " +
+    "위험 공동체의 구성원은 자신이 속한 위험 공동체의 위험에 상응하는 보험료를 납부하는 것이 공정할 " +
+    "것이다. 따라서 공정한 보험에서는 구성원 각자가 납부하는 보험료와 그가 지급받을 보험금에 대한 " +
+    "기댓값이 일치해야 하며 구성원 전체의 보험료 총액과 보험금 총액이 일치해야 한다. 이때 보험금에 대한 " +
+    "기댓값은 사고가 발생할 확률에 사고 발생 시 수령할 보험금을 곱한 값이다. 보험금에 대한 보험료의 " +
+    "비율(보험료/보험금)을 보험료율이라 하는데, 보험료율이 사고 발생 확률보다 높으면 구성원 전체의 " +
+    "보험료 총액이 보험금 총액보다 더 많고, 그 반대의 경우에는 구성원 전체의 보험료 총액이 보험금 " +
+    "총액보다 더 적게 된다. 따라서 공정한 보험에서는 보험료율과 사고 발생 확률이 같아야 한다.",
+].join("\n");
+
+const Q39_5525982_CORRECTED_QUESTION = Q37_42_5525982_PASSAGE +
+  "\n\n39. [가]를 바탕으로 <보기>의 상황을 이해한 내용으로 적절한 것은? [3점]\n\n" +
+  "<보기>\n사고 발생 확률이 각각 0.1과 0.2로 고정되어 있는 위험 공동체 A와 B가 있다고 가정한다. " +
+  "A와 B에 모두 공정한 보험이 항상 적용된다고 할 때, 각 구성원이 납부할 보험료와 사고 발생 시 " +
+  "지급받을 보험금을 산정하려고 한다.\n단, 동일한 위험 공동체의 구성원끼리는 납부하는 보험료가 같고, " +
+  "지급받는 보험금이 같다. 보험료는 한꺼번에 모두 납부한다.";
 
 
 const Q43_5525982_FAILED_QUESTION = [
@@ -4525,6 +4610,126 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_reading",
   },
+  {
+    allowlistId: "ebsi-5525982-q18-manual-v1",
+    entryId: "ebsi:5525982",
+    key: "7:18",
+    sourcePage: 7,
+    sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "c6e1102de25e6a751905958d31ea19375646a90d5d7e3b717d7d55bddaffbb70",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "745287373aa1ae4b0b3b722379531007f6dcac703bebddbb3305b32bdfc0163c",
+    failedClassificationHash: "d307449126a4f31e9020095e52961dbc9317a0539097c6b89bbf361b5beb4e1d",
+    failedClassificationEvidenceHash: "54e6937817f015c518d5431a67c08958ba5367c41bf31ada0aa4af617961f512",
+    views: [
+      { sourcePage: 6, label: "p6 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 6, label: "p6 left shared passage start", rect: [0.07, 0.42, 0.50, 0.96] },
+      { sourcePage: 6, label: "p6 right shared passage continuation", rect: [0.50, 0.12, 0.95, 0.86] },
+      { sourcePage: 7, label: "p7 Q18 stem and choices", rect: [0.07, 0.39, 0.50, 0.60] },
+    ],
+    requiredTokens: [
+      "[16 ~ 20] 다음 글을 읽고 물음에 답하시오.", "논리학 지식처럼", "기존의 지식과 M에",
+      "경험을 통한 시험의 대상", "㉢ 도달한다", "선택하겠지만 실용적 필요",
+      "윗글을 바탕으로 총체주의의 입장에서 ⓐ~ⓒ에 대해 평가한 것으로 적절하지 않은 것은? [3점]",
+    ],
+    replacements: [{
+      field: "question", from: "[16~20] 다음 글을 읽고 물음에 답하시오.",
+      to: "[16 ~ 20] 다음 글을 읽고 물음에 답하시오.", count: 1,
+    }, {
+      field: "question", from: "㉠논리실증주의자", to: "㉠ 논리실증주의자", count: 1,
+    }, {
+      field: "question", from: "논리학적 지식", to: "논리학 지식", count: 2,
+    }, {
+      field: "question", from: "㉡콰인은", to: "㉡ 콰인은", count: 1,
+    }, {
+      field: "question", from: "ⓐ새로 발견된", to: "ⓐ 새로 발견된", count: 1,
+    }, {
+      field: "question", from: "ⓑ열을 받은", to: "ⓑ 열을 받은", count: 1,
+    }, {
+      field: "question", from: "기존의 지식, M에", to: "기존의 지식과 M에", count: 1,
+    }, {
+      field: "question", from: "ⓒ기존의 지식들과", to: "ⓒ 기존의 지식들과", count: 1,
+    }, {
+      field: "question", from: "경험을 통해 시험의 대상", to: "경험을 통한 시험의 대상", count: 1,
+    }, {
+      field: "question", from: "ⓓ도달한다", to: "㉢ 도달한다", count: 1,
+    }, {
+      field: "question", from: "선택하지만 실용적 필요", to: "선택하겠지만 실용적 필요", count: 1,
+    }],
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5525982-q19-manual-v1",
+    entryId: "ebsi:5525982",
+    key: "7:19",
+    sourcePage: 7,
+    sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "dab952b2960c489006f15751116dcc7b1e8d6e9326a4278a0fd81991f8b5a50c",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "f6442fc7394763ffb573b62c1294bb25aba603bbadcd4bc332447aa2c426f46e",
+    failedClassificationHash: "2cc3fa82a1bb87210095e3aca152cd8194301e48206791191810269c10c14a7a",
+    failedClassificationEvidenceHash: "6f7149f1f13684da56ebf58b9bf0e12c446d7a9a5a1b3393c2587abe50c2c560",
+    views: [
+      { sourcePage: 6, label: "p6 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 6, label: "p6 left shared passage start", rect: [0.07, 0.42, 0.50, 0.96] },
+      { sourcePage: 6, label: "p6 right shared passage continuation", rect: [0.50, 0.12, 0.95, 0.86] },
+      { sourcePage: 7, label: "p7 Q19 stem and choices", rect: [0.07, 0.60, 0.50, 0.84] },
+    ],
+    requiredTokens: [
+      "[16 ~ 20] 다음 글을 읽고 물음에 답하시오.", "논리학 지식처럼", "기존의 지식과 M에",
+      "경험을 통한 시험의 대상", "㉢ 도달한다", "선택하겠지만 실용적 필요",
+      "윗글의 총체주의에 대한 비판으로 가장 적절한 것은?",
+    ],
+    replacements: [{
+      field: "question", from: "다음 글을 읽고 물음에 답하시오.",
+      to: "[16 ~ 20] 다음 글을 읽고 물음에 답하시오.", count: 1,
+    }, {
+      field: "question", from: "선택하지만 실용적 필요", to: "선택하겠지만 실용적 필요", count: 1,
+    }],
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5525982-q39-manual-v1",
+    entryId: "ebsi:5525982",
+    key: "15:39",
+    sourcePage: 15,
+    sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "c4f86ad116cf248fafcb360795081c949cd2442ed9c5375c56d5748385fdf25f",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "b0f2287b7c860d7e5141198fb5f343a4f2498cc001e5bd16956f5ccc0f6987da",
+    failedClassificationHash: "c4fbd7afb910d1cf0081ef5502ba4f9aaded73d3b59a38f07a61b4c544fbbc3e",
+    failedClassificationEvidenceHash: "9695b4d67b6b143e91ef53fad010184eedccba57ae42a99572c8ae96b3f7c211",
+    views: [
+      { sourcePage: 14, label: "p14 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 14, label: "p14 left shared passage", rect: [0.07, 0.10, 0.50, 0.96] },
+      { sourcePage: 14, label: "p14 right shared passage", rect: [0.50, 0.10, 0.95, 0.96] },
+      { sourcePage: 15, label: "p15 Q39", rect: [0.07, 0.40, 0.50, 0.75] },
+    ],
+    requiredTokens: [
+      "[37~42] 다음 글을 읽고 물음에 답하시오.", "[가]", "해지를 하면 보험사는",
+      "39. [가]를 바탕으로 <보기>의 상황을 이해한 내용으로 적절한 것은? [3점]",
+      "사고 발생 확률이 각각 0.1과 0.2로 고정되어 있는 위험 공동체 A와 B",
+    ],
+    replacements: [{
+      field: "question", from: Q39_5525982_FAILED_PASSAGE,
+      to: Q37_42_5525982_PASSAGE, count: 1,
+    }, {
+      field: "question",
+      from: "[가]를 바탕으로 <보기>의 상황을 이해한 내용으로 적절한 것은? [3점]",
+      to: "39. [가]를 바탕으로 <보기>의 상황을 이해한 내용으로 적절한 것은? [3점]",
+      count: 1,
+    }],
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
 ] as const;
 
 export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
@@ -4597,6 +4802,51 @@ export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSp
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
+}] as const;
+
+export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
+  allowlistId: "ebsi-5525982-q32-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5525982-q32-manual-revision-v1",
+  parentRevisionEvidenceHash: "944ad7e2ab07ffff727e3ac8923cfbee5b9e0499610a82eca37ccd7309c0abbd",
+  entryId: "ebsi:5525982",
+  key: "12:32",
+  sourcePage: 12,
+  sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+  failedQuestionHash: "e3649d8930138bdc731c8642e24507e5d98f12da8d83503877ef92c3f31981bb",
+  failedClassificationHash: "e052bfaae96839742bad356f8235d214202d18baeb4bf3cc24d7e485b8042e2b",
+  failedClassificationEvidenceHash: "d403219ab15a4d2584fb01f1abbed234cc824de7a7ef2df1e75f433c7442b205",
+  replacement: {
+    field: "question",
+    from: "함이정 : (서연 곁으로 가서 개울물을 바라본다). 물 위에 비쳐 보여요, 우리 얼굴이…… " +
+      "얼굴 뒤엔 구름이…… 구름 뒤엔 하늘이……. (물을 떠서 마신다). 물이 맑고 시원해요.",
+    to: "함이정 : (서연 곁으로 가서 개울물을 바라본다.) 물 위에 비쳐 보여요, 우리 얼굴이…… " +
+      "얼굴 뒤엔 구름이…… 구름 뒤엔 하늘이……. (물을 떠서 마신다.) 물이 맑고 시원해요.",
+    count: 1,
+  },
+  requiredTokens: [
+    "(서연 곁으로 가서 개울물을 바라본다.)", "(물을 떠서 마신다.)",
+    "32. (나)의 등장인물에 대한 이해로 적절하지 않은 것은?", "이야기 속의 인물들을", "조숭인",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}] as const;
+
+const DEFERRED_TERMINAL_FIDELITY_5525982 = [{
+  key: "4:8",
+  manualAllowlistId: "ebsi-5525982-q8-manual-v1",
+  manualEvidenceHash: "83fcb39d89e7244aac7e36fd625c79703c00f0ca7eb32877dbabcdcf5cc4b63c",
+  questionHash: "e5e1b8c0afdb43aa2bf537c2ecfb0b60b770979c8522c692db09002c3cf4680d",
+  classificationHash: "145281c6b51bf4f975e0ea974c2f45c5df0c62511eae267617afa4e1bf569e9a",
+  terminalInputHash: "47cabcda93bdd7a544cd6a841b516c3c041b00839bad060df5d0acbdc4447441",
+  scopeDecision: "reject",
+}, {
+  key: "9:23",
+  manualAllowlistId: "ebsi-5525982-q23-manual-v1",
+  manualEvidenceHash: "7af496c0fe8f53552a2546bd8e2076da560a3611eb41f92dcad18849edd3f88e",
+  questionHash: "e4886fd0c2386eba4d4f84d0ef6f1954fc92b8d3a5ddfe99788d533f69f8cb56",
+  classificationHash: "905b03f9b47fcdbacb16c1d52fe71f73b8554a03e7a831d975f3edf086cce5a4",
+  terminalInputHash: "bff869b0f5daa950ae3a4a75ec3968f2dd96bf19c6cb2da473b50724e9841a02",
+  scopeDecision: "accept",
 }] as const;
 
 export const PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST: readonly ProblemScopeBoxRevisionSpec[] = [{
@@ -12345,6 +12595,30 @@ function problemManualRevisionSpec(
   return match;
 }
 
+function problemManualSourceRevisionSpec(
+  entryId: string,
+  key: string,
+  sourcePage: number,
+  sourceHash: string,
+  parentRevision: ProblemManualRevisionEvidence,
+  failed: ClassifiedQuestion
+): ProblemManualSourceRevisionSpec | null {
+  const matches = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.filter((spec) =>
+    spec.entryId === entryId && spec.key === key && spec.sourcePage === sourcePage
+  );
+  if (matches.length > 1) throw new Error(`${entryId} ${key} manual source revision allowlist가 중복입니다`);
+  const match = matches[0];
+  if (!match) return null;
+  if (
+    match.sourceHash !== sourceHash || match.parentRevisionAllowlistId !== parentRevision.allowlistId ||
+    canonicalEvidenceHash(parentRevision) !== match.parentRevisionEvidenceHash ||
+    canonicalEvidenceHash(failed.question) !== match.failedQuestionHash ||
+    canonicalEvidenceHash(failed.classification) !== match.failedClassificationHash ||
+    sha256Text(failed.classification.transcription_evidence) !== match.failedClassificationEvidenceHash
+  ) throw new Error(`${entryId} ${key} manual source revision parent/allowlist가 다릅니다`);
+  return match;
+}
+
 function exactOccurrenceCount(source: string, target: string): number {
   if (!target) throw new Error("manual adjudication replacement target이 비어 있습니다");
   let count = 0;
@@ -12382,6 +12656,18 @@ function problemManualRevisionCorrectionSpecHash(spec: ProblemManualRevisionSpec
   return canonicalEvidenceHash({
     allowlistId: spec.allowlistId,
     parentAllowlistId: spec.parentAllowlistId,
+    replacement: spec.replacement,
+    requiredTokens: spec.requiredTokens,
+    expectedDecision: spec.expectedDecision,
+    expectedCanonicalSubject: spec.expectedCanonicalSubject,
+  });
+}
+
+function problemManualSourceRevisionCorrectionSpecHash(spec: ProblemManualSourceRevisionSpec): string {
+  return canonicalEvidenceHash({
+    allowlistId: spec.allowlistId,
+    parentRevisionAllowlistId: spec.parentRevisionAllowlistId,
+    parentRevisionEvidenceHash: spec.parentRevisionEvidenceHash,
     replacement: spec.replacement,
     requiredTokens: spec.requiredTokens,
     expectedDecision: spec.expectedDecision,
@@ -12447,6 +12733,54 @@ export function applyAllowlistedProblemManualRevision(
   }
   if (questionKey(corrected) !== key || corrected.page !== spec.sourcePage) {
     throw new Error(`${key} manual revision이 원본 key/page를 바꿨습니다`);
+  }
+  assertProblemCropAdjudicationTokens(corrected, spec.requiredTokens);
+  return corrected;
+}
+
+export function applyAllowlistedProblemManualSourceRevision(
+  entryId: string,
+  sourceHash: string,
+  parentRevisionAllowlistId: string,
+  item: QuizItemEx
+): QuizItemEx {
+  const key = questionKey(item);
+  const matches = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.filter((spec) =>
+    spec.entryId === entryId && spec.key === key && spec.sourcePage === item.page &&
+    spec.sourceHash === sourceHash && spec.parentRevisionAllowlistId === parentRevisionAllowlistId
+  );
+  if (matches.length !== 1) {
+    throw new Error(`${entryId} ${key} manual source revision allowlist authority가 없습니다`);
+  }
+  const spec = matches[0];
+  if (canonicalEvidenceHash(item) !== spec.failedQuestionHash) {
+    throw new Error(`${entryId} ${key} manual source revision failed question hash가 다릅니다`);
+  }
+  const corrected = structuredClone(item);
+  const replacement = spec.replacement;
+  if (replacement.field === "choices") {
+    const choices = corrected.choices ?? [];
+    if (choices.reduce((count, choice) => count + exactOccurrenceCount(choice, replacement.from), 0) !==
+        replacement.count) {
+      throw new Error(`${key} manual source revision replacement occurrence가 다릅니다`);
+    }
+    corrected.choices = choices.map((choice) => choice.split(replacement.from).join(replacement.to));
+  } else {
+    const current = replacement.field === "question"
+      ? corrected.question
+      : replacement.field === "answer"
+        ? corrected.answer
+        : corrected.figure_description ?? "";
+    if (exactOccurrenceCount(current, replacement.from) !== replacement.count) {
+      throw new Error(`${key} manual source revision replacement occurrence가 다릅니다`);
+    }
+    const next = current.split(replacement.from).join(replacement.to);
+    if (replacement.field === "question") corrected.question = next;
+    else if (replacement.field === "answer") corrected.answer = next;
+    else corrected.figure_description = next;
+  }
+  if (questionKey(corrected) !== key || corrected.page !== spec.sourcePage) {
+    throw new Error(`${key} manual source revision이 원본 key/page를 바꿨습니다`);
   }
   assertProblemCropAdjudicationTokens(corrected, spec.requiredTokens);
   return corrected;
@@ -12975,6 +13309,221 @@ async function reviseProblemManualAdjudication(
   };
 }
 
+async function reviseProblemManualSourceRevision(
+  entry: CorpusManifestEntry,
+  stateDir: string,
+  failed: ClassifiedQuestion,
+  prepared: PreparedProblemCropEvidence,
+  parentRevision: ProblemManualRevisionEvidence,
+  spec: ProblemManualSourceRevisionSpec,
+  existingOnly: boolean
+): Promise<{ classified: ClassifiedQuestion; evidence: ProblemManualSourceRevisionEvidence } | null> {
+  const key = questionKey(failed.question);
+  const parentRevisionEvidenceHash = canonicalEvidenceHash(parentRevision);
+  const correctionSpecHash = problemManualSourceRevisionCorrectionSpecHash(spec);
+  const commonBasis = {
+    allowlistId: spec.allowlistId,
+    parentRevisionAllowlistId: spec.parentRevisionAllowlistId,
+    entryId: entry.id,
+    key,
+    printedNumber: parentRevision.printedNumber,
+    sourcePage: spec.sourcePage,
+    sourceHash: spec.sourceHash,
+    parentRevision,
+    parentRevisionEvidenceHash,
+    parentProblemArtifact: {
+      path: parentRevision.problemArtifact.path,
+      sha256: parentRevision.problemArtifact.sha256,
+    },
+    parentProblemArtifactItemHash: parentRevision.problemArtifactItemHash,
+    parentClassificationArtifact: {
+      path: parentRevision.classificationArtifact.path,
+      sha256: parentRevision.classificationArtifact.sha256,
+    },
+    parentClassificationArtifactItemHash: parentRevision.classificationArtifactItemHash,
+    failedQuestionHash: spec.failedQuestionHash,
+    failedClassificationHash: spec.failedClassificationHash,
+    failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
+    correctionSpecHash,
+    cropEvidenceArtifact: prepared.artifact,
+    cropEvidencePdf: { path: prepared.pdf.path, sha256: prepared.pdf.sha256 },
+    cropViews: prepared.views,
+  };
+  const basisDigest = canonicalEvidenceHash(commonBasis);
+  const stem = `v${PROBLEM_MANUAL_SOURCE_REVISION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+    `${parentRevision.printedNumber.padStart(4, "0")}-${basisDigest}`;
+  const problemRelativePath = `problem-manual-second-revisions/${stem}.json`;
+  const problemPath = join(stateDir, problemRelativePath);
+  const corrected = applyAllowlistedProblemManualSourceRevision(
+    entry.id,
+    spec.sourceHash,
+    parentRevision.allowlistId,
+    failed.question
+  );
+  const expectedProblemCheckpoint = {
+    version: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+    entryId: entry.id,
+    basisDigest,
+    basis: commonBasis,
+    correctionVersion: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+    correctionDigest: PROBLEM_MANUAL_SOURCE_REVISION_CORRECTION_DIGEST,
+    item: corrected,
+  };
+  const expectedProblemSha = canonicalEvidenceHash(expectedProblemCheckpoint);
+  const problemItemHash = canonicalEvidenceHash(corrected);
+  const classificationBasis = {
+    ...commonBasis,
+    problemArtifact: { path: problemRelativePath, sha256: expectedProblemSha },
+    problemArtifactItemHash: problemItemHash,
+    effectiveQuestionHash: problemItemHash,
+  };
+  const classificationBasisDigest = canonicalEvidenceHash(classificationBasis);
+  const classificationRelativePath = `classification-manual-second-revisions/` +
+    `v${CLASSIFICATION_MANUAL_SOURCE_REVISION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+    `${parentRevision.printedNumber.padStart(4, "0")}-${classificationBasisDigest}-${CLASSIFIER_DIGEST}.json`;
+  const classificationPath = join(stateDir, classificationRelativePath);
+  const prefix = `v${PROBLEM_MANUAL_SOURCE_REVISION_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+    `${parentRevision.printedNumber.padStart(4, "0")}-`;
+  const problemNames = strictArtifactNames(
+    join(stateDir, "problem-manual-second-revisions"),
+    "problem manual second revision",
+    (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
+  ).filter((name) => name.startsWith(prefix));
+  const classificationNames = strictArtifactNames(
+    join(stateDir, "classification-manual-second-revisions"),
+    "classification manual second revision",
+    (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
+  ).filter((name) => name.startsWith(prefix));
+  const expectedProblemName = problemRelativePath.slice(problemRelativePath.lastIndexOf("/") + 1);
+  const expectedClassificationName = classificationRelativePath.slice(classificationRelativePath.lastIndexOf("/") + 1);
+  if (
+    problemNames.length > 1 || classificationNames.length > 1 ||
+    (classificationNames.length > 0 && problemNames.length === 0) ||
+    problemNames.some((name) => name !== expectedProblemName) ||
+    classificationNames.some((name) => name !== expectedClassificationName)
+  ) throw new Error(`${key} manual source revision preflight orphan/conflict`);
+
+  if (problemNames.length === 1) {
+    const checkpoint = object(JSON.parse(readFileSync(
+      confinedStateFile(stateDir, problemRelativePath, "problem manual second revision"),
+      "utf8"
+    )), problemRelativePath);
+    if (canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(expectedProblemCheckpoint)) {
+      throw new Error(`기존 problem manual second revision이 exact envelope와 다릅니다: ${problemRelativePath}`);
+    }
+  } else {
+    if (existingOnly) return null;
+    await writeImmutableEvidence(problemPath, expectedProblemCheckpoint);
+  }
+  const problemSha = await sha256File(problemPath);
+  if (problemSha !== expectedProblemSha) throw new Error(`${key} problem manual second revision hash가 다릅니다`);
+
+  const mappingNote = `${PROBLEM_MANUAL_ADJUDICATION_RULES} Source-correcting second manual revision. ` +
+    `Evidence mapping: ${parentRevision.key}; ` + parentRevision.allowlistId + `. Required source anchors: ` +
+    `${spec.requiredTokens.join(" | ")}.`;
+  let classification: ClassificationDecision;
+  let classificationCheckpoint: Record<string, unknown>;
+  if (classificationNames.length === 1) {
+    classificationCheckpoint = object(JSON.parse(readFileSync(confinedStateFile(
+      stateDir,
+      classificationRelativePath,
+      "classification manual second revision"
+    ), "utf8")), classificationRelativePath);
+    classification = parseDecisions(classificationCheckpoint.items, [corrected], entry)[0];
+  } else {
+    if (existingOnly) return null;
+    classification = (await classifyQuestions(
+      entry,
+      prepared.pdf.absolutePath,
+      Math.min(...prepared.views.map((view) => view.sourcePage)),
+      Math.max(...prepared.views.map((view) => view.sourcePage)),
+      [corrected],
+      { targeted: true, sourceEvidenceNote: mappingNote }
+    ))[0];
+    classificationCheckpoint = {
+      version: CLASSIFICATION_MANUAL_SOURCE_REVISION_VERSION,
+      entryId: entry.id,
+      basisDigest: classificationBasisDigest,
+      basis: classificationBasis,
+      classifierVersion: CLASSIFIER_VERSION,
+      rulesDigest: CLASSIFIER_DIGEST,
+      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      sourceRevisionVersion: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+      sourceRevisionPromptDigest: PROBLEM_MANUAL_SOURCE_REVISION_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      items: [classification],
+    };
+    await writeImmutableEvidence(classificationPath, classificationCheckpoint);
+  }
+  const expectedClassificationCheckpoint = {
+    version: CLASSIFICATION_MANUAL_SOURCE_REVISION_VERSION,
+    entryId: entry.id,
+    basisDigest: classificationBasisDigest,
+    basis: classificationBasis,
+    classifierVersion: CLASSIFIER_VERSION,
+    rulesDigest: CLASSIFIER_DIGEST,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    sourceRevisionVersion: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+    sourceRevisionPromptDigest: PROBLEM_MANUAL_SOURCE_REVISION_PROMPT_DIGEST,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    items: [classification],
+  };
+  if (
+    canonicalEvidenceHash(classificationCheckpoint) !== canonicalEvidenceHash(expectedClassificationCheckpoint) ||
+    classification.transcription_status !== "exact" ||
+    !matchesProblemManualExpectedDecision(spec, classification)
+  ) throw new Error(`${key} manual source revision classification이 exact/allowlisted decision이 아닙니다`);
+  const classificationSha = await sha256File(classificationPath);
+  if (classificationSha !== canonicalEvidenceHash(expectedClassificationCheckpoint)) {
+    throw new Error(`${key} classification manual second revision hash가 다릅니다`);
+  }
+  return {
+    classified: { question: corrected, classification },
+    evidence: {
+      allowlistId: spec.allowlistId,
+      parentRevisionAllowlistId: spec.parentRevisionAllowlistId,
+      key,
+      printedNumber: parentRevision.printedNumber,
+      sourcePage: spec.sourcePage,
+      sourceHash: spec.sourceHash,
+      parentRevisionEvidenceHash,
+      parentProblemArtifact: commonBasis.parentProblemArtifact,
+      parentProblemArtifactItemHash: parentRevision.problemArtifactItemHash,
+      parentClassificationArtifact: commonBasis.parentClassificationArtifact,
+      parentClassificationArtifactItemHash: parentRevision.classificationArtifactItemHash,
+      failedQuestionHash: spec.failedQuestionHash,
+      failedClassificationHash: spec.failedClassificationHash,
+      failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
+      correctionSpecHash,
+      problemArtifact: {
+        path: problemRelativePath,
+        sha256: problemSha,
+        correctionVersion: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+        correctionDigest: PROBLEM_MANUAL_SOURCE_REVISION_CORRECTION_DIGEST,
+      },
+      problemArtifactItemHash: problemItemHash,
+      classificationArtifact: {
+        path: classificationRelativePath,
+        sha256: classificationSha,
+        rulesDigest: CLASSIFIER_DIGEST,
+        transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+        transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+        sourceRevisionVersion: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+        sourceRevisionPromptDigest: PROBLEM_MANUAL_SOURCE_REVISION_PROMPT_DIGEST,
+      },
+      classificationArtifactItemHash: canonicalEvidenceHash(classification),
+      baseQuestionHash: spec.failedQuestionHash,
+      effectiveQuestionHash: problemItemHash,
+      baseClassificationHash: spec.failedClassificationHash,
+      effectiveClassificationHash: canonicalEvidenceHash(classification),
+    },
+  };
+}
+
 function isQ43To45ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5525982" && ["16:43", "16:44", "16:45"].includes(spec.key);
 }
@@ -12985,6 +13534,10 @@ function isQ8Q16ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
 
 function isQ17Q20ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5525982" && ["7:17", "7:20"].includes(spec.key);
+}
+
+function isQ18Q19ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5525982" && ["7:18", "7:19"].includes(spec.key);
 }
 
 function isQ23Q28Q29ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
@@ -13005,6 +13558,10 @@ function isQ37ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
 
 function isQ38Q40Q41Q42ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5525982" && ["15:38", "15:40", "15:41", "15:42"].includes(spec.key);
+}
+
+function isQ39ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5525982" && spec.key === "15:39";
 }
 
 async function restoredPinnedManualRecovery(
@@ -13171,29 +13728,54 @@ async function preflightProblemManualBatch(
   stateDir: string,
   requestedSpec: ProblemManualAdjudicationSpec
 ): Promise<void> {
+  const trueRepairKeys = new Set(["7:18", "7:19", "12:32", "15:39"]);
+  if (requestedSpec.entryId === "ebsi:5525982" && trueRepairKeys.has(requestedSpec.key)) {
+    const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
+      spec.entryId === requestedSpec.entryId &&
+      (trueRepairKeys.has(spec.key) || spec.key === "12:31")
+    );
+    if (
+      specs.length !== 5 || problem.sha256 !== requestedSpec.sourceHash ||
+      await sha256File(problem.path) !== problem.sha256
+    ) throw new Error(`${requestedSpec.key} true repair manual preflight source/allowlist가 다릅니다`);
+    const restored = [] as Array<{
+      failed: ClassifiedQuestion;
+      parent: ProblemRecoveryEvidence;
+    }>;
+    for (const spec of specs) restored.push(await restoredPinnedManualRecovery(entry, stateDir, spec));
+    for (const row of restored) {
+      await adjudicateProblemManualOne(entry, problem, stateDir, row.failed, row.parent, true);
+    }
+    return;
+  }
   const predicate = isQ43To45ManualBatchSpec(requestedSpec)
     ? isQ43To45ManualBatchSpec
     : isQ8Q16ManualBatchSpec(requestedSpec)
       ? isQ8Q16ManualBatchSpec
       : isQ17Q20ManualBatchSpec(requestedSpec)
         ? isQ17Q20ManualBatchSpec
-        : isQ23Q28Q29ManualBatchSpec(requestedSpec)
-          ? isQ23Q28Q29ManualBatchSpec
-          : isQ30ManualBatchSpec(requestedSpec)
-            ? isQ30ManualBatchSpec
-            : isQ31Q32ManualBatchSpec(requestedSpec)
-              ? isQ31Q32ManualBatchSpec
-              : isQ37ManualBatchSpec(requestedSpec)
-                ? isQ37ManualBatchSpec
-                : isQ38Q40Q41Q42ManualBatchSpec(requestedSpec)
-                  ? isQ38Q40Q41Q42ManualBatchSpec
-                  : null;
+        : isQ18Q19ManualBatchSpec(requestedSpec)
+          ? isQ18Q19ManualBatchSpec
+          : isQ23Q28Q29ManualBatchSpec(requestedSpec)
+            ? isQ23Q28Q29ManualBatchSpec
+            : isQ30ManualBatchSpec(requestedSpec)
+              ? isQ30ManualBatchSpec
+              : isQ31Q32ManualBatchSpec(requestedSpec)
+                ? isQ31Q32ManualBatchSpec
+                : isQ37ManualBatchSpec(requestedSpec)
+                  ? isQ37ManualBatchSpec
+                  : isQ38Q40Q41Q42ManualBatchSpec(requestedSpec)
+                    ? isQ38Q40Q41Q42ManualBatchSpec
+                    : isQ39ManualBatchSpec(requestedSpec)
+                      ? isQ39ManualBatchSpec
+                      : null;
   if (!predicate) return;
   const expectedCount = predicate === isQ43To45ManualBatchSpec || predicate === isQ23Q28Q29ManualBatchSpec
     ? 3
     : predicate === isQ38Q40Q41Q42ManualBatchSpec
       ? 4
-      : predicate === isQ30ManualBatchSpec || predicate === isQ37ManualBatchSpec
+      : predicate === isQ30ManualBatchSpec || predicate === isQ37ManualBatchSpec ||
+          predicate === isQ39ManualBatchSpec
         ? 1
         : 2;
   const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(predicate);
@@ -13304,10 +13886,27 @@ async function adjudicateProblemManualOne(
       "classification manual revision",
       (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
     ).filter((name) => name.startsWith(prefix));
+    const sourceRevisionProblemNames = strictArtifactNames(
+      join(stateDir, "problem-manual-second-revisions"),
+      "problem manual second revision",
+      (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
+    ).filter((name) => name.startsWith(prefix));
+    const sourceRevisionClassificationNames = strictArtifactNames(
+      join(stateDir, "classification-manual-second-revisions"),
+      "classification manual second revision",
+      (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
+    ).filter((name) => name.startsWith(prefix));
     const hasRevision = revisionProblemNames.length > 0 || revisionClassificationNames.length > 0;
+    const hasSourceRevision = sourceRevisionProblemNames.length > 0 || sourceRevisionClassificationNames.length > 0;
     const revisionSpecs = PROBLEM_MANUAL_REVISION_ALLOWLIST.filter((candidate) =>
       candidate.entryId === entry.id && candidate.key === key && candidate.sourcePage === sourcePage &&
       candidate.sourceHash === problem.sha256 && candidate.parentAllowlistId === spec.allowlistId
+    );
+    const sourceRevisionSpecs = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.filter((candidate) =>
+      candidate.entryId === entry.id && candidate.key === key && candidate.sourcePage === sourcePage &&
+      candidate.sourceHash === problem.sha256 && revisionSpecs.some((revisionSpec) =>
+        revisionSpec.allowlistId === candidate.parentRevisionAllowlistId
+      )
     );
     const evidenceBasis = {
       allowlistId: spec.allowlistId,
@@ -13331,12 +13930,17 @@ async function adjudicateProblemManualOne(
     if (
       evidenceExtras.length > 0 || pinnedProblemNames.length > 1 || pinnedClassificationNames.length > 1 ||
       revisionProblemNames.length > 1 || revisionClassificationNames.length > 1 ||
+      sourceRevisionProblemNames.length > 1 || sourceRevisionClassificationNames.length > 1 ||
       (revisionClassificationNames.length > 0 && revisionProblemNames.length === 0) ||
+      (sourceRevisionClassificationNames.length > 0 && sourceRevisionProblemNames.length === 0) ||
       (hasRevision && (
         revisionSpecs.length !== 1 || !hasEvidenceCheckpoint ||
         pinnedProblemNames.length !== 1 || pinnedClassificationNames.length !== 1
+      )) || (hasSourceRevision && (
+        sourceRevisionSpecs.length !== 1 || revisionProblemNames.length !== 1 ||
+        revisionClassificationNames.length !== 1
       )) || (!hasEvidenceCheckpoint && (
-        pinnedProblemNames.length > 0 || pinnedClassificationNames.length > 0
+        pinnedProblemNames.length > 0 || pinnedClassificationNames.length > 0 || hasSourceRevision
       )) || (pinnedProblemNames.length === 0 && pinnedClassificationNames.length > 0)
     ) throw new Error(`${key} manual adjudication preflight orphan/conflict`);
   }
@@ -13603,7 +14207,34 @@ async function adjudicateProblemManualOne(
       existingOnly
     );
     if (!revised) return null;
-    return { classified: revised.classified, evidence: { ...evidence, revision: revised.evidence } };
+    const sourceRevisionSpec = problemManualSourceRevisionSpec(
+      entry.id,
+      key,
+      sourcePage,
+      problem.sha256,
+      revised.evidence,
+      revised.classified
+    );
+    if (!sourceRevisionSpec) {
+      return { classified: revised.classified, evidence: { ...evidence, revision: revised.evidence } };
+    }
+    const sourceRevised = await reviseProblemManualSourceRevision(
+      entry,
+      stateDir,
+      revised.classified,
+      prepared,
+      revised.evidence,
+      sourceRevisionSpec,
+      existingOnly
+    );
+    if (!sourceRevised) return null;
+    return {
+      classified: sourceRevised.classified,
+      evidence: {
+        ...evidence,
+        revision: { ...revised.evidence, sourceRevision: sourceRevised.evidence },
+      },
+    };
   }
   return { classified: { question: corrected, classification }, evidence };
 }
@@ -14618,8 +15249,9 @@ export async function assertProblemManualAdjudicationAuthority(
     ) throw new Error(`${repair.key} classification manual adjudication checkpoint가 다릅니다`);
 
     if (manualRevision) {
+      const { sourceRevision, ...manualRevisionBase } = manualRevision;
       const revisionMatches = PROBLEM_MANUAL_REVISION_ALLOWLIST.filter((candidate) =>
-        candidate.allowlistId === manualRevision.allowlistId &&
+        candidate.allowlistId === manualRevisionBase.allowlistId &&
         candidate.parentAllowlistId === manual.allowlistId && candidate.entryId === spec.entryId &&
         candidate.key === manual.key && candidate.sourcePage === manual.sourcePage &&
         candidate.sourceHash === manual.sourceHash
@@ -14629,36 +15261,36 @@ export async function assertProblemManualAdjudicationAuthority(
       }
       const revisionSpec = revisionMatches[0];
       if (
-        manualRevision.key !== manual.key || manualRevision.printedNumber !== manual.printedNumber ||
-        manualRevision.sourcePage !== manual.sourcePage || manualRevision.sourceHash !== manual.sourceHash ||
-        manualRevision.parentManualEvidenceHash !== canonicalEvidenceHash(manual) ||
-        canonicalEvidenceHash(manualRevision.parentProblemArtifact) !== canonicalEvidenceHash({
+        manualRevisionBase.key !== manual.key || manualRevisionBase.printedNumber !== manual.printedNumber ||
+        manualRevisionBase.sourcePage !== manual.sourcePage || manualRevisionBase.sourceHash !== manual.sourceHash ||
+        manualRevisionBase.parentManualEvidenceHash !== canonicalEvidenceHash(manual) ||
+        canonicalEvidenceHash(manualRevisionBase.parentProblemArtifact) !== canonicalEvidenceHash({
           path: manual.problemArtifact.path,
           sha256: manual.problemArtifact.sha256,
         }) ||
-        manualRevision.parentProblemArtifactItemHash !== manual.problemArtifactItemHash ||
-        canonicalEvidenceHash(manualRevision.parentClassificationArtifact) !== canonicalEvidenceHash({
+        manualRevisionBase.parentProblemArtifactItemHash !== manual.problemArtifactItemHash ||
+        canonicalEvidenceHash(manualRevisionBase.parentClassificationArtifact) !== canonicalEvidenceHash({
           path: manual.classificationArtifact.path,
           sha256: manual.classificationArtifact.sha256,
         }) ||
-        manualRevision.parentClassificationArtifactItemHash !== manual.classificationArtifactItemHash ||
-        manualRevision.failedQuestionHash !== revisionSpec.failedQuestionHash ||
-        manualRevision.failedQuestionHash !== manual.problemArtifactItemHash ||
-        manualRevision.failedClassificationHash !== revisionSpec.failedClassificationHash ||
-        manualRevision.failedClassificationHash !== manual.classificationArtifactItemHash ||
-        manualRevision.failedClassificationEvidenceHash !== revisionSpec.failedClassificationEvidenceHash ||
+        manualRevisionBase.parentClassificationArtifactItemHash !== manual.classificationArtifactItemHash ||
+        manualRevisionBase.failedQuestionHash !== revisionSpec.failedQuestionHash ||
+        manualRevisionBase.failedQuestionHash !== manual.problemArtifactItemHash ||
+        manualRevisionBase.failedClassificationHash !== revisionSpec.failedClassificationHash ||
+        manualRevisionBase.failedClassificationHash !== manual.classificationArtifactItemHash ||
+        manualRevisionBase.failedClassificationEvidenceHash !== revisionSpec.failedClassificationEvidenceHash ||
         manualClassification === null ||
         sha256Text(String(manualClassification.transcription_evidence)) !==
-          manualRevision.failedClassificationEvidenceHash ||
-        manualRevision.correctionSpecHash !== problemManualRevisionCorrectionSpecHash(revisionSpec) ||
-        manualRevision.baseQuestionHash !== revisionSpec.failedQuestionHash ||
-        manualRevision.baseClassificationHash !== revisionSpec.failedClassificationHash ||
-        manualRevision.effectiveQuestionHash !== manualRevision.problemArtifactItemHash ||
-        manualRevision.effectiveClassificationHash !== manualRevision.classificationArtifactItemHash
+          manualRevisionBase.failedClassificationEvidenceHash ||
+        manualRevisionBase.correctionSpecHash !== problemManualRevisionCorrectionSpecHash(revisionSpec) ||
+        manualRevisionBase.baseQuestionHash !== revisionSpec.failedQuestionHash ||
+        manualRevisionBase.baseClassificationHash !== revisionSpec.failedClassificationHash ||
+        manualRevisionBase.effectiveQuestionHash !== manualRevisionBase.problemArtifactItemHash ||
+        manualRevisionBase.effectiveClassificationHash !== manualRevisionBase.classificationArtifactItemHash
       ) throw new Error(`${repair.key} manual revision evidence가 parent/allowlist와 다릅니다`);
 
-      await declare("problem manual revision", manualRevision.problemArtifact);
-      await declare("classification manual revision", manualRevision.classificationArtifact);
+      await declare("problem manual revision", manualRevisionBase.problemArtifact);
+      await declare("classification manual revision", manualRevisionBase.classificationArtifact);
       const revisionCommonBasis = {
         allowlistId: revisionSpec.allowlistId,
         parentAllowlistId: revisionSpec.parentAllowlistId,
@@ -14668,15 +15300,15 @@ export async function assertProblemManualAdjudicationAuthority(
         sourcePage: manual.sourcePage,
         sourceHash: manual.sourceHash,
         parentManual: manual,
-        parentManualEvidenceHash: manualRevision.parentManualEvidenceHash,
-        parentProblemArtifact: manualRevision.parentProblemArtifact,
-        parentProblemArtifactItemHash: manualRevision.parentProblemArtifactItemHash,
-        parentClassificationArtifact: manualRevision.parentClassificationArtifact,
-        parentClassificationArtifactItemHash: manualRevision.parentClassificationArtifactItemHash,
-        failedQuestionHash: manualRevision.failedQuestionHash,
-        failedClassificationHash: manualRevision.failedClassificationHash,
-        failedClassificationEvidenceHash: manualRevision.failedClassificationEvidenceHash,
-        correctionSpecHash: manualRevision.correctionSpecHash,
+        parentManualEvidenceHash: manualRevisionBase.parentManualEvidenceHash,
+        parentProblemArtifact: manualRevisionBase.parentProblemArtifact,
+        parentProblemArtifactItemHash: manualRevisionBase.parentProblemArtifactItemHash,
+        parentClassificationArtifact: manualRevisionBase.parentClassificationArtifact,
+        parentClassificationArtifactItemHash: manualRevisionBase.parentClassificationArtifactItemHash,
+        failedQuestionHash: manualRevisionBase.failedQuestionHash,
+        failedClassificationHash: manualRevisionBase.failedClassificationHash,
+        failedClassificationEvidenceHash: manualRevisionBase.failedClassificationEvidenceHash,
+        correctionSpecHash: manualRevisionBase.correctionSpecHash,
         cropEvidenceArtifact: manual.cropEvidenceArtifact,
         cropEvidencePdf: manual.cropEvidencePdf,
         cropViews: manual.cropViews,
@@ -14707,12 +15339,12 @@ export async function assertProblemManualAdjudicationAuthority(
       };
       const expectedRevisionProblemSha = canonicalEvidenceHash(expectedRevisionProblemCheckpoint);
       if (
-        manualRevision.problemArtifact.path !== expectedRevisionProblemPath ||
-        manualRevision.problemArtifact.correctionVersion !== PROBLEM_MANUAL_REVISION_VERSION ||
-        manualRevision.problemArtifact.correctionDigest !== PROBLEM_MANUAL_REVISION_CORRECTION_DIGEST ||
+        manualRevisionBase.problemArtifact.path !== expectedRevisionProblemPath ||
+        manualRevisionBase.problemArtifact.correctionVersion !== PROBLEM_MANUAL_REVISION_VERSION ||
+        manualRevisionBase.problemArtifact.correctionDigest !== PROBLEM_MANUAL_REVISION_CORRECTION_DIGEST ||
         canonicalEvidenceHash(revisionProblemCheckpoint) !==
           canonicalEvidenceHash(expectedRevisionProblemCheckpoint) ||
-        canonicalEvidenceHash(expectedRevisionItem) !== manualRevision.problemArtifactItemHash
+        canonicalEvidenceHash(expectedRevisionItem) !== manualRevisionBase.problemArtifactItemHash
       ) throw new Error(`${repair.key} problem manual revision checkpoint가 다릅니다`);
 
       const revisionClassificationBasis = {
@@ -14721,8 +15353,8 @@ export async function assertProblemManualAdjudicationAuthority(
           path: expectedRevisionProblemPath,
           sha256: expectedRevisionProblemSha,
         },
-        problemArtifactItemHash: manualRevision.problemArtifactItemHash,
-        effectiveQuestionHash: manualRevision.effectiveQuestionHash,
+        problemArtifactItemHash: manualRevisionBase.problemArtifactItemHash,
+        effectiveQuestionHash: manualRevisionBase.effectiveQuestionHash,
       };
       const revisionClassificationBasisDigest = canonicalEvidenceHash(revisionClassificationBasis);
       const expectedRevisionClassificationPath = `classification-manual-revisions/` +
@@ -14801,12 +15433,12 @@ export async function assertProblemManualAdjudicationAuthority(
         effectiveClassificationHash: canonicalEvidenceHash(revisionClassification),
       } : null;
       if (
-        manualRevision.classificationArtifact.path !== expectedRevisionClassificationPath ||
-        manualRevision.classificationArtifact.rulesDigest !== CLASSIFIER_DIGEST ||
-        manualRevision.classificationArtifact.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
-        manualRevision.classificationArtifact.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
-        manualRevision.classificationArtifact.revisionVersion !== PROBLEM_MANUAL_REVISION_VERSION ||
-        manualRevision.classificationArtifact.revisionPromptDigest !== PROBLEM_MANUAL_REVISION_PROMPT_DIGEST ||
+        manualRevisionBase.classificationArtifact.path !== expectedRevisionClassificationPath ||
+        manualRevisionBase.classificationArtifact.rulesDigest !== CLASSIFIER_DIGEST ||
+        manualRevisionBase.classificationArtifact.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+        manualRevisionBase.classificationArtifact.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+        manualRevisionBase.classificationArtifact.revisionVersion !== PROBLEM_MANUAL_REVISION_VERSION ||
+        manualRevisionBase.classificationArtifact.revisionPromptDigest !== PROBLEM_MANUAL_REVISION_PROMPT_DIGEST ||
         !revisionClassification || !expectedManualRevision ||
         revisionClassification.key !== manual.key || revisionClassification.transcription_status !== "exact" ||
         !matchesProblemManualExpectedDecision(revisionSpec, revisionClassification) ||
@@ -14818,8 +15450,218 @@ export async function assertProblemManualAdjudicationAuthority(
         ) ||
         canonicalEvidenceHash(revisionClassificationCheckpoint) !==
           canonicalEvidenceHash(expectedRevisionClassificationCheckpoint) ||
-        canonicalEvidenceHash(manualRevision) !== canonicalEvidenceHash(expectedManualRevision)
+        canonicalEvidenceHash(manualRevisionBase) !== canonicalEvidenceHash(expectedManualRevision)
       ) throw new Error(`${repair.key} classification manual revision checkpoint가 다릅니다`);
+
+      const sourceRevisionMatches = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.filter((candidate) =>
+        candidate.entryId === spec.entryId && candidate.key === manual.key &&
+        candidate.sourcePage === manual.sourcePage && candidate.sourceHash === manual.sourceHash &&
+        candidate.parentRevisionAllowlistId === revisionSpec.allowlistId
+      );
+      if (sourceRevisionMatches.length > 1) {
+        throw new Error(`${repair.key} manual source revision allowlist authority가 중복입니다`);
+      }
+      if (!sourceRevision && sourceRevisionMatches.some((candidate) =>
+        candidate.parentRevisionEvidenceHash === canonicalEvidenceHash(manualRevisionBase)
+      )) throw new Error(`${repair.key} manual source revision evidence가 없습니다`);
+      if (sourceRevision) {
+        if (sourceRevisionMatches.length !== 1 || !expectedManualRevision) {
+          throw new Error(`${repair.key} manual source revision allowlist authority가 없습니다`);
+        }
+        const sourceSpec = sourceRevisionMatches[0];
+        if (
+          sourceRevision.allowlistId !== sourceSpec.allowlistId ||
+          sourceRevision.parentRevisionAllowlistId !== revisionSpec.allowlistId ||
+          sourceRevision.key !== manual.key || sourceRevision.printedNumber !== manual.printedNumber ||
+          sourceRevision.sourcePage !== manual.sourcePage || sourceRevision.sourceHash !== manual.sourceHash ||
+          sourceRevision.parentRevisionEvidenceHash !== canonicalEvidenceHash(manualRevisionBase) ||
+          sourceRevision.parentRevisionEvidenceHash !== sourceSpec.parentRevisionEvidenceHash ||
+          canonicalEvidenceHash(sourceRevision.parentProblemArtifact) !== canonicalEvidenceHash({
+            path: manualRevisionBase.problemArtifact.path,
+            sha256: manualRevisionBase.problemArtifact.sha256,
+          }) ||
+          sourceRevision.parentProblemArtifactItemHash !== manualRevisionBase.problemArtifactItemHash ||
+          canonicalEvidenceHash(sourceRevision.parentClassificationArtifact) !== canonicalEvidenceHash({
+            path: manualRevisionBase.classificationArtifact.path,
+            sha256: manualRevisionBase.classificationArtifact.sha256,
+          }) ||
+          sourceRevision.parentClassificationArtifactItemHash !==
+            manualRevisionBase.classificationArtifactItemHash ||
+          sourceRevision.failedQuestionHash !== sourceSpec.failedQuestionHash ||
+          sourceRevision.failedQuestionHash !== manualRevisionBase.problemArtifactItemHash ||
+          sourceRevision.failedClassificationHash !== sourceSpec.failedClassificationHash ||
+          sourceRevision.failedClassificationHash !== manualRevisionBase.classificationArtifactItemHash ||
+          sourceRevision.failedClassificationEvidenceHash !== sourceSpec.failedClassificationEvidenceHash ||
+          sha256Text(revisionClassification.transcription_evidence) !==
+            sourceRevision.failedClassificationEvidenceHash ||
+          sourceRevision.correctionSpecHash !== problemManualSourceRevisionCorrectionSpecHash(sourceSpec) ||
+          sourceRevision.baseQuestionHash !== sourceSpec.failedQuestionHash ||
+          sourceRevision.baseClassificationHash !== sourceSpec.failedClassificationHash ||
+          sourceRevision.effectiveQuestionHash !== sourceRevision.problemArtifactItemHash ||
+          sourceRevision.effectiveClassificationHash !== sourceRevision.classificationArtifactItemHash
+        ) throw new Error(`${repair.key} manual source revision evidence가 parent/allowlist와 다릅니다`);
+
+        await declare("problem manual second revision", sourceRevision.problemArtifact);
+        await declare("classification manual second revision", sourceRevision.classificationArtifact);
+        const sourceCommonBasis = {
+          allowlistId: sourceSpec.allowlistId,
+          parentRevisionAllowlistId: sourceSpec.parentRevisionAllowlistId,
+          entryId: spec.entryId,
+          key: manual.key,
+          printedNumber: manual.printedNumber,
+          sourcePage: manual.sourcePage,
+          sourceHash: manual.sourceHash,
+          parentRevision: manualRevisionBase,
+          parentRevisionEvidenceHash: sourceRevision.parentRevisionEvidenceHash,
+          parentProblemArtifact: sourceRevision.parentProblemArtifact,
+          parentProblemArtifactItemHash: sourceRevision.parentProblemArtifactItemHash,
+          parentClassificationArtifact: sourceRevision.parentClassificationArtifact,
+          parentClassificationArtifactItemHash: sourceRevision.parentClassificationArtifactItemHash,
+          failedQuestionHash: sourceRevision.failedQuestionHash,
+          failedClassificationHash: sourceRevision.failedClassificationHash,
+          failedClassificationEvidenceHash: sourceRevision.failedClassificationEvidenceHash,
+          correctionSpecHash: sourceRevision.correctionSpecHash,
+          cropEvidenceArtifact: manual.cropEvidenceArtifact,
+          cropEvidencePdf: manual.cropEvidencePdf,
+          cropViews: manual.cropViews,
+        };
+        const sourceBasisDigest = canonicalEvidenceHash(sourceCommonBasis);
+        const sourceStem = `v${PROBLEM_MANUAL_SOURCE_REVISION_VERSION}-` +
+          `${String(manual.sourcePage).padStart(4, "0")}-${manual.printedNumber.padStart(4, "0")}-` +
+          `${sourceBasisDigest}`;
+        const expectedSourceProblemPath = `problem-manual-second-revisions/${sourceStem}.json`;
+        const sourceProblemCheckpoint = object(JSON.parse(readFileSync(confinedStateFile(
+          stateDir,
+          expectedSourceProblemPath,
+          "problem manual second revision"
+        ), "utf8")), expectedSourceProblemPath);
+        const expectedSourceItem = applyAllowlistedProblemManualSourceRevision(
+          spec.entryId,
+          spec.sourceHash,
+          revisionSpec.allowlistId,
+          expectedRevisionItem
+        );
+        const expectedSourceProblemCheckpoint = {
+          version: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+          entryId: spec.entryId,
+          basisDigest: sourceBasisDigest,
+          basis: sourceCommonBasis,
+          correctionVersion: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+          correctionDigest: PROBLEM_MANUAL_SOURCE_REVISION_CORRECTION_DIGEST,
+          item: expectedSourceItem,
+        };
+        const expectedSourceProblemSha = canonicalEvidenceHash(expectedSourceProblemCheckpoint);
+        if (
+          sourceRevision.problemArtifact.path !== expectedSourceProblemPath ||
+          sourceRevision.problemArtifact.sha256 !== expectedSourceProblemSha ||
+          sourceRevision.problemArtifact.correctionVersion !== PROBLEM_MANUAL_SOURCE_REVISION_VERSION ||
+          sourceRevision.problemArtifact.correctionDigest !== PROBLEM_MANUAL_SOURCE_REVISION_CORRECTION_DIGEST ||
+          canonicalEvidenceHash(sourceProblemCheckpoint) !==
+            canonicalEvidenceHash(expectedSourceProblemCheckpoint) ||
+          canonicalEvidenceHash(expectedSourceItem) !== sourceRevision.problemArtifactItemHash
+        ) throw new Error(`${repair.key} problem manual second revision checkpoint가 다릅니다`);
+
+        const sourceClassificationBasis = {
+          ...sourceCommonBasis,
+          problemArtifact: { path: expectedSourceProblemPath, sha256: expectedSourceProblemSha },
+          problemArtifactItemHash: sourceRevision.problemArtifactItemHash,
+          effectiveQuestionHash: sourceRevision.effectiveQuestionHash,
+        };
+        const sourceClassificationBasisDigest = canonicalEvidenceHash(sourceClassificationBasis);
+        const expectedSourceClassificationPath = `classification-manual-second-revisions/` +
+          `v${CLASSIFICATION_MANUAL_SOURCE_REVISION_VERSION}-` +
+          `${String(manual.sourcePage).padStart(4, "0")}-${manual.printedNumber.padStart(4, "0")}-` +
+          `${sourceClassificationBasisDigest}-${CLASSIFIER_DIGEST}.json`;
+        const sourceClassificationCheckpoint = object(JSON.parse(readFileSync(confinedStateFile(
+          stateDir,
+          expectedSourceClassificationPath,
+          "classification manual second revision"
+        ), "utf8")), expectedSourceClassificationPath);
+        const sourceClassification = Array.isArray(sourceClassificationCheckpoint.items) &&
+          sourceClassificationCheckpoint.items.length === 1
+          ? parseHistoricalDecision(
+              sourceClassificationCheckpoint.items[0],
+              manual.key,
+              "manual second revision classification item"
+            )
+          : null;
+        const expectedSourceClassificationCheckpoint = {
+          version: CLASSIFICATION_MANUAL_SOURCE_REVISION_VERSION,
+          entryId: spec.entryId,
+          basisDigest: sourceClassificationBasisDigest,
+          basis: sourceClassificationBasis,
+          classifierVersion: CLASSIFIER_VERSION,
+          rulesDigest: CLASSIFIER_DIGEST,
+          transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+          transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+          sourceRevisionVersion: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+          sourceRevisionPromptDigest: PROBLEM_MANUAL_SOURCE_REVISION_PROMPT_DIGEST,
+          model: IMPORT_MODEL,
+          reasoningEffort: IMPORT_REASONING_EFFORT,
+          items: sourceClassification ? [sourceClassification] : [],
+        };
+        const expectedSourceClassificationSha = canonicalEvidenceHash(expectedSourceClassificationCheckpoint);
+        const expectedSourceRevision: ProblemManualSourceRevisionEvidence | null = sourceClassification ? {
+          allowlistId: sourceSpec.allowlistId,
+          parentRevisionAllowlistId: sourceSpec.parentRevisionAllowlistId,
+          key: manual.key,
+          printedNumber: manual.printedNumber,
+          sourcePage: manual.sourcePage,
+          sourceHash: manual.sourceHash,
+          parentRevisionEvidenceHash: canonicalEvidenceHash(manualRevisionBase),
+          parentProblemArtifact: {
+            path: manualRevisionBase.problemArtifact.path,
+            sha256: manualRevisionBase.problemArtifact.sha256,
+          },
+          parentProblemArtifactItemHash: manualRevisionBase.problemArtifactItemHash,
+          parentClassificationArtifact: {
+            path: manualRevisionBase.classificationArtifact.path,
+            sha256: manualRevisionBase.classificationArtifact.sha256,
+          },
+          parentClassificationArtifactItemHash: manualRevisionBase.classificationArtifactItemHash,
+          failedQuestionHash: sourceSpec.failedQuestionHash,
+          failedClassificationHash: sourceSpec.failedClassificationHash,
+          failedClassificationEvidenceHash: sourceSpec.failedClassificationEvidenceHash,
+          correctionSpecHash: problemManualSourceRevisionCorrectionSpecHash(sourceSpec),
+          problemArtifact: {
+            path: expectedSourceProblemPath,
+            sha256: expectedSourceProblemSha,
+            correctionVersion: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+            correctionDigest: PROBLEM_MANUAL_SOURCE_REVISION_CORRECTION_DIGEST,
+          },
+          problemArtifactItemHash: canonicalEvidenceHash(expectedSourceItem),
+          classificationArtifact: {
+            path: expectedSourceClassificationPath,
+            sha256: expectedSourceClassificationSha,
+            rulesDigest: CLASSIFIER_DIGEST,
+            transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+            transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+            sourceRevisionVersion: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+            sourceRevisionPromptDigest: PROBLEM_MANUAL_SOURCE_REVISION_PROMPT_DIGEST,
+          },
+          classificationArtifactItemHash: canonicalEvidenceHash(sourceClassification),
+          baseQuestionHash: sourceSpec.failedQuestionHash,
+          effectiveQuestionHash: canonicalEvidenceHash(expectedSourceItem),
+          baseClassificationHash: sourceSpec.failedClassificationHash,
+          effectiveClassificationHash: canonicalEvidenceHash(sourceClassification),
+        } : null;
+        if (
+          sourceRevision.classificationArtifact.path !== expectedSourceClassificationPath ||
+          sourceRevision.classificationArtifact.sha256 !== expectedSourceClassificationSha ||
+          sourceRevision.classificationArtifact.rulesDigest !== CLASSIFIER_DIGEST ||
+          sourceRevision.classificationArtifact.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+          sourceRevision.classificationArtifact.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+          sourceRevision.classificationArtifact.sourceRevisionVersion !== PROBLEM_MANUAL_SOURCE_REVISION_VERSION ||
+          sourceRevision.classificationArtifact.sourceRevisionPromptDigest !==
+            PROBLEM_MANUAL_SOURCE_REVISION_PROMPT_DIGEST ||
+          !sourceClassification || !expectedSourceRevision ||
+          sourceClassification.transcription_status !== "exact" ||
+          !matchesProblemManualExpectedDecision(sourceSpec, sourceClassification) ||
+          canonicalEvidenceHash(sourceClassificationCheckpoint) !==
+            canonicalEvidenceHash(expectedSourceClassificationCheckpoint) ||
+          canonicalEvidenceHash(sourceRevision) !== canonicalEvidenceHash(expectedSourceRevision)
+        ) throw new Error(`${repair.key} classification manual second revision checkpoint가 다릅니다`);
+      }
     }
   }
 
@@ -14830,6 +15672,8 @@ export async function assertProblemManualAdjudicationAuthority(
     "classification-manual-adjudications",
     "problem-manual-revisions",
     "classification-manual-revisions",
+    "problem-manual-second-revisions",
+    "classification-manual-second-revisions",
   ]) {
     const path = join(stateDir, directory);
     if (!existsSync(path)) continue;
@@ -18052,6 +18896,66 @@ async function reviseClassifiedQuestion(
   );
 }
 
+async function deferredTerminalFidelityIssues5525982(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  stateDir: string,
+  effective: ClassifiedQuestion[],
+  repairs: ReadonlyMap<string, ProblemRepairEvidence>,
+  items: ProblemTerminalFidelityItem[]
+): Promise<Set<string>> {
+  if (
+    entry.id !== "ebsi:5525982" ||
+    problem.sha256 !== "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132"
+  ) return new Set();
+  const itemByKey = new Map(items.map((item) => [item.key, item]));
+  const issueRows = DEFERRED_TERMINAL_FIDELITY_5525982.filter((row) =>
+    itemByKey.get(row.key)?.status === "mismatch"
+  );
+  if (issueRows.length === 0) return new Set();
+  await assertProblemManualAdjudicationAuthority(stateDir, repairs.values());
+  const deferred = new Set<string>();
+  for (const row of issueRows) {
+    const current = effective.find((item) => questionKey(item.question) === row.key);
+    const repair = repairs.get(row.key);
+    const manual = repair?.revision?.recovery?.manualAdjudication;
+    const terminal = itemByKey.get(row.key);
+    if (
+      !current || !repair || !manual || manual.revision ||
+      manual.allowlistId !== row.manualAllowlistId || canonicalEvidenceHash(manual) !== row.manualEvidenceHash ||
+      manual.sourceHash !== problem.sha256 || manual.effectiveQuestionHash !== row.questionHash ||
+      manual.effectiveClassificationHash !== row.classificationHash ||
+      canonicalEvidenceHash(current.question) !== row.questionHash ||
+      canonicalEvidenceHash(current.classification) !== row.classificationHash ||
+      canonicalEvidenceHash(problemTerminalInput(current.question)) !== row.terminalInputHash ||
+      current.classification.transcription_status !== "exact" ||
+      current.classification.decision !== row.scopeDecision ||
+      !terminal || terminal.status !== "mismatch" || terminal.scopeDecision !== row.scopeDecision ||
+      terminal.scopeConfidence < 0.9
+    ) throw new Error(`${row.key} deferred terminal fidelity authority가 다릅니다`);
+    deferred.add(row.key);
+  }
+  return deferred;
+}
+
+export function actionableTerminalFidelityIssues(
+  terminalIssues: readonly string[],
+  deferredIssues: ReadonlySet<string>
+): string[] {
+  const terminalIssueSet = new Set(terminalIssues);
+  if ([...deferredIssues].some((key) => !terminalIssueSet.has(key))) {
+    throw new Error("deferred terminal fidelity issue가 terminal issue 집합에 없습니다");
+  }
+  const actionableIssues = terminalIssues.filter((key) => !deferredIssues.has(key));
+  if (actionableIssues.length === 0 && deferredIssues.size > 0) {
+    throw new Error(
+      `terminal fidelity 최종 adjudication 대기: ${[...deferredIssues]
+        .sort(compareCorpusQuestionKeys).join(", ")}`
+    );
+  }
+  return actionableIssues;
+}
+
 export async function repairAndAuditOfficialAnswers(
   entry: CorpusManifestEntry,
   problem: PdfEvidence,
@@ -18175,6 +19079,21 @@ export async function repairAndAuditOfficialAnswers(
       repair: ProblemRepairEvidence;
       trigger: Extract<ProblemRecoveryTrigger, { kind: "terminal" }>;
     }> = [];
+    const exactRecoveryManualCurrents: Array<{
+      key: string;
+      current: ClassifiedQuestion;
+      repair: ProblemRepairEvidence;
+      recovery: ProblemRecoveryEvidence;
+    }> = [];
+    const manualSourceRevisionCurrents: Array<{
+      key: string;
+      current: ClassifiedQuestion;
+      repair: ProblemRepairEvidence;
+      recovery: ProblemRecoveryEvidence;
+      manual: ProblemManualAdjudicationEvidence;
+      revision: ProblemManualRevisionEvidence;
+      spec: ProblemManualSourceRevisionSpec;
+    }> = [];
     for (const key of uniqueKeys) {
       if (initialRepairKeys.has(key)) continue;
       const index = effective.findIndex((item) => questionKey(item.question) === key);
@@ -18194,6 +19113,47 @@ export async function repairAndAuditOfficialAnswers(
             };
         if (!trigger) throw new Error(`${key} problem revision trigger가 없습니다`);
         if (existing.revision) {
+          const recovery = existing.revision.recovery;
+          const exactManualSpec = problemManualAdjudicationSpec(
+            entry.id,
+            key,
+            current.question.page!,
+            problem.sha256
+          );
+          if (
+            trigger.kind === "terminal" && recovery && !recovery.manualAdjudication &&
+            exactManualSpec?.failedStatus === "exact" &&
+            canonicalEvidenceHash(current.question) === exactManualSpec.failedQuestionHash &&
+            canonicalEvidenceHash(current.classification) === exactManualSpec.failedClassificationHash &&
+            current.classification.transcription_status === "exact"
+          ) {
+            exactRecoveryManualCurrents.push({ key, current, repair: existing, recovery });
+            continue;
+          }
+          const manual = recovery?.manualAdjudication;
+          const manualRevision = manual?.revision;
+          if (trigger.kind === "terminal" && recovery && manual && manualRevision && !manualRevision.sourceRevision) {
+            const sourceRevisionSpec = problemManualSourceRevisionSpec(
+              entry.id,
+              key,
+              current.question.page!,
+              problem.sha256,
+              manualRevision,
+              current
+            );
+            if (sourceRevisionSpec) {
+              manualSourceRevisionCurrents.push({
+                key,
+                current,
+                repair: existing,
+                recovery,
+                manual,
+                revision: manualRevision,
+                spec: sourceRevisionSpec,
+              });
+              continue;
+            }
+          }
           if (trigger.kind !== "terminal" || existing.revision.recovery) {
             throw new Error(`${key} problem recovery는 한 번만 허용됩니다`);
           }
@@ -18205,6 +19165,21 @@ export async function repairAndAuditOfficialAnswers(
         continue;
       }
       // Initial repairs were handled in one page/context batch above.
+    }
+    const manualPreflightSpecs = [
+      ...exactRecoveryManualCurrents,
+      ...manualSourceRevisionCurrents,
+    ].map((item) => problemManualAdjudicationSpec(
+      entry.id,
+      item.key,
+      item.current.question.page!,
+      problem.sha256
+    ));
+    for (const spec of manualPreflightSpecs.filter(
+      (candidate, index, all): candidate is ProblemManualAdjudicationSpec =>
+        Boolean(candidate) && all.findIndex((other) => other?.allowlistId === candidate?.allowlistId) === index
+    )) {
+      await preflightProblemManualBatch(entry, problem, stateDir, spec);
     }
     if (revisionCurrents.length > 0) {
       const revised = await reviseClassifiedQuestionsBatch(
@@ -18271,6 +19246,86 @@ export async function repairAndAuditOfficialAnswers(
         });
         changedKeys.add(item.key);
       }
+    }
+    for (const item of exactRecoveryManualCurrents.sort((left, right) =>
+      compareCorpusQuestionKeys(left.key, right.key)
+    )) {
+      const adjudicated = await adjudicateProblemManual(
+        entry,
+        problem,
+        stateDir,
+        item.current,
+        item.recovery
+      );
+      const index = effective.findIndex((current) => questionKey(current.question) === item.key);
+      const existing = repairs.get(item.key);
+      if (index < 0 || !existing?.revision?.recovery || existing.revision.recovery.manualAdjudication) {
+        throw new Error(`${item.key} exact recovery manual authority가 없습니다`);
+      }
+      effective[index] = adjudicated.classified;
+      repairs.set(item.key, {
+        ...existing,
+        revision: {
+          ...existing.revision,
+          recovery: { ...existing.revision.recovery, manualAdjudication: adjudicated.evidence },
+        },
+      });
+      changedKeys.add(item.key);
+    }
+    for (const item of manualSourceRevisionCurrents.sort((left, right) =>
+      compareCorpusQuestionKeys(left.key, right.key)
+    )) {
+      const manualSpec = problemManualAdjudicationSpec(
+        entry.id,
+        item.key,
+        item.current.question.page!,
+        problem.sha256
+      );
+      if (!manualSpec) throw new Error(`${item.key} manual source revision parent allowlist가 없습니다`);
+      await preflightProblemManualBatch(entry, problem, stateDir, manualSpec);
+      const prepared = {
+        artifact: item.manual.cropEvidenceArtifact,
+        pdf: {
+          ...item.manual.cropEvidencePdf,
+          absolutePath: confinedStateFile(
+            stateDir,
+            item.manual.cropEvidencePdf.path,
+            "manual source revision crop evidence PDF"
+          ),
+        },
+        views: item.manual.cropViews,
+      };
+      const revised = await reviseProblemManualSourceRevision(
+        entry,
+        stateDir,
+        item.current,
+        prepared,
+        item.revision,
+        item.spec,
+        false
+      );
+      if (!revised) throw new Error(`${item.key} manual source revision child가 없습니다`);
+      const index = effective.findIndex((current) => questionKey(current.question) === item.key);
+      const existing = repairs.get(item.key);
+      const manual = existing?.revision?.recovery?.manualAdjudication;
+      if (index < 0 || !existing?.revision?.recovery || !manual?.revision || manual.revision.sourceRevision) {
+        throw new Error(`${item.key} manual source revision authority가 없습니다`);
+      }
+      effective[index] = revised.classified;
+      repairs.set(item.key, {
+        ...existing,
+        revision: {
+          ...existing.revision,
+          recovery: {
+            ...existing.revision.recovery,
+            manualAdjudication: {
+              ...manual,
+              revision: { ...manual.revision, sourceRevision: revised.evidence },
+            },
+          },
+        },
+      });
+      changedKeys.add(item.key);
     }
     const effectiveKeys = effective.map((item) => questionKey(item.question));
     if (
@@ -18471,9 +19526,27 @@ export async function repairAndAuditOfficialAnswers(
       .filter((item) => item.status !== "exact" && !authorizedScopeRejects.has(item.key))
       .map((item) => item.key);
     if (terminalIssues.length > 0) {
+      const deferredIssues = await deferredTerminalFidelityIssues5525982(
+        entry,
+        problem,
+        stateDir,
+        effective,
+        repairs,
+        finalProblemFidelity.items
+      );
+      if (deferredIssues.size > 0) {
+        assertProblemTerminalFidelityAdjudicationInventory(
+          stateDir,
+          new Set(preparedAdjudications.map((prepared) => prepared.relativePath)),
+          false
+        );
+      }
+      const actionableIssues = actionableTerminalFidelityIssues(terminalIssues, deferredIssues);
       const terminalTriggers = new Map<string, Extract<ProblemRevisionTrigger, { kind: "terminal" }>>();
       const preRecoveryEffectiveCorpusHash = canonicalEvidenceHash(effective);
-      for (const item of finalProblemFidelity.items.filter((candidate) => candidate.status !== "exact")) {
+      for (const item of finalProblemFidelity.items.filter((candidate) =>
+        candidate.status !== "exact" && actionableIssues.includes(candidate.key)
+      )) {
         const current = effective.find((candidate) => questionKey(candidate.question) === item.key);
         if (!current) throw new Error(`${item.key} terminal 문제 fidelity 대상이 없습니다`);
         const checkpoints = finalProblemFidelity.checkpoints.filter((checkpoint) =>
@@ -18489,9 +19562,9 @@ export async function repairAndAuditOfficialAnswers(
           effectiveCorpusHash: preRecoveryEffectiveCorpusHash,
         });
       }
-      const changed = await applyRepairs(terminalIssues, "terminal", terminalTriggers);
-      if (terminalIssues.some((key) => !changed.has(key))) {
-        throw new Error(`terminal 문제 fidelity 재검증에 실패했습니다: ${terminalIssues.join(", ")}`);
+      const changed = await applyRepairs(actionableIssues, "terminal", terminalTriggers);
+      if (actionableIssues.some((key) => !changed.has(key))) {
+        throw new Error(`terminal 문제 fidelity 재검증에 실패했습니다: ${actionableIssues.join(", ")}`);
       }
       finalSemantic = null;
       finalSolutionAudit = null;
