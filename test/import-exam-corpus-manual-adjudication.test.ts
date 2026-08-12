@@ -54,6 +54,7 @@ import {
   parseCorpusManifest,
   parseDecisions,
   repairAndAuditOfficialAnswers,
+  solutionRepairFidelityEvidence,
   type ClassificationDecision,
   type ClassifiedQuestion,
   type PdfEvidence,
@@ -172,6 +173,22 @@ function stateSnapshot(directory: string): Array<[string, string, string]> {
   };
   visit(directory, "");
   return output;
+}
+
+function removeSolutionRepairArtifacts(stateDir: string): void {
+  for (const directory of [
+    "solution-repairs",
+    "solution-fidelity-repairs",
+    "solution-revisions",
+    "solution-fidelity-revisions",
+    "solution-fidelity-adjudications",
+    "solution-fidelity-adjudication-evidence",
+    "solution-revision-upgrades",
+    "solution-fidelity-revision-upgrades",
+    "semantic-choice-checks",
+    "answer-audit",
+    "answer-attestation",
+  ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
 }
 
 function removeManualArtifacts(stateDir: string, keys: string[]): void {
@@ -1757,7 +1774,8 @@ describe("exact allowlisted problem manual adjudication", () => {
         }
         if (schema === "studywork_solution_file_items") {
           const number = request.prompt.match(/printed solution (\d+)/u)?.[1] ?? "unknown";
-          expect(number).toBe("17");
+          providerCalls.at(-1)!.requested = [`15:${number}`];
+          expect(number).toBe("40");
           throw new Error(`seeded true-repair targeted solution boundary: ${number}`);
         }
         throw new Error(`unexpected defer-gate provider call: ${schema}`);
@@ -1779,11 +1797,9 @@ describe("exact allowlisted problem manual adjudication", () => {
       input.classified,
       input.solutions
     ).then(() => "resolved unexpectedly", (error: unknown) => error instanceof Error ? error.message : String(error));
-    expect([
-      "seeded fresh true-repair terminal boundary",
-      "seeded true-repair solution fidelity boundary: 7:17",
-      "seeded true-repair targeted solution boundary: 17",
-    ]).toContain(boundary);
+    expect(boundary).toBe("seeded true-repair targeted solution boundary: 40");
+    expect(providerCalls.filter((call) => call.schema === "studywork_solution_file_items"))
+      .toEqual([{ schema: "studywork_solution_file_items", requested: ["15:40"] }]);
     expect(providerCalls.length).toBeGreaterThan(0);
     const requested = [...new Set(providerCalls
       .filter((call) => call.schema === "studywork_exam_corpus_classification")
@@ -4663,6 +4679,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     for (const suffix of [" alternate wording A", " 같은 판정의 다른 근거 문구 B"]) {
       root = mkdtempSync(join(tmpdir(), "studywork-q17-q34-solution-evidence-variant-"));
       cpSync(q27LiveState, root, { recursive: true });
+      removeSolutionRepairArtifacts(root);
       rmSync(join(root, "solution-fidelity"), { recursive: true, force: true });
       const input = q27FixtureInputs(root);
       const bulkCalls: string[][] = [];
@@ -4737,6 +4754,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     for (const testCase of cases) {
       root = mkdtempSync(join(tmpdir(), `studywork-q17-q34-solution-wrong-${testCase.label}-`));
       cpSync(q27LiveState, root, { recursive: true });
+      removeSolutionRepairArtifacts(root);
       rmSync(join(root, "solution-fidelity"), { recursive: true, force: true });
       const before = stateSnapshot(root);
       providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
@@ -4767,23 +4785,18 @@ describe("exact allowlisted problem manual adjudication", () => {
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-q17-q34-solution-resume-"));
     cpSync(q27LiveState, root, { recursive: true });
+    removeSolutionRepairArtifacts(root);
     const input = q27FixtureInputs(root);
     const calls = {
       bulk: [] as string[][],
       repair: [] as string[],
       repairFidelity: [] as string[],
     };
-    let crashQ17Fidelity = true;
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
         const decisions = q5525982FidelityDecisions(request.prompt);
         if (decisions.length > 1) calls.bulk.push(decisions.map((decision) => decision.key));
-        else {
-          calls.repairFidelity.push(decisions[0].key);
-          if (crashQ17Fidelity && decisions[0].key === "7:17") {
-            throw new Error("seeded Q17 solution repair fidelity crash");
-          }
-        }
+        else calls.repairFidelity.push(decisions[0].key);
         return { text: JSON.stringify(decisions) };
       }
       if (request.schema?.name === "studywork_solution_file_items") {
@@ -4805,33 +4818,31 @@ describe("exact allowlisted problem manual adjudication", () => {
       input.solutions
     );
 
-    await expect(run()).rejects.toThrow("seeded Q17 solution repair fidelity crash");
+    await expect(run()).rejects.toThrow("seeded honest Q40 solution repair boundary");
     expect(calls.bulk.map((keys) => keys.length)).toEqual([]);
-    expect(calls.repair).toEqual([]);
-    expect(calls.repairFidelity).toEqual(["7:17"]);
+    expect(calls.repair).toEqual(["15:40"]);
+    expect(calls.repairFidelity).toEqual([]);
     for (const checkpoint of SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].checkpoints) {
       const bytes = readFileSync(join(root, checkpoint.path));
       expect(hash(bytes)).toBe(canonicalEvidenceHash(JSON.parse(bytes.toString("utf8"))));
     }
-    expect(readdirSync(join(root, "solution-repairs"))).toHaveLength(1);
-    expect(existsSync(join(root, "solution-fidelity-repairs"))
-      ? readdirSync(join(root, "solution-fidelity-repairs")).length
-      : 0).toBe(0);
+    expect(readdirSync(join(root, "solution-repairs"))).toHaveLength(11);
+    expect(readdirSync(join(root, "solution-fidelity-repairs"))).toHaveLength(11);
     expect(existsSync(join(root, "answer-audit"))).toBe(false);
     expect(existsSync(join(root, "answer-attestation"))).toBe(false);
 
-    crashQ17Fidelity = false;
     calls.bulk = [];
     calls.repair = [];
     calls.repairFidelity = [];
     await expect(run()).rejects.toThrow("seeded honest Q40 solution repair boundary");
     expect(calls.bulk).toEqual([]);
-    expect(calls.repairFidelity).toEqual(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items.map((item) => item.key));
+    expect(calls.repairFidelity).toEqual([]);
     expect(calls.repair).toEqual(["15:40"]);
     const repairFiles = readdirSync(join(root, "solution-repairs")).sort();
     const fidelityFiles = readdirSync(join(root, "solution-fidelity-repairs")).sort();
     expect(repairFiles).toHaveLength(11);
     expect(fidelityFiles).toHaveLength(11);
+    expect(fidelityFiles.every((name) => name.startsWith("v2-"))).toBe(true);
     for (const spec of SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items) {
       const number = Number(spec.key.split(":")[1]);
       const name = repairFiles.find((candidate) => candidate.includes(`-${String(number).padStart(4, "0")}-`))!;
@@ -4855,19 +4866,19 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 420_000);
 
   it.skipIf(!existsSync(join(q27LiveState, "solution.pdf")))(
-    "writes deterministic Q17 v2 repair without targeted solution AI and crash-resumes its fidelity",
+    "writes deterministic Q17 v2 repair and fidelity without targeted solution AI",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-q17-solution-v2-repair-"));
     cpSync(q27LiveState, root, { recursive: true });
+    removeSolutionRepairArtifacts(root);
     const input = q27FixtureInputs(root);
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
         const decisions = q5525982FidelityDecisions(request.prompt);
-        if (decisions.length === 1) throw new Error("seeded Q17 deterministic repair fidelity crash");
         return { text: JSON.stringify(decisions) };
       }
       if (request.schema?.name === "studywork_solution_file_items") {
-        throw new Error("targeted solution AI must not run for forced rows");
+        throw new Error("seeded deterministic forced rows completed");
       }
       throw new Error(`unexpected AI call: ${request.schema?.name ?? "unknown"}`);
     });
@@ -4879,12 +4890,12 @@ describe("exact allowlisted problem manual adjudication", () => {
       input.classified,
       input.solutions
     );
-    await expect(run()).rejects.toThrow("seeded Q17 deterministic repair fidelity crash");
+    await expect(run()).rejects.toThrow("seeded deterministic forced rows completed");
     expect(readdirSync(join(root, "solution-fidelity"))).toHaveLength(2);
     const repairs = readdirSync(join(root, "solution-repairs"));
-    expect(repairs).toHaveLength(1);
-    expect(repairs[0]).toMatch(/^v2-0011-0017-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u);
-    const repair = JSON.parse(readFileSync(join(root, "solution-repairs", repairs[0]), "utf8"));
+    expect(repairs).toHaveLength(11);
+    const q17Repair = repairs.find((name) => /^v2-0011-0017-/u.test(name))!;
+    const repair = JSON.parse(readFileSync(join(root, "solution-repairs", q17Repair), "utf8"));
     expect(repair).not.toHaveProperty("promptVersion");
     expect(repair).not.toHaveProperty("promptDigest");
     expect(repair).not.toHaveProperty("model");
@@ -4893,9 +4904,30 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(repair.item)).toBe(
       SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items[0].expectedSolutionItemHash
     );
+    const fidelities = readdirSync(join(root, "solution-fidelity-repairs"));
+    expect(fidelities).toHaveLength(11);
+    const q17Fidelity = JSON.parse(readFileSync(join(
+      root,
+      "solution-fidelity-repairs",
+      fidelities.find((name) => /^v2-0011-0017-/u.test(name))!
+    ), "utf8"));
+    expect(q17Fidelity).toMatchObject({
+      version: 2,
+      authorityKind: "source-literal-fidelity",
+      key: "7:17",
+      item: {
+        sourcePage: 11,
+        answerStatus: "exact",
+        explanationStatus: "exact",
+        evidence: "SOURCE_LITERAL_REPLACEMENT_AUTHORITY",
+      },
+    });
+    expect(q17Fidelity).not.toHaveProperty("promptDigest");
+    expect(q17Fidelity).not.toHaveProperty("model");
+    expect(q17Fidelity).not.toHaveProperty("reasoningEffort");
     const before = stateSnapshot(root);
     providerMock.complete.mockClear();
-    await expect(run()).rejects.toThrow("seeded Q17 deterministic repair fidelity crash");
+    await expect(run()).rejects.toThrow("seeded deterministic forced rows completed");
     expect(providerMock.complete).toHaveBeenCalledTimes(1);
     expect(stateSnapshot(root)).toEqual(before);
   }, 180_000);
@@ -4905,21 +4937,18 @@ describe("exact allowlisted problem manual adjudication", () => {
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-q17-q18-solution-cross-row-"));
     cpSync(q27LiveState, root, { recursive: true });
+    removeSolutionRepairArtifacts(root);
     const input = q27FixtureInputs(root);
-    let crashAtQ18Fidelity = true;
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
         const decisions = q5525982FidelityDecisions(request.prompt);
-        if (decisions.length === 1 && decisions[0].key === "7:18" && crashAtQ18Fidelity) {
-          throw new Error("seeded Q18 repair fidelity crash");
-        }
         return { text: JSON.stringify(decisions) };
       }
       if (request.schema?.name === "studywork_solution_file_items") {
         const number = Number(request.prompt.match(/printed solution (\d+)/u)?.[1]);
         const key = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items
           .find((item) => Number(item.key.split(":")[1]) === number)?.key;
-        if (!key) throw new Error(`unexpected solution repair: ${number}`);
+        if (!key) throw new Error("seeded Q40 boundary");
         return { text: JSON.stringify([q5525982CorrectedSolution(input.solutions, key)]) };
       }
       throw new Error(`unexpected AI call: ${request.schema?.name ?? "unknown"}`);
@@ -4932,19 +4961,18 @@ describe("exact allowlisted problem manual adjudication", () => {
       input.classified,
       input.solutions
     );
-    await expect(run()).rejects.toThrow("seeded Q18 repair fidelity crash");
+    await expect(run()).rejects.toThrow("seeded Q40 boundary");
     const repairsDirectory = join(root, "solution-repairs");
     const q17 = readdirSync(repairsDirectory).find((name) => /^v2-\d{4}-0017-/u.test(name))!;
     const q18 = readdirSync(repairsDirectory).find((name) => /^v2-\d{4}-0018-/u.test(name))!;
     rmSync(join(repairsDirectory, q17));
     const q17Fidelity = readdirSync(join(root, "solution-fidelity-repairs"))
-      .find((name) => /^v1-\d{4}-0017-/u.test(name))!;
+      .find((name) => /^v2-\d{4}-0017-/u.test(name))!;
     rmSync(join(root, "solution-fidelity-repairs", q17Fidelity));
     const q18Path = join(repairsDirectory, q18);
     const q18Checkpoint = JSON.parse(readFileSync(q18Path, "utf8"));
     q18Checkpoint.item.explanation += " altered";
     writeCanonicalJson(q18Path, q18Checkpoint);
-    crashAtQ18Fidelity = false;
     providerMock.complete.mockClear();
     providerMock.complete.mockRejectedValue(new Error("AI must not run"));
     const before = stateSnapshot(root);
@@ -4960,15 +4988,15 @@ describe("exact allowlisted problem manual adjudication", () => {
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-q17-q18-solution-v2-negatives-"));
     cpSync(q27LiveState, root, { recursive: true });
+    removeSolutionRepairArtifacts(root);
     const input = q27FixtureInputs(root);
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
         const decisions = q5525982FidelityDecisions(request.prompt);
-        if (decisions.length === 1 && decisions[0].key === "7:18") throw new Error("seeded Q18 v2 crash");
         return { text: JSON.stringify(decisions) };
       }
       if (request.schema?.name === "studywork_solution_file_items") {
-        throw new Error("targeted solution AI must not run");
+        throw new Error("seeded Q40 v2 boundary");
       }
       throw new Error(`unexpected AI call: ${request.schema?.name ?? "unknown"}`);
     });
@@ -4979,54 +5007,88 @@ describe("exact allowlisted problem manual adjudication", () => {
       root,
       input.classified,
       input.solutions
-    )).rejects.toThrow("seeded Q18 v2 crash");
+    )).rejects.toThrow("seeded Q40 v2 boundary");
     const baseline = stateSnapshot(root);
     const q17 = readdirSync(join(root, "solution-repairs"))
       .find((name) => /^v2-\d{4}-0017-/u.test(name))!;
     const q18 = readdirSync(join(root, "solution-repairs"))
       .find((name) => /^v2-\d{4}-0018-/u.test(name))!;
+    const q18Fidelity = readdirSync(join(root, "solution-fidelity-repairs"))
+      .find((name) => /^v2-\d{4}-0018-/u.test(name))!;
 
     const cases: Array<{ label: string; mutate: (stateDir: string) => void; error: RegExp }> = [{
-      label: "same-parent v1 and v2",
+      label: "same-parent fidelity v1 and v2",
       mutate: (stateDir) => {
-        const v2 = JSON.parse(readFileSync(join(stateDir, "solution-repairs", q18), "utf8"));
+        const v2 = JSON.parse(readFileSync(join(stateDir, "solution-fidelity-repairs", q18Fidelity), "utf8"));
         const v1Name = `v1-${String(v2.basePage).padStart(4, "0")}-${v2.printedNumber.padStart(4, "0")}-` +
-          `${v2.baseFidelityCheckpoint.sha256}.json`;
-        writeFileSync(join(stateDir, "solution-repairs", v1Name), readFileSync(join(stateDir, "solution-repairs", q18)));
+          `${v2.baseFidelityCheckpoint.sha256}-${v2.effectiveSolutionItemHash}.json`;
+        writeFileSync(
+          join(stateDir, "solution-fidelity-repairs", v1Name),
+          readFileSync(join(stateDir, "solution-fidelity-repairs", q18Fidelity))
+        );
       },
-      error: /v1\/v2 parent coverage/u,
+      error: /repair fidelity child가 중복/u,
     }, {
-      label: "v2 extra field",
+      label: "v2 fidelity extra field",
       mutate: (stateDir) => {
-        const path = join(stateDir, "solution-repairs", q18);
+        const path = join(stateDir, "solution-fidelity-repairs", q18Fidelity);
         const checkpoint = JSON.parse(readFileSync(path, "utf8"));
         checkpoint.unexpected = true;
         writeCanonicalJson(path, checkpoint);
       },
-      error: /persisted repair envelope/u,
+      error: /persisted repair fidelity envelope/u,
     }, {
-      label: "v2 dynamic parent path tamper",
+      label: "v2 fidelity reason tamper",
       mutate: (stateDir) => {
-        const source = join(stateDir, "solution-repairs", q18);
-        const target = q18.replace(/-[a-f0-9]{64}-([a-f0-9]{64}\.json)$/u, `-${"0".repeat(64)}-$1`);
-        renameSync(source, join(stateDir, "solution-repairs", target));
+        const path = join(stateDir, "solution-fidelity-repairs", q18Fidelity);
+        const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+        checkpoint.item.evidence = "altered";
+        writeCanonicalJson(path, checkpoint);
       },
-      error: /filename base fidelity hash|persisted repair version\/path/u,
+      error: /persisted repair fidelity envelope/u,
     }, {
-      label: "v2 leaf symlink",
+      label: "v2 fidelity dynamic parent path tamper",
       mutate: (stateDir) => {
-        const path = join(stateDir, "solution-repairs", q18);
+        const source = join(stateDir, "solution-fidelity-repairs", q18Fidelity);
+        const target = q18Fidelity.replace(/-[a-f0-9]{64}-([a-f0-9]{64}\.json)$/u, `-${"0".repeat(64)}-$1`);
+        renameSync(source, join(stateDir, "solution-fidelity-repairs", target));
+      },
+      error: /persisted repair fidelity envelope/u,
+    }, {
+      label: "v2 fidelity leaf symlink",
+      mutate: (stateDir) => {
+        const path = join(stateDir, "solution-fidelity-repairs", q18Fidelity);
         renameSync(path, `${path}.tmp`);
-        symlinkSync(`${q18}.tmp`, path);
+        symlinkSync(`${q18Fidelity}.tmp`, path);
       },
       error: /malformed solution authority/u,
     }, {
-      label: "v2 directory symlink",
+      label: "v2 fidelity orphan",
       mutate: (stateDir) => {
-        const source = join(stateDir, "solution-repairs");
-        const target = join(stateDir, "solution-repairs-target");
+        const checkpoint = JSON.parse(readFileSync(
+          join(stateDir, "solution-fidelity-repairs", q18Fidelity),
+          "utf8"
+        ));
+        checkpoint.repairArtifact.path = "solution-repairs/missing.json";
+        const orphanName = q18Fidelity.replace(
+          /^(v2-\d{4}-0018-)[a-f0-9]{64}(-[a-f0-9]{64}\.json)$/u,
+          `$1${"f".repeat(64)}$2`
+        );
+        expect(orphanName).not.toBe(q18Fidelity);
+        writeCanonicalJson(join(
+          stateDir,
+          "solution-fidelity-repairs",
+          orphanName
+        ), checkpoint);
+      },
+      error: /orphan solution repair fidelity artifact/u,
+    }, {
+      label: "v2 fidelity directory symlink",
+      mutate: (stateDir) => {
+        const source = join(stateDir, "solution-fidelity-repairs");
+        const target = join(stateDir, "solution-fidelity-repairs-target");
         renameSync(source, target);
-        symlinkSync("solution-repairs-target", source);
+        symlinkSync("solution-fidelity-repairs-target", source);
       },
       error: /디렉터리가 유효하지 않습니다/u,
     }];
@@ -5036,7 +5098,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         cpSync(root, stateDir, { recursive: true });
         rmSync(join(stateDir, "solution-repairs", q17));
         const q17Fidelity = readdirSync(join(stateDir, "solution-fidelity-repairs"))
-          .find((name) => /^v1-\d{4}-0017-/u.test(name))!;
+          .find((name) => /^v2-\d{4}-0017-/u.test(name))!;
         rmSync(join(stateDir, "solution-fidelity-repairs", q17Fidelity));
         testCase.mutate(stateDir);
         const before = stateSnapshot(stateDir);
@@ -5061,22 +5123,20 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 300_000);
 
   it.skipIf(!existsSync(join(q27LiveState, "solution.pdf")))(
-    "rejects a nonterminal forced Q17 repair fidelity before writing its child or revision",
+    "resumes the live mixed Q17 v1 and Q18 parent-only state with deterministic v2 fidelity",
     async () => {
-    root = mkdtempSync(join(tmpdir(), "studywork-q17-solution-fidelity-nonterminal-"));
+    root = mkdtempSync(join(tmpdir(), "studywork-q17-q18-solution-fidelity-mixed-"));
     cpSync(q27LiveState, root, { recursive: true });
     const input = q27FixtureInputs(root);
-    let crash = true;
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
         const decisions = q5525982FidelityDecisions(request.prompt);
-        if (decisions.length === 1 && decisions[0].key === "7:17") {
-          if (crash) throw new Error("seeded Q17 fidelity crash before decision");
-          return { text: JSON.stringify([{ ...decisions[0], explanationStatus: "mismatch" }]) };
-        }
+        if (decisions.length === 1) throw new Error(`forced fidelity AI must not run: ${decisions[0].key}`);
         return { text: JSON.stringify(decisions) };
       }
-      if (request.schema?.name === "studywork_solution_file_items") throw new Error("targeted solution AI must not run");
+      if (request.schema?.name === "studywork_solution_file_items") {
+        throw new Error("seeded live mixed Q40 boundary");
+      }
       throw new Error(`unexpected AI call: ${request.schema?.name ?? "unknown"}`);
     });
     const run = () => repairAndAuditOfficialAnswers(
@@ -5087,30 +5147,77 @@ describe("exact allowlisted problem manual adjudication", () => {
       input.classified,
       input.solutions
     );
-    await expect(run()).rejects.toThrow("seeded Q17 fidelity crash before decision");
-    expect(readdirSync(join(root, "solution-repairs"))).toHaveLength(1);
-    expect(existsSync(join(root, "solution-fidelity-repairs"))
-      ? readdirSync(join(root, "solution-fidelity-repairs")).length
-      : 0).toBe(0);
-    const before = stateSnapshot(root);
-    crash = false;
-    providerMock.complete.mockClear();
-    await expect(run()).rejects.toThrow(/7:17 forced false-negative repair fidelity가 terminal exact가 아닙니다/u);
+    const q17Repair = readFileSync(join(
+      root,
+      "solution-repairs",
+      readdirSync(join(root, "solution-repairs")).find((name) => /^v2-0011-0017-/u.test(name))!
+    ));
+    const q17FidelityName = readdirSync(join(root, "solution-fidelity-repairs"))
+      .find((name) => /^v1-0011-0017-/u.test(name))!;
+    const q17Fidelity = readFileSync(join(root, "solution-fidelity-repairs", q17FidelityName));
+    await expect(run()).rejects.toThrow("seeded live mixed Q40 boundary");
     expect(providerMock.complete).toHaveBeenCalledTimes(1);
-    expect(existsSync(join(root, "solution-fidelity-repairs"))
-      ? readdirSync(join(root, "solution-fidelity-repairs")).length
-      : 0).toBe(0);
-    expect(existsSync(join(root, "solution-revisions"))
-      ? readdirSync(join(root, "solution-revisions")).length
-      : 0).toBe(0);
-    expect(stateSnapshot(root)).toEqual(before);
-  }, 180_000);
+    expect(readFileSync(join(
+      root,
+      "solution-repairs",
+      readdirSync(join(root, "solution-repairs")).find((name) => /^v2-0011-0017-/u.test(name))!
+    ))).toEqual(q17Repair);
+    expect(readFileSync(join(root, "solution-fidelity-repairs", q17FidelityName))).toEqual(q17Fidelity);
+    const fidelityFiles = readdirSync(join(root, "solution-fidelity-repairs")).sort();
+    expect(fidelityFiles.filter((name) => name.startsWith("v1-"))).toEqual([q17FidelityName]);
+    expect(fidelityFiles.filter((name) => name.startsWith("v2-"))).toHaveLength(10);
+    const q18Fidelity = JSON.parse(readFileSync(join(
+      root,
+      "solution-fidelity-repairs",
+      fidelityFiles.find((name) => /^v2-0011-0018-/u.test(name))!
+    ), "utf8"));
+    expect(q18Fidelity).toMatchObject({
+      version: 2,
+      authorityKind: "source-literal-fidelity",
+      key: "7:18",
+      item: {
+        answerStatus: "exact",
+        explanationStatus: "exact",
+        evidence: "SOURCE_LITERAL_REPLACEMENT_AUTHORITY",
+      },
+    });
+    expect(q18Fidelity).not.toHaveProperty("promptDigest");
+    expect(solutionRepairFidelityEvidence(
+      `solution-fidelity-repairs/${q17FidelityName}`,
+      hash(q17Fidelity),
+      false
+    )).toEqual({
+      path: `solution-fidelity-repairs/${q17FidelityName}`,
+      sha256: hash(q17Fidelity),
+      promptDigest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+    });
+    const q18FidelityName = fidelityFiles.find((name) => /^v2-0011-0018-/u.test(name))!;
+    const q18FidelityBytes = readFileSync(join(root, "solution-fidelity-repairs", q18FidelityName));
+    expect(solutionRepairFidelityEvidence(
+      `solution-fidelity-repairs/${q18FidelityName}`,
+      hash(q18FidelityBytes),
+      true
+    )).toEqual({
+      path: `solution-fidelity-repairs/${q18FidelityName}`,
+      sha256: hash(q18FidelityBytes),
+      authorityKind: "source-literal-fidelity",
+    });
+    expect(existsSync(join(root, "solution-revisions"))).toBe(false);
+    expect(existsSync(join(root, "answer-audit"))).toBe(false);
+    expect(existsSync(join(root, "answer-attestation"))).toBe(false);
+    const completed = stateSnapshot(root);
+    providerMock.complete.mockClear();
+    await expect(run()).rejects.toThrow("seeded live mixed Q40 boundary");
+    expect(providerMock.complete).toHaveBeenCalledTimes(1);
+    expect(stateSnapshot(root)).toEqual(completed);
+  }, 240_000);
 
   it.skipIf(!existsSync(join(q27LiveState, "solution.pdf")))(
     "preflights both pinned solution fidelity checkpoints and strict inventory before AI or writes",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-q17-q34-solution-seed-"));
     cpSync(q27LiveState, root, { recursive: true });
+    removeSolutionRepairArtifacts(root);
     rmSync(join(root, "solution-fidelity"), { recursive: true, force: true });
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
@@ -5218,6 +5325,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       const stateDir = mkdtempSync(join(tmpdir(), "studywork-q17-q34-solution-preflight-"));
       try {
         cpSync(q27LiveState, stateDir, { recursive: true });
+        removeSolutionRepairArtifacts(stateDir);
         rmSync(join(stateDir, "solution-fidelity"), { recursive: true, force: true });
         testCase.mutate(stateDir);
         const before = stateSnapshot(stateDir);

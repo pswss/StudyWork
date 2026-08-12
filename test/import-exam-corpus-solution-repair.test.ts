@@ -358,9 +358,13 @@ describe("exam corpus official solution repair", () => {
     const stale = JSON.parse(readFileSync(fidelityPath, "utf8"));
     stale.promptDigest = "stale";
     writeFileSync(fidelityPath, `${JSON.stringify(stale, null, 2)}\n`);
-    await expect(repairAndAuditOfficialAnswers(
+    const failure = await repairAndAuditOfficialAnswers(
       entry, problem, solution, root, classified, solutions
-    )).rejects.toThrow(/hash가 다릅니다|repair 해설 fidelity 메타데이터가 다릅니다/u);
+    ).then(() => "resolved unexpectedly", (error: unknown) => error instanceof Error ? error.message : String(error));
+    expect([
+      `${repaired.solutionRepairs[0].fidelityArtifact.path} persisted repair fidelity envelope가 다릅니다`,
+      `${migrated.solutionRepairs[0].repairArtifact.path} persisted seed repair fidelity hash가 다릅니다`,
+    ]).toContain(failure);
   });
 
   it("uses exact 22/18 fidelity ownership without start-page gaps or duplicates", () => {

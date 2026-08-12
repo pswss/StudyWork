@@ -118,6 +118,7 @@ export const SOLUTION_FIDELITY_SLICE_STRIDE = 18;
 export const SOLUTION_REPAIR_VERSION = 1;
 export const SOLUTION_SOURCE_LITERAL_REPAIR_VERSION = 2;
 export const SOLUTION_REPAIR_FIDELITY_VERSION = 1;
+export const SOLUTION_SOURCE_LITERAL_REPAIR_FIDELITY_VERSION = 2;
 export const PERSISTED_SOLUTION_REPAIR_SEED_VERSION = 1;
 export const SOLUTION_REVISION_VERSION = 1;
 export const SOLUTION_REVISION_FIDELITY_VERSION = 1;
@@ -1585,6 +1586,11 @@ type ProblemRecoveryTrigger =
 
 type EvidencePointer = { path: string; sha256: string };
 
+type SolutionRepairFidelityEvidence = EvidencePointer & (
+  | { promptDigest: string; authorityKind?: never }
+  | { authorityKind: "source-literal-fidelity"; promptDigest?: never }
+);
+
 type SolutionFidelityDecision = {
   key: string;
   sourcePage: number;
@@ -1613,7 +1619,7 @@ export type SolutionRepairEvidence = {
   baseSolutionCheckpoint: EvidencePointer;
   baseFidelityCheckpoint: EvidencePointer;
   repairArtifact: EvidencePointer;
-  fidelityArtifact: EvidencePointer & { promptDigest: string };
+  fidelityArtifact: SolutionRepairFidelityEvidence;
   baseSolutionItemHash: string;
   effectiveSolutionItemHash: string;
   baseRawAnswerHash: string;
@@ -1641,7 +1647,7 @@ export type SolutionRevisionEvidence = {
   baseRepairPage: number;
   effectivePage: number;
   baseRepairArtifact: EvidencePointer;
-  baseRepairFidelityArtifact: EvidencePointer & { promptDigest: string };
+  baseRepairFidelityArtifact: SolutionRepairFidelityEvidence;
   solutionArtifact: EvidencePointer & {
     revisionPromptVersion: number;
     revisionPromptDigest: string;
@@ -7928,6 +7934,93 @@ function sourceLiteralSolutionRepairCheckpoint(
   };
 }
 
+const SOURCE_LITERAL_FIDELITY_REASON = "SOURCE_LITERAL_REPLACEMENT_AUTHORITY";
+
+function sourceLiteralSolutionRepairFidelityDecision(
+  base: SolutionFidelityInput,
+  spec: SolutionFalseNegativeRepairItemSpec,
+  corrected: SolutionItem
+): SolutionFidelityDecision {
+  if (
+    base.key !== spec.key || corrected.page !== base.sourcePage ||
+    canonicalEvidenceHash(corrected) !== spec.expectedSolutionItemHash
+  ) throw new Error(`${spec.key} source-literal repair fidelity 입력 권위가 다릅니다`);
+  return {
+    key: base.key,
+    sourcePage: corrected.page,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: SOURCE_LITERAL_FIDELITY_REASON,
+  };
+}
+
+function sourceLiteralSolutionRepairFidelityPath(
+  base: SolutionFidelityInput,
+  repairArtifact: EvidencePointer,
+  correctionSpecHash: string
+): string {
+  return `solution-fidelity-repairs/v${SOLUTION_SOURCE_LITERAL_REPAIR_FIDELITY_VERSION}-` +
+    `${String(base.sourcePage).padStart(4, "0")}-${base.printedNumber.padStart(4, "0")}-` +
+    `${repairArtifact.sha256}-${correctionSpecHash}.json`;
+}
+
+function sourceLiteralSolutionRepairFidelityCheckpoint(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  effectiveProblemCorpusHash: string,
+  base: SolutionFidelityInput,
+  baseFidelityCheckpoint: EvidencePointer,
+  repairArtifact: EvidencePointer,
+  spec: SolutionFalseNegativeRepairItemSpec,
+  corrected: SolutionItem
+): Record<string, unknown> {
+  const { allowlist, correctionSpecHash } = solutionFalseNegativeRepairAuthority(entry, spec);
+  const input: SolutionFidelityInput = {
+    ...base,
+    sourcePage: corrected.page,
+    rawAnswer: corrected.answer,
+    explanation: corrected.explanation,
+  };
+  return {
+    version: SOLUTION_SOURCE_LITERAL_REPAIR_FIDELITY_VERSION,
+    authorityKind: "source-literal-fidelity",
+    entryId: entry.id,
+    key: base.key,
+    printedNumber: base.printedNumber,
+    sourceHash: evidence.sha256,
+    from: base.baseContextFrom,
+    to: base.baseContextTo,
+    basePage: base.sourcePage,
+    effectivePage: corrected.page,
+    baseOwnedFrom: base.baseOwnedFrom,
+    baseOwnedTo: base.baseOwnedTo,
+    effectiveProblemCorpusHash,
+    baseSolutionCheckpoint: base.baseSolutionCheckpoint,
+    baseFidelityCheckpoint,
+    repairArtifact,
+    baseSolutionItemHash: base.baseSolutionItemHash,
+    baseRawAnswerHash: sha256Text(base.rawAnswer),
+    baseExplanationHash: sha256Text(base.explanation),
+    allowlistId: allowlist.allowlistId,
+    correctionSpecHash,
+    expectedSolutionItemHash: spec.expectedSolutionItemHash,
+    effectiveSolutionItemHash: canonicalEvidenceHash(corrected),
+    inputHash: canonicalEvidenceHash(input),
+    input,
+    item: sourceLiteralSolutionRepairFidelityDecision(base, spec, corrected),
+  };
+}
+
+export function solutionRepairFidelityEvidence(
+  path: string,
+  sha256: string,
+  sourceLiteral: boolean
+): SolutionRepairFidelityEvidence {
+  return sourceLiteral
+    ? { path, sha256, authorityKind: "source-literal-fidelity" }
+    : { path, sha256, promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST };
+}
+
 async function assertSolutionFalseNegativeSourceAuthority(
   entry: CorpusManifestEntry,
   evidence: PdfEvidence,
@@ -8611,7 +8704,7 @@ async function scanPersistedSolutionHistory(
   const repairFidelityFiles = await readCanonicalSolutionArtifacts(
     stateDir,
     "solution-fidelity-repairs",
-    /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u
+    /^(?:v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}|v2-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64})\.json$/u
   );
   const revisionFiles = await readCanonicalSolutionArtifacts(
     stateDir,
@@ -8972,31 +9065,12 @@ async function scanPersistedSolutionHistory(
       explanation: repairedItem.explanation,
     };
     const repairedInputHash = canonicalEvidenceHash(repairedInput);
-    const expectedFidelityPath = `solution-fidelity-repairs/v${SOLUTION_REPAIR_FIDELITY_VERSION}-` +
+    const v1FidelityPath = `solution-fidelity-repairs/v${SOLUTION_REPAIR_FIDELITY_VERSION}-` +
       `${String(basePage).padStart(4, "0")}-${String(printedNumber).padStart(4, "0")}-` +
       `${baseFidelityPointerSha}-${repairedItemHash}.json`;
-    if (
-      fidelityFile.relativePath !== expectedFidelityPath || fidelity.version !== SOLUTION_REPAIR_FIDELITY_VERSION ||
-      fidelity.entryId !== entry.id || fidelity.key !== input.key || fidelity.sourceHash !== evidence.sha256 ||
-      fidelity.from !== input.baseContextFrom || fidelity.to !== input.baseContextTo || fidelity.basePage !== basePage ||
-      fidelity.effectivePage !== repairedItem.page || fidelity.baseOwnedFrom !== input.baseOwnedFrom ||
-      fidelity.baseOwnedTo !== input.baseOwnedTo ||
-      fidelity.effectiveProblemCorpusHash !== effectiveProblemCorpusHash ||
-      canonicalEvidenceHash(fidelity.baseSolutionCheckpoint) !== canonicalEvidenceHash(baseEvidence.checkpoint) ||
-      canonicalEvidenceHash(fidelity.baseFidelityCheckpoint) !== canonicalEvidenceHash({
-        path: baseFidelityPath,
-        sha256: baseFidelityPointerSha,
-      }) || canonicalEvidenceHash(fidelity.repairArtifact) !== canonicalEvidenceHash({
-        path: repairFile.relativePath,
-        sha256: repairFile.sha256,
-      }) || fidelity.effectiveSolutionItemHash !== repairedItemHash || fidelity.inputHash !== repairedInputHash ||
-      fidelity.promptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST || fidelity.model !== IMPORT_MODEL ||
-      fidelity.reasoningEffort !== IMPORT_REASONING_EFFORT ||
-      canonicalEvidenceHash(fidelity.input) !== canonicalEvidenceHash(repairedInput)
-    ) throw new Error(`기존 repair 해설 fidelity 메타데이터가 다릅니다: ${fidelityFile.relativePath}`);
     const firstDecision = parseSolutionFidelityDecisions([fidelity.item], [repairedInput])[0];
     if (forcedFalseNegative) assertFalseNegativeRepairFidelity(forcedFalseNegative, repairedItem, firstDecision);
-    const expectedFidelity = {
+    const v1Fidelity = {
       version: SOLUTION_REPAIR_FIDELITY_VERSION,
       entryId: entry.id,
       key: input.key,
@@ -9019,7 +9093,32 @@ async function scanPersistedSolutionHistory(
       input: repairedInput,
       item: firstDecision,
     };
-    if (canonicalEvidenceHash(fidelity) !== canonicalEvidenceHash(expectedFidelity)) {
+    const forcedAuthority = forcedFalseNegative && solutionFalseNegativeRepairAuthority(entry, forcedFalseNegative);
+    const repairArtifact = { path: repairFile.relativePath, sha256: repairFile.sha256 };
+    const v2FidelityPath = forcedAuthority && sourceLiteralSolutionRepairFidelityPath(
+      input,
+      repairArtifact,
+      forcedAuthority.correctionSpecHash
+    );
+    const expectedFidelity = fidelity.version === SOLUTION_SOURCE_LITERAL_REPAIR_FIDELITY_VERSION &&
+        forcedFalseNegative && v2Match
+      ? sourceLiteralSolutionRepairFidelityCheckpoint(
+          entry,
+          evidence,
+          effectiveProblemCorpusHash,
+          input,
+          { path: baseFidelityPath, sha256: baseFidelityPointerSha },
+          repairArtifact,
+          forcedFalseNegative,
+          repairedItem
+        )
+      : v1Fidelity;
+    if (
+      fidelityFile.relativePath !== (fidelity.version === SOLUTION_SOURCE_LITERAL_REPAIR_FIDELITY_VERSION
+        ? v2FidelityPath
+        : v1FidelityPath) ||
+      canonicalEvidenceHash(fidelity) !== canonicalEvidenceHash(expectedFidelity)
+    ) {
       throw new Error(`${fidelityFile.relativePath} persisted repair fidelity envelope가 다릅니다`);
     }
     const firstTerminal = terminalSolutionFidelity(repairedInput, repairedItem, firstDecision);
@@ -9814,6 +9913,9 @@ async function reviseSolutionItem(
   fidelityArtifact: EvidencePointer;
   evidence: SolutionRevisionEvidence;
 }> {
+  if (firstEvidence.fidelityArtifact.authorityKind === "source-literal-fidelity") {
+    throw new Error(`${base.key} source-literal repair fidelity에는 revision이 허용되지 않습니다`);
+  }
   const firstTerminalAnswer = firstDecision.answerStatus === "exact" ||
     firstDecision.answerStatus === "not_visible" && base.allowDerivedMarkerAnswer;
   const firstTerminal = firstDecision.sourcePage === firstSolution.page &&
@@ -10411,16 +10513,48 @@ async function repairSolutionItem(
       explanation: corrected.explanation,
     };
     const repairedInputHash = canonicalEvidenceHash(repairedInput);
-    const fidelityRelativePath =
+    const legacyFidelityRelativePath =
       `solution-fidelity-repairs/v${SOLUTION_REPAIR_FIDELITY_VERSION}-` +
       `${String(basePage).padStart(4, "0")}-${number.padStart(4, "0")}-` +
       `${baseFidelityCheckpoint.sha256}-${effectiveSolutionItemHash}.json`;
+    const repairArtifact = { path: repairRelativePath, sha256: repairArtifactHash };
+    const sourceLiteralFidelityRelativePath = falseNegativeSpec && forcedAuthority && useSourceLiteralRepair
+      ? sourceLiteralSolutionRepairFidelityPath(
+          base,
+          repairArtifact,
+          forcedAuthority.correctionSpecHash
+        )
+      : undefined;
+    const legacyFidelityExists = existsSync(join(stateDir, legacyFidelityRelativePath));
+    const sourceLiteralFidelityExists = sourceLiteralFidelityRelativePath !== undefined &&
+      existsSync(join(stateDir, sourceLiteralFidelityRelativePath));
+    if (legacyFidelityExists && sourceLiteralFidelityExists) {
+      throw new Error(`${base.key} forced false-negative repair fidelity v1/v2가 중복입니다`);
+    }
+    const useSourceLiteralFidelity = sourceLiteralFidelityRelativePath !== undefined && !legacyFidelityExists;
+    const fidelityRelativePath = useSourceLiteralFidelity
+      ? sourceLiteralFidelityRelativePath
+      : legacyFidelityRelativePath;
     const fidelityPath = join(stateDir, fidelityRelativePath);
     let fidelityCheckpoint: Record<string, unknown>;
     let decision: SolutionFidelityDecision;
     if (existsSync(fidelityPath)) {
       fidelityCheckpoint = object(JSON.parse(readFileSync(fidelityPath, "utf8")), fidelityRelativePath);
-      if (
+      if (useSourceLiteralFidelity && falseNegativeSpec) {
+        decision = sourceLiteralSolutionRepairFidelityDecision(base, falseNegativeSpec, corrected);
+        if (canonicalEvidenceHash(fidelityCheckpoint) !== canonicalEvidenceHash(
+          sourceLiteralSolutionRepairFidelityCheckpoint(
+            entry,
+            evidence,
+            effectiveProblemCorpusHash,
+            base,
+            { path: baseFidelityCheckpoint.path, sha256: baseFidelityCheckpoint.sha256 },
+            repairArtifact,
+            falseNegativeSpec,
+            corrected
+          )
+        )) throw new Error(`기존 source-literal repair fidelity 체크포인트가 다릅니다: ${fidelityPath}`);
+      } else if (
         fidelityCheckpoint.version !== SOLUTION_REPAIR_FIDELITY_VERSION || fidelityCheckpoint.entryId !== entry.id ||
         fidelityCheckpoint.key !== base.key || fidelityCheckpoint.sourceHash !== evidence.sha256 ||
         fidelityCheckpoint.from !== base.baseContextFrom || fidelityCheckpoint.to !== base.baseContextTo ||
@@ -10434,53 +10568,66 @@ async function repairSolutionItem(
           path: baseFidelityCheckpoint.path,
           sha256: baseFidelityCheckpoint.sha256,
         }) ||
-        canonicalEvidenceHash(fidelityCheckpoint.repairArtifact) !== canonicalEvidenceHash({
-          path: repairRelativePath,
-          sha256: repairArtifactHash,
-        }) ||
+        canonicalEvidenceHash(fidelityCheckpoint.repairArtifact) !== canonicalEvidenceHash(repairArtifact) ||
         fidelityCheckpoint.effectiveSolutionItemHash !== effectiveSolutionItemHash ||
         fidelityCheckpoint.inputHash !== repairedInputHash ||
         fidelityCheckpoint.promptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST ||
         fidelityCheckpoint.model !== IMPORT_MODEL || fidelityCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
         canonicalEvidenceHash(fidelityCheckpoint.input) !== canonicalEvidenceHash(repairedInput)
       ) throw new Error(`기존 repair 해설 fidelity 메타데이터가 다릅니다: ${fidelityPath}`);
-      decision = parseSolutionFidelityDecisions([fidelityCheckpoint.item], [repairedInput])[0];
-      if (falseNegativeSpec) assertFalseNegativeRepairFidelity(falseNegativeSpec, corrected, decision);
+      else {
+        decision = parseSolutionFidelityDecisions([fidelityCheckpoint.item], [repairedInput])[0];
+        if (falseNegativeSpec) assertFalseNegativeRepairFidelity(falseNegativeSpec, corrected, decision);
+      }
     } else {
-      decision = (await evaluateSolutionFidelity(
-        contextPath,
-        base.baseContextFrom,
-        base.baseContextTo,
-        { from: base.baseContextFrom, to: base.baseContextTo },
-        [repairedInput]
-      ))[0];
-      if (falseNegativeSpec) assertFalseNegativeRepairFidelity(falseNegativeSpec, corrected, decision);
-      fidelityCheckpoint = {
-        version: SOLUTION_REPAIR_FIDELITY_VERSION,
-        entryId: entry.id,
-        key: base.key,
-        sourceHash: evidence.sha256,
-        from: base.baseContextFrom,
-        to: base.baseContextTo,
-        basePage,
-        effectivePage: corrected.page,
-        baseOwnedFrom: base.baseOwnedFrom,
-        baseOwnedTo: base.baseOwnedTo,
-        effectiveProblemCorpusHash,
-        baseSolutionCheckpoint: base.baseSolutionCheckpoint,
-        baseFidelityCheckpoint: {
-          path: baseFidelityCheckpoint.path,
-          sha256: baseFidelityCheckpoint.sha256,
-        },
-        repairArtifact: { path: repairRelativePath, sha256: repairArtifactHash },
-        effectiveSolutionItemHash,
-        inputHash: repairedInputHash,
-        promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
-        model: IMPORT_MODEL,
-        reasoningEffort: IMPORT_REASONING_EFFORT,
-        input: repairedInput,
-        item: decision,
-      };
+      if (useSourceLiteralFidelity && falseNegativeSpec) {
+        decision = sourceLiteralSolutionRepairFidelityDecision(base, falseNegativeSpec, corrected);
+        fidelityCheckpoint = sourceLiteralSolutionRepairFidelityCheckpoint(
+          entry,
+          evidence,
+          effectiveProblemCorpusHash,
+          base,
+          { path: baseFidelityCheckpoint.path, sha256: baseFidelityCheckpoint.sha256 },
+          repairArtifact,
+          falseNegativeSpec,
+          corrected
+        );
+      } else {
+        decision = (await evaluateSolutionFidelity(
+          contextPath,
+          base.baseContextFrom,
+          base.baseContextTo,
+          { from: base.baseContextFrom, to: base.baseContextTo },
+          [repairedInput]
+        ))[0];
+        if (falseNegativeSpec) assertFalseNegativeRepairFidelity(falseNegativeSpec, corrected, decision);
+        fidelityCheckpoint = {
+          version: SOLUTION_REPAIR_FIDELITY_VERSION,
+          entryId: entry.id,
+          key: base.key,
+          sourceHash: evidence.sha256,
+          from: base.baseContextFrom,
+          to: base.baseContextTo,
+          basePage,
+          effectivePage: corrected.page,
+          baseOwnedFrom: base.baseOwnedFrom,
+          baseOwnedTo: base.baseOwnedTo,
+          effectiveProblemCorpusHash,
+          baseSolutionCheckpoint: base.baseSolutionCheckpoint,
+          baseFidelityCheckpoint: {
+            path: baseFidelityCheckpoint.path,
+            sha256: baseFidelityCheckpoint.sha256,
+          },
+          repairArtifact,
+          effectiveSolutionItemHash,
+          inputHash: repairedInputHash,
+          promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+          model: IMPORT_MODEL,
+          reasoningEffort: IMPORT_REASONING_EFFORT,
+          input: repairedInput,
+          item: decision,
+        };
+      }
       await writeImmutableEvidence(fidelityPath, fidelityCheckpoint);
     }
     const fidelityArtifactHash = await sha256File(fidelityPath);
@@ -10501,12 +10648,12 @@ async function repairSolutionItem(
         path: baseFidelityCheckpoint.path,
         sha256: baseFidelityCheckpoint.sha256,
       },
-      repairArtifact: { path: repairRelativePath, sha256: repairArtifactHash },
-      fidelityArtifact: {
-        path: fidelityRelativePath,
-        sha256: fidelityArtifactHash,
-        promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
-      },
+      repairArtifact,
+      fidelityArtifact: solutionRepairFidelityEvidence(
+        fidelityRelativePath,
+        fidelityArtifactHash,
+        useSourceLiteralFidelity
+      ),
       baseSolutionItemHash: base.baseSolutionItemHash,
       effectiveSolutionItemHash,
       baseRawAnswerHash: sha256Text(base.rawAnswer),

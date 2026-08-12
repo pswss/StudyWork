@@ -175,6 +175,11 @@ type ClassificationEvidence = {
 
 type EvidencePointer = { path: string; sha256: string };
 
+type SolutionRepairFidelityEvidence = EvidencePointer & (
+  | { promptDigest: string; authorityKind?: never }
+  | { authorityKind: "source-literal-fidelity"; promptDigest?: never }
+);
+
 type ClassifiedEvidence = {
   question: ProblemQuestion;
   classification: ClassificationEvidence;
@@ -351,6 +356,7 @@ const SOLUTION_FIDELITY_SLICE_STRIDE = 18;
 const SOLUTION_REPAIR_VERSION = 1;
 const SOLUTION_SOURCE_LITERAL_REPAIR_VERSION = 2;
 const SOLUTION_REPAIR_FIDELITY_VERSION = 1;
+const SOLUTION_SOURCE_LITERAL_REPAIR_FIDELITY_VERSION = 2;
 const SOLUTION_REVISION_VERSION = 1;
 const SOLUTION_REVISION_FIDELITY_VERSION = 1;
 const PERSISTED_SOLUTION_REPAIR_SEED_VERSION = 1;
@@ -13263,6 +13269,92 @@ function sourceLiteralSolutionRepairCheckpoint(
   };
 }
 
+const SOURCE_LITERAL_FIDELITY_REASON = "SOURCE_LITERAL_REPLACEMENT_AUTHORITY";
+
+function sourceLiteralSolutionRepairFidelityDecision(
+  input: SolutionFidelityInput,
+  spec: SolutionFalseNegativeRepairItemSpec,
+  corrected: OfficialSolution,
+): SolutionFidelityDecision {
+  if (input.key !== spec.key || corrected.page !== input.sourcePage
+    || canonicalEvidenceHash(corrected.evidence) !== spec.expectedSolutionItemHash) {
+    throw new Error(`${spec.key}: source-literal repair fidelity authority is stale`);
+  }
+  return {
+    key: input.key,
+    sourcePage: corrected.page,
+    answerStatus: "exact",
+    explanationStatus: "exact",
+    evidence: SOURCE_LITERAL_FIDELITY_REASON,
+  };
+}
+
+function sourceLiteralSolutionRepairFidelityPath(
+  input: SolutionFidelityInput,
+  repairArtifact: EvidencePointer,
+  correctionSpecHash: string,
+): string {
+  return `solution-fidelity-repairs/v${SOLUTION_SOURCE_LITERAL_REPAIR_FIDELITY_VERSION}-` +
+    `${String(input.sourcePage).padStart(4, "0")}-${input.printedNumber.padStart(4, "0")}-` +
+    `${repairArtifact.sha256}-${correctionSpecHash}.json`;
+}
+
+function sourceLiteralSolutionRepairFidelityCheckpoint(
+  entry: ManifestEntry,
+  evidence: DownloadEvidence,
+  effectiveProblemCorpusHash: string,
+  input: SolutionFidelityInput,
+  baseFidelityCheckpoint: EvidencePointer,
+  repairArtifact: EvidencePointer,
+  spec: SolutionFalseNegativeRepairItemSpec,
+  corrected: OfficialSolution,
+): Record<string, unknown> {
+  const { allowlist, correctionSpecHash } = solutionFalseNegativeRepairAuthority(entry, spec);
+  const repairedInput: SolutionFidelityInput = {
+    ...input,
+    sourcePage: corrected.page,
+    rawAnswer: corrected.rawAnswer,
+    explanation: corrected.explanation,
+  };
+  return {
+    version: SOLUTION_SOURCE_LITERAL_REPAIR_FIDELITY_VERSION,
+    authorityKind: "source-literal-fidelity",
+    entryId: entry.id,
+    key: input.key,
+    printedNumber: input.printedNumber,
+    sourceHash: evidence.sha256,
+    from: input.baseContextFrom,
+    to: input.baseContextTo,
+    basePage: input.sourcePage,
+    effectivePage: corrected.page,
+    baseOwnedFrom: input.baseOwnedFrom,
+    baseOwnedTo: input.baseOwnedTo,
+    effectiveProblemCorpusHash,
+    baseSolutionCheckpoint: input.baseSolutionCheckpoint,
+    baseFidelityCheckpoint,
+    repairArtifact,
+    baseSolutionItemHash: input.baseSolutionItemHash,
+    baseRawAnswerHash: sha256(input.rawAnswer),
+    baseExplanationHash: sha256(input.explanation),
+    allowlistId: allowlist.allowlistId,
+    correctionSpecHash,
+    expectedSolutionItemHash: spec.expectedSolutionItemHash,
+    effectiveSolutionItemHash: canonicalEvidenceHash(corrected.evidence),
+    inputHash: canonicalEvidenceHash(repairedInput),
+    input: repairedInput,
+    item: sourceLiteralSolutionRepairFidelityDecision(input, spec, corrected),
+  };
+}
+
+function solutionRepairFidelityEvidence(
+  pointer: EvidencePointer,
+  sourceLiteral: boolean,
+): SolutionRepairFidelityEvidence {
+  return sourceLiteral
+    ? { ...pointer, authorityKind: "source-literal-fidelity" }
+    : { ...pointer, promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST };
+}
+
 function assertFalseNegativeRepairFidelity(
   spec: SolutionFalseNegativeRepairItemSpec,
   solution: OfficialSolution,
@@ -13481,6 +13573,40 @@ export function verifyPersistedSolutionFalseNegativeStateForTest(input: {
     throw new Error(`${entry.id}: persisted forced false-negative repair coverage is not exact`);
   }
   return actual;
+}
+
+export function verifyCurrentSolutionFalseNegativeRepairForTest(input: {
+  stateDir: string;
+  entry: unknown;
+  solutionEvidence: unknown;
+  effectiveProblemCorpusHash: string;
+  baseInput: unknown;
+  baseSolution: unknown;
+  baseFidelityArtifact: unknown;
+  repair: unknown;
+}): Record<string, unknown> {
+  const entry = input.entry as ManifestEntry;
+  const baseInput = input.baseInput as SolutionFidelityInput;
+  const spec = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST.find((candidate) => candidate.entryId === entry.id)
+    ?.items.find((candidate) => candidate.key === baseInput.key);
+  if (!spec) throw new Error(`${baseInput.key}: no solution false-negative authority`);
+  const repair = object(input.repair, `${baseInput.key}.repair`);
+  const first = verifyFirstSolutionRepair(
+    input.stateDir,
+    entry,
+    input.solutionEvidence as DownloadEvidence,
+    input.effectiveProblemCorpusHash,
+    baseInput,
+    input.baseSolution as OfficialSolution,
+    evidencePointer(input.baseFidelityArtifact, `${baseInput.key}.baseFidelityArtifact`),
+    repair,
+    undefined,
+    spec,
+  );
+  if (!isDeepStrictEqual(repair, first.evidence)) {
+    throw new Error(`${baseInput.key}: solution repair evidence envelope does not match its exact chain`);
+  }
+  return first.evidence;
 }
 
 type VerifiedSolutionFidelity = {
@@ -14302,7 +14428,7 @@ function verifyPersistedSolutionHistory(
   const repairFidelityFiles = readCanonicalSolutionArtifacts(
     stateDir,
     "solution-fidelity-repairs",
-    /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u,
+    /^(?:v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}|v2-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64})\.json$/u,
   );
   const revisionFiles = readCanonicalSolutionArtifacts(
     stateDir,
@@ -14644,10 +14770,10 @@ function verifyPersistedSolutionHistory(
       repairedInput,
       `${fidelityFile.path}.item`,
     );
-    const expectedFidelityPath = `solution-fidelity-repairs/v${SOLUTION_REPAIR_FIDELITY_VERSION}-` +
+    const v1FidelityPath = `solution-fidelity-repairs/v${SOLUTION_REPAIR_FIDELITY_VERSION}-` +
       `${String(basePage).padStart(4, "0")}-${printedNumber.padStart(4, "0")}-` +
       `${baseFidelityCheckpoint.sha256}-${repairedItemHash}.json`;
-    const expectedFidelity = {
+    const v1Fidelity = {
       version: SOLUTION_REPAIR_FIDELITY_VERSION,
       entryId: entry.id,
       key,
@@ -14670,7 +14796,28 @@ function verifyPersistedSolutionHistory(
       input: repairedInput,
       item: firstDecision,
     };
-    if (fidelityFile.path !== expectedFidelityPath || !isDeepStrictEqual(fidelity, expectedFidelity)) {
+    const repairArtifact = { path: repairFile.path, sha256: repairFile.sha256 };
+    const forcedAuthority = forcedFalseNegative
+      ? solutionFalseNegativeRepairAuthority(entry, forcedFalseNegative)
+      : undefined;
+    const v2FidelityPath = forcedAuthority
+      ? sourceLiteralSolutionRepairFidelityPath(input, repairArtifact, forcedAuthority.correctionSpecHash)
+      : undefined;
+    const sourceLiteralFidelity = fidelity.version === SOLUTION_SOURCE_LITERAL_REPAIR_FIDELITY_VERSION;
+    const expectedFidelity = sourceLiteralFidelity && forcedFalseNegative && v2Match
+      ? sourceLiteralSolutionRepairFidelityCheckpoint(
+        entry,
+        solutionEvidence,
+        effectiveProblemCorpusHash,
+        input,
+        baseFidelityCheckpoint,
+        repairArtifact,
+        forcedFalseNegative,
+        repaired,
+      )
+      : v1Fidelity;
+    if (fidelityFile.path !== (sourceLiteralFidelity ? v2FidelityPath : v1FidelityPath)
+      || !isDeepStrictEqual(fidelity, expectedFidelity)) {
       throw new Error(`${fidelityFile.path}: persisted repair fidelity metadata is stale`);
     }
     if (forcedFalseNegative) assertFalseNegativeRepairFidelity(forcedFalseNegative, repaired, firstDecision);
@@ -15406,14 +15553,19 @@ function verifyFirstSolutionRepair(
   }
 
   const fidelityArtifactRow = object(repair.fidelityArtifact, `${key}.fidelityArtifact`);
-  if (Object.keys(fidelityArtifactRow).sort().join(",") !== "path,promptDigest,sha256") {
+  const sourceLiteralFidelity = fidelityArtifactRow.authorityKind === "source-literal-fidelity";
+  const expectedFidelityFields = sourceLiteralFidelity
+    ? "authorityKind,path,sha256"
+    : "path,promptDigest,sha256";
+  if (Object.keys(fidelityArtifactRow).sort().join(",") !== expectedFidelityFields) {
     throw new Error(`${key}.fidelityArtifact has unexpected fields`);
   }
   const fidelityArtifact = evidencePointer(
     { path: fidelityArtifactRow.path, sha256: fidelityArtifactRow.sha256 },
     `${key}.fidelityArtifact`,
   );
-  if (fidelityArtifactRow.promptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST) {
+  if (sourceLiteralFidelity && (!sourceLiteralRepair || !falseNegativeSpec)
+    || !sourceLiteralFidelity && fidelityArtifactRow.promptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST) {
     throw new Error(`${key}: repaired solution fidelity prompt is stale`);
   }
   const repairedInput: SolutionFidelityInput = {
@@ -15423,10 +15575,16 @@ function verifyFirstSolutionRepair(
     explanation: corrected.explanation,
   };
   const repairedInputHash = canonicalEvidenceHash(repairedInput);
-  const expectedFidelityPath = `solution-fidelity-repairs/v${SOLUTION_REPAIR_FIDELITY_VERSION}-` +
+  const v1FidelityPath = `solution-fidelity-repairs/v${SOLUTION_REPAIR_FIDELITY_VERSION}-` +
     `${String(basePage).padStart(4, "0")}-${printedNumber.padStart(4, "0")}-` +
     `${baseFidelityArtifact.sha256}-${effectiveSolutionItemHash}.json`;
-  if (fidelityArtifact.path !== expectedFidelityPath) {
+  const forcedAuthority = falseNegativeSpec
+    ? solutionFalseNegativeRepairAuthority(entry, falseNegativeSpec)
+    : undefined;
+  const v2FidelityPath = forcedAuthority
+    ? sourceLiteralSolutionRepairFidelityPath(input, repairArtifact, forcedAuthority.correctionSpecHash)
+    : undefined;
+  if (fidelityArtifact.path !== (sourceLiteralFidelity ? v2FidelityPath : v1FidelityPath)) {
     throw new Error(`${key}: repaired solution fidelity path is invalid`);
   }
   const fidelityCheckpoint = readBoundEvidence(stateDir, fidelityArtifact, `${key} repaired solution fidelity`);
@@ -15435,7 +15593,7 @@ function verifyFirstSolutionRepair(
     repairedInput,
     `${key} repaired solution fidelity.item`,
   );
-  const expectedFidelityCheckpoint = {
+  const v1FidelityCheckpoint = {
     version: SOLUTION_REPAIR_FIDELITY_VERSION,
     entryId: entry.id,
     key,
@@ -15458,6 +15616,18 @@ function verifyFirstSolutionRepair(
     input: repairedInput,
     item: repairedDecision,
   };
+  const expectedFidelityCheckpoint = sourceLiteralFidelity && falseNegativeSpec
+    ? sourceLiteralSolutionRepairFidelityCheckpoint(
+      entry,
+      solutionEvidence,
+      effectiveProblemCorpusHash,
+      input,
+      baseFidelityArtifact,
+      repairArtifact,
+      falseNegativeSpec,
+      corrected,
+    )
+    : v1FidelityCheckpoint;
   if (!isDeepStrictEqual(fidelityCheckpoint, expectedFidelityCheckpoint)) {
     throw new Error(`${key}: repaired solution fidelity metadata/content is stale or incomplete`);
   }
@@ -15482,7 +15652,7 @@ function verifyFirstSolutionRepair(
     baseSolutionCheckpoint,
     baseFidelityCheckpoint,
     repairArtifact,
-    fidelityArtifact: { ...fidelityArtifact, promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST },
+    fidelityArtifact: solutionRepairFidelityEvidence(fidelityArtifact, sourceLiteralFidelity),
     baseSolutionItemHash: input.baseSolutionItemHash,
     effectiveSolutionItemHash,
     baseRawAnswerHash: sha256(input.rawAnswer),
@@ -16365,15 +16535,17 @@ function hasPersistedSolutionGenerationSignal(stateDir: string): boolean {
     if (existsSync(absolute) && readdirSync(absolute, { withFileTypes: true }).some((entry) =>
       !(entry.isFile() && entry.name.endsWith(".tmp")))) return true;
   }
-  const repairDirectory = join(stateDir, "solution-repairs");
-  try {
-    const info = lstatSync(repairDirectory);
-    if (info.isSymbolicLink() || !info.isDirectory()
-      || realpathSync(repairDirectory) !== resolve(realpathSync(stateDir), "solution-repairs")) return true;
-    if (readdirSync(repairDirectory, { withFileTypes: true }).some((entry) =>
-      !(entry.isFile() && entry.name.endsWith(".tmp")) && entry.name.startsWith("v2-"))) return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") return true;
+  for (const directory of ["solution-repairs", "solution-fidelity-repairs"]) {
+    const absolute = join(stateDir, directory);
+    try {
+      const info = lstatSync(absolute);
+      if (info.isSymbolicLink() || !info.isDirectory()
+        || realpathSync(absolute) !== resolve(realpathSync(stateDir), directory)) return true;
+      if (readdirSync(absolute, { withFileTypes: true }).some((entry) =>
+        !(entry.isFile() && entry.name.endsWith(".tmp")) && entry.name.startsWith("v2-"))) return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return true;
+    }
   }
   for (const [directory, pattern, kind] of [
     ["solution-repairs", /^(?:v1-\d{4}-\d{4}-[a-f0-9]{64}|v2-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64})\.json$/u, "repair"],

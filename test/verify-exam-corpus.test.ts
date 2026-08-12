@@ -69,6 +69,7 @@ import {
   verifyExamCorpus,
   verifyProblemManualAdjudicationForTest,
   verifyPersistedProblemRepairOverlapForTest,
+  verifyCurrentSolutionFalseNegativeRepairForTest,
   verifySolutionFalseNegativeRepairAuthorityForTest,
   verifyPersistedSolutionFalseNegativeStateForTest,
   verificationContractAuditVersionForTest,
@@ -892,6 +893,56 @@ function q5525982BaseAuthorityInput(stateDir: string) {
     effectiveProblemCorpusHash: persisted.effectiveProblemCorpusHash,
     checkpoints,
     items,
+  };
+}
+
+function q5525982CurrentRepairAuthorityInput(stateDir: string, key: string) {
+  const base = q5525982BaseAuthorityInput(stateDir);
+  const item = base.items.find((candidate) => (candidate.input as { key: string }).key === key)!;
+  const repairName = readdirSync(join(stateDir, "solution-repairs"))
+    .find((name) => name.includes(`-${String(Number(key.split(":")[1])).padStart(4, "0")}-`))!;
+  const repairPath = `solution-repairs/${repairName}`;
+  const repairCheckpoint = JSON.parse(readFileSync(join(stateDir, repairPath), "utf8"));
+  const fidelityName = readdirSync(join(stateDir, "solution-fidelity-repairs")).find((name) => {
+    const checkpoint = JSON.parse(readFileSync(join(stateDir, "solution-fidelity-repairs", name), "utf8"));
+    return checkpoint.repairArtifact.path === repairPath;
+  })!;
+  const fidelityPath = `solution-fidelity-repairs/${fidelityName}`;
+  const repair = {
+    key,
+    printedNumber: repairCheckpoint.printedNumber,
+    basePage: repairCheckpoint.basePage,
+    effectivePage: repairCheckpoint.effectivePage,
+    contextFrom: repairCheckpoint.contextFrom,
+    contextTo: repairCheckpoint.contextTo,
+    baseOwnedFrom: repairCheckpoint.baseOwnedFrom,
+    baseOwnedTo: repairCheckpoint.baseOwnedTo,
+    baseSolutionCheckpoint: repairCheckpoint.baseSolutionCheckpoint,
+    baseFidelityCheckpoint: repairCheckpoint.baseFidelityCheckpoint,
+    repairArtifact: { path: repairPath, sha256: hash(readFileSync(join(stateDir, repairPath))) },
+    fidelityArtifact: {
+      path: fidelityPath,
+      sha256: hash(readFileSync(join(stateDir, fidelityPath))),
+      ...(fidelityName.startsWith("v2-")
+        ? { authorityKind: "source-literal-fidelity" }
+        : { promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST }),
+    },
+    baseSolutionItemHash: repairCheckpoint.baseSolutionItemHash,
+    effectiveSolutionItemHash: canonicalEvidenceHash(repairCheckpoint.item),
+    baseRawAnswerHash: repairCheckpoint.baseRawAnswerHash,
+    effectiveRawAnswerHash: hash(Buffer.from(repairCheckpoint.item.answer)),
+    baseExplanationHash: repairCheckpoint.baseExplanationHash,
+    effectiveExplanationHash: hash(Buffer.from(repairCheckpoint.item.explanation)),
+  };
+  return {
+    stateDir,
+    entry: base.entry,
+    solutionEvidence: base.solutionEvidence,
+    effectiveProblemCorpusHash: base.effectiveProblemCorpusHash,
+    baseInput: item.input,
+    baseSolution: item.solution,
+    baseFidelityArtifact: item.artifact,
+    repair,
   };
 }
 
@@ -16140,6 +16191,40 @@ describe("exam corpus verifier", () => {
       .toMatchObject({ ok: true });
   });
 
+  it("forces current verification for orphan or invalid v2 fidelity authority", () => {
+    const orphan = fixture();
+    const directory = join(orphan.stateDirs.math, "solution-fidelity-repairs");
+    mkdirSync(directory, { recursive: true });
+    writeJson(join(
+      directory,
+      `v2-0001-0001-${"1".repeat(64)}-${"2".repeat(64)}.json`,
+    ), {});
+    expect(verificationContractAuditVersionForTest(orphan.stateDirs.math)).toBe(5);
+    expect(verifyExamCorpus(orphan).ok).toBe(false);
+
+    for (const dangling of [false, true]) {
+      const files = fixture();
+      const target = mkdtempSync(join(tmpdir(), "verify-v2-fidelity-dir-signal-"));
+      if (dangling) rmSync(target, { recursive: true, force: true });
+      const signalPath = join(files.stateDirs.math, "solution-fidelity-repairs");
+      symlinkSync(target, signalPath);
+      try {
+        expect(verificationContractAuditVersionForTest(files.stateDirs.math)).toBe(5);
+        expect(verifyExamCorpus(files).ok).toBe(false);
+      } finally {
+        rmSync(signalPath);
+        rmSync(target, { recursive: true, force: true });
+      }
+    }
+
+    const residue = fixture();
+    const prior = verificationContractAuditVersionForTest(residue.stateDirs.math);
+    const residueDir = join(residue.stateDirs.math, "solution-fidelity-repairs");
+    mkdirSync(residueDir, { recursive: true });
+    writeFileSync(join(residueDir, "v2-crash-resume.tmp"), "partial immutable write");
+    expect(verificationContractAuditVersionForTest(residue.stateDirs.math)).toBe(prior);
+  });
+
   it.skipIf(!existsSync(join(Q5525982_STATE, "solution.pdf")))(
     "reconstructs all eleven forced exact solution repairs and rejects tampered authority",
     async () => {
@@ -16195,7 +16280,51 @@ describe("exam corpus verifier", () => {
         for (const field of ["promptVersion", "promptDigest", "model", "reasoningEffort"]) {
           expect(firstRepair).not.toHaveProperty(field);
         }
-        expect(readdirSync(join(valid, "solution-fidelity-repairs"))).toHaveLength(11);
+        const fidelities = readdirSync(join(valid, "solution-fidelity-repairs")).sort();
+        expect(fidelities).toHaveLength(11);
+        expect(fidelities.filter((name) => name.startsWith("v1-")))
+          .toEqual([expect.stringMatching(/^v1-0011-0017-/u)]);
+        expect(fidelities.filter((name) => name.startsWith("v2-"))).toHaveLength(10);
+        const q18FidelityName = fidelities.find((name) => /^v2-0011-0018-/u.test(name))!;
+        const q18Fidelity = JSON.parse(readFileSync(
+          join(valid, "solution-fidelity-repairs", q18FidelityName),
+          "utf8",
+        ));
+        expect(q18Fidelity).toMatchObject({
+          version: 2,
+          authorityKind: "source-literal-fidelity",
+          key: "7:18",
+          item: {
+            answerStatus: "exact",
+            explanationStatus: "exact",
+            evidence: "SOURCE_LITERAL_REPLACEMENT_AUTHORITY",
+          },
+        });
+        for (const field of ["promptDigest", "model", "reasoningEffort"]) {
+          expect(q18Fidelity).not.toHaveProperty(field);
+        }
+        expect(verifyCurrentSolutionFalseNegativeRepairForTest(
+          q5525982CurrentRepairAuthorityInput(valid, "7:18"),
+        )).toMatchObject({
+          key: "7:18",
+          fidelityArtifact: {
+            authorityKind: "source-literal-fidelity",
+            path: `solution-fidelity-repairs/${q18FidelityName}`,
+          },
+        });
+        const extraDiscriminator = q5525982CurrentRepairAuthorityInput(valid, "7:18");
+        (extraDiscriminator.repair.fidelityArtifact as Record<string, unknown>).promptDigest = "0".repeat(64);
+        expect(() => verifyCurrentSolutionFalseNegativeRepairForTest(extraDiscriminator))
+          .toThrow(/fidelityArtifact has unexpected fields/u);
+        expect(verifyCurrentSolutionFalseNegativeRepairForTest(
+          q5525982CurrentRepairAuthorityInput(valid, "7:17"),
+        )).toMatchObject({
+          key: "7:17",
+          fidelityArtifact: {
+            promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+            path: expect.stringMatching(/^solution-fidelity-repairs\/v1-0011-0017-/u),
+          },
+        });
         expect(existsSync(join(valid, "solution-revisions"))
           ? readdirSync(join(valid, "solution-revisions")).length
           : 0).toBe(0);
@@ -16333,7 +16462,7 @@ describe("exam corpus verifier", () => {
       try {
         const path = join(nonterminal, "solution-fidelity-repairs", readdirSync(
           join(nonterminal, "solution-fidelity-repairs"),
-        ).find((name) => /-0017-/u.test(name))!);
+        ).find((name) => /^v2-\d{4}-0018-/u.test(name))!);
         const checkpoint = JSON.parse(readFileSync(path, "utf8"));
         checkpoint.item.explanationStatus = "mismatch";
         writeEvidence(path, checkpoint);
@@ -16346,12 +16475,101 @@ describe("exam corpus verifier", () => {
       const missing = await seed();
       try {
         const name = readdirSync(join(missing, "solution-fidelity-repairs"))
-          .find((candidate) => /-0017-/u.test(candidate))!;
+          .find((candidate) => /^v2-\d{4}-0018-/u.test(candidate))!;
         rmSync(join(missing, "solution-fidelity-repairs", name));
         expect(() => verifyPersistedSolutionFalseNegativeStateForTest(q5525982VerifierAuthorityInput(missing)))
           .toThrow(/child coverage/u);
       } finally {
         rmSync(missing, { recursive: true, force: true });
+      }
+
+      const fidelityCases: Array<{
+        label: string;
+        mutate: (stateDir: string, name: string) => void;
+        error: RegExp;
+      }> = [{
+        label: "same-parent fidelity v1 and v2",
+        mutate: (stateDir, name) => {
+          const checkpoint = JSON.parse(readFileSync(
+            join(stateDir, "solution-fidelity-repairs", name),
+            "utf8",
+          ));
+          const v1Name = `v1-${String(checkpoint.basePage).padStart(4, "0")}-` +
+            `${checkpoint.printedNumber.padStart(4, "0")}-${checkpoint.baseFidelityCheckpoint.sha256}-` +
+            `${checkpoint.effectiveSolutionItemHash}.json`;
+          writeFileSync(
+            join(stateDir, "solution-fidelity-repairs", v1Name),
+            readFileSync(join(stateDir, "solution-fidelity-repairs", name)),
+          );
+        },
+        error: /fidelity child coverage/u,
+      }, {
+        label: "v2 fidelity extra envelope field",
+        mutate: (stateDir, name) => {
+          const path = join(stateDir, "solution-fidelity-repairs", name);
+          const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+          checkpoint.unexpected = true;
+          writeEvidence(path, checkpoint);
+        },
+        error: /fidelity metadata/u,
+      }, {
+        label: "v2 fidelity dynamic repair hash filename",
+        mutate: (stateDir, name) => {
+          const changed = name.replace(
+            /-([a-f0-9]{64})-([a-f0-9]{64}\.json)$/u,
+            `-${"0".repeat(64)}-$2`,
+          );
+          renameSync(
+            join(stateDir, "solution-fidelity-repairs", name),
+            join(stateDir, "solution-fidelity-repairs", changed),
+          );
+        },
+        error: /fidelity metadata/u,
+      }, {
+        label: "v2 fidelity leaf symlink",
+        mutate: (stateDir, name) => {
+          const path = join(stateDir, "solution-fidelity-repairs", name);
+          renameSync(path, `${path}.tmp`);
+          symlinkSync(`${name}.tmp`, path);
+        },
+        error: /malformed persisted solution authority/u,
+      }, {
+        label: "v2 fidelity orphan",
+        mutate: (stateDir, name) => {
+          const checkpoint = JSON.parse(readFileSync(
+            join(stateDir, "solution-fidelity-repairs", name),
+            "utf8",
+          ));
+          checkpoint.repairArtifact.path = "solution-repairs/missing.json";
+          const orphanName = name.replace(
+            /^(v2-\d{4}-0018-)[a-f0-9]{64}(-[a-f0-9]{64}\.json)$/u,
+            `$1${"f".repeat(64)}$2`,
+          );
+          writeEvidence(join(stateDir, "solution-fidelity-repairs", orphanName), checkpoint);
+        },
+        error: /orphan persisted solution repair fidelity/u,
+      }, {
+        label: "v2 fidelity directory symlink",
+        mutate: (stateDir) => {
+          const directory = join(stateDir, "solution-fidelity-repairs");
+          const target = join(stateDir, "solution-fidelity-repairs-target");
+          renameSync(directory, target);
+          symlinkSync("solution-fidelity-repairs-target", directory);
+        },
+        error: /directory must be confined and non-symlink/u,
+      }];
+      for (const testCase of fidelityCases) {
+        const tampered = await seed();
+        try {
+          const name = readdirSync(join(tampered, "solution-fidelity-repairs"))
+            .find((candidate) => /^v2-\d{4}-0018-/u.test(candidate))!;
+          testCase.mutate(tampered, name);
+          expect(() => verifyPersistedSolutionFalseNegativeStateForTest(
+            q5525982VerifierAuthorityInput(tampered),
+          ), testCase.label).toThrow(testCase.error);
+        } finally {
+          rmSync(tampered, { recursive: true, force: true });
+        }
       }
 
       const revision = await seed();
