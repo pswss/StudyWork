@@ -24,7 +24,7 @@ import {
 } from "node:fs";
 import { open as openFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { PDFDocument } from "pdf-lib";
@@ -5695,6 +5695,132 @@ export const SOLUTION_REVISION_FIDELITY_ADJUDICATION_ALLOWLIST = [{
   requiredTokens: ["함수 $f(x)$는 극솟값을 갖는다. (거짓)", "정답 ③"],
   literalToken: "함수 $f(x)$는 극솟값을 갖는다. (거짓)",
 }] as const;
+export const SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST = [{
+  allowlistId: "ebsi-5525982-solution-false-negative-v1",
+  entryId: "ebsi:5525982",
+  sourceHash: "41765adaef8826181042cf68889033ef77327169a2d8c2956e8a7d9f842e090f",
+  effectiveProblemCorpusHash: "5f5fc141fb05bcf6ca205bcb84b82f86bdabbaf2b365db2b071b20f53a75af5d",
+  checkpoints: [{
+    path: "solution-fidelity/v1-0000-" +
+      "5f5fc141fb05bcf6ca205bcb84b82f86bdabbaf2b365db2b071b20f53a75af5d-" +
+      "15fb9a2330f54466478db4467a1319fe441111b9fc9bab0afae8981f8da298e3.json",
+    sha256: "0f1ef586d7f98d03974354455650394f6eee0eace0542708ba2839f98a1618cd",
+    inputHash: "15fb9a2330f54466478db4467a1319fe441111b9fc9bab0afae8981f8da298e3",
+    from: 1,
+    to: 22,
+    ownedFrom: 1,
+    ownedTo: 18,
+    promptDigest: "3bb2a75624a04702be559c331fd88b00e6a4e37e71920347747a62baf8eb6f00",
+  }, {
+    path: "solution-fidelity/v1-0001-" +
+      "5f5fc141fb05bcf6ca205bcb84b82f86bdabbaf2b365db2b071b20f53a75af5d-" +
+      "66005e9442043b6c29ffef0fb46a629a2428c4091f61ce453ea9f83088887f10.json",
+    sha256: "8d13e5529f22c474d499ae4e36aae94fd87f078725a6604bad27affec682cd0a",
+    inputHash: "66005e9442043b6c29ffef0fb46a629a2428c4091f61ce453ea9f83088887f10",
+    from: 19,
+    to: 28,
+    ownedFrom: 19,
+    ownedTo: 28,
+    promptDigest: "3bb2a75624a04702be559c331fd88b00e6a4e37e71920347747a62baf8eb6f00",
+  }],
+  items: [{
+    key: "7:17",
+    baseSolutionItemHash: "cb61d407056b6e657deddd6e9455e79403fb6482f2610ae962029584560626d3",
+    baseExplanationHash: "2b6087c3931287c951ccba5821349f768c6a6e82f3d3fb8228211f4d0ad2f634",
+    failedDecisionHash: "e9a83c2416d2e4fffbf8c1b291bc925b577f67288243766c98dd9864a1a2809b",
+    failedEvidenceHash: "03db8f172cd7fa8ac8f87edb71d3d1efe4a6f0c8d4bbb020aaeff5c9352f0424",
+    replacements: [{
+      from: "주변부 지식(관찰과 실험에 의존하는 지식)",
+      to: "주변적 지식(관찰과 실험에 의존하는 지식)",
+      count: 1,
+    }],
+    expectedSolutionItemHash: "85d19231615befd80047e086df96d69eabd13956097ee74ef5f023656a4a9639",
+  }, {
+    key: "7:18",
+    baseSolutionItemHash: "01bd36b536489c36f866f268d87869bbbae0bdb47860979caa3110b368eba471",
+    baseExplanationHash: "a8da127ce0312a4ad0995c9a227523b396fbae0c48a869a7798e9175a0fa6aab",
+    failedDecisionHash: "2d3899a03e35ec6e37dfbe68bd1c1a8b7c9655b1d8f8664408e05982d8746d9b",
+    failedEvidenceHash: "01ff371ccb697706543c031cf7780cd7cfbe41f769705e9428c14b296618b4e7",
+    replacements: [{ from: "밝혀져 ⓒ의 수정", to: "밝혀져서 ⓒ의 수정", count: 1 }],
+    expectedSolutionItemHash: "05251acde209c55b30ac96aeed19583d7f6be087ae7ab14b3c512e62e95233d6",
+  }, {
+    key: "9:21",
+    baseSolutionItemHash: "0d00f883eb2454977c4f4e43e588d05b9a51086c80ee4390783fc189f7d0ba29",
+    baseExplanationHash: "eb0f4e184f9829361f7eaa565291420e95a29a0cf7104b8b9092996ce183bf96",
+    failedDecisionHash: "ec3658cb4267e7dc94a33b72b1934b664de11aa43410dac2a348de11f108e52d",
+    failedEvidenceHash: "558a84d57f246f6241d79e75f2cbb0dcb60df819428ee42d52f68fa1038517fe",
+    replacements: [
+      { from: "이는 실제했던 전쟁을", to: "이는 실재했던 전쟁을", count: 1 },
+      { from: "전쟁의 상황을 직시", to: "전쟁의 상흔을 직시", count: 1 },
+      { from: "모두 실제했던 전쟁을 환기", to: "모두 실재했던 전쟁을 환기", count: 1 },
+    ],
+    expectedSolutionItemHash: "e76add6dc430642c6e1635504c8beaeef484acfc30c1dc8eeff8ec414749c4dd",
+  }, {
+    key: "9:22",
+    baseSolutionItemHash: "7d8c117f6668447ada0cbff91ea39f01c214b2f8ca26cc7c9d6ef6be8e7567ff",
+    baseExplanationHash: "0cb7026db78a942ecdfe25d658e2b894a38abeeaf3271a0f1f9dd0acf6f783ab",
+    failedDecisionHash: "a5f90cea4cc1bacc00160b607f9534144cdb3eba1899be4f925725f8f7735900",
+    failedEvidenceHash: "6573bf1a120cf39a781c9f8044b1a772507ef7958bf736eadcf9bef17894c8d1",
+    replacements: [{ from: "반영됐다는 설명", to: "반영되었다는 설명", count: 1 }],
+    expectedSolutionItemHash: "7c42220802574ce1733682460dfc01378bcc23e26665a67e4fee3b5519d7d4ee",
+  }, {
+    key: "9:23",
+    baseSolutionItemHash: "5e7b4ce5b5a6b18ada0a43f0090bc3299a44f676b452866071c8fc0cbfbd8347",
+    baseExplanationHash: "64afac3f2b536347e7a3f1140abeb2598fae9f3a4a660f0b86976b858e110389",
+    failedDecisionHash: "209f9093ae734a597ee31a9fdccd6cd457fdfede20d514209b1bc3fc43fa2aed",
+    failedEvidenceHash: "7d0ceb2e47bfecc1b011a794cf4cd161f037fd6e3ed38478909a480013d5f203",
+    replacements: [{ from: "어찌 분한치 않으리요.", to: "어찌 분한치 않으리오.", count: 1 }],
+    expectedSolutionItemHash: "12007db8ee2052ad4420ef8bb534a9a26cef2af642f4043cb90b243eb0efa7d0",
+  }, {
+    key: "9:25",
+    baseSolutionItemHash: "71850169b94456f7122211d9922aad754b8c5f9b779aeb96817c3b99ea335d39",
+    baseExplanationHash: "72922d6c8254228b30a51421a8b0fb72d8f8d199bbee6d65fbec71747ec056ee",
+    failedDecisionHash: "b7d14e6460d90e71d9d580967994d66cf113ae0920fd2e246b1fa66ea7996f0a",
+    failedEvidenceHash: "36ce1444574f1d86a84b567e716bd00c6f45350497966bef8acd307edbc531bb",
+    replacements: [{ from: "“네 아우가 불행하여", to: "“내 아우가 불행하여", count: 1 }],
+    expectedSolutionItemHash: "e2be49fc43042099338dab233f1d188b1cc2700dac37de06ca4a2f29fbebdcf8",
+  }, {
+    key: "9:26",
+    baseSolutionItemHash: "d21b028bcf5b9ca642370b4ca183856755bf68b1bf26ad945e99edda5fecebef",
+    baseExplanationHash: "ca689d4623ab8cac6c0233a34eacf7d5029a98b1fc52cce93f815fdc814d96fb",
+    failedDecisionHash: "8c574f08b25280f2a639ee60f6f6623cad10039b2fc962f4d1da3c50feed7784",
+    failedEvidenceHash: "50927f4cab09c664fca03a6cc141788c676ae16e6bf5f49aa454c874dbeb25ce",
+    replacements: [{ from: "경험이 객관적으로 서술", to: "경험이 관념적으로 서술", count: 1 }],
+    expectedSolutionItemHash: "a1863f8c27a84458c678b8eaa94544f0aa8c31184c6e255ef7e48f253adc63be",
+  }, {
+    key: "11:30",
+    baseSolutionItemHash: "549af14b37afe59ee29012641925f9c14872e3cb2467c5025f7bd736cf0d4439",
+    baseExplanationHash: "3fc9f4e3ea882f65e286c967a7bc6f040c452fb76d4b661c2e8d0969426e361b",
+    failedDecisionHash: "69f2a32dc69b389b041f5a1da542b01d95a6cbf083e74e48509574a63a57e2da",
+    failedEvidenceHash: "a2c53447e64bb14792f7a04d24efa068ececab4d73ecec834a1af32ed571f4b3",
+    replacements: [{ from: "조승인", to: "조숭인", count: 2 }],
+    expectedSolutionItemHash: "9f4a84cd0c02420d5f7a3e9059f9974cd3d4903eac515d16161f9694f8abb134",
+  }, {
+    key: "12:31",
+    baseSolutionItemHash: "0583a46246db261d9cd63aa79678e434cef67b70827d1601b8344f8c524c47ad",
+    baseExplanationHash: "25048ba32c8c1f801d5cdb1754f22baa549a1a03848ab8ffc9f8893220f4fc1b",
+    failedDecisionHash: "4dc23cfad7ae8a65692533d9a32c5d2094b52ebcbd3a444494c0f16dedcb80a5",
+    failedEvidenceHash: "7961de693cb5ee9bfc39c961a2561c39d20a15839fdb8277716627b746184f29",
+    replacements: [{ from: "조승인", to: "조숭인", count: 2 }],
+    expectedSolutionItemHash: "b47659df291b9da71ed612f46832ce171a1d4f7a423e7fd9d75a33d2d6d6d7dd",
+  }, {
+    key: "12:32",
+    baseSolutionItemHash: "6167de8bc3ef9907889db95d5450f63013253cfd3b633c6c48771e1a112bf608",
+    baseExplanationHash: "2f01e86579212f79b19f907300cf8e53cc2c77a22d9e63020e770b168b647cd5",
+    failedDecisionHash: "68edda18b5100f617861986ed4bee8d40fb794ad5507625e8e186e87d43129af",
+    failedEvidenceHash: "acf3ac7b67ca1ddabb74f558598820679141b3a5175c94f488f426c8995ea61e",
+    replacements: [{ from: "조승인", to: "조숭인", count: 2 }],
+    expectedSolutionItemHash: "c1ab8d6d1b47d823782b84123b0e905771df275d7b838c41aef4261435e9a2ab",
+  }, {
+    key: "13:34",
+    baseSolutionItemHash: "ba0c448b52d33d98eda08acf5b9f92489d64aba4029d39c358d85b1a7191663a",
+    baseExplanationHash: "8fdd8537c2680d5e5b31a929a75ed669d77e3a3fffff053b502cac3537827efe",
+    failedDecisionHash: "4768504dd19c693415567d52d15c4ace486fc3881f3306d0cb6beb262480728a",
+    failedEvidenceHash: "8bb9d5b2c2ebe4e9d4b7d8954bddfd7443a304c4264567f719a5e846164fb4e6",
+    replacements: [{ from: "생존 유지와 성장에 사용", to: "생존 유지와 생장에 사용", count: 1 }],
+    expectedSolutionItemHash: "1295f5f3ab27742c4294ce8832372edd7a7d7f75f072f9cb96edbc6d5cf1f00a",
+  }],
+}] as const;
 const SEMANTIC_CHOICE_PROMPT_DIGEST = sha256Text(
   `${SEMANTIC_CHOICE_CHECK_VERSION}\n${SEMANTIC_CHOICE_RULES}`
 );
@@ -7510,20 +7636,66 @@ async function solutionFidelityCheckpoint(
   slice: SourceSlice,
   ownership: { from: number; to: number },
   effectiveProblemCorpusHash: string,
-  inputs: SolutionFidelityInput[]
+  inputs: SolutionFidelityInput[],
+  existingOnly: true
 ): Promise<{
   decisions: SolutionFidelityDecision[];
   evidence: SolutionFidelityCheckpointEvidence;
-}> {
+} | null>;
+async function solutionFidelityCheckpoint(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  stateDir: string,
+  index: number,
+  slice: SourceSlice,
+  ownership: { from: number; to: number },
+  effectiveProblemCorpusHash: string,
+  inputs: SolutionFidelityInput[],
+  existingOnly?: false
+): Promise<{
+  decisions: SolutionFidelityDecision[];
+  evidence: SolutionFidelityCheckpointEvidence;
+}>;
+async function solutionFidelityCheckpoint(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  stateDir: string,
+  index: number,
+  slice: SourceSlice,
+  ownership: { from: number; to: number },
+  effectiveProblemCorpusHash: string,
+  inputs: SolutionFidelityInput[],
+  existingOnly = false
+): Promise<{
+  decisions: SolutionFidelityDecision[];
+  evidence: SolutionFidelityCheckpointEvidence;
+} | null> {
   const inputHash = canonicalEvidenceHash(inputs);
   const relativePath =
     `solution-fidelity/v${SOLUTION_FIDELITY_VERSION}-${String(index).padStart(4, "0")}-` +
     `${effectiveProblemCorpusHash}-${inputHash}.json`;
+  const forcedCheckpoint = solutionFalseNegativeCheckpointSpec(
+    entry,
+    evidence,
+    effectiveProblemCorpusHash,
+    relativePath
+  );
   const path = join(stateDir, relativePath);
   let checkpoint: Record<string, unknown>;
   let decisions: SolutionFidelityDecision[];
-  if (existsSync(path)) {
-    checkpoint = object(JSON.parse(readFileSync(path, "utf8")), relativePath);
+  let exists = false;
+  try {
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw new Error(`기존 해설 fidelity가 regular file이 아닙니다: ${path}`);
+    }
+    exists = true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (exists) {
+    const confinedPath = confinedStateFile(stateDir, relativePath, "solution fidelity checkpoint");
+    checkpoint = object(JSON.parse(readFileSync(confinedPath, "utf8")), relativePath);
     if (
       checkpoint.version !== SOLUTION_FIDELITY_VERSION || checkpoint.entryId !== entry.id ||
       checkpoint.sourceHash !== evidence.sha256 || checkpoint.from !== slice.from || checkpoint.to !== slice.to ||
@@ -7538,6 +7710,7 @@ async function solutionFidelityCheckpoint(
     ) throw new Error(`기존 해설 fidelity 체크포인트 메타데이터가 다릅니다: ${path}`);
     decisions = parseSolutionFidelityDecisions(checkpoint.items, inputs);
   } else {
+    if (existingOnly) return null;
     decisions = await evaluateSolutionFidelity(slice.path, slice.from, slice.to, ownership, inputs);
     checkpoint = {
       version: SOLUTION_FIDELITY_VERSION,
@@ -7559,10 +7732,15 @@ async function solutionFidelityCheckpoint(
       inputs,
       items: decisions,
     };
+    if (forcedCheckpoint && canonicalEvidenceHash(checkpoint) !== forcedCheckpoint.sha256) {
+      throw new Error(`${relativePath} generated solution false-negative checkpoint가 pinned source와 다릅니다`);
+    }
     await writeImmutableEvidence(path, checkpoint);
   }
   const sha256 = await sha256File(path);
-  if (sha256 !== canonicalEvidenceHash(checkpoint)) throw new Error(`해설 fidelity hash가 다릅니다: ${path}`);
+  if (
+    sha256 !== canonicalEvidenceHash(checkpoint) || forcedCheckpoint && sha256 !== forcedCheckpoint.sha256
+  ) throw new Error(`해설 fidelity hash가 다릅니다: ${path}`);
   return {
     decisions,
     evidence: {
@@ -7575,6 +7753,177 @@ async function solutionFidelityCheckpoint(
       inputHash,
     },
   };
+}
+
+type SolutionFalseNegativeRepairItemSpec =
+  (typeof SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST)[number]["items"][number];
+
+function solutionFalseNegativeCheckpointSpec(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  effectiveProblemCorpusHash: string,
+  path: string
+) {
+  const matches = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST.filter((candidate) => candidate.entryId === entry.id);
+  if (matches.length > 1) throw new Error(`${entry.id} solution false-negative allowlist가 중복입니다`);
+  const allowlist = matches[0];
+  if (!allowlist) return undefined;
+  if (
+    evidence.sha256 !== allowlist.sourceHash || effectiveProblemCorpusHash !== allowlist.effectiveProblemCorpusHash
+  ) throw new Error(`${entry.id} solution false-negative source/corpus authority가 다릅니다`);
+  const checkpoint = allowlist.checkpoints.find((candidate) => candidate.path === path);
+  if (!checkpoint) throw new Error(`${entry.id} solution false-negative checkpoint path authority가 다릅니다`);
+  return checkpoint;
+}
+
+async function assertSolutionFalseNegativeSourceAuthority(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  stateDir: string
+): Promise<void> {
+  const matches = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST.filter((candidate) => candidate.entryId === entry.id);
+  if (matches.length > 1) throw new Error(`${entry.id} solution false-negative allowlist가 중복입니다`);
+  const allowlist = matches[0];
+  if (!allowlist) return;
+  const sourcePath = confinedStateFile(
+    stateDir,
+    relative(stateDir, evidence.path),
+    "solution false-negative official source"
+  );
+  if (
+    evidence.sha256 !== allowlist.sourceHash || await sha256File(sourcePath) !== allowlist.sourceHash
+  ) throw new Error(`${entry.id} solution false-negative official source bytes hash가 다릅니다`);
+}
+
+function expectedFalseNegativeSolution(
+  base: SolutionItem,
+  spec: SolutionFalseNegativeRepairItemSpec
+): SolutionItem {
+  let explanation = base.explanation;
+  for (const replacement of spec.replacements) {
+    if (exactOccurrenceCount(explanation, replacement.from) !== replacement.count) {
+      throw new Error(`${spec.key} false-negative 해설 replacement occurrence가 다릅니다`);
+    }
+    explanation = explanation.split(replacement.from).join(replacement.to);
+  }
+  const expected = { ...base, explanation };
+  if (canonicalEvidenceHash(expected) !== spec.expectedSolutionItemHash) {
+    throw new Error(`${spec.key} false-negative 해설 corrected item hash가 다릅니다`);
+  }
+  return expected;
+}
+
+function assertFalseNegativeRepairFidelity(
+  spec: SolutionFalseNegativeRepairItemSpec,
+  solution: SolutionItem,
+  decision: SolutionFidelityDecision
+): void {
+  if (
+    decision.key !== spec.key || decision.sourcePage !== solution.page ||
+    decision.answerStatus !== "exact" || decision.explanationStatus !== "exact"
+  ) throw new Error(`${spec.key} forced false-negative repair fidelity가 terminal exact가 아닙니다`);
+}
+
+function solutionFalseNegativeRepairItemSpec(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  effectiveProblemCorpusHash: string,
+  input: SolutionFidelityInput,
+  base: SolutionItem,
+  decision: SolutionFidelityDecision,
+  checkpoint: EvidencePointer
+): SolutionFalseNegativeRepairItemSpec | undefined {
+  const matches = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST.filter((candidate) => candidate.entryId === entry.id);
+  if (matches.length > 1) throw new Error(`${entry.id} solution false-negative allowlist가 중복입니다`);
+  const allowlist = matches[0];
+  if (!allowlist) return undefined;
+  if (
+    evidence.sha256 !== allowlist.sourceHash || effectiveProblemCorpusHash !== allowlist.effectiveProblemCorpusHash
+  ) throw new Error(`${entry.id} solution false-negative source/corpus authority가 다릅니다`);
+  const spec = allowlist.items.find((candidate) => candidate.key === input.key);
+  if (!spec) return undefined;
+  const checkpointSpec = allowlist.checkpoints.find((candidate) => candidate.path === checkpoint.path);
+  if (
+    !checkpointSpec || checkpoint.sha256 !== checkpointSpec.sha256 || input.baseSolutionItemHash !== spec.baseSolutionItemHash ||
+    canonicalEvidenceHash(base) !== spec.baseSolutionItemHash || sha256Text(base.explanation) !== spec.baseExplanationHash ||
+    decision.sourcePage !== input.sourcePage || decision.answerStatus !== "exact" ||
+    decision.explanationStatus !== "exact" || canonicalEvidenceHash(decision) !== spec.failedDecisionHash ||
+    sha256Text(decision.evidence) !== spec.failedEvidenceHash
+  ) throw new Error(`${input.key} solution false-negative item authority가 다릅니다`);
+  expectedFalseNegativeSolution(base, spec);
+  return spec;
+}
+
+async function preflightSolutionFalseNegativeRepairs(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  stateDir: string,
+  effectiveProblemCorpusHash: string,
+  slices: Array<{
+    slice: SourceSlice;
+    owned: { from: number; to: number };
+    inputs: SolutionFidelityInput[];
+    decisions: SolutionFidelityDecision[];
+    checkpoint: SolutionFidelityCheckpointEvidence;
+  }>,
+  baseByNumber: Map<number, SolutionItem>
+): Promise<Map<string, SolutionFalseNegativeRepairItemSpec>> {
+  const matches = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST.filter((candidate) => candidate.entryId === entry.id);
+  if (matches.length > 1) throw new Error(`${entry.id} solution false-negative allowlist가 중복입니다`);
+  const allowlist = matches[0];
+  if (!allowlist) return new Map();
+  if (
+    evidence.sha256 !== allowlist.sourceHash || effectiveProblemCorpusHash !== allowlist.effectiveProblemCorpusHash ||
+    await sha256File(evidence.path) !== allowlist.sourceHash
+  ) throw new Error(`${entry.id} solution false-negative source/corpus preflight가 다릅니다`);
+  const expectedPaths = new Set(allowlist.checkpoints.map((checkpoint) => checkpoint.path));
+  const actualPaths = new Set(slices.map(({ checkpoint }) => checkpoint.path));
+  if (
+    expectedPaths.size !== allowlist.checkpoints.length || actualPaths.size !== slices.length ||
+    expectedPaths.size !== actualPaths.size || [...expectedPaths].some((path) => !actualPaths.has(path))
+  ) throw new Error(`${entry.id} solution false-negative checkpoint exact-set가 다릅니다`);
+  const specs = new Map<string, SolutionFalseNegativeRepairItemSpec>();
+  for (const current of slices) {
+    const checkpointSpec = allowlist.checkpoints.find((candidate) => candidate.path === current.checkpoint.path);
+    if (!checkpointSpec) throw new Error(`${entry.id} solution false-negative checkpoint allowlist가 없습니다`);
+    const path = confinedStateFile(stateDir, checkpointSpec.path, "solution false-negative checkpoint");
+    const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), checkpointSpec.path);
+    if (
+      await sha256File(path) !== checkpointSpec.sha256 || canonicalEvidenceHash(checkpoint) !== checkpointSpec.sha256 ||
+      current.checkpoint.sha256 !== checkpointSpec.sha256 || checkpoint.version !== SOLUTION_FIDELITY_VERSION ||
+      checkpoint.entryId !== entry.id || checkpoint.sourceHash !== allowlist.sourceHash ||
+      checkpoint.from !== checkpointSpec.from || checkpoint.to !== checkpointSpec.to ||
+      checkpoint.ownedFrom !== checkpointSpec.ownedFrom || checkpoint.ownedTo !== checkpointSpec.ownedTo ||
+      checkpoint.effectiveProblemCorpusHash !== allowlist.effectiveProblemCorpusHash ||
+      checkpoint.inputHash !== checkpointSpec.inputHash || checkpoint.promptDigest !== checkpointSpec.promptDigest ||
+      checkpointSpec.promptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST || checkpoint.model !== IMPORT_MODEL ||
+      checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+      canonicalEvidenceHash(checkpoint.inputs) !== canonicalEvidenceHash(current.inputs) ||
+      canonicalEvidenceHash(checkpoint.items) !== canonicalEvidenceHash(current.decisions)
+    ) throw new Error(`${checkpointSpec.path} solution false-negative checkpoint preflight가 다릅니다`);
+    const decisions = new Map(current.decisions.map((decision) => [decision.key, decision]));
+    for (const input of current.inputs) {
+      const base = baseByNumber.get(Number(input.printedNumber));
+      const decision = decisions.get(input.key);
+      if (!base || !decision) throw new Error(`${input.key} solution false-negative input coverage가 다릅니다`);
+      const spec = solutionFalseNegativeRepairItemSpec(
+        entry,
+        evidence,
+        effectiveProblemCorpusHash,
+        input,
+        base,
+        decision,
+        current.checkpoint
+      );
+      if (!spec) continue;
+      if (specs.has(spec.key)) throw new Error(`${spec.key} solution false-negative item이 중복입니다`);
+      specs.set(spec.key, spec);
+    }
+  }
+  if (
+    specs.size !== allowlist.items.length || allowlist.items.some((item) => specs.get(item.key) !== item)
+  ) throw new Error(`${entry.id} solution false-negative item exact-set가 다릅니다`);
+  return specs;
 }
 
 async function withSolutionContextSlice<T>(
@@ -8272,13 +8621,22 @@ async function scanPersistedSolutionHistory(
       inputs: baseInputs,
       items: decisions,
     };
+    const forcedFalseNegative = solutionFalseNegativeRepairItemSpec(
+      entry,
+      evidence,
+      effectiveProblemCorpusHash,
+      input,
+      baseSolution,
+      baseDecision,
+      { path: baseFidelityPath, sha256: baseFidelityPointerSha }
+    );
     if (
       canonicalEvidenceHash(baseFidelity) !== canonicalEvidenceHash(expectedBaseFidelity) ||
       canonicalEvidenceHash(input) !== canonicalEvidenceHash(expectedBaseInput) ||
       !Number.isInteger(from) || !Number.isInteger(to) || !Number.isInteger(ownedFrom) || !Number.isInteger(ownedTo) ||
       from < 1 || to < from || ownedFrom < from || ownedTo > to || input.sourcePage < ownedFrom ||
       input.sourcePage > ownedTo || terminalSolutionFidelity(input, baseSolution, baseDecision) &&
-        input.baseContextTo <= to && repair.persistedSeed === undefined
+        input.baseContextTo <= to && repair.persistedSeed === undefined && !forcedFalseNegative
     ) throw new Error(`${baseFidelityPath}은 genuine nonterminal base fidelity가 아닙니다`);
     if (
       repair.version !== SOLUTION_REPAIR_VERSION || repair.entryId !== entry.id || repair.key !== input.key ||
@@ -8295,6 +8653,9 @@ async function scanPersistedSolutionHistory(
     ) throw new Error(`${repairFile.relativePath} persisted repair 메타데이터가 다릅니다`);
     const repairedItem = parseSolutionItems(JSON.stringify([repair.item]))[0];
     const repairedItemHash = canonicalEvidenceHash(repairedItem);
+    if (
+      forcedFalseNegative && repairedItemHash !== forcedFalseNegative.expectedSolutionItemHash
+    ) throw new Error(`${input.key} persisted forced false-negative 해설 repair item이 source candidate와 다릅니다`);
     if (
       numericPrintedLocator(repairedItem.number) !== printedNumber || repairedItem.page !== repair.effectivePage ||
       repairedItem.page < input.baseContextFrom || repairedItem.page > input.baseContextTo || repairedItem.complete !== true ||
@@ -8401,6 +8762,7 @@ async function scanPersistedSolutionHistory(
       canonicalEvidenceHash(fidelity.input) !== canonicalEvidenceHash(repairedInput)
     ) throw new Error(`기존 repair 해설 fidelity 메타데이터가 다릅니다: ${fidelityFile.relativePath}`);
     const firstDecision = parseSolutionFidelityDecisions([fidelity.item], [repairedInput])[0];
+    if (forcedFalseNegative) assertFalseNegativeRepairFidelity(forcedFalseNegative, repairedItem, firstDecision);
     const expectedFidelity = {
       version: SOLUTION_REPAIR_FIDELITY_VERSION,
       entryId: entry.id,
@@ -8431,6 +8793,9 @@ async function scanPersistedSolutionHistory(
     const revisionChildren = revisionFiles.filter((candidate) =>
       object(candidate.checkpoint.baseRepairArtifact, "persisted revision parent").path === repairFile.relativePath
     );
+    if (forcedFalseNegative && revisionChildren.length > 0) {
+      throw new Error(`${input.key} forced false-negative repair에는 revision이 허용되지 않습니다`);
+    }
     if (revisionChildren.length > 1) throw new Error(`${repairFile.relativePath} persisted revision child가 중복입니다`);
     if (!firstTerminal && revisionChildren.length !== 1) {
       if (!allowCurrentPartial || effectiveProblemCorpusHash !== currentEffectiveProblemCorpusHash) {
@@ -9614,7 +9979,8 @@ async function repairSolutionItem(
   base: SolutionFidelityInput,
   baseFidelityCheckpoint: SolutionFidelityCheckpointEvidence,
   revisionTrigger?: Exclude<SolutionRevisionTrigger, { kind: "fidelity" }>,
-  persistedFirst?: PersistedSolutionFirstAuthority
+  persistedFirst?: PersistedSolutionFirstAuthority,
+  falseNegativeSpec?: SolutionFalseNegativeRepairItemSpec
 ): Promise<{
   solution: SolutionItem;
   decision: SolutionFidelityDecision;
@@ -9683,6 +10049,9 @@ async function repairSolutionItem(
           reasoningEffort: IMPORT_REASONING_EFFORT,
         })))[0];
       }
+      if (
+        falseNegativeSpec && canonicalEvidenceHash(corrected) !== falseNegativeSpec.expectedSolutionItemHash
+      ) throw new Error(`${base.key} forced false-negative 해설 repair item이 source candidate와 다릅니다`);
       repairCheckpoint = {
         version: SOLUTION_REPAIR_VERSION,
         entryId: entry.id,
@@ -9713,6 +10082,9 @@ async function repairSolutionItem(
       };
       await writeImmutableEvidence(repairPath, repairCheckpoint);
     }
+    if (
+      falseNegativeSpec && canonicalEvidenceHash(corrected) !== falseNegativeSpec.expectedSolutionItemHash
+    ) throw new Error(`${base.key} persisted forced false-negative 해설 repair item이 source candidate와 다릅니다`);
     if (repairCheckpoint.persistedSeed !== undefined) {
       const seed = object(repairCheckpoint.persistedSeed, "persisted solution repair seed");
       if (
@@ -9789,6 +10161,7 @@ async function repairSolutionItem(
         canonicalEvidenceHash(fidelityCheckpoint.input) !== canonicalEvidenceHash(repairedInput)
       ) throw new Error(`기존 repair 해설 fidelity 메타데이터가 다릅니다: ${fidelityPath}`);
       decision = parseSolutionFidelityDecisions([fidelityCheckpoint.item], [repairedInput])[0];
+      if (falseNegativeSpec) assertFalseNegativeRepairFidelity(falseNegativeSpec, corrected, decision);
     } else {
       decision = (await evaluateSolutionFidelity(
         contextPath,
@@ -9797,6 +10170,7 @@ async function repairSolutionItem(
         { from: base.baseContextFrom, to: base.baseContextTo },
         [repairedInput]
       ))[0];
+      if (falseNegativeSpec) assertFalseNegativeRepairFidelity(falseNegativeSpec, corrected, decision);
       fidelityCheckpoint = {
         version: SOLUTION_REPAIR_FIDELITY_VERSION,
         entryId: entry.id,
@@ -9906,6 +10280,10 @@ export async function auditAcceptedSolutions(
   const baseByNumber = officialSolutionsByNumber(entry, classified, baseSolutions);
   const accepted = classified.filter(({ classification }) => classification.decision === "accept");
   const effectiveProblemCorpusHash = canonicalEvidenceHash(classified);
+  const falseNegativeAllowlist = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST.find((candidate) =>
+    candidate.entryId === entry.id
+  );
+  await assertSolutionFalseNegativeSourceAuthority(entry, evidence, stateDir);
   const inputs: SolutionFidelityInput[] = [];
   for (const item of accepted) {
     const number = numericPrintedLocator(item.question.number)!;
@@ -9983,6 +10361,63 @@ export async function auditAcceptedSolutions(
       SOLUTION_FIDELITY_SLICE_STRIDE,
       async (slices) => {
         const ownership = validateSolutionSliceTopology(slices);
+        const preparedSlices: Array<{
+          slice: SourceSlice;
+          owned: { from: number; to: number };
+          inputs: SolutionFidelityInput[];
+          decisions: SolutionFidelityDecision[];
+          checkpoint: SolutionFidelityCheckpointEvidence;
+        }> = [];
+        if (falseNegativeAllowlist) {
+          const prefix = `v${SOLUTION_FIDELITY_VERSION}-`;
+          const fidelityDirectory = join(stateDir, "solution-fidelity");
+          try {
+            const directoryStat = lstatSync(fidelityDirectory);
+            if (directoryStat.isSymbolicLink() || !directoryStat.isDirectory()) {
+              throw new Error("solution false-negative fidelity 디렉터리가 유효하지 않습니다");
+            }
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          }
+          const actual = strictArtifactNames(
+            fidelityDirectory,
+            "solution false-negative fidelity",
+            (name) => /^v1-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u.test(name)
+          ).filter((name) => name.startsWith(prefix) && name.includes(`-${effectiveProblemCorpusHash}-`))
+            .map((name) => `solution-fidelity/${name}`);
+          const expected = falseNegativeAllowlist.checkpoints.map((checkpoint) => checkpoint.path);
+          if (
+            new Set(actual).size !== actual.length || actual.some((path) => !expected.includes(path as never))
+          ) throw new Error(`${entry.id} solution false-negative fidelity current generation에 extra가 있습니다`);
+          for (const [index, slice] of slices.entries()) {
+            const owned = ownership[index];
+            const ownedInputs = inputs.filter((input) =>
+              input.sourcePage >= owned.from && input.sourcePage <= owned.to
+            );
+            if (ownedInputs.length === 0) continue;
+            const expectedPath = `solution-fidelity/v${SOLUTION_FIDELITY_VERSION}-` +
+              `${String(index).padStart(4, "0")}-${effectiveProblemCorpusHash}-${canonicalEvidenceHash(ownedInputs)}.json`;
+            solutionFalseNegativeCheckpointSpec(entry, evidence, effectiveProblemCorpusHash, expectedPath);
+          }
+        }
+        for (const [index, slice] of slices.entries()) {
+          const owned = ownership[index];
+          const ownedInputs = inputs.filter((input) =>
+            input.sourcePage >= owned.from && input.sourcePage <= owned.to
+          );
+          if (ownedInputs.length === 0) continue;
+          await solutionFidelityCheckpoint(
+            entry,
+            evidence,
+            stateDir,
+            index,
+            slice,
+            owned,
+            effectiveProblemCorpusHash,
+            ownedInputs,
+            true
+          );
+        }
         for (const [index, slice] of slices.entries()) {
           const owned = ownership[index];
           const ownedInputs = inputs.filter((input) =>
@@ -10000,7 +10435,25 @@ export async function auditAcceptedSolutions(
             ownedInputs
           );
           checkpoints.push(result.evidence);
-          const decisionByKey = new Map(result.decisions.map((decision) => [decision.key, decision]));
+          preparedSlices.push({
+            slice,
+            owned,
+            inputs: ownedInputs,
+            decisions: result.decisions,
+            checkpoint: result.evidence,
+          });
+        }
+        const falseNegativeSpecs = await preflightSolutionFalseNegativeRepairs(
+          entry,
+          evidence,
+          stateDir,
+          effectiveProblemCorpusHash,
+          preparedSlices,
+          baseByNumber
+        );
+        for (const current of preparedSlices) {
+          const { slice, inputs: ownedInputs, decisions, checkpoint } = current;
+          const decisionByKey = new Map(decisions.map((decision) => [decision.key, decision]));
           for (const input of ownedInputs) {
             if (seen.has(input.key)) throw new Error(`해설 fidelity 대상이 중복되었습니다: ${input.key}`);
             seen.add(input.key);
@@ -10013,7 +10466,7 @@ export async function auditAcceptedSolutions(
             const needsRepair = decision.sourcePage !== input.sourcePage ||
               decision.explanationStatus !== "exact" || !terminalAnswer || input.baseContextTo > slice.to ||
               persistedHistory.stickyFirst.has(input.key) ||
-              persistedHistory.currentPartialKeys.has(input.key);
+              persistedHistory.currentPartialKeys.has(input.key) || falseNegativeSpecs.has(input.key);
             if (!needsRepair) {
               terminalItems.set(input.key, {
                 key: input.key,
@@ -10024,7 +10477,7 @@ export async function auditAcceptedSolutions(
                 answerStatus: decision.answerStatus,
                 explanationStatus: decision.explanationStatus,
                 evidence: decision.evidence,
-                fidelityArtifact: { path: result.evidence.path, sha256: result.evidence.sha256 },
+                fidelityArtifact: { path: checkpoint.path, sha256: checkpoint.sha256 },
                 baseSolutionItemHash: input.baseSolutionItemHash,
                 effectiveSolutionItemHash: input.baseSolutionItemHash,
                 baseRawAnswerHash: sha256Text(input.rawAnswer),
@@ -10037,6 +10490,9 @@ export async function auditAcceptedSolutions(
             expectedRepairKeys.add(input.key);
             const persistedTrigger = persistedHistory.revisionTriggers.get(input.key);
             const semanticTrigger = revisionTriggers.get(input.key);
+            if (falseNegativeSpecs.has(input.key) && (persistedTrigger || semanticTrigger)) {
+              throw new Error(`${input.key} forced false-negative repair revision trigger가 허용되지 않습니다`);
+            }
             if (
               persistedTrigger?.kind === "semantic" && semanticTrigger &&
               canonicalEvidenceHash(persistedTrigger) !== canonicalEvidenceHash(semanticTrigger)
@@ -10048,9 +10504,10 @@ export async function auditAcceptedSolutions(
               analysisEvidence.path,
               effectiveProblemCorpusHash,
               input,
-              result.evidence,
+              checkpoint,
               persistedTrigger ?? semanticTrigger,
-              persistedHistory.stickyFirst.get(input.key)
+              persistedHistory.stickyFirst.get(input.key),
+              falseNegativeSpecs.get(input.key)
             );
             effectiveByNumber.set(Number(input.printedNumber), repaired.solution);
             repairs.push(repaired.evidence);

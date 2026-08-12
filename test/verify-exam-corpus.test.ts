@@ -60,6 +60,7 @@ import {
   repairScopeAdjudicationAllowlistFingerprint,
   revisionScopeAdjudicationAllowlistFingerprint,
   runCli,
+  solutionFalseNegativeRepairAllowlistFingerprint,
   solutionFidelityAdjudicationAllowlistFingerprint,
   solutionPromptUpgradeAllowlistFingerprint,
   scopeBoxRevisionAllowlistFingerprint,
@@ -68,6 +69,8 @@ import {
   verifyExamCorpus,
   verifyProblemManualAdjudicationForTest,
   verifyPersistedProblemRepairOverlapForTest,
+  verifySolutionFalseNegativeRepairAuthorityForTest,
+  verifyPersistedSolutionFalseNegativeStateForTest,
   verificationContractAuditVersionForTest,
 } from "../scripts/verify-exam-corpus";
 import {
@@ -117,6 +120,7 @@ import {
   PROBLEM_SCOPE_BOX_REVISION_PROMPT_DIGEST,
   PROBLEM_SCOPE_BOX_REVISION_VERSION,
   repairAndAuditOfficialAnswers,
+  SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST,
   SOLUTION_PROMPT_UPGRADE_ALLOWLIST,
   SOLUTION_PROMPT_UPGRADE_FIDELITY_VERSION,
   SOLUTION_PROMPT_UPGRADE_VERSION,
@@ -132,6 +136,40 @@ import {
   type ProblemRecoveryEvidence,
 } from "../scripts/import-exam-corpus";
 import type { QuizItemEx, SolutionItem } from "../src/claude";
+
+const Q5525982_STATE = join(process.cwd(), "data/import-exam-corpus/bb876a67170089dfb2022f47");
+const Q5525982_FIDELITY_ROWS = [
+  ["6:16", 10, "exact", "exact", "10쪽에 ‘16. 세부 내용 추론’과 ‘정답 ②’가 명시되어 있다. 해설은 10쪽에서 시작해 11쪽의 ⑤ 설명까지 이어지며, supplied explanation과 빠짐없이 일치한다."],
+  ["7:17", 11, "exact", "exact", "11쪽에 ‘17. 핵심 정보 파악’과 ‘정답 ④’가 보인다. 분석 명제·동의적 표현의 순환론 설명과 오답 ①·②·③·⑤가 모두 supplied explanation과 일치한다."],
+  ["7:18", 11, "exact", "exact", "11쪽에 ‘18. 반응의 적절성 평가’와 ‘정답 ⑤’가 명시되어 있다. 해설은 12쪽의 오답 ④까지 계속되며 전체 내용이 supplied explanation과 일치한다."],
+  ["7:19", 12, "exact", "exact", "12쪽에 ‘19. 내용의 비판적 이해’와 ‘정답 ⑤’가 보인다. 총체주의에 대한 비판 및 오답 ①~④의 설명이 모두 정확히 일치한다."],
+  ["7:20", 12, "exact", "exact", "12쪽에서 ‘20. 어휘의 문맥적 의미 파악’이 시작되고, 13쪽에 결론 ‘다다르다’, ‘정답 ②’ 및 오답 ①·③·④·⑤가 보인다. supplied explanation과 일치한다."],
+  ["9:21", 14, "exact", "exact", "14쪽에 ‘21. 외적 준거에 따른 작품 감상’과 ‘정답 ④’가 명시되어 있다. 윤씨와 지영에 관한 정답 해설부터 오답 ⑤까지 모두 supplied explanation과 일치한다."],
+  ["9:22", 14, "exact", "exact", "14쪽에 ‘22. 작품의 종합적 이해’와 ‘정답 ④’가 보인다. 해설은 15쪽의 오답 ③·⑤까지 이어지며 supplied explanation 전체와 일치한다."],
+  ["9:23", 15, "exact", "exact", "15쪽에 ‘23. 감상의 적절성 평가’와 ‘정답 ⑤’가 명시되어 있다. 용골대의 발언에 대한 판단과 오답 ①~④가 모두 일치한다."],
+  ["9:24", 15, "exact", "exact", "15쪽에서 ‘24. 구절의 의미 파악’이 시작되고 ‘정답 ③’이 명시되어 있다. 해설은 16쪽의 오답 ④·⑤까지 이어지며 supplied explanation과 일치한다."],
+  ["9:25", 16, "exact", "exact", "16쪽에 ‘25. 작품의 내용 파악’과 ‘정답 ③’이 보인다. 김씨 부인의 만류와 지영의 행동을 설명한 정답 해설 및 오답 ①·②·④·⑤가 모두 일치한다."],
+  ["9:26", 16, "exact", "exact", "16쪽에 ‘26. 서술상의 특징 파악’과 ‘정답 ⑤’가 명시되어 있다. 현재형 시제와 긴박감에 관한 해설 및 오답 ①~④가 supplied explanation과 일치한다."],
+  ["11:27", 17, "exact", "exact", "17쪽에 ‘27. 작품의 내용 파악’과 ‘정답 ②’가 보인다. 해설은 18쪽에서 오답 ⑤의 마지막 결론까지 계속되며 supplied explanation과 완전히 일치한다."],
+  ["11:28", 18, "exact", "exact", "18쪽에 ‘28. 외적 준거에 따른 작품 감상’과 ‘정답 ②’가 명시되어 있다. ㉠·㉡의 갈등에 관한 정답 해설과 오답 ①·③·④·⑤가 모두 일치한다."],
+  ["11:29", 18, "exact", "exact", "18쪽에 ‘29. 작품 간의 공통점, 차이점 파악’과 ‘정답 ①’이 보인다. 오답 해설은 19쪽의 ②·③·④·⑤까지 이어지며 supplied explanation 전체와 일치한다."],
+  ["11:30", 19, "exact", "exact", "19쪽에서 30번이 시작하며 명시적 정답은 ②이다. 정답해설과 오답 ①·③·④·⑤의 설명이 모두 공급본과 일치한다."],
+  ["12:31", 19, "exact", "exact", "31번은 19쪽에서 시작해 20쪽으로 이어진다. 명시적 정답 ④와 정답해설 및 오답 ①·②·③·⑤ 전체가 일치한다."],
+  ["12:32", 20, "exact", "exact", "20쪽에서 32번이 시작하며 명시적 정답은 ③이다. 정답해설과 오답 ①·②·④·⑤ 설명이 모두 일치한다."],
+  ["13:33", 21, "exact", "exact", "21쪽에서 33번이 시작하며 명시적 정답은 ⑤이다. F의 셀룰로스 분해 설명과 오답 ①~④의 근거가 모두 일치한다."],
+  ["13:34", 22, "exact", "exact", "22쪽에서 34번이 시작하며 명시적 정답은 ④이다. ⓐ·ⓑ·ⓒ, pH 5.8·5.5·5.0·6.0 등 모든 값과 결론이 일치한다."],
+  ["13:35", 22, "exact", "exact", "35번은 22쪽에서 시작해 23쪽 첫 부분까지 이어진다. 명시적 정답 ①과 정답해설 및 오답 ②의 끝 문장까지 일치한다."],
+  ["13:36", 23, "exact", "exact", "23쪽에서 36번이 시작하며 명시적 정답은 ③이다. 숙신산·젖산의 배출 조건과 오답 ①·②·④·⑤ 설명이 모두 일치한다."],
+  ["14:37", 24, "exact", "exact", "24쪽에서 37번이 시작하며 명시적 정답은 ③이다. 문단별 중심 내용과 오답 ①·②·④·⑤ 설명이 모두 일치한다."],
+  ["15:38", 24, "exact", "exact", "24쪽에서 38번이 시작하며 명시적 정답은 ④이다. ‘중요한 사항’에 관한 추론과 오답 ①·②·③·⑤ 설명이 모두 일치한다."],
+  ["15:39", 24, "exact", "exact", "39번은 24쪽에서 시작해 25쪽으로 이어진다. 명시적 정답 ⑤와 보험료율=보험료/보험금, 두 배 관계, 기댓값 및 오답 설명 전체가 일치한다."],
+  ["15:40", 25, "exact", "mismatch", "25쪽의 명시적 정답은 ①이고 공급된 정답해설 문단도 일치한다. 그러나 PDF에 이어지는 [오답피하기] ②·③·④·⑤ 전체가 공급 설명에서 누락되었다."],
+  ["15:41", 26, "exact", "mismatch", "26쪽의 명시적 정답은 ④이고 공급된 정답해설 문단도 일치한다. 그러나 PDF의 [오답피하기] ①·②·③·⑤가 전부 누락되었다."],
+  ["15:42", 26, "exact", "mismatch", "42번은 26쪽에서 시작하며 명시적 정답은 ①이다. 공급된 정답해설은 일치하지만, 26~27쪽의 [오답피하기] ②·③·④·⑤가 누락되었다."],
+  ["16:43", 27, "exact", "mismatch", "27쪽의 명시적 정답은 ③이고 공급된 정답해설 문단도 일치한다. 그러나 PDF의 [오답피하기] ①·②·④·⑤가 누락되었다."],
+  ["16:44", 27, "exact", "mismatch", "44번은 27쪽에서 시작해 28쪽으로 이어지며 명시적 정답은 ⑤이다. 공급된 정답해설은 일치하지만 28쪽의 [오답피하기] ①·②·③·④가 누락되었다."],
+  ["16:45", 28, "exact", "mismatch", "28쪽의 명시적 정답은 ①이고 공급된 정답해설 문단도 일치한다. 그러나 PDF의 [오답피하기] ②·③·④·⑤가 누락되었다."],
+] as const;
 
 type Target = (typeof TARGET_SUBJECTS)[number];
 type Accepted = { canonical: string; target: Target; code: string };
@@ -645,6 +683,216 @@ function writeEvidence(path: string, value: unknown): string {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, `${JSON.stringify(canonicalize(value), null, 2)}\n`);
   return canonicalEvidenceHash(value);
+}
+
+function q5525982FidelityDecisions(prompt: string) {
+  const inputs = JSON.parse(prompt.split("Accepted solutions:\n")[1]) as Array<{ key: string }>;
+  const byKey = new Map<string, { key: string; sourcePage: number; answerStatus: "exact"; explanationStatus: "exact" | "mismatch"; evidence: string }>(Q5525982_FIDELITY_ROWS.map(([key, sourcePage, answerStatus, explanationStatus, evidence]) =>
+    [key, { key, sourcePage, answerStatus, explanationStatus, evidence }]));
+  return inputs.map(({ key }) => {
+    const decision = byKey.get(key);
+    if (!decision) throw new Error(`missing frozen solution fidelity row: ${key}`);
+    return decision;
+  });
+}
+
+function q5525982CorrectedSolution(solutions: SolutionItem[], key: string): SolutionItem {
+  const spec = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items.find((item) => item.key === key);
+  if (!spec) throw new Error(`missing forced solution repair row: ${key}`);
+  const number = Number(key.split(":")[1]);
+  const base = structuredClone(solutions.find((solution) => Number(solution.number) === number)!);
+  for (const replacement of spec.replacements) {
+    expect(base.explanation.split(replacement.from)).toHaveLength(replacement.count + 1);
+    base.explanation = base.explanation.split(replacement.from).join(replacement.to);
+  }
+  expect(canonicalEvidenceHash(base)).toBe(spec.expectedSolutionItemHash);
+  return base;
+}
+
+function q5525982FixtureInputs(stateDir: string) {
+  const entry = parseCorpusManifest({
+    schemaVersion: 2,
+    entries: [JSON.parse(readFileSync(join(stateDir, "entry.json"), "utf8")).entry],
+  }).entries[0];
+  const downloads = JSON.parse(readFileSync(join(stateDir, "downloads.json"), "utf8"));
+  const problem: PdfEvidence = {
+    ...downloads.problem,
+    path: join(stateDir, "problem.pdf"),
+    resolvedUrl: downloads.problem.requestedUrl,
+  };
+  const solution: PdfEvidence = {
+    ...downloads.solution,
+    path: join(stateDir, "solution.pdf"),
+    resolvedUrl: downloads.solution.requestedUrl,
+  };
+  const questions = JSON.parse(readFileSync(join(stateDir, "problem-chunks/v2-0000.json"), "utf8"))
+    .items as QuizItemEx[];
+  const decisions = parseDecisions(
+    JSON.parse(readFileSync(
+      join(stateDir, `classification-chunks/v${CLASSIFIER_VERSION}-0000-${CLASSIFIER_DIGEST}.json`),
+      "utf8",
+    )).items,
+    questions,
+    entry,
+  );
+  const byKey = new Map(decisions.map((decision) => [decision.key, decision]));
+  const classified: ClassifiedQuestion[] = questions.map((question) => ({
+    question,
+    classification: byKey.get(`${question.page}:${Number(question.number)}`)!,
+  }));
+  const solutions = readdirSync(join(stateDir, "solution-chunks"))
+    .filter((name) => /^v3-\d{4}\.json$/u.test(name)).sort()
+    .flatMap((name) => JSON.parse(readFileSync(join(stateDir, "solution-chunks", name), "utf8")).items) as
+    SolutionItem[];
+  return { entry, problem, solution, classified, solutions };
+}
+
+function q5525982VerifierAuthorityInput(stateDir: string) {
+  const input = q5525982FixtureInputs(stateDir);
+  const terminalName = readdirSync(join(stateDir, "problem-terminal-fidelity"))
+    .find((name) => name.includes(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].effectiveProblemCorpusHash))!;
+  const terminal = JSON.parse(readFileSync(join(stateDir, "problem-terminal-fidelity", terminalName), "utf8"));
+  const byKey = new Map(input.classified.map((record) => [
+    `${record.question.page}:${Number(record.question.number)}`,
+    record,
+  ]));
+  for (const [index, value] of (terminal.inputs as Array<Record<string, unknown>>).entries()) {
+    const key = String(value.key);
+    const current = byKey.get(key);
+    if (!current) throw new Error(`missing terminal effective row: ${key}`);
+    current.question = {
+      ...current.question,
+      question: String(value.question),
+      choices: value.choices as string[] | null,
+      qtype: value.qtype as QuizItemEx["qtype"],
+      figure: Boolean(value.figure),
+      figure_description: value.figure_description as string | null,
+      box: value.box as [number, number] | null,
+    };
+    const item = terminal.items[index] as Record<string, unknown>;
+    current.classification = {
+      ...current.classification,
+      transcription_status: item.status as ClassificationDecision["transcription_status"],
+      transcription_evidence: String(item.evidence),
+      decision: item.scopeDecision as ClassificationDecision["decision"],
+      confidence: Number(item.scopeConfidence),
+      ...(item.scopeDecision === "accept" ? {} : {
+        canonical_subject: null,
+        curriculum_course: null,
+        domain: null,
+        achievement_codes: [],
+      }),
+    };
+  }
+  return {
+    stateDir,
+    entry: input.entry,
+    problemEvidence: { ...input.problem, path: "problem.pdf", requestedUrl: input.problem.resolvedUrl },
+    solutionEvidence: { ...input.solution, path: "solution.pdf", requestedUrl: input.solution.resolvedUrl },
+    rulesDigest: String(terminal.rulesDigest),
+    effective: {
+      problems: new Map(input.classified.map((record) => [
+        `${record.question.page}:${Number(record.question.number)}`,
+        {
+          key: `${record.question.page}:${Number(record.question.number)}`,
+          page: record.question.page,
+          printedNumber: String(Number(record.question.number)),
+          qtype: record.question.qtype,
+          difficulty: record.question.difficulty,
+          question: record.question.question,
+          choices: record.question.choices,
+          answer: record.question.answer,
+          evidence: record.question,
+        },
+      ])),
+      accepted: [],
+      rejected: 0,
+      reviews: 0,
+      rulesDigest: String(terminal.rulesDigest),
+      order: input.classified.map((record) => `${record.question.page}:${Number(record.question.number)}`),
+      records: new Map(input.classified.map((record) => {
+        const key = `${record.question.page}:${Number(record.question.number)}`;
+        const problem = {
+          key,
+          page: record.question.page,
+          printedNumber: String(Number(record.question.number)),
+          qtype: record.question.qtype,
+          difficulty: record.question.difficulty,
+          question: record.question.question,
+          choices: record.question.choices,
+          answer: record.question.answer,
+          evidence: record.question,
+        };
+        return [key, {
+          question: problem,
+          classification: record.classification,
+          problemCheckpoint: { path: "test", sha256: "0".repeat(64) },
+          classificationCheckpoint: { path: "test", sha256: "0".repeat(64) },
+          contextFrom: 1,
+          contextTo: 16,
+        }];
+      })),
+    },
+    baseSolutions: new Map(input.solutions.map((solution) => {
+      const checkpointName = readdirSync(join(stateDir, "solution-chunks")).find((name) => {
+        const checkpoint = JSON.parse(readFileSync(join(stateDir, "solution-chunks", name), "utf8"));
+        return checkpoint.items.some((item: SolutionItem) => Number(item.number) === Number(solution.number));
+      })!;
+      const checkpoint = JSON.parse(readFileSync(join(stateDir, "solution-chunks", checkpointName), "utf8"));
+      return [String(Number(solution.number)), {
+        printedNumber: String(Number(solution.number)),
+        rawAnswer: solution.answer,
+        explanation: solution.explanation,
+        page: solution.page,
+        evidence: solution,
+        checkpoint: {
+          path: `solution-chunks/${checkpointName}`,
+          sha256: hash(readFileSync(join(stateDir, "solution-chunks", checkpointName))),
+        },
+        contextFrom: checkpoint.from,
+        contextTo: checkpoint.to,
+        ownedFrom: checkpoint.ownedFrom,
+        ownedTo: checkpoint.ownedTo,
+      }];
+    })),
+    effectiveProblemCorpusHash: SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].effectiveProblemCorpusHash,
+  };
+}
+
+function q5525982BaseAuthorityInput(stateDir: string) {
+  const persisted = q5525982VerifierAuthorityInput(stateDir);
+  const checkpoints = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].checkpoints.map((checkpoint) => ({
+    path: checkpoint.path,
+    sha256: checkpoint.sha256,
+    from: checkpoint.from,
+    to: checkpoint.to,
+    ownedFrom: checkpoint.ownedFrom,
+    ownedTo: checkpoint.ownedTo,
+    inputHash: checkpoint.inputHash,
+  }));
+  const items = checkpoints.flatMap((pointer) => {
+    const checkpoint = JSON.parse(readFileSync(join(stateDir, pointer.path), "utf8"));
+    const decisionByKey = new Map(checkpoint.items.map((item: Record<string, unknown>) => [item.key, item]));
+    return checkpoint.inputs.flatMap((rawInput: Record<string, unknown>) => {
+      const spec = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items.find((item) => item.key === rawInput.key);
+      if (!spec) return [];
+      return [{
+        input: rawInput,
+        solution: persisted.baseSolutions.get(String(rawInput.printedNumber))!,
+        decision: decisionByKey.get(rawInput.key)!,
+        artifact: { path: pointer.path, sha256: pointer.sha256 },
+        sliceTo: pointer.to,
+      }];
+    });
+  });
+  return {
+    stateDir,
+    entry: persisted.entry,
+    solutionEvidence: persisted.solutionEvidence,
+    effectiveProblemCorpusHash: persisted.effectiveProblemCorpusHash,
+    checkpoints,
+    items,
+  };
 }
 
 type RegroupingClassified = {
@@ -9947,6 +10195,7 @@ async function q6Q26ManualAuthorityFixture() {
     "classification-manual-revisions",
     "problem-manual-second-revisions",
     "classification-manual-second-revisions",
+    "classification-manual-policy-revisions",
   ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
   const rows = Q6_Q26_MANUAL_SPECS.map((spec) => ({
     spec,
@@ -10281,6 +10530,10 @@ async function scopeBoxRevisionFixture() {
     "problem-terminal-fidelity-policy-revisions",
     "solution-repairs",
     "solution-fidelity-repairs",
+    "problem-manual-evidence",
+    "problem-manual-adjudications",
+    "classification-manual-adjudications",
+    "classification-manual-policy-revisions",
     "migration-plans",
     "migration-commits",
     "receipt-history",
@@ -15886,6 +16139,128 @@ describe("exam corpus verifier", () => {
     expect(verifyExamCorpus(residue), "tmp-only evidence directory must not force a new authority generation")
       .toMatchObject({ ok: true });
   });
+
+  it.skipIf(!existsSync(join(Q5525982_STATE, "solution.pdf")))(
+    "reconstructs all eleven forced exact solution repairs and rejects tampered authority",
+    async () => {
+      expect(solutionFalseNegativeRepairAllowlistFingerprint())
+        .toBe(canonicalEvidenceHash(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST));
+      expect(solutionFalseNegativeRepairAllowlistFingerprint())
+        .toBe("ca97462911545e5ca85ec1a4406ba36048203e90133e31034fa4de32b52123c1");
+      const seed = async () => {
+        const stateDir = mkdtempSync(join(tmpdir(), "verify-solution-false-negative-"));
+        cpSync(Q5525982_STATE, stateDir, { recursive: true });
+        const input = q5525982FixtureInputs(stateDir);
+        providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+          if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
+            return { text: JSON.stringify(q5525982FidelityDecisions(request.prompt)) };
+          }
+          if (request.schema?.name === "studywork_solution_file_items") {
+            const number = Number(request.prompt.match(/printed solution (\d+)/u)?.[1]);
+            const key = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items
+              .find((item) => Number(item.key.split(":")[1]) === number)?.key ?? `15:${number}`;
+            if (number === 40) throw new Error("honest Q40 boundary");
+            return { text: JSON.stringify([q5525982CorrectedSolution(input.solutions, key)]) };
+          }
+          throw new Error(`unexpected AI call: ${request.schema?.name ?? "unknown"}`);
+        });
+        await expect(repairAndAuditOfficialAnswers(
+          input.entry,
+          input.problem,
+          input.solution,
+          stateDir,
+          input.classified,
+          input.solutions,
+        )).rejects.toThrow("honest Q40 boundary");
+        providerMock.complete.mockReset();
+        return stateDir;
+      };
+      const expectedKeys = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items.map((item) => item.key)
+        .sort(compareCorpusQuestionKeys);
+      const valid = await seed();
+      try {
+        expect(verifySolutionFalseNegativeRepairAuthorityForTest(q5525982BaseAuthorityInput(valid)))
+          .toEqual(expectedKeys);
+        expect(verifyPersistedSolutionFalseNegativeStateForTest(q5525982VerifierAuthorityInput(valid)))
+          .toEqual(expectedKeys);
+        expect(readdirSync(join(valid, "solution-repairs"))).toHaveLength(11);
+        expect(readdirSync(join(valid, "solution-fidelity-repairs"))).toHaveLength(11);
+        expect(existsSync(join(valid, "solution-revisions"))
+          ? readdirSync(join(valid, "solution-revisions")).length
+          : 0).toBe(0);
+      } finally {
+        rmSync(valid, { recursive: true, force: true });
+      }
+
+      const wrongRepair = await seed();
+      try {
+        const path = join(wrongRepair, "solution-repairs", readdirSync(join(wrongRepair, "solution-repairs"))
+          .find((name) => /-0017-/u.test(name))!);
+        const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+        checkpoint.item.explanation += " altered";
+        writeEvidence(path, checkpoint);
+        expect(() => verifyPersistedSolutionFalseNegativeStateForTest(q5525982VerifierAuthorityInput(wrongRepair)))
+          .toThrow(/forced false-negative repair item|repair metadata/u);
+      } finally {
+        rmSync(wrongRepair, { recursive: true, force: true });
+      }
+
+      const nonterminal = await seed();
+      try {
+        const path = join(nonterminal, "solution-fidelity-repairs", readdirSync(
+          join(nonterminal, "solution-fidelity-repairs"),
+        ).find((name) => /-0017-/u.test(name))!);
+        const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+        checkpoint.item.explanationStatus = "mismatch";
+        writeEvidence(path, checkpoint);
+        expect(() => verifyPersistedSolutionFalseNegativeStateForTest(q5525982VerifierAuthorityInput(nonterminal)))
+          .toThrow(/terminal exact\/exact|metadata is stale/u);
+      } finally {
+        rmSync(nonterminal, { recursive: true, force: true });
+      }
+
+      const missing = await seed();
+      try {
+        const name = readdirSync(join(missing, "solution-fidelity-repairs"))
+          .find((candidate) => /-0017-/u.test(candidate))!;
+        rmSync(join(missing, "solution-fidelity-repairs", name));
+        expect(() => verifyPersistedSolutionFalseNegativeStateForTest(q5525982VerifierAuthorityInput(missing)))
+          .toThrow(/child coverage/u);
+      } finally {
+        rmSync(missing, { recursive: true, force: true });
+      }
+
+      const revision = await seed();
+      try {
+        mkdirSync(join(revision, "solution-revisions"), { recursive: true });
+        const repair = readdirSync(join(revision, "solution-repairs")).find((name) => /-0017-/u.test(name))!;
+        writeJson(join(revision, "solution-revisions", `v1-0011-0017-${"1".repeat(64)}.json`), {
+          baseRepairArtifact: { path: `solution-repairs/${repair}`, sha256: "0".repeat(64) },
+        });
+        expect(() => verifyPersistedSolutionFalseNegativeStateForTest(q5525982VerifierAuthorityInput(revision)))
+          .toThrow(/revision child coverage|persisted solution authority/u);
+      } finally {
+        rmSync(revision, { recursive: true, force: true });
+      }
+
+      const extraCheckpoint = await seed();
+      try {
+        const checkpoint = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].checkpoints[0];
+        writeFileSync(join(
+          extraCheckpoint,
+          "solution-fidelity",
+          `v1-0002-${SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].effectiveProblemCorpusHash}-${"0".repeat(64)}.json`,
+        ), readFileSync(join(extraCheckpoint, checkpoint.path)));
+        expect(() => verifySolutionFalseNegativeRepairAuthorityForTest(
+          q5525982BaseAuthorityInput(extraCheckpoint),
+        ))
+          .toThrow(/checkpoint current-generation set|path authority/u);
+      } finally {
+        rmSync(extraCheckpoint, { recursive: true, force: true });
+      }
+    },
+    420_000,
+  );
 
   it.skipIf(!existsSync(join(SOLUTION_FIDELITY_ADJUDICATION_STATE, "problem.pdf"))
     || !existsSync(join(SOLUTION_FIDELITY_ADJUDICATION_STATE, "solution.pdf")))(
