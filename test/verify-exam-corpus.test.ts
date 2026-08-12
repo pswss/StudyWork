@@ -16186,7 +16186,15 @@ describe("exam corpus verifier", () => {
           .toEqual(expectedKeys);
         expect(verifyPersistedSolutionFalseNegativeStateForTest(q5525982VerifierAuthorityInput(valid)))
           .toEqual(expectedKeys);
-        expect(readdirSync(join(valid, "solution-repairs"))).toHaveLength(11);
+        const repairs = readdirSync(join(valid, "solution-repairs"));
+        expect(repairs).toHaveLength(11);
+        expect(repairs.every((name) => /^v2-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u.test(name)))
+          .toBe(true);
+        const firstRepair = JSON.parse(readFileSync(join(valid, "solution-repairs", repairs[0]), "utf8"));
+        expect(firstRepair).toMatchObject({ version: 2, authorityKind: "source-literal-replacement" });
+        for (const field of ["promptVersion", "promptDigest", "model", "reasoningEffort"]) {
+          expect(firstRepair).not.toHaveProperty(field);
+        }
         expect(readdirSync(join(valid, "solution-fidelity-repairs"))).toHaveLength(11);
         expect(existsSync(join(valid, "solution-revisions"))
           ? readdirSync(join(valid, "solution-revisions")).length
@@ -16210,6 +16218,68 @@ describe("exam corpus verifier", () => {
         expect(checkpoints.every(({ sha256, canonical }) => sha256 === canonical)).toBe(true);
       } finally {
         rmSync(alternateEvidence, { recursive: true, force: true });
+      }
+
+      const persistedCases: Array<{
+        label: string;
+        mutate: (stateDir: string, name: string) => void;
+        error: RegExp;
+      }> = [{
+        label: "same-parent v1 and v2",
+        mutate: (stateDir, name) => {
+          const repair = JSON.parse(readFileSync(join(stateDir, "solution-repairs", name), "utf8"));
+          const v1 = `v1-${String(repair.basePage).padStart(4, "0")}-` +
+            `${repair.printedNumber.padStart(4, "0")}-${repair.baseFidelityCheckpoint.sha256}.json`;
+          writeFileSync(join(stateDir, "solution-repairs", v1), readFileSync(join(stateDir, "solution-repairs", name)));
+        },
+        error: /v1\/v2 parent coverage/u,
+      }, {
+        label: "v2 extra envelope field",
+        mutate: (stateDir, name) => {
+          const path = join(stateDir, "solution-repairs", name);
+          const repair = JSON.parse(readFileSync(path, "utf8"));
+          repair.unexpected = true;
+          writeEvidence(path, repair);
+        },
+        error: /repair metadata/u,
+      }, {
+        label: "v2 dynamic parent filename",
+        mutate: (stateDir, name) => {
+          const changed = name.replace(
+            /-([a-f0-9]{64})-([a-f0-9]{64}\.json)$/u,
+            `-${"0".repeat(64)}-$2`,
+          );
+          renameSync(join(stateDir, "solution-repairs", name), join(stateDir, "solution-repairs", changed));
+        },
+        error: /filename does not bind|version\/path authority/u,
+      }, {
+        label: "v2 leaf symlink",
+        mutate: (stateDir, name) => {
+          const path = join(stateDir, "solution-repairs", name);
+          renameSync(path, `${path}.tmp`);
+          symlinkSync(`${name}.tmp`, path);
+        },
+        error: /malformed persisted solution authority/u,
+      }, {
+        label: "v2 directory symlink",
+        mutate: (stateDir) => {
+          const directory = join(stateDir, "solution-repairs");
+          const target = join(stateDir, "solution-repairs-target");
+          renameSync(directory, target);
+          symlinkSync("solution-repairs-target", directory);
+        },
+        error: /directory must be confined and non-symlink/u,
+      }];
+      for (const testCase of persistedCases) {
+        const tampered = await seed();
+        try {
+          const name = readdirSync(join(tampered, "solution-repairs")).find((candidate) => /-0017-/u.test(candidate))!;
+          testCase.mutate(tampered, name);
+          expect(() => verifyPersistedSolutionFalseNegativeStateForTest(q5525982VerifierAuthorityInput(tampered)),
+            testCase.label).toThrow(testCase.error);
+        } finally {
+          rmSync(tampered, { recursive: true, force: true });
+        }
       }
 
       for (const testCase of [{

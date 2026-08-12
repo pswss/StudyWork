@@ -349,6 +349,7 @@ const SOLUTION_FIDELITY_VERSION = 1;
 const SOLUTION_FIDELITY_SLICE_PAGES = 22;
 const SOLUTION_FIDELITY_SLICE_STRIDE = 18;
 const SOLUTION_REPAIR_VERSION = 1;
+const SOLUTION_SOURCE_LITERAL_REPAIR_VERSION = 2;
 const SOLUTION_REPAIR_FIDELITY_VERSION = 1;
 const SOLUTION_REVISION_VERSION = 1;
 const SOLUTION_REVISION_FIDELITY_VERSION = 1;
@@ -13100,6 +13101,8 @@ type SolutionFalseNegativeRepairItemSpec =
   (typeof SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST)[number]["items"][number];
 type SolutionFalseNegativeCheckpointSpec =
   (typeof SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST)[number]["checkpoints"][number];
+type SolutionFalseNegativeAllowlist =
+  (typeof SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST)[number];
 
 function assertSolutionFalseNegativeCheckpointProjection(
   spec: SolutionFalseNegativeCheckpointSpec,
@@ -13201,6 +13204,63 @@ function expectedFalseNegativeSolution(
     throw new Error(`${spec.key}: false-negative corrected solution item hash is stale`);
   }
   return { ...base, explanation, evidence };
+}
+
+function solutionFalseNegativeRepairAuthority(
+  entry: ManifestEntry,
+  spec: SolutionFalseNegativeRepairItemSpec,
+): { allowlist: SolutionFalseNegativeAllowlist; correctionSpecHash: string } {
+  const matches = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST.filter((candidate) =>
+    candidate.entryId === entry.id && candidate.items.some((item) => item === spec));
+  if (matches.length !== 1) {
+    throw new Error(`${spec.key}: solution false-negative repair authority is not unique`);
+  }
+  return { allowlist: matches[0], correctionSpecHash: canonicalEvidenceHash(spec) };
+}
+
+function sourceLiteralSolutionRepairPath(
+  input: SolutionFidelityInput,
+  baseFidelityCheckpoint: EvidencePointer,
+  correctionSpecHash: string,
+): string {
+  return `solution-repairs/v${SOLUTION_SOURCE_LITERAL_REPAIR_VERSION}-` +
+    `${String(input.sourcePage).padStart(4, "0")}-${input.printedNumber.padStart(4, "0")}-` +
+    `${baseFidelityCheckpoint.sha256}-${correctionSpecHash}.json`;
+}
+
+function sourceLiteralSolutionRepairCheckpoint(
+  entry: ManifestEntry,
+  evidence: DownloadEvidence,
+  effectiveProblemCorpusHash: string,
+  input: SolutionFidelityInput,
+  baseFidelityCheckpoint: EvidencePointer,
+  spec: SolutionFalseNegativeRepairItemSpec,
+  corrected: OfficialSolution,
+): Record<string, unknown> {
+  const { allowlist, correctionSpecHash } = solutionFalseNegativeRepairAuthority(entry, spec);
+  return {
+    version: SOLUTION_SOURCE_LITERAL_REPAIR_VERSION,
+    authorityKind: "source-literal-replacement",
+    entryId: entry.id,
+    key: input.key,
+    printedNumber: input.printedNumber,
+    basePage: input.sourcePage,
+    contextFrom: input.baseContextFrom,
+    contextTo: input.baseContextTo,
+    baseOwnedFrom: input.baseOwnedFrom,
+    baseOwnedTo: input.baseOwnedTo,
+    sourceHash: evidence.sha256,
+    effectiveProblemCorpusHash,
+    baseSolutionCheckpoint: input.baseSolutionCheckpoint,
+    baseFidelityCheckpoint,
+    baseSolutionItemHash: input.baseSolutionItemHash,
+    baseRawAnswerHash: sha256(input.rawAnswer),
+    baseExplanationHash: sha256(input.explanation),
+    allowlistId: allowlist.allowlistId,
+    correctionSpecHash,
+    effectivePage: corrected.page,
+    item: corrected.evidence,
+  };
 }
 
 function assertFalseNegativeRepairFidelity(
@@ -13639,7 +13699,16 @@ function readCanonicalSolutionArtifacts(
   pattern: RegExp,
 ): CanonicalSolutionArtifact[] {
   const absolute = join(stateDir, directory);
-  if (!existsSync(absolute)) return [];
+  try {
+    const info = lstatSync(absolute);
+    if (info.isSymbolicLink() || !info.isDirectory()
+      || realpathSync(absolute) !== resolve(realpathSync(stateDir), directory)) {
+      throw new Error(`${directory}: persisted solution authority directory must be confined and non-symlink`);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
   const result: CanonicalSolutionArtifact[] = [];
   for (const entry of readdirSync(absolute, { withFileTypes: true })
     .sort((left, right) => left.name.localeCompare(right.name))) {
@@ -14228,7 +14297,7 @@ function verifyPersistedSolutionHistory(
   const repairFiles = readCanonicalSolutionArtifacts(
     stateDir,
     "solution-repairs",
-    /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
+    /^(?:v1-\d{4}-\d{4}-[a-f0-9]{64}|v2-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64})\.json$/u,
   );
   const repairFidelityFiles = readCanonicalSolutionArtifacts(
     stateDir,
@@ -14309,11 +14378,28 @@ function verifyPersistedSolutionHistory(
   }>();
   const legacyPromptUpgradePredecessors = new Map<string, LegacySolutionRevisionPredecessor>();
 
+  const repairParents = new Set<string>();
+  for (const repairFile of repairFiles) {
+    const match = /^solution-repairs\/v1-(\d{4})-(\d{4})-([a-f0-9]{64})\.json$/u.exec(repairFile.path)
+      ?? /^solution-repairs\/v2-(\d{4})-(\d{4})-([a-f0-9]{64})-[a-f0-9]{64}\.json$/u.exec(
+        repairFile.path,
+      );
+    const parent = match && `${match[1]}:${match[2]}:${match[3]}`;
+    if (!parent || repairParents.has(parent)) {
+      throw new Error(`${repairFile.path}: solution repair v1/v2 parent coverage is not exact`);
+    }
+    repairParents.add(parent);
+  }
+
   for (const repairFile of repairFiles) {
     const repair = repairFile.checkpoint;
-    const pathMatch = /^solution-repairs\/v1-(\d{4})-(\d{4})-([a-f0-9]{64})\.json$/u.exec(
+    const v1Match = /^solution-repairs\/v1-(\d{4})-(\d{4})-([a-f0-9]{64})\.json$/u.exec(
       repairFile.path,
-    )!;
+    );
+    const v2Match = /^solution-repairs\/v2-(\d{4})-(\d{4})-([a-f0-9]{64})-([a-f0-9]{64})\.json$/u.exec(
+      repairFile.path,
+    );
+    const pathMatch = v1Match ?? v2Match!;
     const basePage = Number(pathMatch[1]);
     const printedNumber = String(Number(pathMatch[2]));
     const baseFidelitySha = pathMatch[3];
@@ -14475,7 +14561,17 @@ function verifyPersistedSolutionHistory(
         if (hashFile(path) !== pointer.sha256) throw new Error(`${repairFile.path}: persisted seed ${label} hash mismatch`);
       }
     }
-    const expectedRepair = {
+    const expectedRepair = v2Match && forcedFalseNegative
+      ? sourceLiteralSolutionRepairCheckpoint(
+        entry,
+        solutionEvidence,
+        effectiveProblemCorpusHash,
+        input,
+        baseFidelityCheckpoint,
+        forcedFalseNegative,
+        repaired,
+      )
+      : {
       version: SOLUTION_REPAIR_VERSION,
       entryId: entry.id,
       key,
@@ -14508,6 +14604,21 @@ function verifyPersistedSolutionHistory(
       || isTerminalSolutionDecision(input, baseSolution, baseDecision)
         && input.baseContextTo <= slice.to && persistedSeed === undefined && !forcedFalseNegative) {
       throw new Error(`${repairFile.path}: persisted repair metadata is stale or not source-required`);
+    }
+    if (v2Match && (!forcedFalseNegative
+      || v2Match[4] !== canonicalEvidenceHash(forcedFalseNegative)
+      || repairFile.path !== sourceLiteralSolutionRepairPath(
+        input,
+        baseFidelityCheckpoint,
+        canonicalEvidenceHash(forcedFalseNegative),
+      )) || v1Match && (
+      repair.version !== SOLUTION_REPAIR_VERSION
+      || repair.promptVersion !== TARGETED_SOLUTION_TRANSCRIPTION_VERSION
+      || repair.promptDigest !== TARGETED_SOLUTION_PROMPT_DIGEST
+      || repair.model !== "gpt-5.6-sol"
+      || repair.reasoningEffort !== "high"
+    )) {
+      throw new Error(`${repairFile.path}: persisted repair version/path authority is stale`);
     }
     if (forcedFalseNegative && repairedItemHash !== forcedFalseNegative.expectedSolutionItemHash) {
       throw new Error(`${key}: persisted forced false-negative repair item is stale`);
@@ -15230,9 +15341,19 @@ function verifyFirstSolutionRepair(
   }
 
   const repairArtifact = evidencePointer(repair.repairArtifact, `${key}.repairArtifact`);
-  const expectedRepairPath = `solution-repairs/v${SOLUTION_REPAIR_VERSION}-${String(basePage).padStart(4, "0")}-` +
+  const legacyRepairPath = `solution-repairs/v${SOLUTION_REPAIR_VERSION}-${String(basePage).padStart(4, "0")}-` +
     `${printedNumber.padStart(4, "0")}-${baseFidelityArtifact.sha256}.json`;
-  if (repairArtifact.path !== expectedRepairPath) throw new Error(`${key}: solution repair path is invalid`);
+  const sourceLiteralRepairPath = falseNegativeSpec
+    ? sourceLiteralSolutionRepairPath(
+      input,
+      baseFidelityArtifact,
+      canonicalEvidenceHash(falseNegativeSpec),
+    )
+    : undefined;
+  const sourceLiteralRepair = sourceLiteralRepairPath === repairArtifact.path;
+  if (repairArtifact.path !== legacyRepairPath && !sourceLiteralRepair) {
+    throw new Error(`${key}: solution repair path is invalid`);
+  }
   const repairCheckpoint = readBoundEvidence(stateDir, repairArtifact, `${key} solution repair`);
   const corrected = parseRepairedSolution(repairCheckpoint.item, `${key} solution repair.item`, baseSolution);
   if (corrected.printedNumber !== printedNumber || corrected.page !== effectivePage
@@ -15243,7 +15364,17 @@ function verifyFirstSolutionRepair(
   if (falseNegativeSpec && effectiveSolutionItemHash !== falseNegativeSpec.expectedSolutionItemHash) {
     throw new Error(`${key}: forced false-negative repaired solution item is stale`);
   }
-  const expectedRepairCheckpoint = {
+  const expectedRepairCheckpoint = sourceLiteralRepair && falseNegativeSpec
+    ? sourceLiteralSolutionRepairCheckpoint(
+      entry,
+      solutionEvidence,
+      effectiveProblemCorpusHash,
+      input,
+      baseFidelityArtifact,
+      falseNegativeSpec,
+      corrected,
+    )
+    : {
     version: SOLUTION_REPAIR_VERSION,
     entryId: entry.id,
     key,
@@ -16234,8 +16365,18 @@ function hasPersistedSolutionGenerationSignal(stateDir: string): boolean {
     if (existsSync(absolute) && readdirSync(absolute, { withFileTypes: true }).some((entry) =>
       !(entry.isFile() && entry.name.endsWith(".tmp")))) return true;
   }
+  const repairDirectory = join(stateDir, "solution-repairs");
+  try {
+    const info = lstatSync(repairDirectory);
+    if (info.isSymbolicLink() || !info.isDirectory()
+      || realpathSync(repairDirectory) !== resolve(realpathSync(stateDir), "solution-repairs")) return true;
+    if (readdirSync(repairDirectory, { withFileTypes: true }).some((entry) =>
+      !(entry.isFile() && entry.name.endsWith(".tmp")) && entry.name.startsWith("v2-"))) return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") return true;
+  }
   for (const [directory, pattern, kind] of [
-    ["solution-repairs", /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u, "repair"],
+    ["solution-repairs", /^(?:v1-\d{4}-\d{4}-[a-f0-9]{64}|v2-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64})\.json$/u, "repair"],
     ["solution-revisions", /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u, "revision"],
   ] as const) {
     const absolute = join(stateDir, directory);

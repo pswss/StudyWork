@@ -116,6 +116,7 @@ export const SOLUTION_FIDELITY_VERSION = 1;
 export const SOLUTION_FIDELITY_SLICE_PAGES = 22;
 export const SOLUTION_FIDELITY_SLICE_STRIDE = 18;
 export const SOLUTION_REPAIR_VERSION = 1;
+export const SOLUTION_SOURCE_LITERAL_REPAIR_VERSION = 2;
 export const SOLUTION_REPAIR_FIDELITY_VERSION = 1;
 export const PERSISTED_SOLUTION_REPAIR_SEED_VERSION = 1;
 export const SOLUTION_REVISION_VERSION = 1;
@@ -7786,6 +7787,8 @@ type SolutionFalseNegativeRepairItemSpec =
   (typeof SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST)[number]["items"][number];
 type SolutionFalseNegativeCheckpointSpec =
   (typeof SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST)[number]["checkpoints"][number];
+type SolutionFalseNegativeAllowlist =
+  (typeof SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST)[number];
 
 function solutionFidelityCheckpointEnvelope(
   entry: CorpusManifestEntry,
@@ -7864,6 +7867,65 @@ function solutionFalseNegativeCheckpointSpec(
   const checkpoint = allowlist.checkpoints.find((candidate) => candidate.path === path);
   if (!checkpoint) throw new Error(`${entry.id} solution false-negative checkpoint path authority가 다릅니다`);
   return checkpoint;
+}
+
+function solutionFalseNegativeRepairAuthority(
+  entry: CorpusManifestEntry,
+  spec: SolutionFalseNegativeRepairItemSpec
+): { allowlist: SolutionFalseNegativeAllowlist; correctionSpecHash: string } {
+  const matches = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST.filter((candidate) =>
+    candidate.entryId === entry.id && candidate.items.some((item) => item === spec)
+  );
+  if (matches.length !== 1) throw new Error(`${spec.key} solution false-negative repair authority가 유일하지 않습니다`);
+  return { allowlist: matches[0], correctionSpecHash: canonicalEvidenceHash(spec) };
+}
+
+function sourceLiteralSolutionRepairPath(
+  base: SolutionFidelityInput,
+  baseFidelityCheckpoint: SolutionFidelityCheckpointEvidence,
+  correctionSpecHash: string
+): string {
+  return `solution-repairs/v${SOLUTION_SOURCE_LITERAL_REPAIR_VERSION}-` +
+    `${String(base.sourcePage).padStart(4, "0")}-${base.printedNumber.padStart(4, "0")}-` +
+    `${baseFidelityCheckpoint.sha256}-${correctionSpecHash}.json`;
+}
+
+function sourceLiteralSolutionRepairCheckpoint(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  effectiveProblemCorpusHash: string,
+  base: SolutionFidelityInput,
+  baseFidelityCheckpoint: SolutionFidelityCheckpointEvidence,
+  spec: SolutionFalseNegativeRepairItemSpec,
+  corrected: SolutionItem
+): Record<string, unknown> {
+  const { allowlist, correctionSpecHash } = solutionFalseNegativeRepairAuthority(entry, spec);
+  return {
+    version: SOLUTION_SOURCE_LITERAL_REPAIR_VERSION,
+    authorityKind: "source-literal-replacement",
+    entryId: entry.id,
+    key: base.key,
+    printedNumber: base.printedNumber,
+    basePage: base.sourcePage,
+    contextFrom: base.baseContextFrom,
+    contextTo: base.baseContextTo,
+    baseOwnedFrom: base.baseOwnedFrom,
+    baseOwnedTo: base.baseOwnedTo,
+    sourceHash: evidence.sha256,
+    effectiveProblemCorpusHash,
+    baseSolutionCheckpoint: base.baseSolutionCheckpoint,
+    baseFidelityCheckpoint: {
+      path: baseFidelityCheckpoint.path,
+      sha256: baseFidelityCheckpoint.sha256,
+    },
+    baseSolutionItemHash: base.baseSolutionItemHash,
+    baseRawAnswerHash: sha256Text(base.rawAnswer),
+    baseExplanationHash: sha256Text(base.explanation),
+    allowlistId: allowlist.allowlistId,
+    correctionSpecHash,
+    effectivePage: corrected.page,
+    item: corrected,
+  };
 }
 
 async function assertSolutionFalseNegativeSourceAuthority(
@@ -8181,7 +8243,15 @@ async function readCanonicalSolutionArtifacts(
   fileName: RegExp
 ): Promise<CanonicalSolutionArtifact[]> {
   const absoluteDirectory = join(stateDir, directory);
-  if (!existsSync(absoluteDirectory)) return [];
+  try {
+    const stat = lstatSync(absoluteDirectory);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      throw new Error(`${directory} 디렉터리가 유효하지 않습니다`);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
   const artifacts: CanonicalSolutionArtifact[] = [];
   for (const entry of readdirSync(absoluteDirectory, { withFileTypes: true }).sort((a, b) =>
     a.name.localeCompare(b.name))) {
@@ -8536,7 +8606,7 @@ async function scanPersistedSolutionHistory(
   const repairFiles = await readCanonicalSolutionArtifacts(
     stateDir,
     "solution-repairs",
-    /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u
+    /^(?:v1-\d{4}-\d{4}-[a-f0-9]{64}|v2-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64})\.json$/u
   );
   const repairFidelityFiles = await readCanonicalSolutionArtifacts(
     stateDir,
@@ -8584,6 +8654,20 @@ async function scanPersistedSolutionHistory(
     currentPartialKeys: new Set(),
   };
 
+  const repairParents = new Set<string>();
+  for (const repairFile of repairFiles) {
+    const match = /^solution-repairs\/v1-(\d{4})-(\d{4})-([a-f0-9]{64})\.json$/u.exec(
+      repairFile.relativePath
+    ) ?? /^solution-repairs\/v2-(\d{4})-(\d{4})-([a-f0-9]{64})-[a-f0-9]{64}\.json$/u.exec(
+      repairFile.relativePath
+    );
+    const parent = match && `${match[1]}:${match[2]}:${match[3]}`;
+    if (!parent || repairParents.has(parent)) {
+      throw new Error(`${repairFile.relativePath} solution repair v1/v2 parent coverage가 다릅니다`);
+    }
+    repairParents.add(parent);
+  }
+
   const classifiedByNumber = new Map<number, ClassifiedQuestion>();
   for (const current of classified) {
     const number = numericPrintedLocator(current.question.number)!;
@@ -8619,9 +8703,13 @@ async function scanPersistedSolutionHistory(
 
   for (const repairFile of repairFiles) {
     const repair = repairFile.checkpoint;
-    const match = /^solution-repairs\/v1-(\d{4})-(\d{4})-([a-f0-9]{64})\.json$/u.exec(
+    const v1Match = /^solution-repairs\/v1-(\d{4})-(\d{4})-([a-f0-9]{64})\.json$/u.exec(
       repairFile.relativePath
-    )!;
+    );
+    const v2Match = /^solution-repairs\/v2-(\d{4})-(\d{4})-([a-f0-9]{64})-([a-f0-9]{64})\.json$/u.exec(
+      repairFile.relativePath
+    );
+    const match = v1Match ?? v2Match!;
     const basePage = Number(match[1]);
     const printedNumber = Number(match[2]);
     const baseFidelitySha = match[3];
@@ -8752,17 +8840,14 @@ async function scanPersistedSolutionHistory(
         input.baseContextTo <= to && repair.persistedSeed === undefined && !forcedFalseNegative
     ) throw new Error(`${baseFidelityPath}은 genuine nonterminal base fidelity가 아닙니다`);
     if (
-      repair.version !== SOLUTION_REPAIR_VERSION || repair.entryId !== entry.id || repair.key !== input.key ||
+      repair.entryId !== entry.id || repair.key !== input.key ||
       repair.printedNumber !== input.printedNumber || repair.basePage !== basePage || basePage !== input.sourcePage ||
       repair.sourceHash !== evidence.sha256 || repair.contextFrom !== input.baseContextFrom ||
       repair.contextTo !== input.baseContextTo || repair.baseOwnedFrom !== input.baseOwnedFrom ||
       repair.baseOwnedTo !== input.baseOwnedTo ||
       canonicalEvidenceHash(repair.baseSolutionCheckpoint) !== canonicalEvidenceHash(baseEvidence.checkpoint) ||
       repair.baseSolutionItemHash !== baseEvidence.itemHash || repair.baseRawAnswerHash !== sha256Text(baseSolution.answer) ||
-      repair.baseExplanationHash !== sha256Text(baseSolution.explanation) ||
-      repair.promptVersion !== TARGETED_SOLUTION_TRANSCRIPTION_VERSION ||
-      repair.promptDigest !== TARGETED_SOLUTION_PROMPT_DIGEST || repair.model !== IMPORT_MODEL ||
-      repair.reasoningEffort !== IMPORT_REASONING_EFFORT
+      repair.baseExplanationHash !== sha256Text(baseSolution.explanation)
     ) throw new Error(`${repairFile.relativePath} persisted repair 메타데이터가 다릅니다`);
     const repairedItem = parseSolutionItems(JSON.stringify([repair.item]))[0];
     const repairedItemHash = canonicalEvidenceHash(repairedItem);
@@ -8803,7 +8888,23 @@ async function scanPersistedSolutionHistory(
         }
       }
     }
-    const expectedRepair = {
+    const expectedRepair = v2Match ? forcedFalseNegative && sourceLiteralSolutionRepairCheckpoint(
+      entry,
+      evidence,
+      effectiveProblemCorpusHash,
+      input,
+      {
+        path: baseFidelityPath,
+        sha256: baseFidelityPointerSha,
+        from: expectedFrom,
+        to: expectedTo,
+        ownedFrom: expectedFrom,
+        ownedTo: expectedOwnedTo,
+        inputHash: exactHash(baseFidelity.inputHash, "persisted base fidelity input hash"),
+      },
+      forcedFalseNegative,
+      repairedItem
+    ) : {
       version: SOLUTION_REPAIR_VERSION,
       entryId: entry.id,
       key: input.key,
@@ -8831,6 +8932,25 @@ async function scanPersistedSolutionHistory(
     if (canonicalEvidenceHash(repair) !== canonicalEvidenceHash(expectedRepair)) {
       throw new Error(`${repairFile.relativePath} persisted repair envelope가 다릅니다`);
     }
+    if (
+      v2Match && (
+        !forcedFalseNegative || match[4] !== canonicalEvidenceHash(forcedFalseNegative) ||
+        repairFile.relativePath !== sourceLiteralSolutionRepairPath(input, {
+          path: baseFidelityPath,
+          sha256: baseFidelityPointerSha,
+          from: expectedFrom,
+          to: expectedTo,
+          ownedFrom: expectedFrom,
+          ownedTo: expectedOwnedTo,
+          inputHash: exactHash(baseFidelity.inputHash, "persisted base fidelity input hash"),
+        }, canonicalEvidenceHash(forcedFalseNegative))
+      ) || v1Match && (
+        repair.version !== SOLUTION_REPAIR_VERSION ||
+        repair.promptVersion !== TARGETED_SOLUTION_TRANSCRIPTION_VERSION ||
+        repair.promptDigest !== TARGETED_SOLUTION_PROMPT_DIGEST || repair.model !== IMPORT_MODEL ||
+        repair.reasoningEffort !== IMPORT_REASONING_EFFORT
+      )
+    ) throw new Error(`${repairFile.relativePath} persisted repair version/path authority가 다릅니다`);
     const fidelityChildren = repairFidelityFiles.filter((candidate) =>
       object(candidate.checkpoint.repairArtifact, "persisted repair fidelity parent").path === repairFile.relativePath
     );
@@ -10102,9 +10222,25 @@ async function repairSolutionItem(
 }> {
   const number = base.printedNumber;
   const basePage = base.sourcePage;
-  const repairRelativePath =
+  const forcedAuthority = falseNegativeSpec
+    ? solutionFalseNegativeRepairAuthority(entry, falseNegativeSpec)
+    : undefined;
+  const legacyRepairRelativePath =
     `solution-repairs/v${SOLUTION_REPAIR_VERSION}-${String(basePage).padStart(4, "0")}-` +
     `${number.padStart(4, "0")}-${baseFidelityCheckpoint.sha256}.json`;
+  const sourceLiteralRepairRelativePath = falseNegativeSpec && forcedAuthority
+    ? sourceLiteralSolutionRepairPath(base, baseFidelityCheckpoint, forcedAuthority.correctionSpecHash)
+    : undefined;
+  const legacyRepairExists = falseNegativeSpec && existsSync(join(stateDir, legacyRepairRelativePath));
+  const sourceLiteralRepairExists = sourceLiteralRepairRelativePath !== undefined &&
+    existsSync(join(stateDir, sourceLiteralRepairRelativePath));
+  if (legacyRepairExists && sourceLiteralRepairExists) {
+    throw new Error(`${base.key} forced false-negative 해설 repair v1/v2가 중복입니다`);
+  }
+  const useSourceLiteralRepair = sourceLiteralRepairRelativePath !== undefined && !legacyRepairExists;
+  const repairRelativePath = useSourceLiteralRepair
+    ? sourceLiteralRepairRelativePath
+    : legacyRepairRelativePath;
   const repairPath = join(stateDir, repairRelativePath);
   const persistedSeed = persistedFirst ? {
     version: PERSISTED_SOLUTION_REPAIR_SEED_VERSION,
@@ -10121,7 +10257,26 @@ async function repairSolutionItem(
     let repairCheckpoint: Record<string, unknown>;
     if (existsSync(repairPath)) {
       repairCheckpoint = object(JSON.parse(readFileSync(repairPath, "utf8")), repairRelativePath);
-      if (
+      if (falseNegativeSpec && useSourceLiteralRepair) {
+        corrected = expectedFalseNegativeSolution({
+          number: base.printedNumber,
+          answer: base.rawAnswer,
+          explanation: base.explanation,
+          page: base.sourcePage,
+          complete: true,
+        }, falseNegativeSpec);
+        if (canonicalEvidenceHash(repairCheckpoint) !== canonicalEvidenceHash(
+          sourceLiteralSolutionRepairCheckpoint(
+            entry,
+            evidence,
+            effectiveProblemCorpusHash,
+            base,
+            baseFidelityCheckpoint,
+            falseNegativeSpec,
+            corrected
+          )
+        )) throw new Error(`기존 source-literal 해설 repair 체크포인트가 다릅니다: ${repairPath}`);
+      } else if (
         repairCheckpoint.version !== SOLUTION_REPAIR_VERSION || repairCheckpoint.entryId !== entry.id ||
         repairCheckpoint.key !== base.key || repairCheckpoint.printedNumber !== number ||
         repairCheckpoint.basePage !== basePage || repairCheckpoint.sourceHash !== evidence.sha256 ||
@@ -10142,9 +10297,17 @@ async function repairSolutionItem(
         repairCheckpoint.promptDigest !== TARGETED_SOLUTION_PROMPT_DIGEST ||
         repairCheckpoint.model !== IMPORT_MODEL || repairCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT
       ) throw new Error(`기존 해설 repair 체크포인트 메타데이터가 다릅니다: ${repairPath}`);
-      corrected = parseSolutionItems(JSON.stringify([repairCheckpoint.item]))[0];
+      else corrected = parseSolutionItems(JSON.stringify([repairCheckpoint.item]))[0];
     } else {
-      if (persistedFirst && persistedSeed) {
+      if (falseNegativeSpec) {
+        corrected = expectedFalseNegativeSolution({
+          number: base.printedNumber,
+          answer: base.rawAnswer,
+          explanation: base.explanation,
+          page: base.sourcePage,
+          complete: true,
+        }, falseNegativeSpec);
+      } else if (persistedFirst && persistedSeed) {
         for (const [label, pointer] of [
           ["persisted first base fidelity", persistedFirst.baseFidelityCheckpoint],
           ["persisted first repair", persistedFirst.repairArtifact],
@@ -10165,7 +10328,15 @@ async function repairSolutionItem(
       if (
         falseNegativeSpec && canonicalEvidenceHash(corrected) !== falseNegativeSpec.expectedSolutionItemHash
       ) throw new Error(`${base.key} forced false-negative 해설 repair item이 source candidate와 다릅니다`);
-      repairCheckpoint = {
+      repairCheckpoint = falseNegativeSpec ? sourceLiteralSolutionRepairCheckpoint(
+        entry,
+        evidence,
+        effectiveProblemCorpusHash,
+        base,
+        baseFidelityCheckpoint,
+        falseNegativeSpec,
+        corrected
+      ) : {
         version: SOLUTION_REPAIR_VERSION,
         entryId: entry.id,
         key: base.key,
