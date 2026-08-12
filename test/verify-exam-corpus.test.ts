@@ -863,7 +863,7 @@ function q5525982BaseAuthorityInput(stateDir: string) {
   const persisted = q5525982VerifierAuthorityInput(stateDir);
   const checkpoints = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].checkpoints.map((checkpoint) => ({
     path: checkpoint.path,
-    sha256: checkpoint.sha256,
+    sha256: hash(readFileSync(join(stateDir, checkpoint.path))),
     from: checkpoint.from,
     to: checkpoint.to,
     ownedFrom: checkpoint.ownedFrom,
@@ -16146,14 +16146,17 @@ describe("exam corpus verifier", () => {
       expect(solutionFalseNegativeRepairAllowlistFingerprint())
         .toBe(canonicalEvidenceHash(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST));
       expect(solutionFalseNegativeRepairAllowlistFingerprint())
-        .toBe("ca97462911545e5ca85ec1a4406ba36048203e90133e31034fa4de32b52123c1");
-      const seed = async () => {
+        .toBe("8f780112dc37cf0cd67b29fd3237c36a8a2dad4d81201f5f030a155f2303d8ad");
+      const seed = async (evidenceSuffix = "") => {
         const stateDir = mkdtempSync(join(tmpdir(), "verify-solution-false-negative-"));
         cpSync(Q5525982_STATE, stateDir, { recursive: true });
         const input = q5525982FixtureInputs(stateDir);
         providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
           if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
-            return { text: JSON.stringify(q5525982FidelityDecisions(request.prompt)) };
+            return { text: JSON.stringify(q5525982FidelityDecisions(request.prompt).map((decision) => ({
+              ...decision,
+              evidence: `${decision.evidence}${evidenceSuffix}`,
+            }))) };
           }
           if (request.schema?.name === "studywork_solution_file_items") {
             const number = Number(request.prompt.match(/printed solution (\d+)/u)?.[1]);
@@ -16190,6 +16193,57 @@ describe("exam corpus verifier", () => {
           : 0).toBe(0);
       } finally {
         rmSync(valid, { recursive: true, force: true });
+      }
+
+      const alternateEvidence = await seed(" alternate diagnostic wording");
+      try {
+        expect(verifySolutionFalseNegativeRepairAuthorityForTest(
+          q5525982BaseAuthorityInput(alternateEvidence),
+        )).toEqual(expectedKeys);
+        expect(verifyPersistedSolutionFalseNegativeStateForTest(
+          q5525982VerifierAuthorityInput(alternateEvidence),
+        )).toEqual(expectedKeys);
+        const checkpoints = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].checkpoints.map((checkpoint) => {
+          const bytes = readFileSync(join(alternateEvidence, checkpoint.path));
+          return { sha256: hash(bytes), canonical: canonicalEvidenceHash(JSON.parse(bytes.toString("utf8"))) };
+        });
+        expect(checkpoints.every(({ sha256, canonical }) => sha256 === canonical)).toBe(true);
+      } finally {
+        rmSync(alternateEvidence, { recursive: true, force: true });
+      }
+
+      for (const testCase of [{
+        label: "semantic status",
+        mutate: (checkpoint: Record<string, any>) => { checkpoint.items[0].answerStatus = "mismatch"; },
+        error: /semantic projection/u,
+      }, {
+        label: "semantic source page",
+        mutate: (checkpoint: Record<string, any>) => { checkpoint.items[0].sourcePage += 1; },
+        error: /semantic projection/u,
+      }, {
+        label: "semantic key",
+        mutate: (checkpoint: Record<string, any>) => {
+          checkpoint.items[0].key = "99:99";
+          checkpoint.inputs[0].key = "99:99";
+        },
+        error: /projection|extra key/u,
+      }, {
+        label: "checkpoint extra field",
+        mutate: (checkpoint: Record<string, any>) => { checkpoint.unexpected = true; },
+        error: /envelope/u,
+      }]) {
+        const tampered = await seed();
+        try {
+          const path = join(tampered, SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].checkpoints[0].path);
+          const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+          testCase.mutate(checkpoint);
+          writeEvidence(path, checkpoint);
+          expect(() => verifySolutionFalseNegativeRepairAuthorityForTest(
+            q5525982BaseAuthorityInput(tampered),
+          ), testCase.label).toThrow(testCase.error);
+        } finally {
+          rmSync(tampered, { recursive: true, force: true });
+        }
       }
 
       const wrongRepair = await seed();

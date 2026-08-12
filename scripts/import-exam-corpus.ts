@@ -5704,31 +5704,61 @@ export const SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST = [{
     path: "solution-fidelity/v1-0000-" +
       "5f5fc141fb05bcf6ca205bcb84b82f86bdabbaf2b365db2b071b20f53a75af5d-" +
       "15fb9a2330f54466478db4467a1319fe441111b9fc9bab0afae8981f8da298e3.json",
-    sha256: "0f1ef586d7f98d03974354455650394f6eee0eace0542708ba2839f98a1618cd",
     inputHash: "15fb9a2330f54466478db4467a1319fe441111b9fc9bab0afae8981f8da298e3",
     from: 1,
     to: 22,
     ownedFrom: 1,
     ownedTo: 18,
     promptDigest: "3bb2a75624a04702be559c331fd88b00e6a4e37e71920347747a62baf8eb6f00",
+    decisions: [
+      { key: "6:16", sourcePage: 10, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "7:17", sourcePage: 11, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "7:18", sourcePage: 11, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "7:19", sourcePage: 12, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "7:20", sourcePage: 12, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "9:21", sourcePage: 14, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "9:22", sourcePage: 14, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "9:23", sourcePage: 15, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "9:24", sourcePage: 15, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "9:25", sourcePage: 16, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "9:26", sourcePage: 16, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "11:27", sourcePage: 17, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "11:28", sourcePage: 18, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "11:29", sourcePage: 18, answerStatus: "exact", explanationStatus: "exact" },
+    ],
   }, {
     path: "solution-fidelity/v1-0001-" +
       "5f5fc141fb05bcf6ca205bcb84b82f86bdabbaf2b365db2b071b20f53a75af5d-" +
       "66005e9442043b6c29ffef0fb46a629a2428c4091f61ce453ea9f83088887f10.json",
-    sha256: "8d13e5529f22c474d499ae4e36aae94fd87f078725a6604bad27affec682cd0a",
     inputHash: "66005e9442043b6c29ffef0fb46a629a2428c4091f61ce453ea9f83088887f10",
     from: 19,
     to: 28,
     ownedFrom: 19,
     ownedTo: 28,
     promptDigest: "3bb2a75624a04702be559c331fd88b00e6a4e37e71920347747a62baf8eb6f00",
+    decisions: [
+      { key: "11:30", sourcePage: 19, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "12:31", sourcePage: 19, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "12:32", sourcePage: 20, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "13:33", sourcePage: 21, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "13:34", sourcePage: 22, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "13:35", sourcePage: 22, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "13:36", sourcePage: 23, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "14:37", sourcePage: 24, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "15:38", sourcePage: 24, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "15:39", sourcePage: 24, answerStatus: "exact", explanationStatus: "exact" },
+      { key: "15:40", sourcePage: 25, answerStatus: "exact", explanationStatus: "mismatch" },
+      { key: "15:41", sourcePage: 26, answerStatus: "exact", explanationStatus: "mismatch" },
+      { key: "15:42", sourcePage: 26, answerStatus: "exact", explanationStatus: "mismatch" },
+      { key: "16:43", sourcePage: 27, answerStatus: "exact", explanationStatus: "mismatch" },
+      { key: "16:44", sourcePage: 27, answerStatus: "exact", explanationStatus: "mismatch" },
+      { key: "16:45", sourcePage: 28, answerStatus: "exact", explanationStatus: "mismatch" },
+    ],
   }],
   items: [{
     key: "7:17",
     baseSolutionItemHash: "cb61d407056b6e657deddd6e9455e79403fb6482f2610ae962029584560626d3",
     baseExplanationHash: "2b6087c3931287c951ccba5821349f768c6a6e82f3d3fb8228211f4d0ad2f634",
-    failedDecisionHash: "e9a83c2416d2e4fffbf8c1b291bc925b577f67288243766c98dd9864a1a2809b",
-    failedEvidenceHash: "03db8f172cd7fa8ac8f87edb71d3d1efe4a6f0c8d4bbb020aaeff5c9352f0424",
     replacements: [{
       from: "주변부 지식(관찰과 실험에 의존하는 지식)",
       to: "주변적 지식(관찰과 실험에 의존하는 지식)",
@@ -5739,16 +5769,12 @@ export const SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST = [{
     key: "7:18",
     baseSolutionItemHash: "01bd36b536489c36f866f268d87869bbbae0bdb47860979caa3110b368eba471",
     baseExplanationHash: "a8da127ce0312a4ad0995c9a227523b396fbae0c48a869a7798e9175a0fa6aab",
-    failedDecisionHash: "2d3899a03e35ec6e37dfbe68bd1c1a8b7c9655b1d8f8664408e05982d8746d9b",
-    failedEvidenceHash: "01ff371ccb697706543c031cf7780cd7cfbe41f769705e9428c14b296618b4e7",
     replacements: [{ from: "밝혀져 ⓒ의 수정", to: "밝혀져서 ⓒ의 수정", count: 1 }],
     expectedSolutionItemHash: "05251acde209c55b30ac96aeed19583d7f6be087ae7ab14b3c512e62e95233d6",
   }, {
     key: "9:21",
     baseSolutionItemHash: "0d00f883eb2454977c4f4e43e588d05b9a51086c80ee4390783fc189f7d0ba29",
     baseExplanationHash: "eb0f4e184f9829361f7eaa565291420e95a29a0cf7104b8b9092996ce183bf96",
-    failedDecisionHash: "ec3658cb4267e7dc94a33b72b1934b664de11aa43410dac2a348de11f108e52d",
-    failedEvidenceHash: "558a84d57f246f6241d79e75f2cbb0dcb60df819428ee42d52f68fa1038517fe",
     replacements: [
       { from: "이는 실제했던 전쟁을", to: "이는 실재했던 전쟁을", count: 1 },
       { from: "전쟁의 상황을 직시", to: "전쟁의 상흔을 직시", count: 1 },
@@ -5759,64 +5785,48 @@ export const SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST = [{
     key: "9:22",
     baseSolutionItemHash: "7d8c117f6668447ada0cbff91ea39f01c214b2f8ca26cc7c9d6ef6be8e7567ff",
     baseExplanationHash: "0cb7026db78a942ecdfe25d658e2b894a38abeeaf3271a0f1f9dd0acf6f783ab",
-    failedDecisionHash: "a5f90cea4cc1bacc00160b607f9534144cdb3eba1899be4f925725f8f7735900",
-    failedEvidenceHash: "6573bf1a120cf39a781c9f8044b1a772507ef7958bf736eadcf9bef17894c8d1",
     replacements: [{ from: "반영됐다는 설명", to: "반영되었다는 설명", count: 1 }],
     expectedSolutionItemHash: "7c42220802574ce1733682460dfc01378bcc23e26665a67e4fee3b5519d7d4ee",
   }, {
     key: "9:23",
     baseSolutionItemHash: "5e7b4ce5b5a6b18ada0a43f0090bc3299a44f676b452866071c8fc0cbfbd8347",
     baseExplanationHash: "64afac3f2b536347e7a3f1140abeb2598fae9f3a4a660f0b86976b858e110389",
-    failedDecisionHash: "209f9093ae734a597ee31a9fdccd6cd457fdfede20d514209b1bc3fc43fa2aed",
-    failedEvidenceHash: "7d0ceb2e47bfecc1b011a794cf4cd161f037fd6e3ed38478909a480013d5f203",
     replacements: [{ from: "어찌 분한치 않으리요.", to: "어찌 분한치 않으리오.", count: 1 }],
     expectedSolutionItemHash: "12007db8ee2052ad4420ef8bb534a9a26cef2af642f4043cb90b243eb0efa7d0",
   }, {
     key: "9:25",
     baseSolutionItemHash: "71850169b94456f7122211d9922aad754b8c5f9b779aeb96817c3b99ea335d39",
     baseExplanationHash: "72922d6c8254228b30a51421a8b0fb72d8f8d199bbee6d65fbec71747ec056ee",
-    failedDecisionHash: "b7d14e6460d90e71d9d580967994d66cf113ae0920fd2e246b1fa66ea7996f0a",
-    failedEvidenceHash: "36ce1444574f1d86a84b567e716bd00c6f45350497966bef8acd307edbc531bb",
     replacements: [{ from: "“네 아우가 불행하여", to: "“내 아우가 불행하여", count: 1 }],
     expectedSolutionItemHash: "e2be49fc43042099338dab233f1d188b1cc2700dac37de06ca4a2f29fbebdcf8",
   }, {
     key: "9:26",
     baseSolutionItemHash: "d21b028bcf5b9ca642370b4ca183856755bf68b1bf26ad945e99edda5fecebef",
     baseExplanationHash: "ca689d4623ab8cac6c0233a34eacf7d5029a98b1fc52cce93f815fdc814d96fb",
-    failedDecisionHash: "8c574f08b25280f2a639ee60f6f6623cad10039b2fc962f4d1da3c50feed7784",
-    failedEvidenceHash: "50927f4cab09c664fca03a6cc141788c676ae16e6bf5f49aa454c874dbeb25ce",
     replacements: [{ from: "경험이 객관적으로 서술", to: "경험이 관념적으로 서술", count: 1 }],
     expectedSolutionItemHash: "a1863f8c27a84458c678b8eaa94544f0aa8c31184c6e255ef7e48f253adc63be",
   }, {
     key: "11:30",
     baseSolutionItemHash: "549af14b37afe59ee29012641925f9c14872e3cb2467c5025f7bd736cf0d4439",
     baseExplanationHash: "3fc9f4e3ea882f65e286c967a7bc6f040c452fb76d4b661c2e8d0969426e361b",
-    failedDecisionHash: "69f2a32dc69b389b041f5a1da542b01d95a6cbf083e74e48509574a63a57e2da",
-    failedEvidenceHash: "a2c53447e64bb14792f7a04d24efa068ececab4d73ecec834a1af32ed571f4b3",
     replacements: [{ from: "조승인", to: "조숭인", count: 2 }],
     expectedSolutionItemHash: "9f4a84cd0c02420d5f7a3e9059f9974cd3d4903eac515d16161f9694f8abb134",
   }, {
     key: "12:31",
     baseSolutionItemHash: "0583a46246db261d9cd63aa79678e434cef67b70827d1601b8344f8c524c47ad",
     baseExplanationHash: "25048ba32c8c1f801d5cdb1754f22baa549a1a03848ab8ffc9f8893220f4fc1b",
-    failedDecisionHash: "4dc23cfad7ae8a65692533d9a32c5d2094b52ebcbd3a444494c0f16dedcb80a5",
-    failedEvidenceHash: "7961de693cb5ee9bfc39c961a2561c39d20a15839fdb8277716627b746184f29",
     replacements: [{ from: "조승인", to: "조숭인", count: 2 }],
     expectedSolutionItemHash: "b47659df291b9da71ed612f46832ce171a1d4f7a423e7fd9d75a33d2d6d6d7dd",
   }, {
     key: "12:32",
     baseSolutionItemHash: "6167de8bc3ef9907889db95d5450f63013253cfd3b633c6c48771e1a112bf608",
     baseExplanationHash: "2f01e86579212f79b19f907300cf8e53cc2c77a22d9e63020e770b168b647cd5",
-    failedDecisionHash: "68edda18b5100f617861986ed4bee8d40fb794ad5507625e8e186e87d43129af",
-    failedEvidenceHash: "acf3ac7b67ca1ddabb74f558598820679141b3a5175c94f488f426c8995ea61e",
     replacements: [{ from: "조승인", to: "조숭인", count: 2 }],
     expectedSolutionItemHash: "c1ab8d6d1b47d823782b84123b0e905771df275d7b838c41aef4261435e9a2ab",
   }, {
     key: "13:34",
     baseSolutionItemHash: "ba0c448b52d33d98eda08acf5b9f92489d64aba4029d39c358d85b1a7191663a",
     baseExplanationHash: "8fdd8537c2680d5e5b31a929a75ed669d77e3a3fffff053b502cac3537827efe",
-    failedDecisionHash: "4768504dd19c693415567d52d15c4ace486fc3881f3306d0cb6beb262480728a",
-    failedEvidenceHash: "8bb9d5b2c2ebe4e9d4b7d8954bddfd7443a304c4264567f719a5e846164fb4e6",
     replacements: [{ from: "생존 유지와 성장에 사용", to: "생존 유지와 생장에 사용", count: 1 }],
     expectedSolutionItemHash: "1295f5f3ab27742c4294ce8832372edd7a7d7f75f072f9cb96edbc6d5cf1f00a",
   }],
@@ -7709,38 +7719,55 @@ async function solutionFidelityCheckpoint(
       canonicalEvidenceHash(checkpoint.inputs) !== canonicalEvidenceHash(inputs)
     ) throw new Error(`기존 해설 fidelity 체크포인트 메타데이터가 다릅니다: ${path}`);
     decisions = parseSolutionFidelityDecisions(checkpoint.items, inputs);
+    if (canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(solutionFidelityCheckpointEnvelope(
+      entry,
+      evidence,
+      slice,
+      ownership,
+      effectiveProblemCorpusHash,
+      inputHash,
+      inputs,
+      decisions
+    ))) throw new Error(`기존 해설 fidelity 체크포인트 envelope가 다릅니다: ${path}`);
+    if (forcedCheckpoint) {
+      assertSolutionFalseNegativeCheckpointProjection(
+        forcedCheckpoint,
+        inputHash,
+        slice,
+        ownership,
+        inputs,
+        decisions,
+        relativePath
+      );
+    }
   } else {
     if (existingOnly) return null;
     decisions = await evaluateSolutionFidelity(slice.path, slice.from, slice.to, ownership, inputs);
-    checkpoint = {
-      version: SOLUTION_FIDELITY_VERSION,
-      entryId: entry.id,
-      sourceHash: evidence.sha256,
-      from: slice.from,
-      to: slice.to,
-      ownedFrom: ownership.from,
-      ownedTo: ownership.to,
-      classifierVersion: CLASSIFIER_VERSION,
-      rulesDigest: CLASSIFIER_DIGEST,
-      transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
-      transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    if (forcedCheckpoint) {
+      assertSolutionFalseNegativeCheckpointProjection(
+        forcedCheckpoint,
+        inputHash,
+        slice,
+        ownership,
+        inputs,
+        decisions,
+        relativePath
+      );
+    }
+    checkpoint = solutionFidelityCheckpointEnvelope(
+      entry,
+      evidence,
+      slice,
+      ownership,
       effectiveProblemCorpusHash,
       inputHash,
-      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
-      model: IMPORT_MODEL,
-      reasoningEffort: IMPORT_REASONING_EFFORT,
       inputs,
-      items: decisions,
-    };
-    if (forcedCheckpoint && canonicalEvidenceHash(checkpoint) !== forcedCheckpoint.sha256) {
-      throw new Error(`${relativePath} generated solution false-negative checkpoint가 pinned source와 다릅니다`);
-    }
+      decisions
+    );
     await writeImmutableEvidence(path, checkpoint);
   }
   const sha256 = await sha256File(path);
-  if (
-    sha256 !== canonicalEvidenceHash(checkpoint) || forcedCheckpoint && sha256 !== forcedCheckpoint.sha256
-  ) throw new Error(`해설 fidelity hash가 다릅니다: ${path}`);
+  if (sha256 !== canonicalEvidenceHash(checkpoint)) throw new Error(`해설 fidelity hash가 다릅니다: ${path}`);
   return {
     decisions,
     evidence: {
@@ -7757,6 +7784,69 @@ async function solutionFidelityCheckpoint(
 
 type SolutionFalseNegativeRepairItemSpec =
   (typeof SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST)[number]["items"][number];
+type SolutionFalseNegativeCheckpointSpec =
+  (typeof SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST)[number]["checkpoints"][number];
+
+function solutionFidelityCheckpointEnvelope(
+  entry: CorpusManifestEntry,
+  evidence: PdfEvidence,
+  slice: SourceSlice,
+  ownership: { from: number; to: number },
+  effectiveProblemCorpusHash: string,
+  inputHash: string,
+  inputs: SolutionFidelityInput[],
+  decisions: SolutionFidelityDecision[]
+): Record<string, unknown> {
+  return {
+    version: SOLUTION_FIDELITY_VERSION,
+    entryId: entry.id,
+    sourceHash: evidence.sha256,
+    from: slice.from,
+    to: slice.to,
+    ownedFrom: ownership.from,
+    ownedTo: ownership.to,
+    classifierVersion: CLASSIFIER_VERSION,
+    rulesDigest: CLASSIFIER_DIGEST,
+    transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+    transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+    effectiveProblemCorpusHash,
+    inputHash,
+    promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    inputs,
+    items: decisions,
+  };
+}
+
+function assertSolutionFalseNegativeCheckpointProjection(
+  spec: SolutionFalseNegativeCheckpointSpec,
+  inputHash: string,
+  slice: SourceSlice,
+  ownership: { from: number; to: number },
+  inputs: SolutionFidelityInput[],
+  decisions: SolutionFidelityDecision[],
+  label: string
+): void {
+  const expected = new Map(spec.decisions.map((decision) => [decision.key, decision]));
+  const inputKeys = new Set(inputs.map((input) => input.key));
+  const actual = new Map(decisions.map((decision) => [decision.key, decision]));
+  if (
+    inputHash !== spec.inputHash || slice.from !== spec.from || slice.to !== spec.to ||
+    ownership.from !== spec.ownedFrom || ownership.to !== spec.ownedTo ||
+    spec.promptDigest !== SOLUTION_FIDELITY_PROMPT_DIGEST ||
+    canonicalEvidenceHash(inputs) !== spec.inputHash || expected.size !== spec.decisions.length ||
+    inputKeys.size !== inputs.length || actual.size !== decisions.length || expected.size !== inputKeys.size ||
+    expected.size !== actual.size || [...expected.keys()].some((key) => !inputKeys.has(key) || !actual.has(key))
+  ) throw new Error(`${label} solution false-negative checkpoint envelope/key projection이 다릅니다`);
+  for (const [key, projected] of expected) {
+    const decision = actual.get(key)!;
+    if (
+      decision.sourcePage !== projected.sourcePage || decision.answerStatus !== projected.answerStatus ||
+      decision.explanationStatus !== projected.explanationStatus
+    ) throw new Error(`${label} solution false-negative checkpoint semantic projection이 다릅니다: ${key}`);
+  }
+}
 
 function solutionFalseNegativeCheckpointSpec(
   entry: CorpusManifestEntry,
@@ -7843,12 +7933,14 @@ function solutionFalseNegativeRepairItemSpec(
   const spec = allowlist.items.find((candidate) => candidate.key === input.key);
   if (!spec) return undefined;
   const checkpointSpec = allowlist.checkpoints.find((candidate) => candidate.path === checkpoint.path);
+  const projected = checkpointSpec?.decisions.find((candidate) => candidate.key === input.key);
   if (
-    !checkpointSpec || checkpoint.sha256 !== checkpointSpec.sha256 || input.baseSolutionItemHash !== spec.baseSolutionItemHash ||
+    !checkpointSpec || !projected || input.baseSolutionItemHash !== spec.baseSolutionItemHash ||
     canonicalEvidenceHash(base) !== spec.baseSolutionItemHash || sha256Text(base.explanation) !== spec.baseExplanationHash ||
-    decision.sourcePage !== input.sourcePage || decision.answerStatus !== "exact" ||
-    decision.explanationStatus !== "exact" || canonicalEvidenceHash(decision) !== spec.failedDecisionHash ||
-    sha256Text(decision.evidence) !== spec.failedEvidenceHash
+    decision.key !== projected.key || decision.sourcePage !== input.sourcePage ||
+    decision.sourcePage !== projected.sourcePage || decision.answerStatus !== projected.answerStatus ||
+    decision.explanationStatus !== projected.explanationStatus || decision.answerStatus !== "exact" ||
+    decision.explanationStatus !== "exact"
   ) throw new Error(`${input.key} solution false-negative item authority가 다릅니다`);
   expectedFalseNegativeSolution(base, spec);
   return spec;
@@ -7888,9 +7980,21 @@ async function preflightSolutionFalseNegativeRepairs(
     if (!checkpointSpec) throw new Error(`${entry.id} solution false-negative checkpoint allowlist가 없습니다`);
     const path = confinedStateFile(stateDir, checkpointSpec.path, "solution false-negative checkpoint");
     const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), checkpointSpec.path);
+    const actualHash = await sha256File(path);
+    const reconstructed = solutionFidelityCheckpointEnvelope(
+      entry,
+      evidence,
+      current.slice,
+      current.owned,
+      effectiveProblemCorpusHash,
+      current.checkpoint.inputHash,
+      current.inputs,
+      current.decisions
+    );
     if (
-      await sha256File(path) !== checkpointSpec.sha256 || canonicalEvidenceHash(checkpoint) !== checkpointSpec.sha256 ||
-      current.checkpoint.sha256 !== checkpointSpec.sha256 || checkpoint.version !== SOLUTION_FIDELITY_VERSION ||
+      actualHash !== canonicalEvidenceHash(checkpoint) || current.checkpoint.sha256 !== actualHash ||
+      canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(reconstructed) ||
+      checkpoint.version !== SOLUTION_FIDELITY_VERSION ||
       checkpoint.entryId !== entry.id || checkpoint.sourceHash !== allowlist.sourceHash ||
       checkpoint.from !== checkpointSpec.from || checkpoint.to !== checkpointSpec.to ||
       checkpoint.ownedFrom !== checkpointSpec.ownedFrom || checkpoint.ownedTo !== checkpointSpec.ownedTo ||
@@ -7901,6 +8005,15 @@ async function preflightSolutionFalseNegativeRepairs(
       canonicalEvidenceHash(checkpoint.inputs) !== canonicalEvidenceHash(current.inputs) ||
       canonicalEvidenceHash(checkpoint.items) !== canonicalEvidenceHash(current.decisions)
     ) throw new Error(`${checkpointSpec.path} solution false-negative checkpoint preflight가 다릅니다`);
+    assertSolutionFalseNegativeCheckpointProjection(
+      checkpointSpec,
+      current.checkpoint.inputHash,
+      current.slice,
+      current.owned,
+      current.inputs,
+      current.decisions,
+      checkpointSpec.path
+    );
     const decisions = new Map(current.decisions.map((decision) => [decision.key, decision]));
     for (const input of current.inputs) {
       const base = baseByNumber.get(Number(input.printedNumber));

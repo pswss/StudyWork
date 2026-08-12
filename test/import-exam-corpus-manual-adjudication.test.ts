@@ -1236,19 +1236,19 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
 describe("exact allowlisted problem manual adjudication", () => {
   it("pins the complete Q17-Q34 solution false-negative authority", () => {
     expect(canonicalEvidenceHash(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST))
-      .toBe("ca97462911545e5ca85ec1a4406ba36048203e90133e31034fa4de32b52123c1");
+      .toBe("8f780112dc37cf0cd67b29fd3237c36a8a2dad4d81201f5f030a155f2303d8ad");
     expect(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items.map((item) => canonicalEvidenceHash(item))).toEqual([
-      "813293e4861fdaad58409fca67ec0cec01ebd286cea72f1d5b85b855155b1706",
-      "5873bbb614e481356b9af73a4ff873b9447df4ccc72163608c505e8292339e10",
-      "d8c6bc53ebecfdb7f6c9d41efb9db31073e03dd980b801b4035dc574c2e08a14",
-      "51f8a3f2b581aa7f8ff5bc8082fd58154bc3cb00a350ae0b7e988cfe04026f8b",
-      "b50da17fa892807cabce387d417e32717d31392a2a74b9c5b724a4a3d8a3f797",
-      "96a57f682a9d4f9d0fe8f7634647f7189314304f2e310edfc723998d400d5f9f",
-      "7dbea320e7575eee9208850f6c5e8557577022dd51d5fd5d397fd470a584dac6",
-      "15cf5df90810656a78567394ad03127127d4657c054f326f52f001e2a4ef2515",
-      "e950c30ffd5ec1e8a081b3f2c4cda7e9daacc91abf2f660592b5e73889b10f50",
-      "aab7a3a069e201b00618a2342ce1cf356ee1a05c1d7da827b5e314bd4c2e5f8d",
-      "b2677b2e4237cca253dff89b07ef7ca2e9b0b56f5d8620f41930f7b6ca0868e6",
+      "e17b1ed3f0ed2c3c155fee47fd0ce1db65b01aac36ddfc152551839085854980",
+      "56be79294489fde849507d2f6a792331d8541e127fa65a42e55e8e3542365dd0",
+      "e144bac17721cd9bc5ebf19dbbd0cefbb18975fe80be000a595cdb50b80c2095",
+      "612c6ef1b6d77e58c171c3a2c42d6404cd72603a8e4964d2928a5a0344854e74",
+      "aaa638b3e3f56ebc38dcc8b1f35bdd40655fc492208761a88305a83db9fb84ee",
+      "72443e38d0a07797e7193dda0dd750a1bfda1f8a3f2e898aca2dcda918f719ea",
+      "75fdb9bc2568ca86975675c0f079f7f1bc91abb4b1dd1038cc7d92ea512c40b7",
+      "54cebc963a81df797998a4e368b9b06e97f16e5dcd4e84bd81e1e9702f83959d",
+      "a4bbeb2eedf1e5ce27e51fdd229ed2e9f8b291aa322c4d433cf325122d49b454",
+      "55673d5bf35b4ad22deae1b0c20fa9b97a41b4bbed858e5bd5cee992c09fde30",
+      "e7132199776a4979ebfd4e0cdc1103556ee7ef3c0b4433a4fa1c916c82693802",
     ]);
   });
 
@@ -4658,31 +4658,107 @@ describe("exact allowlisted problem manual adjudication", () => {
   }
 
   it.skipIf(!existsSync(join(q27LiveState, "solution.pdf")))(
-    "rejects an unpinned generated Q17-Q34 solution fidelity checkpoint before writing",
+    "accepts two diagnostic evidence variants and replays each semantic projection without bulk AI",
     async () => {
-    root = mkdtempSync(join(tmpdir(), "studywork-q17-q34-solution-wrong-"));
-    cpSync(q27LiveState, root, { recursive: true });
-    const before = stateSnapshot(root);
-    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
-      expect(request.schema?.name).toBe("studywork_exam_corpus_solution_fidelity");
-      const decisions = q5525982FidelityDecisions(request.prompt).map((decision, index) =>
-        index === 0 ? { ...decision, evidence: `${decision.evidence} altered` } : decision
+    for (const suffix of [" alternate wording A", " 같은 판정의 다른 근거 문구 B"]) {
+      root = mkdtempSync(join(tmpdir(), "studywork-q17-q34-solution-evidence-variant-"));
+      cpSync(q27LiveState, root, { recursive: true });
+      const input = q27FixtureInputs(root);
+      const bulkCalls: string[][] = [];
+      providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+        if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
+          const decisions = q5525982FidelityDecisions(request.prompt).map((decision) => ({
+            ...decision,
+            evidence: `${decision.evidence}${suffix}`,
+          }));
+          bulkCalls.push(decisions.map((decision) => decision.key));
+          return { text: JSON.stringify(decisions) };
+        }
+        if (request.schema?.name === "studywork_solution_file_items") {
+          throw new Error(`seeded evidence variant boundary:${suffix}`);
+        }
+        throw new Error(`unexpected AI call: ${request.schema?.name ?? "unknown"}`);
+      });
+      const run = () => repairAndAuditOfficialAnswers(
+        input.entry,
+        input.problem,
+        input.solution,
+        root,
+        input.classified,
+        input.solutions
       );
-      return { text: JSON.stringify(decisions) };
-    });
-    const input = q27FixtureInputs(root);
-    await expect(repairAndAuditOfficialAnswers(
-      input.entry,
-      input.problem,
-      input.solution,
-      root,
-      input.classified,
-      input.solutions
-    )).rejects.toThrow(/generated solution false-negative checkpoint가 pinned source와 다릅니다/u);
-    expect(providerMock.complete).toHaveBeenCalledTimes(1);
-    expect(existsSync(join(root, "solution-fidelity"))).toBe(false);
-    expect(stateSnapshot(root)).toEqual(before);
-  }, 180_000);
+      await expect(run()).rejects.toThrow(`seeded evidence variant boundary:${suffix}`);
+      expect(bulkCalls.map((keys) => keys.length)).toEqual([14, 16]);
+      for (const checkpoint of SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].checkpoints) {
+        const bytes = readFileSync(join(root, checkpoint.path));
+        const parsed = JSON.parse(bytes.toString("utf8"));
+        expect(hash(bytes)).toBe(canonicalEvidenceHash(parsed));
+        expect(parsed.items.every((decision: { evidence: string }) => decision.evidence.endsWith(suffix))).toBe(true);
+      }
+      const completed = stateSnapshot(root);
+      bulkCalls.length = 0;
+      providerMock.complete.mockClear();
+      await expect(run()).rejects.toThrow(`seeded evidence variant boundary:${suffix}`);
+      expect(bulkCalls).toEqual([]);
+      expect(providerMock.complete).toHaveBeenCalledTimes(1);
+      expect(stateSnapshot(root)).toEqual(completed);
+      rmSync(root, { recursive: true, force: true });
+      root = "";
+      providerMock.complete.mockReset();
+    }
+  }, 300_000);
+
+  it.skipIf(!existsSync(join(q27LiveState, "solution.pdf")))(
+    "rejects wrong solution fidelity status, source page, and key before checkpoint writes",
+    async () => {
+    const cases = [{
+      label: "status",
+      mutate: (decision: ReturnType<typeof q5525982FidelityDecisions>[number]) => ({
+        ...decision,
+        answerStatus: "mismatch" as const,
+      }),
+      error: /semantic projection/u,
+    }, {
+      label: "source page",
+      mutate: (decision: ReturnType<typeof q5525982FidelityDecisions>[number]) => ({
+        ...decision,
+        sourcePage: decision.sourcePage + 1,
+      }),
+      error: /semantic projection/u,
+    }, {
+      label: "key",
+      mutate: (decision: ReturnType<typeof q5525982FidelityDecisions>[number]) => ({
+        ...decision,
+        key: "99:99",
+      }),
+      error: /key가 없거나 중복/u,
+    }];
+    for (const testCase of cases) {
+      root = mkdtempSync(join(tmpdir(), `studywork-q17-q34-solution-wrong-${testCase.label}-`));
+      cpSync(q27LiveState, root, { recursive: true });
+      const before = stateSnapshot(root);
+      providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+        expect(request.schema?.name).toBe("studywork_exam_corpus_solution_fidelity");
+        const decisions = q5525982FidelityDecisions(request.prompt);
+        return { text: JSON.stringify([testCase.mutate(decisions[0]), ...decisions.slice(1)]) };
+      });
+      const input = q27FixtureInputs(root);
+      await expect(repairAndAuditOfficialAnswers(
+        input.entry,
+        input.problem,
+        input.solution,
+        root,
+        input.classified,
+        input.solutions
+      ), testCase.label).rejects.toThrow(testCase.error);
+      expect(providerMock.complete, testCase.label).toHaveBeenCalledTimes(1);
+      expect(existsSync(join(root, "solution-fidelity")), testCase.label).toBe(false);
+      expect(stateSnapshot(root), testCase.label).toEqual(before);
+      rmSync(root, { recursive: true, force: true });
+      root = "";
+      providerMock.complete.mockReset();
+    }
+  }, 300_000);
 
   it.skipIf(!existsSync(join(q27LiveState, "solution.pdf")))(
     "crash-resumes eleven pinned solution repairs and replays only the honest Q40 boundary",
@@ -4732,7 +4808,8 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(calls.repair).toEqual(["7:17"]);
     expect(calls.repairFidelity).toEqual(["7:17"]);
     for (const checkpoint of SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].checkpoints) {
-      expect(hash(readFileSync(join(root, checkpoint.path)))).toBe(checkpoint.sha256);
+      const bytes = readFileSync(join(root, checkpoint.path));
+      expect(hash(bytes)).toBe(canonicalEvidenceHash(JSON.parse(bytes.toString("utf8"))));
     }
     expect(readdirSync(join(root, "solution-repairs"))).toHaveLength(1);
     expect(existsSync(join(root, "solution-fidelity-repairs"))
@@ -4945,9 +5022,9 @@ describe("exact allowlisted problem manual adjudication", () => {
       ...checkpoint,
       bytes: readFileSync(join(root, checkpoint.path)),
     }));
-    expect(frozen.map((checkpoint) => hash(checkpoint.bytes))).toEqual(
-      SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].checkpoints.map((checkpoint) => checkpoint.sha256)
-    );
+    expect(frozen.every((checkpoint) =>
+      hash(checkpoint.bytes) === canonicalEvidenceHash(JSON.parse(checkpoint.bytes.toString("utf8")))
+    )).toBe(true);
 
     const cases: Array<{
       label: string;
@@ -4961,14 +5038,23 @@ describe("exact allowlisted problem manual adjudication", () => {
       ),
       error: /official source bytes hash/u,
     }, {
-      label: "missing earlier with later self-consistent decision tamper",
+      label: "missing earlier with later self-consistent semantic tamper",
       mutate: (stateDir) => {
         mkdirSync(join(stateDir, "solution-fidelity"), { recursive: true });
         const checkpoint = JSON.parse(frozen[1].bytes.toString("utf8"));
-        checkpoint.items[0].evidence += " altered";
+        checkpoint.items[0].sourcePage += 1;
         writeCanonicalJson(join(stateDir, frozen[1].path), checkpoint);
       },
-      error: /해설 fidelity hash/u,
+      error: /semantic projection/u,
+    }, {
+      label: "missing earlier with later self-consistent extra field",
+      mutate: (stateDir) => {
+        mkdirSync(join(stateDir, "solution-fidelity"), { recursive: true });
+        const checkpoint = JSON.parse(frozen[1].bytes.toString("utf8"));
+        checkpoint.unexpected = true;
+        writeCanonicalJson(join(stateDir, frozen[1].path), checkpoint);
+      },
+      error: /체크포인트 envelope/u,
     }, {
       label: "missing earlier with later byte tamper",
       mutate: (stateDir) => {
