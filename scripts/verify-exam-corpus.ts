@@ -287,6 +287,9 @@ const PROBLEM_MANUAL_REVISION_VERSION = 1;
 const CLASSIFICATION_MANUAL_REVISION_VERSION = 1;
 const PROBLEM_MANUAL_SOURCE_REVISION_VERSION = 1;
 const CLASSIFICATION_MANUAL_SOURCE_REVISION_VERSION = 1;
+const PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_VERSION = 1;
+const PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_DIGEST =
+  "a88443549d1afd0e1db63e6ab99a03ed6fbe636d9517a2aeffc7371dbd9497c4";
 const PROBLEM_SCOPE_BOX_REVISION_VERSION = 1;
 const CLASSIFICATION_SCOPE_BOX_REVISION_VERSION = 1;
 const PROBLEM_SCOPE_BOX_REVISION_PROMPT_DIGEST =
@@ -301,10 +304,21 @@ const PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_DIGEST =
   "bc625c2e3b1b7006d184e14a7f1fc298a3788617c639bcd131483d7c23177a06";
 const CURRICULUM_RULES_SHA256 =
   "7bb7cb863c8c4855f042419fbbaac4426aafb513d8bbb00fd35f5afa1a2d1932";
+const Q7_MANUAL_CLASSIFICATION_RUNTIME_PROMPT_HASH =
+  "c6952f63fbb464ca4773be62a03943f4dcb86231ab3704935c1643d9cf776f33";
 const PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST =
   "28434a9872d33e0ef364b6030c6f32b4a51cab9182a9d6c372f225884794d7e9";
 const PROBLEM_MANUAL_CORRECTION_DIGEST =
   "a116ca7dd3fb35028db717aac3aa09e78d7c7671ab5ca9ecdaa3364bdb397b46";
+const PROBLEM_MANUAL_ADJUDICATION_RULES = `
+The attached PDF is immutable source-pixel evidence for one exact allowlisted problem. The supplied transcription was
+produced by deterministic, count-checked literal replacements or a narrowly bounded accessibility surrogate for a
+non-text diagram. Independently compare the complete corrected item with every relevant evidence view. Visible Korean,
+labels, formulas, punctuation, choices, and shared passages remain literal. A diagram surrogate is exact only when it
+preserves every glyph's identity, order, orientation, count, premise/conclusion role, open/filled state, and coordinates.
+Previous classification and mismatch labels are intentionally hidden. Classify curriculum scope from source pixels and
+return transcription_status exact only when the corrected item is fully faithful.
+`.trim();
 const PROBLEM_MANUAL_REVISION_PROMPT_DIGEST =
   "28434a9872d33e0ef364b6030c6f32b4a51cab9182a9d6c372f225884794d7e9";
 const PROBLEM_MANUAL_REVISION_CORRECTION_DIGEST =
@@ -372,6 +386,27 @@ Visible text, formulas, numbers, and labels must remain literal. Whitespace, lay
 Return transcription_status exact only when all source-required content is faithfully represented. Return mismatch when any omission, substitution, changed bound/sign/value/formula/choice, wrong qtype, or inaccurate visual description is visible. Return unverifiable when the pixels or required context do not let you decide confidently; never guess exact. Give concise page-grounded transcription_evidence. Curriculum decision and transcription fidelity are independent, so reject and review items still require this source check.
 `.trim();
 const TRANSCRIPTION_PROMPT_DIGEST = sha256(`${TRANSCRIPTION_GATE_VERSION}\n${TRANSCRIPTION_GATE_RULES}`);
+const CURRICULUM_RULES = `
+Classify each question from the complete attached passage, stem, choices, tables, and figures. Never classify from the filename or exam label alone.
+
+Return decision accept, reject, or review. Scope is determined by every concept necessary to solve the question, not by the number of domains or achievement codes. If every necessary concept belongs to one canonical subject, accept under that canonical subject even when multiple domains or codes are required; combine the domain names in one descriptive string and return every applicable allowed achievement code. This is not mixed scope. For example, logarithms plus a finite sequence sum accepts as math_B.
+
+If solving necessarily depends on even one excluded or out-of-target concept, reject the whole question, even when another necessary component is in scope. If necessary concepts span two canonical subjects, reject because no single target contains the whole question. Examples that reject include coordinate geometry plus a sequence or logarithm; rational functions plus a sequence; binomial theorem or combinatorial counting plus math_A or math_B; and finite-set or bijection reasoning plus logarithms.
+
+Use review only for genuine ambiguity, missing or unclear visual/passage context, or uncertainty about whether an excluded concept is actually necessary. Do not use review merely because multiple domains or codes are required, and do not use it when a required excluded dependency is clear. An accept needs confidence >= 0.90, one canonical_subject, a curriculum_course, a domain, at least one achievement code, and reason codes. Emit achievement codes as exact bare codes shown below, without brackets, spaces, abbreviations, or invented ranges. Non-accept decisions use canonical_subject null. Keep every input key exactly once.
+
+MATH_A aliases 2015 수학Ⅱ and 2022 미적분Ⅰ. Accept 함수의 극한과 연속 [12미적Ⅰ-01-01..04] or legacy [12수학Ⅱ01-01..04], 미분 [12미적Ⅰ-02-01..10] or legacy [12수학Ⅱ02-01..11], 적분 [12미적Ⅰ-03-01..06] or legacy [12수학Ⅱ03-01..06]. Reject 2015 선택 미적분/2022 미적분Ⅱ-only content: 수열의 극한·급수, 지수·로그·삼각함수 미분, 합성·매개·음함수 미분, 치환·부분적분. 미적분Ⅰ differentiation/integration stays polynomial scope; motion applications stay straight-line.
+
+MATH_B aliases 2015 수학Ⅰ and 2022 대수. Accept 지수함수와 로그함수 [12대수01-01..08] or [12수학Ⅰ01-01..08], 삼각함수 [12대수02-01..03] or [12수학Ⅰ02-01..03], 수열 [12대수03-01..07] or [12수학Ⅰ03-01..08]. Reject common-math polynomial/equations/matrices/probability, advanced trigonometry, sequence limits, and infinite series. In-scope trigonometry is general angle/radian, sin/cos/tan graphs, and sine/cosine laws. In-scope sequences are arithmetic/geometric, sigma/sums, recursive definition, and induction; finding a general term from a recursive definition is out of scope.
+
+KOREAN_READING accepts nonfiction comprehension whose tested construct is factual, inferential, or critical reading; argument, structure, evidence, cross-text synthesis, or contextual vocabulary. Anchors: [10공국1-02-01..02], [10공국2-02-01..03], [12독작01-03..04]. For mixed 독서와 작문 codes 02,05,07-09,12-14, accept only when the answer requires comprehension/evaluation of the supplied text, not planning, producing, or revising writing. Reject speech/listening/presentation/discussion/debate/negotiation, composition/draft/revision, grammar/phonology/morphology/syntax/semantics/history/spelling, and media as the assessed construct. Incidental charts/images remain reading. Contextual word meaning remains reading; word formation or grammar rules reject.
+
+KOREAN_LITERATURE accepts literary comprehension and interpretation across poetry, sijo/classical verse, modern/classical fiction, drama, and literary essay: speaker/narrator/character, imagery/figurative/form, plot/conflict, theme, context/comparison/criticism. Anchors: [10공국1-05-01..03], [10공국2-05-01..02], [12문학01-01..08,10..12]. For [12문학01-09], accept only when literary meaning is assessed; media form, camera, editing, or platform effect rejects or reviews. Shared sets may split: accept in-scope siblings and reject excluded siblings while retaining the shared passage in the question evidence.
+
+INTEGRATED_SCIENCE accepts only source school grade 1 or 2 and one of: 통합과학1 과학의 기초 [10통과1-01-01..04], 물질과 규칙성 [10통과1-02-01..06], 시스템과 상호작용 [10통과1-03-01..06]; 통합과학2 변화와 다양성 [10통과2-01-01..05], 환경과 에너지 [10통과2-02-01..06], 과학과 미래 사회 [10통과2-03-01..04]. Numerals 1/2 in course names are course halves, not school grades. Reject elective-depth dependencies. Hard bounds: no sensor operating principle; bonding property only conductivity; no detailed silicate/protein/nucleic structures; no semiconductor junction; redox without oxidation numbers; Arrhenius acid/base only; neutralization temperature/indicator only; no thermochemical equations/enthalpy; solar fusion and induction qualitative only.
+
+INTEGRATED_SOCIAL accepts only source school grade 1 or 2 and one of: 통합사회1 통합적 관점 [10통사1-01-01..02], 인간·사회·환경과 행복 [10통사1-02-01..02], 자연환경과 인간 [10통사1-03-01..03], 문화와 다양성 [10통사1-04-01..04], 생활공간과 사회 [10통사1-05-01..03]; 통합사회2 인권보장과 헌법 [10통사2-01-01..03], 사회정의와 불평등 [10통사2-02-01..03], 시장경제와 지속가능발전 [10통사2-03-01..04], 세계화와 평화 [10통사2-04-01..03], 미래와 지속가능한 삶 [10통사2-05-01..03]. Reject elective-depth-only geography/history/sociology/politics/law/economics. Detailed macro/micro models, elasticity calculations, advanced legal doctrine/procedure, named-region factual recall, sociology research methods, or philosopher-specific doctrine not supplied in the stimulus reject or review.
+`.trim();
 const SOLUTION_FIDELITY_RULES = `
 Independently compare every supplied accepted official solution with the attached official solution PDF pixels. Report the visible page where that numbered solution starts. Check the supplied raw final answer separately from the complete explanation through its final step. Compare every sign, coefficient, exponent, root index, fraction, formula, table, diagram, and conclusion. LaTeX normalization is allowed only when it preserves every mathematical and Korean source detail.
 
@@ -556,6 +591,47 @@ type ProblemManualSourceRevisionSpec = {
   requiredTokens: readonly string[];
   expectedDecision: "accept" | "reject";
   expectedCanonicalSubject?: CanonicalSubject;
+};
+
+type ProblemManualClassificationPolicyRevisionSpec = {
+  allowlistId: string;
+  parentAllowlistId: string;
+  entryId: string;
+  key: string;
+  sourcePage: number;
+  sourceHash: string;
+  solutionSourceHash: string;
+  parentManualEvidenceHash: string;
+  parentProblemArtifactPath: string;
+  parentProblemArtifactHash: string;
+  parentProblemArtifactItemHash: string;
+  parentClassificationArtifactPath: string;
+  parentClassificationArtifactHash: string;
+  parentClassificationArtifactItemHash: string;
+  failedClassificationHash: string;
+  failedTranscriptionEvidenceHash: string;
+  runtimePromptHash: string;
+  cropEvidenceArtifactPath: string;
+  cropEvidenceArtifactHash: string;
+  cropEvidencePdfPath: string;
+  cropEvidencePdfHash: string;
+  cropViewHashes: readonly string[];
+  baseSolutionCheckpointPath: string;
+  baseSolutionCheckpointHash: string;
+  baseSolutionItemHash: string;
+  solutionContextFrom: number;
+  solutionContextTo: number;
+  solutionOwnedFrom: number;
+  solutionOwnedTo: number;
+  officialRawAnswerHash: string;
+  officialExplanationHash: string;
+  curriculumRulesHash: string;
+  expectedClassification: ClassificationEvidence;
+};
+
+type ProblemManualClassificationPolicyRevisionResult = {
+  classification: ClassificationEvidence;
+  evidence: Record<string, unknown>;
 };
 
 type ProblemScopeBoxRevisionSpec = ProblemCropAdjudicationSpec & {
@@ -3474,6 +3550,66 @@ const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevi
   expectedCanonicalSubject: "korean_literature",
 }] as const;
 
+const PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST:
+readonly ProblemManualClassificationPolicyRevisionSpec[] = [{
+  allowlistId: "ebsi-5525982-q7-manual-classification-policy-v1",
+  parentAllowlistId: "ebsi-5525982-q7-manual-v1",
+  entryId: "ebsi:5525982",
+  key: "3:7",
+  sourcePage: 3,
+  sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+  solutionSourceHash: "41765adaef8826181042cf68889033ef77327169a2d8c2956e8a7d9f842e090f",
+  parentManualEvidenceHash: "50ca6cdacfa0215bceb57685fafb4a873772739659519df6a864f4e26d063404",
+  parentProblemArtifactPath:
+    "problem-manual-adjudications/v1-0003-0007-937a23f26f56bebe6b4176e9c0098de7ae0840e307e8bbdb26cb780cd4cdaebb.json",
+  parentProblemArtifactHash: "88755192e15f5099e2537c3347e9f01c544c4b7d33657137c6a2b24555225fd4",
+  parentProblemArtifactItemHash: "12c693c31541967de63e3b19e413e088c09eb4e8f5ebe6311a8070b4750d6dac",
+  parentClassificationArtifactPath: "classification-manual-adjudications/" +
+    "v1-0003-0007-f1d994fa459898c70786e03efb020e083e05ac1ee8c441a90c9e862afdbcd074-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "33f45b556059bb7321ecb3d5060ba1d1689facee2d393d07642bf3960e63f930",
+  parentClassificationArtifactItemHash: "737fa9b5743491d62c641273a826c0761fe953560b66d8b25f9b4ca0fb09ab94",
+  failedClassificationHash: "737fa9b5743491d62c641273a826c0761fe953560b66d8b25f9b4ca0fb09ab94",
+  failedTranscriptionEvidenceHash: "ae9a0b29fe65172e6328ee5f2f30e3d3d156610d0a2414b13279ba0645fa233c",
+  runtimePromptHash: "c6952f63fbb464ca4773be62a03943f4dcb86231ab3704935c1643d9cf776f33",
+  cropEvidenceArtifactPath:
+    "problem-manual-evidence/v1-0003-0007-a36de92e1a8abfefc7cba639a5b86294c5ff084be548a9e6f72f4f8e7fd43bab.json",
+  cropEvidenceArtifactHash: "18c0d06ccd10a75da964fd816bf76c446f996755d76efb0e5c72950ce446c2a5",
+  cropEvidencePdfPath:
+    "problem-manual-evidence/v1-0003-0007-a36de92e1a8abfefc7cba639a5b86294c5ff084be548a9e6f72f4f8e7fd43bab.pdf",
+  cropEvidencePdfHash: "c9358f449024e4a2a4b6c4ddb130a17f6b21dee110b9c737c3a8ff2f223e9c61",
+  cropViewHashes: [
+    "d712b1f65224ad29c5cf1ce98031ef221f8508a36f7a01ad69b270cca5809a0a",
+    "8c65b3526f5acd98fc1ba51e0cf0b0437cf2518437ee4990c504905cff9f07b8",
+    "69523967f0b48459af07a6137c37a7738d8a97eb9c0de9a70a774583ab1595d2",
+  ],
+  baseSolutionCheckpointPath: "solution-chunks/v3-0000.json",
+  baseSolutionCheckpointHash: "68098bf1ec8dde5bbc5509ba079ba9404a0cc7395ca40fe1313ed3fa3da8e7cc",
+  baseSolutionItemHash: "ba6400c805959326203290f8d069991be0615fc96fcf9ad0129962e524105857",
+  solutionContextFrom: 1,
+  solutionContextTo: 6,
+  solutionOwnedFrom: 1,
+  solutionOwnedTo: 4,
+  officialRawAnswerHash: "faab5aef76a0e31bef1dc423641a79e0b60938edcdf69194bc63e734ca7114f6",
+  officialExplanationHash: "bedba7290e4d72535db59cc7c0cf010d4764c24324223661ed470c54b7ba471f",
+  curriculumRulesHash: "7bb7cb863c8c4855f042419fbbaac4426aafb513d8bbb00fd35f5afa1a2d1932",
+  expectedClassification: {
+    key: "3:7",
+    decision: "reject",
+    canonical_subject: null,
+    curriculum_course: null,
+    domain: null,
+    achievement_codes: [],
+    confidence: 1,
+    reason_codes: ["EXCLUDED_PRESENTATION_MEDIA_ASSESSED"],
+    transcription_status: "exact",
+    transcription_evidence: "원본 3쪽 왼쪽의 작문 계획과 초고 전체, [A]·[B]를 표시하는 오른쪽으로 열린 " +
+      "세로 묶음괄호 2개, ㉠·㉡이 모두 일치한다. 오른쪽의 7번 발문과 5개 선택지, 물결 모양 위쪽 " +
+      "가장자리·□□신문·두 가로 구분선·회색 제목 띠, 광고 본문의 모든 문장 및 ‘11월 2일’, ‘제품 용량 " +
+      "500 ml. 1,000원’도 원본 픽셀과 일치한다.",
+  },
+}] as const;
+
 const PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST: readonly ProblemScopeBoxRevisionSpec[] = [{
   allowlistId: "ebsi-5577055-q11-scope-box-v1",
   entryId: "ebsi:5577055",
@@ -3851,6 +3987,10 @@ export function manualRevisionAllowlistFingerprint(): string {
 
 export function manualSourceRevisionAllowlistFingerprint(): string {
   return canonicalEvidenceHash(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST);
+}
+
+export function manualClassificationPolicyRevisionAllowlistFingerprint(): string {
+  return canonicalEvidenceHash(PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST);
 }
 
 export function scopeBoxRevisionAllowlistFingerprint(): string {
@@ -7413,16 +7553,30 @@ function verifyProblemManualArtifactInventory(stateDir: string, declaredManual: 
     ["classification-manual-second-revisions", [
       /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u,
     ]],
+    ["classification-manual-policy-revisions", [
+      /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u,
+    ]],
   ] as const) {
     const absolute = join(stateDir, directory);
-    if (!existsSync(absolute)) continue;
+    let directoryInfo;
+    try {
+      directoryInfo = lstatSync(absolute);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
     const expectedDirectory = resolve(realpathSync(stateDir), directory);
-    if (lstatSync(absolute).isSymbolicLink() || !lstatSync(absolute).isDirectory()
+    if (directoryInfo.isSymbolicLink() || !directoryInfo.isDirectory()
       || realpathSync(absolute) !== expectedDirectory) {
       throw new Error(`${directory}: manual adjudication artifact directory must be a confined regular directory`);
     }
-    for (const entry of readdirSync(absolute, { withFileTypes: true })
-      .sort((left, right) => left.name.localeCompare(right.name))) {
+    const entries = readdirSync(absolute, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name));
+    const artifacts = entries.filter((entry) => !(entry.isFile() && entry.name.endsWith(".tmp")));
+    if (directory === "classification-manual-policy-revisions" && artifacts.length > 1) {
+      throw new Error(`${directory}: manual classification policy revision has conflicting generations`);
+    }
+    for (const entry of entries) {
       if (entry.isFile() && entry.name.endsWith(".tmp")) continue;
       if (!entry.isFile() || entry.isSymbolicLink()) {
         throw new Error(`${directory}/${entry.name}: manual adjudication artifact must be a regular file`);
@@ -7641,7 +7795,7 @@ function verifyProblemRecoveryCoverage(
           ["problem manual revision", manualRevision.problemArtifact, true],
           ["classification manual revision", manualRevision.classificationArtifact, true],
         );
-        if (manualRevision.sourceRevision !== undefined) {
+      if (manualRevision.sourceRevision !== undefined) {
           const sourceRevision = object(
             manualRevision.sourceRevision,
             `answer audit repairs[${index}].revision.recovery.manualAdjudication.revision.sourceRevision`,
@@ -7651,6 +7805,17 @@ function verifyProblemRecoveryCoverage(
             ["classification manual source revision", sourceRevision.classificationArtifact, true],
           );
         }
+      }
+      if (manual.policyRevision !== undefined) {
+        const policyRevision = object(
+          manual.policyRevision,
+          `answer audit repairs[${index}].revision.recovery.manualAdjudication.policyRevision`,
+        );
+        manualPointers.push([
+          "manual classification policy revision",
+          policyRevision.policyArtifact,
+          true,
+        ]);
       }
       for (const [label, raw, alwaysManual] of manualPointers) {
         const envelope = object(raw, `${label} artifact`);
@@ -8368,6 +8533,301 @@ function applyProblemManualCorrection(
     throw new Error(`${failed.key}: manual correction did not change the failed item`);
   }
   return question;
+}
+
+function manualClassificationRuntimePrompt(
+  entry: ManifestEntry,
+  question: ProblemQuestion,
+  manual: Record<string, unknown>,
+  spec: ProblemManualAdjudicationSpec,
+): string {
+  if (!Array.isArray(manual.cropViews) || !Array.isArray(manual.sourcePages)) {
+    throw new Error(`${question.key}: manual classification runtime evidence is incomplete`);
+  }
+  const input = [{
+    key: question.key,
+    printed_number: question.printedNumber,
+    source_page: question.page,
+    qtype: question.qtype,
+    question: question.question,
+    choices: question.choices,
+    figure: question.evidence.figure,
+    figure_description: question.evidence.figure_description,
+    box: question.evidence.box,
+  }];
+  const views = manual.cropViews.map((value, index) => {
+    const view = object(value, `${question.key}.manual.cropViews[${index}]`);
+    return `view ${index + 1}=${exactString(view.label, `${question.key}.manual.cropViews[${index}].label`)}, ` +
+      `original page ${integer(view.sourcePage, `${question.key}.manual.cropViews[${index}].sourcePage`, 1)}`;
+  }).join("; ");
+  const sourcePages = manual.sourcePages.map((value, index) =>
+    integer(value, `${question.key}.manual.sourcePages[${index}]`, 1));
+  const sourceEvidenceNote = `${PROBLEM_MANUAL_ADJUDICATION_RULES} Evidence mapping: ${views}. ` +
+    `Required source anchors: ${spec.requiredTokens.join(" | ")}.`;
+  const allowedCodes = CANONICAL_BY_SOURCE[entry.subject]
+    .flatMap((canonical) => [...ALLOWED_CODES[canonical]])
+    .sort();
+  return `Attached official problem PDF slice contains original pages ${sourcePages[0]}-` +
+    `${sourcePages[sourcePages.length - 1]}. Exam source subject is ${entry.subject}; source school grade is ` +
+    `${entry.grade}. Inspect complete source passages and visual evidence, then classify every supplied question. ` +
+    `${sourceEvidenceNote}\n\n${TRANSCRIPTION_GATE_RULES}\n\n${CURRICULUM_RULES}\n\n` +
+    `Allowed exact achievement codes for this source: ${allowedCodes.join(", ")}\n\nQuestions:\n${JSON.stringify(input)}`;
+}
+
+function verifyProblemManualClassificationPolicyRevision(
+  value: unknown,
+  parentManual: Record<string, unknown>,
+  question: ProblemQuestion,
+  failedClassification: ClassificationEvidence,
+  stateDir: string,
+  entry: ManifestEntry,
+  cache: EvidenceCache,
+): ProblemManualClassificationPolicyRevisionResult {
+  const matches = PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST.filter((candidate) =>
+    candidate.entryId === entry.id && candidate.key === question.key && candidate.sourcePage === question.page
+      && candidate.sourceHash === parentManual.sourceHash && candidate.parentAllowlistId === parentManual.allowlistId);
+  if (matches.length !== 1) {
+    throw new Error(`${question.key}: manual classification policy revision is not uniquely allowlisted`);
+  }
+  const spec = matches[0];
+  const parentManualEvidenceHash = canonicalEvidenceHash(parentManual);
+  const parentProblemArtifactRow = object(
+    parentManual.problemArtifact,
+    `${question.key}.manualPolicy.parentProblemArtifact`,
+  );
+  const parentProblemArtifact = evidencePointer({
+    path: parentProblemArtifactRow.path,
+    sha256: parentProblemArtifactRow.sha256,
+  }, `${question.key}.manualPolicy.parentProblemArtifact`);
+  const parentClassificationArtifactRow = object(
+    parentManual.classificationArtifact,
+    `${question.key}.manualPolicy.parentClassificationArtifact`,
+  );
+  const parentClassificationArtifact = evidencePointer({
+    path: parentClassificationArtifactRow.path,
+    sha256: parentClassificationArtifactRow.sha256,
+  }, `${question.key}.manualPolicy.parentClassificationArtifact`);
+  const cropEvidenceArtifact = evidencePointer(
+    parentManual.cropEvidenceArtifact,
+    `${question.key}.manualPolicy.cropEvidenceArtifact`,
+  );
+  const cropEvidencePdf = evidencePointer(
+    parentManual.cropEvidencePdf,
+    `${question.key}.manualPolicy.cropEvidencePdf`,
+  );
+  if (parentManualEvidenceHash !== spec.parentManualEvidenceHash
+    || parentProblemArtifact.path !== spec.parentProblemArtifactPath
+    || parentProblemArtifact.sha256 !== spec.parentProblemArtifactHash
+    || parentManual.problemArtifactItemHash !== spec.parentProblemArtifactItemHash
+    || canonicalEvidenceHash(question.evidence) !== spec.parentProblemArtifactItemHash
+    || parentClassificationArtifact.path !== spec.parentClassificationArtifactPath
+    || parentClassificationArtifact.sha256 !== spec.parentClassificationArtifactHash
+    || parentManual.classificationArtifactItemHash !== spec.parentClassificationArtifactItemHash
+    || canonicalEvidenceHash(failedClassification) !== spec.failedClassificationHash
+    || sha256(failedClassification.transcription_evidence) !== spec.failedTranscriptionEvidenceHash
+    || failedClassification.transcription_status !== "exact"
+    || cropEvidenceArtifact.path !== spec.cropEvidenceArtifactPath
+    || cropEvidenceArtifact.sha256 !== spec.cropEvidenceArtifactHash
+    || cropEvidencePdf.path !== spec.cropEvidencePdfPath
+    || cropEvidencePdf.sha256 !== spec.cropEvidencePdfHash
+    || spec.curriculumRulesHash !== CURRICULUM_RULES_SHA256
+    || canonicalEvidenceHash(spec.expectedClassification) !==
+      "3fafa64dd3d16182d72a5f7a68f9fca8f9e057a376606064b0bd5cf0b228ceb4"
+    || spec.expectedClassification.transcription_status !== failedClassification.transcription_status
+    || spec.expectedClassification.transcription_evidence !== failedClassification.transcription_evidence) {
+    throw new Error(`${question.key}: manual classification policy revision parent/spec is stale`);
+  }
+  for (const [label, pointer] of [
+    ["parent problem", parentProblemArtifact],
+    ["parent classification", parentClassificationArtifact],
+    ["crop evidence", cropEvidenceArtifact],
+  ] as const) {
+    readBoundEvidenceCached(cache, stateDir, pointer, `${question.key} manual policy ${label}`);
+  }
+  if (hashFile(confinedEvidencePath(
+    stateDir,
+    cropEvidencePdf,
+    `${question.key} manual policy crop evidence PDF`,
+  )) !== spec.cropEvidencePdfHash) {
+    throw new Error(`${question.key}: manual classification policy crop evidence PDF is stale`);
+  }
+  if (!Array.isArray(parentManual.cropViews) || parentManual.cropViews.length !== spec.cropViewHashes.length) {
+    throw new Error(`${question.key}: manual classification policy crop view coverage is stale`);
+  }
+  for (const [index, raw] of parentManual.cropViews.entries()) {
+    const view = object(raw, `${question.key}.manualPolicy.cropViews[${index}]`);
+    const artifact = evidencePointer(view.artifact, `${question.key}.manualPolicy.cropViews[${index}].artifact`);
+    if (artifact.sha256 !== spec.cropViewHashes[index] || view.pixelSha256 !== spec.cropViewHashes[index]
+      || hashFile(confinedEvidencePath(stateDir, artifact, `${question.key} manual policy crop view ${index}`))
+        !== spec.cropViewHashes[index]) {
+      throw new Error(`${question.key}: manual classification policy crop view ${index} is stale`);
+    }
+  }
+  if (sha256(manualClassificationRuntimePrompt(entry, question, parentManual, problemManualAdjudicationSpec(
+    entry, question.key, question.page, spec.sourceHash,
+  ))) !== Q7_MANUAL_CLASSIFICATION_RUNTIME_PROMPT_HASH
+    || spec.runtimePromptHash !== Q7_MANUAL_CLASSIFICATION_RUNTIME_PROMPT_HASH) {
+    throw new Error(`${question.key}: manual classification policy runtime prompt is stale`);
+  }
+  const solutionSourceEvidence = { path: "solution.pdf", sha256: spec.solutionSourceHash };
+  if (hashFile(confinedEvidencePath(
+    stateDir,
+    solutionSourceEvidence,
+    `${question.key} manual policy solution source`,
+  )) !== spec.solutionSourceHash) {
+    throw new Error(`${question.key}: manual classification policy solution source is stale`);
+  }
+  const baseSolutionCheckpoint = {
+    path: spec.baseSolutionCheckpointPath,
+    sha256: spec.baseSolutionCheckpointHash,
+  };
+  const solutionCheckpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    baseSolutionCheckpoint,
+    `${question.key} manual policy solution checkpoint`,
+  );
+  if (!Array.isArray(solutionCheckpoint.items)) {
+    throw new Error(`${question.key}: manual classification policy solution items are missing`);
+  }
+  const solutionMatches = solutionCheckpoint.items.filter((raw) => {
+    const item = object(raw, `${question.key}.manualPolicy.solutionItem`);
+    return numericPrintedLocator(exactString(
+      item.number,
+      `${question.key}.manualPolicy.solutionItem.number`,
+    )) === Number(question.printedNumber);
+  });
+  const solutionItem = solutionMatches.length === 1
+    ? object(solutionMatches[0], `${question.key}.manualPolicy.solutionItem`) : null;
+  if (solutionCheckpoint.version !== 3 || solutionCheckpoint.sourceHash !== spec.solutionSourceHash
+    || solutionCheckpoint.from !== spec.solutionContextFrom || solutionCheckpoint.to !== spec.solutionContextTo
+    || solutionCheckpoint.ownedFrom !== spec.solutionOwnedFrom
+    || solutionCheckpoint.ownedTo !== spec.solutionOwnedTo
+    || solutionCheckpoint.model !== "gpt-5.6-sol" || solutionCheckpoint.reasoningEffort !== "high"
+    || !solutionItem || canonicalEvidenceHash(solutionItem) !== spec.baseSolutionItemHash
+    || sha256(exactString(solutionItem.answer, `${question.key}.manualPolicy.solutionItem.answer`))
+      !== spec.officialRawAnswerHash
+    || sha256(exactString(solutionItem.explanation, `${question.key}.manualPolicy.solutionItem.explanation`))
+      !== spec.officialExplanationHash) {
+    throw new Error(`${question.key}: manual classification policy solution authority is stale`);
+  }
+  const commonBasis = {
+    allowlistId: spec.allowlistId,
+    parentAllowlistId: spec.parentAllowlistId,
+    entryId: spec.entryId,
+    key: spec.key,
+    printedNumber: question.printedNumber,
+    sourcePage: spec.sourcePage,
+    sourceHash: spec.sourceHash,
+    solutionSourceHash: spec.solutionSourceHash,
+    parentManual,
+    parentManualEvidenceHash: spec.parentManualEvidenceHash,
+    parentProblemArtifact,
+    parentProblemArtifactItemHash: spec.parentProblemArtifactItemHash,
+    parentClassificationArtifact,
+    parentClassificationArtifactItemHash: spec.parentClassificationArtifactItemHash,
+    failedClassificationHash: spec.failedClassificationHash,
+    failedTranscriptionEvidenceHash: spec.failedTranscriptionEvidenceHash,
+    runtimePromptHash: spec.runtimePromptHash,
+    cropEvidenceArtifact,
+    cropEvidencePdf,
+    cropViews: parentManual.cropViews,
+    baseSolutionCheckpoint,
+    baseSolutionItemHash: spec.baseSolutionItemHash,
+    solutionContextFrom: spec.solutionContextFrom,
+    solutionContextTo: spec.solutionContextTo,
+    solutionOwnedFrom: spec.solutionOwnedFrom,
+    solutionOwnedTo: spec.solutionOwnedTo,
+    officialRawAnswerHash: spec.officialRawAnswerHash,
+    officialExplanationHash: spec.officialExplanationHash,
+    curriculumRulesHash: spec.curriculumRulesHash,
+    policySpecHash: canonicalEvidenceHash(spec),
+    expectedClassification: spec.expectedClassification,
+  };
+  const basisDigest = canonicalEvidenceHash(commonBasis);
+  const expectedPath = `classification-manual-policy-revisions/` +
+    `v${PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_VERSION}-` +
+    `${String(spec.sourcePage).padStart(4, "0")}-${question.printedNumber.padStart(4, "0")}-${basisDigest}.json`;
+  const policy = object(value, `${question.key}.manualAdjudication.policyRevision`);
+  const policyArtifactEnvelope = object(
+    policy.policyArtifact,
+    `${question.key}.manualAdjudication.policyRevision.policyArtifact`,
+  );
+  const policyArtifact = evidencePointer({
+    path: policyArtifactEnvelope.path,
+    sha256: policyArtifactEnvelope.sha256,
+  }, `${question.key}.manualAdjudication.policyRevision.policyArtifact`);
+  if (policyArtifact.path !== expectedPath
+    || policyArtifactEnvelope.version !== PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_VERSION
+    || policyArtifactEnvelope.policyDigest !== PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_DIGEST) {
+    throw new Error(`${question.key}: manual classification policy artifact envelope is stale`);
+  }
+  const checkpoint = readBoundEvidenceCached(
+    cache,
+    stateDir,
+    policyArtifact,
+    `${question.key} manual classification policy revision`,
+  );
+  const expectedCheckpoint = {
+    version: PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_VERSION,
+    entryId: spec.entryId,
+    basisDigest,
+    basis: commonBasis,
+    policyDigest: PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_DIGEST,
+    item: spec.expectedClassification,
+  };
+  const expectedEvidence = {
+    allowlistId: spec.allowlistId,
+    parentAllowlistId: spec.parentAllowlistId,
+    key: spec.key,
+    printedNumber: question.printedNumber,
+    sourcePage: spec.sourcePage,
+    sourceHash: spec.sourceHash,
+    solutionSourceHash: spec.solutionSourceHash,
+    parentManualEvidenceHash: spec.parentManualEvidenceHash,
+    parentProblemArtifact,
+    parentProblemArtifactItemHash: spec.parentProblemArtifactItemHash,
+    parentClassificationArtifact,
+    parentClassificationArtifactItemHash: spec.parentClassificationArtifactItemHash,
+    failedClassificationHash: spec.failedClassificationHash,
+    failedTranscriptionEvidenceHash: spec.failedTranscriptionEvidenceHash,
+    runtimePromptHash: spec.runtimePromptHash,
+    cropEvidenceArtifact,
+    cropEvidencePdf,
+    cropViews: parentManual.cropViews,
+    baseSolutionCheckpoint,
+    baseSolutionItemHash: spec.baseSolutionItemHash,
+    solutionContextFrom: spec.solutionContextFrom,
+    solutionContextTo: spec.solutionContextTo,
+    solutionOwnedFrom: spec.solutionOwnedFrom,
+    solutionOwnedTo: spec.solutionOwnedTo,
+    officialRawAnswerHash: spec.officialRawAnswerHash,
+    officialExplanationHash: spec.officialExplanationHash,
+    curriculumRulesHash: spec.curriculumRulesHash,
+    policySpecHash: canonicalEvidenceHash(spec),
+    policyArtifact: {
+      ...policyArtifact,
+      version: PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_VERSION,
+      policyDigest: PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_DIGEST,
+    },
+    policyItemHash: canonicalEvidenceHash(spec.expectedClassification),
+    baseQuestionHash: spec.parentProblemArtifactItemHash,
+    effectiveQuestionHash: spec.parentProblemArtifactItemHash,
+    baseClassificationHash: spec.failedClassificationHash,
+    effectiveClassificationHash: canonicalEvidenceHash(spec.expectedClassification),
+  };
+  const parsedClassification = parseClassificationEvidence(
+    checkpoint.item,
+    question,
+    entry,
+    `${question.key}.manualClassificationPolicy.item`,
+  );
+  if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)
+    || !isDeepStrictEqual(parsedClassification, spec.expectedClassification)
+    || !isDeepStrictEqual(policy, expectedEvidence)) {
+    throw new Error(`${question.key}: manual classification policy revision checkpoint/evidence is stale`);
+  }
+  return { classification: parsedClassification, evidence: expectedEvidence };
 }
 
 function cropPngDimensions(path: string, label: string): { width: number; height: number } {
@@ -9212,7 +9672,7 @@ function verifyProblemManualAdjudication(
     throw new Error(`${key}: manual adjudication requires its exact allowlisted exhausted recovery status`);
   }
   const manualEnvelope = object(value, `${key}.revision.recovery.manualAdjudication`);
-  const { revision: manualRevision, ...manual } = manualEnvelope;
+  const { revision: manualRevision, policyRevision: manualPolicyRevision, ...manual } = manualEnvelope;
   const parentCrop = parentRecovery.adjudication === undefined
     ? null
     : object(parentRecovery.adjudication, `${key}.manual parent crop adjudication`);
@@ -9498,7 +9958,9 @@ function verifyProblemManualAdjudication(
   const parentClassificationTerminal = classification.transcription_status === "exact"
     && matchesProblemManualExpectedDecision(spec, classification);
   if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)
-    || (manualRevision === undefined ? !parentClassificationTerminal : parentClassificationTerminal)
+    || ((manualRevision === undefined && manualPolicyRevision === undefined)
+      ? !parentClassificationTerminal : parentClassificationTerminal)
+    || manualRevision !== undefined && manualPolicyRevision !== undefined
     || manual.classificationArtifactItemHash !== classificationArtifactItemHash
     || manual.baseClassificationHash !== spec.failedClassificationHash
     || manual.effectiveClassificationHash !== classificationArtifactItemHash) {
@@ -9562,6 +10024,27 @@ function verifyProblemManualAdjudication(
       evidence: { ...evidence, revision: revised.evidence },
     };
   }
+  if (manualPolicyRevision !== undefined) {
+    const policy = verifyProblemManualClassificationPolicyRevision(
+      manualPolicyRevision,
+      evidence,
+      question,
+      classification,
+      stateDir,
+      entry,
+      cache,
+    );
+    return {
+      question,
+      classification: policy.classification,
+      evidence: { ...evidence, policyRevision: policy.evidence },
+    };
+  }
+  if (PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST.some((candidate) =>
+    candidate.entryId === entry.id && candidate.key === key
+      && candidate.parentManualEvidenceHash === canonicalEvidenceHash(evidence))) {
+    throw new Error(`${key}: manual classification policy revision evidence is missing`);
+  }
   return { question, classification, evidence };
 }
 
@@ -9622,6 +10105,7 @@ export function verifyProblemManualAdjudicationForTest(input: {
             : []),
         ]
       : []),
+    ...(manual.policyRevision ? [manual.policyRevision.policyArtifact.path] : []),
   ]);
   verifyProblemManualArtifactInventory(input.stateDir, declaredManual);
   return {
@@ -15322,6 +15806,7 @@ function selectVerificationContract(
     "classification-manual-revisions",
     "problem-manual-second-revisions",
     "classification-manual-second-revisions",
+    "classification-manual-policy-revisions",
     "problem-scope-box-evidence",
     "problem-scope-box-revisions",
     "classification-scope-box-revisions",

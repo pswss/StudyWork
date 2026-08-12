@@ -32,6 +32,9 @@ import {
   IMPORT_MODEL,
   IMPORT_REASONING_EFFORT,
   PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST,
+  PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST,
+  PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_DIGEST,
+  PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_VERSION,
   PROBLEM_MANUAL_REVISION_ALLOWLIST,
   PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST,
   PROBLEM_TERMINAL_FIDELITY_VERSION,
@@ -1683,7 +1686,9 @@ describe("exact allowlisted problem manual adjudication", () => {
     const requested = [...new Set(providerCalls
       .filter((call) => call.schema === "studywork_exam_corpus_classification")
       .flatMap((call) => call.requested))].sort();
-    expect(requested).toEqual([...terminalRecoveryManualKeys].sort());
+    // The copied live fixture already persisted six terminal-recovery manual classifiers;
+    // only the interrupted Q25 classification may be requested on resume.
+    expect(requested).toEqual(["9:25"]);
     expect(requested).not.toContain("4:8");
     expect(requested).not.toContain("9:23");
     expect(deferredSnapshot()).toEqual(before);
@@ -2013,6 +2018,317 @@ describe("exact allowlisted problem manual adjudication", () => {
       mutableQ7.afterBox = afterBox;
     }
   });
+
+  it.skipIf(!existsSync(join(q27LiveState, "problem.pdf")))(
+    "revises the persisted wrong Q7 manual classification without AI and replays byte-stably",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-q7-manual-policy-"));
+    cpSync(q27LiveState, root, { recursive: true });
+    rmSync(join(root, "classification-manual-policy-revisions"), { recursive: true, force: true });
+    const input = q27FixtureInputs(root);
+    const q7 = q7TerminalRecoveryParent(root);
+    providerMock.complete.mockRejectedValue(new Error("AI must not run"));
+
+    const completed = await adjudicateProblemManual(input.entry, input.problem, root, q7.failed, q7.parent);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(canonicalEvidenceHash(completed.classified.question))
+      .toBe("12c693c31541967de63e3b19e413e088c09eb4e8f5ebe6311a8070b4750d6dac");
+    expect(canonicalEvidenceHash(completed.classified.classification))
+      .toBe("3fafa64dd3d16182d72a5f7a68f9fca8f9e057a376606064b0bd5cf0b228ceb4");
+    expect(completed.classified.classification).toMatchObject({
+      key: "3:7",
+      decision: "reject",
+      canonical_subject: null,
+      curriculum_course: null,
+      domain: null,
+      achievement_codes: [],
+      confidence: 1,
+      reason_codes: ["EXCLUDED_PRESENTATION_MEDIA_ASSESSED"],
+      transcription_status: "exact",
+    });
+    const policy = completed.evidence.policyRevision!;
+    expect(PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST).toHaveLength(1);
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST[0]))
+      .toBe("ab0b239fa1e63a0b41a9e510259b9b3047246534ee980b9bbc95ff1f253c8a89");
+    expect(policy).toMatchObject({
+      parentManualEvidenceHash: "50ca6cdacfa0215bceb57685fafb4a873772739659519df6a864f4e26d063404",
+      failedClassificationHash: "737fa9b5743491d62c641273a826c0761fe953560b66d8b25f9b4ca0fb09ab94",
+      officialRawAnswerHash: "faab5aef76a0e31bef1dc423641a79e0b60938edcdf69194bc63e734ca7114f6",
+      policyArtifact: {
+        path: "classification-manual-policy-revisions/" +
+          "v1-0003-0007-81ab9f4c66829d951249d2bb2eb297ed3c33cd65b587d4c242c95749162cdd8b.json",
+        sha256: "71a627aa8433c793bc8ec7d7270ea5097e5fc1abb8187e52236e80b168917ae4",
+        version: PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_VERSION,
+        policyDigest: PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_DIGEST,
+      },
+      policyItemHash: "3fafa64dd3d16182d72a5f7a68f9fca8f9e057a376606064b0bd5cf0b228ceb4",
+    });
+    const snapshot = stateSnapshot(join(root, "classification-manual-policy-revisions"));
+    const replayed = await adjudicateProblemManual(input.entry, input.problem, root, q7.failed, q7.parent);
+    expect(canonicalEvidenceHash(replayed)).toBe(canonicalEvidenceHash(completed));
+    expect(stateSnapshot(join(root, "classification-manual-policy-revisions"))).toEqual(snapshot);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+
+    for (const directory of [
+      "problem-manual-evidence",
+      "problem-manual-adjudications",
+      "classification-manual-adjudications",
+      "problem-manual-revisions",
+      "classification-manual-revisions",
+      "problem-manual-second-revisions",
+      "classification-manual-second-revisions",
+      "classification-manual-policy-revisions",
+    ]) {
+      const path = join(root, directory);
+      for (const name of readdirSync(path)) {
+        if (!name.startsWith("v1-0003-0007-")) rmSync(join(path, name));
+      }
+    }
+    const authorityRepair = {
+      key: "3:7",
+      revision: { recovery: { ...q7.parent, manualAdjudication: completed.evidence } },
+    } as unknown as ProblemRepairEvidence;
+    await expect(assertProblemManualAdjudicationAuthority(root, [authorityRepair])).resolves.toBeUndefined();
+    const tampered = structuredClone(authorityRepair);
+    tampered.revision!.recovery!.manualAdjudication!.policyRevision!.parentManualEvidenceHash = "0".repeat(64);
+    await expect(assertProblemManualAdjudicationAuthority(root, [tampered]))
+      .rejects.toThrow(/manual classification policy revision checkpoint\/evidence/u);
+  }, 120_000);
+
+  it.skipIf(!existsSync(join(q27LiveState, "problem.pdf")))(
+    "resumes the live Q7-policy and Q25-classification partial state before a fresh terminal",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-q7-policy-q25-partial-"));
+    cpSync(q27LiveState, root, { recursive: true });
+    rmSync(join(root, "classification-manual-policy-revisions"), { recursive: true, force: true });
+    const input = q27FixtureInputs(root);
+    const q25Prefix = "v1-0009-0025-";
+    for (const name of readdirSync(join(root, "classification-manual-adjudications"))) {
+      if (name.startsWith(q25Prefix)) rmSync(join(root, "classification-manual-adjudications", name));
+    }
+    const protectedBefore = stateSnapshot(root).filter(([path]) =>
+      /v1-0004-0008-|v1-0009-0023-/u.test(path) || path.startsWith("problem-terminal-fidelity/") ||
+      path.startsWith("answer-audit/") || path.startsWith("answer-attestation/")
+    );
+    const calls = { classification: [] as string[], terminal: 0 };
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      if (request.schema?.name === "studywork_exam_corpus_classification") {
+        const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
+          key: string;
+          question: string;
+        }>;
+        expect(items).toHaveLength(1);
+        expect(items[0].key).toBe("9:25");
+        expect(items[0].question).toContain("25.");
+        expect(items[0].question).toContain("들춰 업는다");
+        calls.classification.push(items[0].key);
+        return { text: JSON.stringify([{
+          key: "9:25",
+          decision: "accept",
+          canonical_subject: "korean_literature",
+          curriculum_course: "문학",
+          domain: "전쟁 소설의 사회·역사적 맥락과 비평적 감상",
+          achievement_codes: ["12문학01-03"],
+          confidence: 0.99,
+          reason_codes: ["IN_SCOPE_KOREAN_LITERATURE"],
+          transcription_status: "exact",
+          transcription_evidence: "공식 source pixel과 9:25 전체 지문·발문·선지가 일치한다.",
+        }]) };
+      }
+      if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
+        calls.terminal++;
+        const items = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{
+          key: string;
+          question: string;
+          box: [number, number] | null;
+        }>;
+        expect(items).toHaveLength(45);
+        const byKey = new Map(items.map((item) => [item.key, item]));
+        expect(byKey.get("3:7")?.box).toEqual([0.42, 0.88]);
+        expect(byKey.get("9:25")?.question).toContain("들춰 업는다");
+        throw new Error("seeded fresh Q7-policy terminal boundary");
+      }
+      throw new Error(`unexpected Q7 policy partial AI call: ${request.schema?.name ?? "unknown"}`);
+    });
+    await expect(repairAndAuditOfficialAnswers(
+      input.entry, input.problem, input.solution, root, input.classified, input.solutions
+    )).rejects.toThrow("seeded fresh Q7-policy terminal boundary");
+    expect(calls).toEqual({ classification: ["9:25"], terminal: 1 });
+    const policyNames = readdirSync(join(root, "classification-manual-policy-revisions"));
+    expect(policyNames).toEqual([
+      "v1-0003-0007-81ab9f4c66829d951249d2bb2eb297ed3c33cd65b587d4c242c95749162cdd8b.json",
+    ]);
+    expect(hash(readFileSync(join(root, "classification-manual-policy-revisions", policyNames[0]))))
+      .toBe("71a627aa8433c793bc8ec7d7270ea5097e5fc1abb8187e52236e80b168917ae4");
+    expect(readdirSync(join(root, "classification-manual-adjudications"))
+      .filter((name) => name.startsWith(q25Prefix))).toHaveLength(1);
+    expect(stateSnapshot(root).filter(([path]) =>
+      /v1-0004-0008-|v1-0009-0023-/u.test(path) || path.startsWith("problem-terminal-fidelity/") ||
+      path.startsWith("answer-audit/") || path.startsWith("answer-attestation/")
+    )).toEqual(protectedBefore);
+  }, 300_000);
+
+  it.skipIf(!existsSync(join(q27LiveState, "problem.pdf")))(
+    "preflights Q7 policy authority before an earlier missing terminal-manual write",
+    async () => {
+    const cases: Array<{
+      label: string;
+      prepare: (stateDir: string) => void | Promise<void>;
+      error: RegExp;
+    }> = [{
+      label: "missing Q7 parent with persisted policy",
+      prepare: (stateDir) => {
+        const name = readdirSync(join(stateDir, "classification-manual-adjudications"))
+          .find((item) => item.startsWith("v1-0003-0007-"))!;
+        unlinkSync(join(stateDir, "classification-manual-adjudications", name));
+      },
+      error: /3:7 manual classification policy revision parent coverage/u,
+    }, {
+      label: "tampered policy child",
+      prepare: (stateDir) => {
+        const path = join(
+          stateDir,
+          "classification-manual-policy-revisions/" +
+            "v1-0003-0007-81ab9f4c66829d951249d2bb2eb297ed3c33cd65b587d4c242c95749162cdd8b.json"
+        );
+        writeFileSync(path, Buffer.concat([readFileSync(path), Buffer.from(" ")]));
+      },
+      error: /manual classification policy revision checkpoint/u,
+    }, {
+      label: "tampered crop view",
+      prepare: (stateDir) => {
+        const path = join(
+          stateDir,
+          "problem-manual-evidence/" +
+            "v1-0003-0007-a36de92e1a8abfefc7cba639a5b86294c5ff084be548a9e6f72f4f8e7fd43bab-view-02.png"
+        );
+        writeFileSync(path, Buffer.concat([readFileSync(path), Buffer.from(" ")]));
+      },
+      error: /3:7 crop evidence view file hash/u,
+    }, {
+      label: "tampered solution checkpoint",
+      prepare: (stateDir) => {
+        const path = join(stateDir, "solution-chunks/v3-0000.json");
+        writeFileSync(path, Buffer.concat([readFileSync(path), Buffer.from(" ")]));
+      },
+      error: /manual classification policy revision solution authority/u,
+    }, {
+      label: "third policy child",
+      prepare: (stateDir) => {
+        const directory = join(stateDir, "classification-manual-policy-revisions");
+        const source = join(directory, readdirSync(directory)[0]);
+        writeFileSync(join(directory, `v1-0003-0007-${"f".repeat(64)}.json`), readFileSync(source));
+      },
+      error: /manual classification policy revision orphan\/conflict/u,
+    }, {
+      label: "policy child symlink",
+      prepare: (stateDir) => {
+        const directory = join(stateDir, "classification-manual-policy-revisions");
+        const name = readdirSync(directory)[0];
+        const target = join(directory, name);
+        const bytes = readFileSync(target);
+        unlinkSync(target);
+        writeFileSync(join(stateDir, "policy-child-target.json"), bytes);
+        symlinkSync(join(stateDir, "policy-child-target.json"), target);
+      },
+      error: /manual classification policy revision 파일이 유효하지 않습니다/u,
+    }];
+    for (const testCase of cases) {
+      const stateDir = mkdtempSync(join(tmpdir(), "studywork-q7-policy-preflight-"));
+      try {
+        cpSync(q27LiveState, stateDir, { recursive: true });
+        rmSync(join(stateDir, "classification-manual-policy-revisions"), { recursive: true, force: true });
+        const input = q27FixtureInputs(stateDir);
+        const q7 = q7TerminalRecoveryParent(stateDir);
+        providerMock.complete.mockRejectedValue(new Error("AI must not run"));
+        await adjudicateProblemManual(input.entry, input.problem, stateDir, q7.failed, q7.parent);
+        removeManualArtifacts(stateDir, ["3:6"]);
+        await testCase.prepare(stateDir);
+        const q6 = q6TerminalRecoveryParent(stateDir);
+        const before = stateSnapshot(stateDir);
+        providerMock.complete.mockClear();
+        await expect(
+          adjudicateProblemManual(input.entry, input.problem, stateDir, q6.failed, q6.parent),
+          testCase.label
+        ).rejects.toThrow(testCase.error);
+        expect(providerMock.complete, testCase.label).not.toHaveBeenCalled();
+        expect(stateSnapshot(stateDir), testCase.label).toEqual(before);
+      } finally {
+        rmSync(stateDir, { recursive: true, force: true });
+        providerMock.complete.mockReset();
+      }
+    }
+
+    for (const dangling of [false, true]) {
+      const stateDir = mkdtempSync(join(tmpdir(), "studywork-q7-policy-dir-symlink-"));
+      const target = mkdtempSync(join(tmpdir(), "studywork-q7-policy-dir-target-"));
+      try {
+        cpSync(q27LiveState, stateDir, { recursive: true });
+        removeManualArtifacts(stateDir, ["3:6"]);
+        const directory = join(stateDir, "classification-manual-policy-revisions");
+        rmSync(directory, { recursive: true, force: true });
+        if (dangling) rmSync(target, { recursive: true, force: true });
+        symlinkSync(target, directory);
+        const input = q27FixtureInputs(stateDir);
+        const q6 = q6TerminalRecoveryParent(stateDir);
+        const before = stateSnapshot(stateDir);
+        providerMock.complete.mockRejectedValue(new Error("AI must not run"));
+        await expect(adjudicateProblemManual(input.entry, input.problem, stateDir, q6.failed, q6.parent))
+          .rejects.toThrow("manual classification policy revision 디렉터리가 유효하지 않습니다");
+        expect(providerMock.complete).not.toHaveBeenCalled();
+        expect(stateSnapshot(stateDir)).toEqual(before);
+      } finally {
+        rmSync(stateDir, { recursive: true, force: true });
+        rmSync(target, { recursive: true, force: true });
+        providerMock.complete.mockReset();
+      }
+    }
+
+    const upstreamState = mkdtempSync(join(tmpdir(), "studywork-q7-policy-entry-preflight-"));
+    try {
+      cpSync(q27LiveState, upstreamState, { recursive: true });
+      rmSync(join(upstreamState, "classification-manual-policy-revisions"), { recursive: true, force: true });
+      const input = q27FixtureInputs(upstreamState);
+      const q7 = q7TerminalRecoveryParent(upstreamState);
+      providerMock.complete.mockRejectedValue(new Error("AI must not run"));
+      await adjudicateProblemManual(input.entry, input.problem, upstreamState, q7.failed, q7.parent);
+      unlinkSync(join(upstreamState, q7.parent.classificationArtifact.path));
+      const before = stateSnapshot(upstreamState);
+      providerMock.complete.mockClear();
+      await expect(repairAndAuditOfficialAnswers(
+        input.entry, input.problem, input.solution, upstreamState, input.classified, input.solutions
+      )).rejects.toThrow(/3:7 manual batch recovery exact-set/u);
+      expect(providerMock.complete).not.toHaveBeenCalled();
+      expect(stateSnapshot(upstreamState)).toEqual(before);
+    } finally {
+      rmSync(upstreamState, { recursive: true, force: true });
+      providerMock.complete.mockReset();
+    }
+
+    for (const dangling of [false, true]) {
+      const stateDir = mkdtempSync(join(tmpdir(), "studywork-q7-policy-entry-dir-symlink-"));
+      const target = mkdtempSync(join(tmpdir(), "studywork-q7-policy-entry-dir-target-"));
+      try {
+        cpSync(q27LiveState, stateDir, { recursive: true });
+        const input = q27FixtureInputs(stateDir);
+        const directory = join(stateDir, "classification-manual-policy-revisions");
+        rmSync(directory, { recursive: true, force: true });
+        if (dangling) rmSync(target, { recursive: true, force: true });
+        symlinkSync(target, directory);
+        const before = stateSnapshot(stateDir);
+        providerMock.complete.mockRejectedValue(new Error("AI must not run"));
+        await expect(repairAndAuditOfficialAnswers(
+          input.entry, input.problem, input.solution, stateDir, input.classified, input.solutions
+        )).rejects.toThrow("manual classification policy revision 디렉터리가 유효하지 않습니다");
+        expect(providerMock.complete).not.toHaveBeenCalled();
+        expect(stateSnapshot(stateDir)).toEqual(before);
+      } finally {
+        rmSync(stateDir, { recursive: true, force: true });
+        rmSync(target, { recursive: true, force: true });
+        providerMock.complete.mockReset();
+      }
+    }
+  }, 300_000);
 
   it.skipIf(!existsSync(join(q27LiveState, "problem.pdf")))(
     "crash-resumes all seven terminal-recovery manual children before the fresh terminal",

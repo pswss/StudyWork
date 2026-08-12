@@ -109,6 +109,7 @@ export const PROBLEM_MANUAL_REVISION_VERSION = 1;
 export const CLASSIFICATION_MANUAL_REVISION_VERSION = 1;
 export const PROBLEM_MANUAL_SOURCE_REVISION_VERSION = 1;
 export const CLASSIFICATION_MANUAL_SOURCE_REVISION_VERSION = 1;
+export const PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_VERSION = 1;
 export const PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION = 1;
 export const PROBLEM_TERMINAL_FIDELITY_POLICY_REVISION_VERSION = 1;
 export const SOLUTION_FIDELITY_VERSION = 1;
@@ -1268,6 +1269,47 @@ export type ProblemManualAdjudicationEvidence = {
   baseClassificationHash: string;
   effectiveClassificationHash: string;
   revision?: ProblemManualRevisionEvidence;
+  policyRevision?: ProblemManualClassificationPolicyRevisionEvidence;
+};
+
+export type ProblemManualClassificationPolicyRevisionEvidence = {
+  allowlistId: string;
+  parentAllowlistId: string;
+  key: string;
+  printedNumber: string;
+  sourcePage: number;
+  sourceHash: string;
+  solutionSourceHash: string;
+  parentManualEvidenceHash: string;
+  parentProblemArtifact: EvidencePointer;
+  parentProblemArtifactItemHash: string;
+  parentClassificationArtifact: EvidencePointer;
+  parentClassificationArtifactItemHash: string;
+  failedClassificationHash: string;
+  failedTranscriptionEvidenceHash: string;
+  runtimePromptHash: string;
+  cropEvidenceArtifact: EvidencePointer;
+  cropEvidencePdf: EvidencePointer;
+  cropViews: ProblemCropAdjudicationEvidence["cropViews"];
+  baseSolutionCheckpoint: EvidencePointer;
+  baseSolutionItemHash: string;
+  solutionContextFrom: number;
+  solutionContextTo: number;
+  solutionOwnedFrom: number;
+  solutionOwnedTo: number;
+  officialRawAnswerHash: string;
+  officialExplanationHash: string;
+  curriculumRulesHash: string;
+  policySpecHash: string;
+  policyArtifact: EvidencePointer & {
+    version: number;
+    policyDigest: string;
+  };
+  policyItemHash: string;
+  baseQuestionHash: string;
+  effectiveQuestionHash: string;
+  baseClassificationHash: string;
+  effectiveClassificationHash: string;
 };
 
 export type ProblemTerminalFidelityPolicyRevisionEvidence = {
@@ -2209,6 +2251,10 @@ export const PROBLEM_MANUAL_SOURCE_REVISION_PROMPT_DIGEST = sha256Text(
 export const PROBLEM_MANUAL_SOURCE_REVISION_CORRECTION_DIGEST = sha256Text(
   `${PROBLEM_MANUAL_SOURCE_REVISION_VERSION}\ncount-checked-source-correcting-second-manual-revision`
 );
+export const PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_DIGEST = sha256Text(
+  `${PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_VERSION}\n` +
+  "deterministic-manual-classification-policy-revision"
+);
 export const PROBLEM_SCOPE_BOX_REVISION_RULES = `
 The attached image-only evidence contains one exact official problem crop followed by its official solution context.
 The supplied item differs from its pinned parent only by an allowlisted vertical figure box expansion. Independently
@@ -2295,6 +2341,42 @@ type ProblemManualSourceRevisionSpec = {
   requiredTokens: string[];
   expectedDecision: "accept" | "reject";
   expectedCanonicalSubject?: CanonicalSubject;
+};
+
+type ProblemManualClassificationPolicyRevisionSpec = {
+  allowlistId: string;
+  parentAllowlistId: string;
+  entryId: string;
+  key: string;
+  sourcePage: number;
+  sourceHash: string;
+  solutionSourceHash: string;
+  parentManualEvidenceHash: string;
+  parentProblemArtifactPath: string;
+  parentProblemArtifactHash: string;
+  parentProblemArtifactItemHash: string;
+  parentClassificationArtifactPath: string;
+  parentClassificationArtifactHash: string;
+  parentClassificationArtifactItemHash: string;
+  failedClassificationHash: string;
+  failedTranscriptionEvidenceHash: string;
+  runtimePromptHash: string;
+  cropEvidenceArtifactPath: string;
+  cropEvidenceArtifactHash: string;
+  cropEvidencePdfPath: string;
+  cropEvidencePdfHash: string;
+  cropViewHashes: readonly string[];
+  baseSolutionCheckpointPath: string;
+  baseSolutionCheckpointHash: string;
+  baseSolutionItemHash: string;
+  solutionContextFrom: number;
+  solutionContextTo: number;
+  solutionOwnedFrom: number;
+  solutionOwnedTo: number;
+  officialRawAnswerHash: string;
+  officialExplanationHash: string;
+  curriculumRulesHash: string;
+  expectedClassification: ClassificationDecision;
 };
 
 type ProblemScopeBoxRevisionSpec = ProblemCropAdjudicationSpec & {
@@ -5117,6 +5199,66 @@ export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSou
   expectedCanonicalSubject: "korean_literature",
 }] as const;
 
+export const PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST:
+readonly ProblemManualClassificationPolicyRevisionSpec[] = [{
+  allowlistId: "ebsi-5525982-q7-manual-classification-policy-v1",
+  parentAllowlistId: "ebsi-5525982-q7-manual-v1",
+  entryId: "ebsi:5525982",
+  key: "3:7",
+  sourcePage: 3,
+  sourceHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+  solutionSourceHash: "41765adaef8826181042cf68889033ef77327169a2d8c2956e8a7d9f842e090f",
+  parentManualEvidenceHash: "50ca6cdacfa0215bceb57685fafb4a873772739659519df6a864f4e26d063404",
+  parentProblemArtifactPath:
+    "problem-manual-adjudications/v1-0003-0007-937a23f26f56bebe6b4176e9c0098de7ae0840e307e8bbdb26cb780cd4cdaebb.json",
+  parentProblemArtifactHash: "88755192e15f5099e2537c3347e9f01c544c4b7d33657137c6a2b24555225fd4",
+  parentProblemArtifactItemHash: "12c693c31541967de63e3b19e413e088c09eb4e8f5ebe6311a8070b4750d6dac",
+  parentClassificationArtifactPath: "classification-manual-adjudications/" +
+    "v1-0003-0007-f1d994fa459898c70786e03efb020e083e05ac1ee8c441a90c9e862afdbcd074-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "33f45b556059bb7321ecb3d5060ba1d1689facee2d393d07642bf3960e63f930",
+  parentClassificationArtifactItemHash: "737fa9b5743491d62c641273a826c0761fe953560b66d8b25f9b4ca0fb09ab94",
+  failedClassificationHash: "737fa9b5743491d62c641273a826c0761fe953560b66d8b25f9b4ca0fb09ab94",
+  failedTranscriptionEvidenceHash: "ae9a0b29fe65172e6328ee5f2f30e3d3d156610d0a2414b13279ba0645fa233c",
+  runtimePromptHash: "c6952f63fbb464ca4773be62a03943f4dcb86231ab3704935c1643d9cf776f33",
+  cropEvidenceArtifactPath:
+    "problem-manual-evidence/v1-0003-0007-a36de92e1a8abfefc7cba639a5b86294c5ff084be548a9e6f72f4f8e7fd43bab.json",
+  cropEvidenceArtifactHash: "18c0d06ccd10a75da964fd816bf76c446f996755d76efb0e5c72950ce446c2a5",
+  cropEvidencePdfPath:
+    "problem-manual-evidence/v1-0003-0007-a36de92e1a8abfefc7cba639a5b86294c5ff084be548a9e6f72f4f8e7fd43bab.pdf",
+  cropEvidencePdfHash: "c9358f449024e4a2a4b6c4ddb130a17f6b21dee110b9c737c3a8ff2f223e9c61",
+  cropViewHashes: [
+    "d712b1f65224ad29c5cf1ce98031ef221f8508a36f7a01ad69b270cca5809a0a",
+    "8c65b3526f5acd98fc1ba51e0cf0b0437cf2518437ee4990c504905cff9f07b8",
+    "69523967f0b48459af07a6137c37a7738d8a97eb9c0de9a70a774583ab1595d2",
+  ],
+  baseSolutionCheckpointPath: "solution-chunks/v3-0000.json",
+  baseSolutionCheckpointHash: "68098bf1ec8dde5bbc5509ba079ba9404a0cc7395ca40fe1313ed3fa3da8e7cc",
+  baseSolutionItemHash: "ba6400c805959326203290f8d069991be0615fc96fcf9ad0129962e524105857",
+  solutionContextFrom: 1,
+  solutionContextTo: 6,
+  solutionOwnedFrom: 1,
+  solutionOwnedTo: 4,
+  officialRawAnswerHash: "faab5aef76a0e31bef1dc423641a79e0b60938edcdf69194bc63e734ca7114f6",
+  officialExplanationHash: "bedba7290e4d72535db59cc7c0cf010d4764c24324223661ed470c54b7ba471f",
+  curriculumRulesHash: "7bb7cb863c8c4855f042419fbbaac4426aafb513d8bbb00fd35f5afa1a2d1932",
+  expectedClassification: {
+    key: "3:7",
+    decision: "reject",
+    canonical_subject: null,
+    curriculum_course: null,
+    domain: null,
+    achievement_codes: [],
+    confidence: 1,
+    reason_codes: ["EXCLUDED_PRESENTATION_MEDIA_ASSESSED"],
+    transcription_status: "exact",
+    transcription_evidence: "원본 3쪽 왼쪽의 작문 계획과 초고 전체, [A]·[B]를 표시하는 오른쪽으로 열린 " +
+      "세로 묶음괄호 2개, ㉠·㉡이 모두 일치한다. 오른쪽의 7번 발문과 5개 선택지, 물결 모양 위쪽 " +
+      "가장자리·□□신문·두 가로 구분선·회색 제목 띠, 광고 본문의 모든 문장 및 ‘11월 2일’, ‘제품 용량 " +
+      "500 ml. 1,000원’도 원본 픽셀과 일치한다.",
+  },
+}] as const;
+
 const DEFERRED_TERMINAL_FIDELITY_5525982 = [{
   key: "4:8",
   manualAllowlistId: "ebsi-5525982-q8-manual-v1",
@@ -6244,6 +6386,28 @@ async function classifyQuestions(
   opts?: { revisionEvidence?: string; sourceEvidenceNote?: string; targeted?: boolean }
 ): Promise<ClassificationDecision[]> {
   if (questions.length === 0) return [];
+  const prompt = classificationPrompt(entry, from, to, questions, opts);
+  const result = await (opts?.targeted ? withTargetedAi : withFullContextAi)(() =>
+    getCodexProvider({ model: IMPORT_MODEL, reasoningEffort: IMPORT_REASONING_EFFORT }).complete({
+    operation: "problem-extract",
+    prompt,
+    file: { path, kind: "pdf" },
+    schema: CLASSIFICATION_SCHEMA,
+    model: IMPORT_MODEL,
+    reasoningEffort: IMPORT_REASONING_EFFORT,
+    lane: "bulk",
+    })
+  );
+  return parseDecisions(JSON.parse(result.text), questions, entry);
+}
+
+function classificationPrompt(
+  entry: Pick<CorpusManifestEntry, "subject" | "grade">,
+  from: number,
+  to: number,
+  questions: QuizItemEx[],
+  opts?: { revisionEvidence?: string; sourceEvidenceNote?: string; targeted?: boolean }
+): string {
   const input = questions.map((question) => ({
     key: questionKey(question),
     printed_number: String(numericPrintedLocator(question.number)),
@@ -6273,18 +6437,7 @@ async function classifyQuestions(
     `${TRANSCRIPTION_GATE_RULES}${revisionRule}\n\n${CURRICULUM_RULES}\n\n` +
     `Allowed exact achievement codes for this source: ${allowedCodes.join(", ")}\n\n` +
     `Questions:\n${JSON.stringify(input)}`;
-  const result = await (opts?.targeted ? withTargetedAi : withFullContextAi)(() =>
-    getCodexProvider({ model: IMPORT_MODEL, reasoningEffort: IMPORT_REASONING_EFFORT }).complete({
-    operation: "problem-extract",
-    prompt,
-    file: { path, kind: "pdf" },
-    schema: CLASSIFICATION_SCHEMA,
-    model: IMPORT_MODEL,
-    reasoningEffort: IMPORT_REASONING_EFFORT,
-    lane: "bulk",
-    })
-  );
-  return parseDecisions(JSON.parse(result.text), questions, entry);
+  return prompt;
 }
 
 type SourceSlice = { path: string; from: number; to: number };
@@ -12905,6 +13058,376 @@ function problemManualSourceRevisionSpec(
   return match;
 }
 
+function problemManualClassificationPolicyRevisionSpec(
+  entryId: string,
+  key: string,
+  sourcePage: number,
+  sourceHash: string,
+  parentManual: ProblemManualAdjudicationEvidence,
+  failed: ClassifiedQuestion
+): ProblemManualClassificationPolicyRevisionSpec | null {
+  const matches = PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST.filter((spec) =>
+    spec.entryId === entryId && spec.key === key && spec.sourcePage === sourcePage
+  );
+  if (matches.length > 1) {
+    throw new Error(`${entryId} ${key} manual classification policy revision allowlist가 중복입니다`);
+  }
+  const match = matches[0];
+  if (!match) return null;
+  if (
+    match.sourceHash !== sourceHash || match.parentAllowlistId !== parentManual.allowlistId ||
+    canonicalEvidenceHash(parentManual) !== match.parentManualEvidenceHash ||
+    canonicalEvidenceHash(failed.question) !== match.parentProblemArtifactItemHash ||
+    canonicalEvidenceHash(failed.classification) !== match.failedClassificationHash ||
+    sha256Text(failed.classification.transcription_evidence) !== match.failedTranscriptionEvidenceHash
+  ) throw new Error(`${entryId} ${key} manual classification policy revision parent/allowlist가 다릅니다`);
+  return match;
+}
+
+function problemManualClassificationPolicyRevisionSpecHash(
+  spec: ProblemManualClassificationPolicyRevisionSpec
+): string {
+  return canonicalEvidenceHash(spec);
+}
+
+function problemManualClassificationPolicyRevisionNames(stateDir: string): string[] {
+  const directory = "classification-manual-policy-revisions";
+  const absoluteDirectory = join(stateDir, directory);
+  let directoryStat;
+  try {
+    directoryStat = lstatSync(absoluteDirectory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  if (directoryStat.isSymbolicLink() || !directoryStat.isDirectory()) {
+    throw new Error("manual classification policy revision 디렉터리가 유효하지 않습니다");
+  }
+  const actual = strictArtifactNames(
+    absoluteDirectory,
+    "manual classification policy revision",
+    (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
+  ).map((name) => `${directory}/${name}`);
+  if (actual.length > 1) {
+    throw new Error(`manual classification policy revision orphan/conflict: ${actual.join(",")}`);
+  }
+  return actual;
+}
+
+function problemManualClassificationPolicyRevisionInventory(
+  stateDir: string,
+  expectedPath?: string
+): string[] {
+  const actual = problemManualClassificationPolicyRevisionNames(stateDir);
+  if (actual.length > 1 || actual.some((path) => path !== expectedPath)) {
+    throw new Error(`manual classification policy revision orphan/conflict: ${actual.join(",") || "-"}`);
+  }
+  return actual;
+}
+
+type PreparedProblemManualClassificationPolicyRevision = {
+  spec: ProblemManualClassificationPolicyRevisionSpec;
+  parentManual: ProblemManualAdjudicationEvidence;
+  failed: ClassifiedQuestion;
+  commonBasis: Record<string, unknown>;
+  basisDigest: string;
+  relativePath: string;
+  absolutePath: string;
+};
+
+function problemManualClassificationPolicyRevisionCheckpoint(
+  prepared: PreparedProblemManualClassificationPolicyRevision
+) {
+  return {
+    version: PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_VERSION,
+    entryId: prepared.spec.entryId,
+    basisDigest: prepared.basisDigest,
+    basis: prepared.commonBasis,
+    policyDigest: PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_DIGEST,
+    item: prepared.spec.expectedClassification,
+  };
+}
+
+function problemManualClassificationPolicyRevisionEvidence(
+  prepared: PreparedProblemManualClassificationPolicyRevision,
+  sha256: string
+): ProblemManualClassificationPolicyRevisionEvidence {
+  const spec = prepared.spec;
+  const parent = prepared.parentManual;
+  return {
+    allowlistId: spec.allowlistId,
+    parentAllowlistId: spec.parentAllowlistId,
+    key: spec.key,
+    printedNumber: parent.printedNumber,
+    sourcePage: spec.sourcePage,
+    sourceHash: spec.sourceHash,
+    solutionSourceHash: spec.solutionSourceHash,
+    parentManualEvidenceHash: spec.parentManualEvidenceHash,
+    parentProblemArtifact: { path: parent.problemArtifact.path, sha256: parent.problemArtifact.sha256 },
+    parentProblemArtifactItemHash: spec.parentProblemArtifactItemHash,
+    parentClassificationArtifact: {
+      path: parent.classificationArtifact.path,
+      sha256: parent.classificationArtifact.sha256,
+    },
+    parentClassificationArtifactItemHash: spec.parentClassificationArtifactItemHash,
+    failedClassificationHash: spec.failedClassificationHash,
+    failedTranscriptionEvidenceHash: spec.failedTranscriptionEvidenceHash,
+    runtimePromptHash: spec.runtimePromptHash,
+    cropEvidenceArtifact: parent.cropEvidenceArtifact,
+    cropEvidencePdf: parent.cropEvidencePdf,
+    cropViews: parent.cropViews,
+    baseSolutionCheckpoint: { path: spec.baseSolutionCheckpointPath, sha256: spec.baseSolutionCheckpointHash },
+    baseSolutionItemHash: spec.baseSolutionItemHash,
+    solutionContextFrom: spec.solutionContextFrom,
+    solutionContextTo: spec.solutionContextTo,
+    solutionOwnedFrom: spec.solutionOwnedFrom,
+    solutionOwnedTo: spec.solutionOwnedTo,
+    officialRawAnswerHash: spec.officialRawAnswerHash,
+    officialExplanationHash: spec.officialExplanationHash,
+    curriculumRulesHash: spec.curriculumRulesHash,
+    policySpecHash: problemManualClassificationPolicyRevisionSpecHash(spec),
+    policyArtifact: {
+      path: prepared.relativePath,
+      sha256,
+      version: PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_VERSION,
+      policyDigest: PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_DIGEST,
+    },
+    policyItemHash: canonicalEvidenceHash(spec.expectedClassification),
+    baseQuestionHash: spec.parentProblemArtifactItemHash,
+    effectiveQuestionHash: spec.parentProblemArtifactItemHash,
+    baseClassificationHash: spec.failedClassificationHash,
+    effectiveClassificationHash: canonicalEvidenceHash(spec.expectedClassification),
+  };
+}
+
+async function reviseProblemManualClassificationPolicy(
+  entry: Pick<CorpusManifestEntry, "id" | "subject" | "grade">,
+  stateDir: string,
+  failed: ClassifiedQuestion,
+  parentManual: ProblemManualAdjudicationEvidence,
+  spec: ProblemManualClassificationPolicyRevisionSpec,
+  existingOnly: boolean
+): Promise<{ classified: ClassifiedQuestion; evidence: ProblemManualClassificationPolicyRevisionEvidence } | null> {
+  const prepared = await prepareProblemManualClassificationPolicyRevision(
+    entry, stateDir, failed, parentManual, spec
+  );
+  const expectedCheckpoint = problemManualClassificationPolicyRevisionCheckpoint(prepared);
+  if (existsSync(prepared.absolutePath)) {
+    const path = confinedStateFile(stateDir, prepared.relativePath, "manual classification policy revision");
+    const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), prepared.relativePath);
+    const sha256 = await sha256File(path);
+    if (
+      canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(expectedCheckpoint) ||
+      sha256 !== canonicalEvidenceHash(expectedCheckpoint)
+    ) throw new Error(`${spec.key} manual classification policy revision checkpoint가 다릅니다`);
+    return {
+      classified: { question: failed.question, classification: spec.expectedClassification },
+      evidence: problemManualClassificationPolicyRevisionEvidence(prepared, sha256),
+    };
+  }
+  if (existingOnly) return null;
+  const sha256 = await writeImmutableEvidence(prepared.absolutePath, expectedCheckpoint);
+  return {
+    classified: { question: failed.question, classification: spec.expectedClassification },
+    evidence: problemManualClassificationPolicyRevisionEvidence(prepared, sha256),
+  };
+}
+
+async function assertProblemManualClassificationPolicyRevision(
+  stateDir: string,
+  parentManual: ProblemManualAdjudicationEvidence,
+  policyRevision: ProblemManualClassificationPolicyRevisionEvidence
+): Promise<string> {
+  const specMatches = PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST.filter((spec) =>
+    spec.allowlistId === policyRevision.allowlistId && spec.parentAllowlistId === parentManual.allowlistId &&
+    spec.key === parentManual.key && spec.sourcePage === parentManual.sourcePage &&
+    spec.sourceHash === parentManual.sourceHash
+  );
+  if (specMatches.length !== 1) {
+    throw new Error(`${parentManual.key} manual classification policy revision allowlist authority가 없습니다`);
+  }
+  const spec = specMatches[0];
+  const failedClassificationPath = confinedStateFile(
+    stateDir,
+    parentManual.classificationArtifact.path,
+    "manual classification policy parent"
+  );
+  const failedClassificationCheckpoint = object(
+    JSON.parse(readFileSync(failedClassificationPath, "utf8")),
+    parentManual.classificationArtifact.path
+  );
+  const failedClassification = Array.isArray(failedClassificationCheckpoint.items) &&
+    failedClassificationCheckpoint.items.length === 1
+    ? parseHistoricalDecision(
+        failedClassificationCheckpoint.items[0],
+        parentManual.key,
+        "manual classification policy parent item"
+      )
+    : null;
+  const problemCheckpoint = object(JSON.parse(readFileSync(confinedStateFile(
+    stateDir,
+    parentManual.problemArtifact.path,
+    "manual classification policy parent problem"
+  ), "utf8")), parentManual.problemArtifact.path);
+  const question = restoredQuizItems([problemCheckpoint.item])[0];
+  if (!failedClassification) {
+    throw new Error(`${parentManual.key} manual classification policy parent item이 없습니다`);
+  }
+  const prepared = await prepareProblemManualClassificationPolicyRevision(
+    { id: spec.entryId, subject: "국어", grade: 3 },
+    stateDir,
+    { question, classification: failedClassification },
+    parentManual,
+    spec
+  );
+  const path = confinedStateFile(stateDir, prepared.relativePath, "manual classification policy revision");
+  const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), prepared.relativePath);
+  const expectedCheckpoint = problemManualClassificationPolicyRevisionCheckpoint(prepared);
+  const sha256 = await sha256File(path);
+  const expectedEvidence = problemManualClassificationPolicyRevisionEvidence(prepared, sha256);
+  if (
+    canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(expectedCheckpoint) ||
+    sha256 !== canonicalEvidenceHash(expectedCheckpoint) ||
+    canonicalEvidenceHash(policyRevision) !== canonicalEvidenceHash(expectedEvidence)
+  ) throw new Error(`${parentManual.key} manual classification policy revision checkpoint/evidence가 다릅니다`);
+  return prepared.relativePath;
+}
+
+async function prepareProblemManualClassificationPolicyRevision(
+  entry: Pick<CorpusManifestEntry, "id" | "subject" | "grade">,
+  stateDir: string,
+  failed: ClassifiedQuestion,
+  parentManual: ProblemManualAdjudicationEvidence,
+  spec: ProblemManualClassificationPolicyRevisionSpec
+): Promise<PreparedProblemManualClassificationPolicyRevision> {
+  const key = questionKey(failed.question);
+  const parentProblem = { path: parentManual.problemArtifact.path, sha256: parentManual.problemArtifact.sha256 };
+  const parentClassification = {
+    path: parentManual.classificationArtifact.path,
+    sha256: parentManual.classificationArtifact.sha256,
+  };
+  const pointers = [
+    ["problem manual parent", parentProblem, spec.parentProblemArtifactPath, spec.parentProblemArtifactHash],
+    ["classification manual parent", parentClassification,
+      spec.parentClassificationArtifactPath, spec.parentClassificationArtifactHash],
+    ["manual crop evidence", parentManual.cropEvidenceArtifact,
+      spec.cropEvidenceArtifactPath, spec.cropEvidenceArtifactHash],
+    ["manual crop evidence PDF", parentManual.cropEvidencePdf,
+      spec.cropEvidencePdfPath, spec.cropEvidencePdfHash],
+  ] as const;
+  for (const [label, pointer, expectedPath, expectedHash] of pointers) {
+    if (pointer.path !== expectedPath || pointer.sha256 !== expectedHash ||
+        await sha256File(confinedStateFile(stateDir, pointer.path, label)) !== expectedHash) {
+      throw new Error(`${key} manual classification policy revision ${label}가 다릅니다`);
+    }
+  }
+  if (
+    entry.id !== spec.entryId || parentManual.policyRevision || parentManual.revision ||
+    parentManual.allowlistId !== spec.parentAllowlistId ||
+    canonicalEvidenceHash(parentManual) !== spec.parentManualEvidenceHash ||
+    parentManual.problemArtifactItemHash !== spec.parentProblemArtifactItemHash ||
+    parentManual.classificationArtifactItemHash !== spec.parentClassificationArtifactItemHash ||
+    canonicalEvidenceHash(failed.question) !== spec.parentProblemArtifactItemHash ||
+    canonicalEvidenceHash(failed.classification) !== spec.failedClassificationHash ||
+    sha256Text(failed.classification.transcription_evidence) !== spec.failedTranscriptionEvidenceHash ||
+    failed.classification.transcription_status !== "exact" ||
+    canonicalEvidenceHash(spec.expectedClassification) !==
+      "3fafa64dd3d16182d72a5f7a68f9fca8f9e057a376606064b0bd5cf0b228ceb4" ||
+    spec.expectedClassification.transcription_status !== failed.classification.transcription_status ||
+    spec.expectedClassification.transcription_evidence !== failed.classification.transcription_evidence ||
+    spec.curriculumRulesHash !== CURRICULUM_RULES_SHA256
+  ) throw new Error(`${key} manual classification policy revision parent/spec이 다릅니다`);
+  if (parentManual.cropViews.length !== spec.cropViewHashes.length) {
+    throw new Error(`${key} manual classification policy revision crop views가 다릅니다`);
+  }
+  for (const [index, view] of parentManual.cropViews.entries()) {
+    const expectedHash = spec.cropViewHashes[index];
+    if (
+      view.artifact.sha256 !== expectedHash || view.pixelSha256 !== expectedHash ||
+      await sha256File(confinedStateFile(stateDir, view.artifact.path, `manual policy crop view ${index + 1}`)) !==
+        expectedHash
+    ) throw new Error(`${key} manual classification policy revision crop view ${index + 1}가 다릅니다`);
+  }
+
+  const prompt = classificationPrompt(
+    entry,
+    parentManual.sourcePages[0],
+    parentManual.sourcePages[parentManual.sourcePages.length - 1],
+    [failed.question],
+    {
+      targeted: true,
+      sourceEvidenceNote: `${PROBLEM_MANUAL_ADJUDICATION_RULES} Evidence mapping: ` +
+        parentManual.cropViews.map((view, index) =>
+          `view ${index + 1}=${view.label}, original page ${view.sourcePage}`
+        ).join("; ") + `. Required source anchors: ${problemManualAdjudicationSpec(
+          entry.id, key, failed.question.page!, spec.sourceHash
+        )!.requiredTokens.join(" | ")}.`,
+    }
+  );
+  if (sha256Text(prompt) !== spec.runtimePromptHash) {
+    throw new Error(`${key} manual classification policy revision runtime prompt가 다릅니다`);
+  }
+
+  const solutionSourcePath = confinedStateFile(stateDir, "solution.pdf", "manual policy official solution");
+  const solutionPath = confinedStateFile(stateDir, spec.baseSolutionCheckpointPath, "manual policy solution checkpoint");
+  const solutionCheckpoint = object(JSON.parse(readFileSync(solutionPath, "utf8")), spec.baseSolutionCheckpointPath);
+  const solutionItems = parseSolutionItems(JSON.stringify(solutionCheckpoint.items));
+  const solutionMatches = solutionItems.filter((item) => numericPrintedLocator(item.number) === 7);
+  const solutionItem = solutionMatches[0];
+  if (
+    await sha256File(solutionSourcePath) !== spec.solutionSourceHash ||
+    await sha256File(solutionPath) !== spec.baseSolutionCheckpointHash ||
+    canonicalEvidenceHash(solutionCheckpoint) !== spec.baseSolutionCheckpointHash ||
+    solutionCheckpoint.version !== SOLUTION_CHECKPOINT_VERSION ||
+    solutionCheckpoint.sourceHash !== spec.solutionSourceHash ||
+    solutionCheckpoint.from !== spec.solutionContextFrom || solutionCheckpoint.to !== spec.solutionContextTo ||
+    solutionCheckpoint.ownedFrom !== spec.solutionOwnedFrom || solutionCheckpoint.ownedTo !== spec.solutionOwnedTo ||
+    solutionCheckpoint.model !== IMPORT_MODEL || solutionCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+    solutionMatches.length !== 1 || !solutionItem || canonicalEvidenceHash(solutionItem) !== spec.baseSolutionItemHash ||
+    sha256Text(solutionItem.answer) !== spec.officialRawAnswerHash ||
+    sha256Text(solutionItem.explanation) !== spec.officialExplanationHash
+  ) throw new Error(`${key} manual classification policy revision solution authority가 다릅니다`);
+  const commonBasis = {
+    allowlistId: spec.allowlistId,
+    parentAllowlistId: spec.parentAllowlistId,
+    entryId: spec.entryId,
+    key: spec.key,
+    printedNumber: parentManual.printedNumber,
+    sourcePage: spec.sourcePage,
+    sourceHash: spec.sourceHash,
+    solutionSourceHash: spec.solutionSourceHash,
+    parentManual,
+    parentManualEvidenceHash: spec.parentManualEvidenceHash,
+    parentProblemArtifact: parentProblem,
+    parentProblemArtifactItemHash: spec.parentProblemArtifactItemHash,
+    parentClassificationArtifact: parentClassification,
+    parentClassificationArtifactItemHash: spec.parentClassificationArtifactItemHash,
+    failedClassificationHash: spec.failedClassificationHash,
+    failedTranscriptionEvidenceHash: spec.failedTranscriptionEvidenceHash,
+    runtimePromptHash: spec.runtimePromptHash,
+    cropEvidenceArtifact: parentManual.cropEvidenceArtifact,
+    cropEvidencePdf: parentManual.cropEvidencePdf,
+    cropViews: parentManual.cropViews,
+    baseSolutionCheckpoint: { path: spec.baseSolutionCheckpointPath, sha256: spec.baseSolutionCheckpointHash },
+    baseSolutionItemHash: spec.baseSolutionItemHash,
+    solutionContextFrom: spec.solutionContextFrom,
+    solutionContextTo: spec.solutionContextTo,
+    solutionOwnedFrom: spec.solutionOwnedFrom,
+    solutionOwnedTo: spec.solutionOwnedTo,
+    officialRawAnswerHash: spec.officialRawAnswerHash,
+    officialExplanationHash: spec.officialExplanationHash,
+    curriculumRulesHash: spec.curriculumRulesHash,
+    policySpecHash: problemManualClassificationPolicyRevisionSpecHash(spec),
+    expectedClassification: spec.expectedClassification,
+  };
+  const basisDigest = canonicalEvidenceHash(commonBasis);
+  const relativePath = `classification-manual-policy-revisions/` +
+    `v${PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_VERSION}-` +
+    `${String(spec.sourcePage).padStart(4, "0")}-${parentManual.printedNumber.padStart(4, "0")}-${basisDigest}.json`;
+  problemManualClassificationPolicyRevisionInventory(stateDir, relativePath);
+  return { spec, parentManual, failed, commonBasis, basisDigest, relativePath, absolutePath: join(stateDir, relativePath) };
+}
+
 function exactOccurrenceCount(source: string, target: string): number {
   if (!target) throw new Error("manual adjudication replacement target이 비어 있습니다");
   let count = 0;
@@ -14177,10 +14700,14 @@ async function preflightProblemManualBatch(
       specs.length !== 7 || problem.sha256 !== requestedSpec.sourceHash ||
       await sha256File(problem.path) !== problem.sha256
     ) throw new Error(`${requestedSpec.key} terminal recovery manual preflight source/allowlist가 다릅니다`);
+    const policyNames = problemManualClassificationPolicyRevisionNames(stateDir);
     const restored = [] as Array<{ failed: ClassifiedQuestion; parent: ProblemRecoveryEvidence }>;
     for (const spec of specs) restored.push(await restoredPinnedManualRecovery(entry, stateDir, spec));
     for (const row of restored) {
-      await adjudicateProblemManualOne(entry, problem, stateDir, row.failed, row.parent, true);
+      const existing = await adjudicateProblemManualOne(entry, problem, stateDir, row.failed, row.parent, true);
+      if (policyNames.length > 0 && row.parent.key === "3:7" && !existing?.evidence.policyRevision) {
+        throw new Error("3:7 manual classification policy revision parent coverage가 다릅니다");
+      }
     }
     return;
   }
@@ -14644,6 +15171,29 @@ async function adjudicateProblemManualOne(
     !matchesProblemManualExpectedDecision(spec, classification)
   ) {
     const failedManual = { question: corrected, classification };
+    const policySpec = problemManualClassificationPolicyRevisionSpec(
+      entry.id,
+      key,
+      sourcePage,
+      problem.sha256,
+      evidence,
+      failedManual
+    );
+    if (policySpec) {
+      const policyRevised = await reviseProblemManualClassificationPolicy(
+        entry,
+        stateDir,
+        failedManual,
+        evidence,
+        policySpec,
+        existingOnly
+      );
+      if (!policyRevised) return null;
+      return {
+        classified: policyRevised.classified,
+        evidence: { ...evidence, policyRevision: policyRevised.evidence },
+      };
+    }
     const revisionSpec = problemManualRevisionSpec(
       entry.id,
       key,
@@ -15485,6 +16035,7 @@ export async function assertProblemManualAdjudicationAuthority(
     if (!recovery || !manualEvidence) continue;
     const {
       revision: manualRevision,
+      policyRevision,
       ...manual
     } = manualEvidence;
     const { manualAdjudication: _manualAdjudication, ...parentRecovery } = recovery;
@@ -15701,8 +16252,20 @@ export async function assertProblemManualAdjudicationAuthority(
       classificationCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
       !Array.isArray(classificationCheckpoint.items) || classificationCheckpoint.items.length !== 1 ||
       canonicalEvidenceHash(classificationCheckpoint.items[0]) !== manual.classificationArtifactItemHash ||
-      (manualRevision ? parentClassificationTerminal : !parentClassificationTerminal)
+      ((manualRevision || policyRevision) ? parentClassificationTerminal : !parentClassificationTerminal)
     ) throw new Error(`${repair.key} classification manual adjudication checkpoint가 다릅니다`);
+
+    if (policyRevision) {
+      if (manualRevision) throw new Error(`${repair.key} manual revision/policy revision이 함께 있습니다`);
+      const policyPath = await assertProblemManualClassificationPolicyRevision(stateDir, manual, policyRevision);
+      if (declared.has(policyPath)) {
+        throw new Error(`manual classification policy revision artifact가 중복 선언됐습니다: ${policyPath}`);
+      }
+      declared.set(policyPath, policyRevision.policyArtifact.sha256);
+    } else if (PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST.some((candidate) =>
+      candidate.entryId === spec.entryId && candidate.key === manual.key &&
+      candidate.parentManualEvidenceHash === canonicalEvidenceHash(manual)
+    )) throw new Error(`${repair.key} manual classification policy revision evidence가 없습니다`);
 
     if (manualRevision) {
       const { sourceRevision, ...manualRevisionBase } = manualRevision;
@@ -16121,7 +16684,7 @@ export async function assertProblemManualAdjudicationAuthority(
     }
   }
 
-  const actual = new Set<string>();
+  const actual = new Set<string>(problemManualClassificationPolicyRevisionNames(stateDir));
   for (const directory of [
     "problem-manual-evidence",
     "problem-manual-adjudications",
@@ -19435,6 +19998,13 @@ export async function repairAndAuditOfficialAnswers(
 ): Promise<AnswerAuditResult> {
   const baseByKey = new Map(initial.map((item) => [questionKey(item.question), item]));
   if (baseByKey.size !== initial.length) throw new Error("base 문제 key가 중복입니다");
+  if (problemManualClassificationPolicyRevisionNames(stateDir).length > 0) {
+    const policySpec = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
+      spec.entryId === entry.id && spec.key === "3:7" && spec.sourceHash === problem.sha256
+    );
+    if (!policySpec) throw new Error(`${entry.id} manual classification policy current authority가 없습니다`);
+    await preflightProblemManualBatch(entry, problem, stateDir, policySpec);
+  }
   const baseSolutionsByNumber = officialSolutionsByNumber(entry, initial, solutions);
   const persistedTerminalRecovery = await preflightPersistedTerminalRecoveryHydration(
     entry,

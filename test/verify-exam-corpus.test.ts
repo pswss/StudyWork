@@ -51,6 +51,7 @@ import {
   compareCorpusQuestionKeys,
   existingCorpusMigrationAllowlistFingerprint,
   manualAdjudicationAllowlistFingerprint,
+  manualClassificationPolicyRevisionAllowlistFingerprint,
   manualRevisionAllowlistFingerprint,
   manualSourceRevisionAllowlistFingerprint,
   officialAnswerForDb,
@@ -93,6 +94,9 @@ import {
   PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST,
   PROBLEM_MANUAL_ADJUDICATION_PROMPT_DIGEST,
   PROBLEM_MANUAL_CORRECTION_DIGEST,
+  PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST,
+  PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_DIGEST,
+  PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_VERSION,
   PROBLEM_MANUAL_REVISION_ALLOWLIST,
   PROBLEM_MANUAL_REVISION_CORRECTION_DIGEST,
   PROBLEM_MANUAL_REVISION_PROMPT_DIGEST,
@@ -9620,6 +9624,7 @@ async function q27ManualAuthorityFixture() {
     "classification-manual-revisions",
     "problem-manual-second-revisions",
     "classification-manual-second-revisions",
+    "classification-manual-policy-revisions",
   ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
   const { input, failed, parent } = q27ExactRecoveryParent(stateDir);
   providerMock.complete.mockReset();
@@ -9763,6 +9768,7 @@ async function q17Q20ManualAuthorityFixture() {
     "classification-manual-revisions",
     "problem-manual-second-revisions",
     "classification-manual-second-revisions",
+    "classification-manual-policy-revisions",
   ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
   const rows = Q17_Q20_MANUAL_SPECS.map((spec) => ({
     spec,
@@ -9949,7 +9955,26 @@ async function q6Q26ManualAuthorityFixture() {
   providerMock.complete.mockReset();
   for (const row of rows) {
     const rejected = row.spec.expectedDecision === "reject";
-    providerMock.complete.mockResolvedValueOnce({ text: JSON.stringify([{
+    const q7Parent = row.spec.key === "3:7" ? {
+      key: "3:7",
+      decision: "accept",
+      canonical_subject: "korean_reading",
+      curriculum_course: "독서와 작문",
+      domain: "독서—비문학 정보의 사실적·추론적 이해와 자료 적용",
+      achievement_codes: ["12독작01-03"],
+      confidence: 0.99,
+      reason_codes: [
+        "NONFICTION_COMPREHENSION",
+        "TEXT_VISUAL_EVIDENCE_COMPARISON",
+        "SINGLE_CANONICAL_SUBJECT",
+      ],
+      transcription_status: "exact",
+      transcription_evidence: "원본 3쪽 왼쪽의 작문 계획과 초고 전체, [A]·[B]를 표시하는 오른쪽으로 열린 " +
+        "세로 묶음괄호 2개, ㉠·㉡이 모두 일치한다. 오른쪽의 7번 발문과 5개 선택지, 물결 모양 위쪽 " +
+        "가장자리·□□신문·두 가로 구분선·회색 제목 띠, 광고 본문의 모든 문장 및 ‘11월 2일’, ‘제품 용량 " +
+        "500 ml. 1,000원’도 원본 픽셀과 일치한다.",
+    } : null;
+    providerMock.complete.mockResolvedValueOnce({ text: JSON.stringify([q7Parent ?? {
       key: row.spec.key,
       decision: rejected ? "reject" : "accept",
       canonical_subject: rejected ? null : "korean_literature",
@@ -9992,6 +10017,7 @@ function withOnlyManualArtifactsForKey<T>(stateDir: string, key: string, run: ()
     "classification-manual-revisions",
     "problem-manual-second-revisions",
     "classification-manual-second-revisions",
+    "classification-manual-policy-revisions",
   ]) {
     const absolute = join(stateDir, directory);
     if (!existsSync(absolute)) continue;
@@ -12272,6 +12298,11 @@ describe("exam corpus verifier", () => {
   )("reconstructs the exact Q30 manual child and rejects tamper, orphan, stale parent, or a fifth authority", () => {
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
+    expect(PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST).toHaveLength(1);
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST[0]))
+      .toBe("ab0b239fa1e63a0b41a9e510259b9b3047246534ee980b9bbc95ff1f253c8a89");
+    expect(manualClassificationPolicyRevisionAllowlistFingerprint())
+      .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST));
     const manualFixture = () => {
       const files = fixture();
       prepareQ30ManualFixture(files);
@@ -13166,6 +13197,7 @@ describe("exam corpus verifier", () => {
       "classification-manual-revisions",
       "problem-manual-second-revisions",
       "classification-manual-second-revisions",
+      "classification-manual-policy-revisions",
     ];
     for (const directory of directories) {
       const files = fixture();
@@ -13192,6 +13224,21 @@ describe("exam corpus verifier", () => {
     expect(verificationContractAuditVersionForTest(residue.stateDirs.math)).toBe(previousContract);
     expect(verifyExamCorpus(residue), "regular temp-only manual directories must remain inert")
       .toMatchObject({ ok: true });
+
+    const current = fixture();
+    upgradeEntryToV3(current, "math", { terminalScope: "authorized-reject", answerV5: true });
+    const danglingPolicyDirectory = join(
+      current.stateDirs.math,
+      "classification-manual-policy-revisions",
+    );
+    symlinkSync(join(current.stateDirs.math, "missing-policy-directory"), danglingPolicyDirectory);
+    try {
+      const report = verifyExamCorpus(current);
+      expect(report.failures.some((failure) => failure.code === "ANSWER_AUDIT_INVALID"
+        && failure.message.includes("confined regular directory"))).toBe(true);
+    } finally {
+      rmSync(danglingPolicyDirectory);
+    }
   });
 
   it.skipIf(
@@ -14349,6 +14396,25 @@ describe("exam corpus verifier", () => {
       expect(verifiedByKey.get("3:7")!.question).toMatchObject({ figure: true, box: [0.42, 0.88] });
       expect(verifiedByKey.get("3:7")!.question.figure_description)
         .toContain("두 개의 가로 구분선 아래 회색 제목 띠");
+      const q7 = rows.find((row) => row.spec.key === "3:7")!;
+      expect((verifiedByKey.get("3:7") as unknown as {
+        classification: ClassificationDecision;
+      }).classification).toMatchObject({
+        decision: "reject",
+        canonical_subject: null,
+        reason_codes: ["EXCLUDED_PRESENTATION_MEDIA_ASSESSED"],
+      });
+      expect(q7.adjudicated.evidence.policyRevision).toMatchObject({
+        parentManualEvidenceHash: "50ca6cdacfa0215bceb57685fafb4a873772739659519df6a864f4e26d063404",
+        policyArtifact: {
+          path: "classification-manual-policy-revisions/" +
+            "v1-0003-0007-81ab9f4c66829d951249d2bb2eb297ed3c33cd65b587d4c242c95749162cdd8b.json",
+          sha256: "71a627aa8433c793bc8ec7d7270ea5097e5fc1abb8187e52236e80b168917ae4",
+          version: PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_VERSION,
+          policyDigest: PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_DIGEST,
+        },
+        policyItemHash: "3fafa64dd3d16182d72a5f7a68f9fca8f9e057a376606064b0bd5cf0b228ceb4",
+      });
       expect(verifiedByKey.get("9:24")!.question.answer).toMatch(/^③ /u);
       expect(verifiedByKey.get("9:26")!.question.question)
         .toContain("26. (다)의 서술상의 특징에 대한 설명으로 가장 적절한 것은?");
@@ -14393,6 +14459,44 @@ describe("exam corpus verifier", () => {
       writeFileSync(cropPath, Buffer.concat([cropBytes, Buffer.from("tampered")]));
       expect(() => verify(q26)).toThrow(/hash mismatch/u);
       writeFileSync(cropPath, cropBytes);
+
+      const q7PolicyPath = join(q7.stateDir, q7.adjudicated.evidence.policyRevision!.policyArtifact.path);
+      const q7PolicyBytes = readFileSync(q7PolicyPath);
+      rmSync(q7PolicyPath);
+      expect(() => verify(q7)).toThrow();
+      writeFileSync(q7PolicyPath, q7PolicyBytes);
+
+      const policyMetadataTamper = structuredClone(q7.adjudicated.evidence);
+      policyMetadataTamper.policyRevision!.policyArtifact.policyDigest = "0".repeat(64);
+      expect(() => verify(q7, policyMetadataTamper)).toThrow(/artifact envelope is stale/u);
+
+      const policyBytesTamper = Buffer.from(q7PolicyBytes);
+      policyBytesTamper[policyBytesTamper.length - 2] ^= 1;
+      writeFileSync(q7PolicyPath, policyBytesTamper);
+      expect(() => verify(q7)).toThrow(/hash mismatch/u);
+      writeFileSync(q7PolicyPath, q7PolicyBytes);
+
+      const solutionCheckpointPath = join(q7.stateDir, "solution-chunks/v3-0000.json");
+      const solutionCheckpointBytes = readFileSync(solutionCheckpointPath);
+      writeFileSync(solutionCheckpointPath, Buffer.concat([
+        solutionCheckpointBytes,
+        Buffer.from("tampered"),
+      ]));
+      expect(() => verify(q7)).toThrow(/hash mismatch/u);
+      writeFileSync(solutionCheckpointPath, solutionCheckpointBytes);
+
+      const q7PolicyDirectory = join(q7.stateDir, "classification-manual-policy-revisions");
+      const orphanPolicyPath = join(q7PolicyDirectory, `v1-0003-0007-${"1".repeat(64)}.json`);
+      writeJson(orphanPolicyPath, {});
+      expect(() => verify(q7)).toThrow(/conflicting generations/u);
+      rmSync(orphanPolicyPath);
+
+      const policyFileTarget = `${q7PolicyPath}.target`;
+      renameSync(q7PolicyPath, policyFileTarget);
+      symlinkSync(policyFileTarget, q7PolicyPath);
+      expect(() => verify(q7)).toThrow(/regular non-symlink file/u);
+      rmSync(q7PolicyPath);
+      renameSync(policyFileTarget, q7PolicyPath);
 
       withOnlyManualArtifactsForKey(rows[4].stateDir, rows[4].spec.key, () => {
         const orphanPath = join(
