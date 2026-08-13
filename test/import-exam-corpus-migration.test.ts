@@ -246,9 +246,10 @@ describe("existing corpus migration v1", () => {
       "ebsi:5875877",
       "ebsi:5578423",
       "ebsi:5772823",
+      "ebsi:5525982",
     ]);
     expect(canonicalEvidenceHash(EXISTING_CORPUS_MIGRATION_ALLOWLIST))
-      .toBe("b36883e5558a211809420335ae95f5509f3b5b73acc4159542c1b0e130055921");
+      .toBe("0c6efd85302d9cf50e390df5281b78e7995314dac351e2005dc4da20947128a2");
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.filter((spec) =>
       !["ebsi:5695028", "ebsi:5853841", "ebsi:5577055", "ebsi:5525984"].includes(spec.entryId)
     ).every((spec) =>
@@ -276,6 +277,17 @@ describe("existing corpus migration v1", () => {
         newKeys: [],
         newQuestions: [],
       });
+    const koreanMigration = EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((spec) => spec.entryId === "ebsi:5525982")!;
+    expect(koreanMigration).toMatchObject({
+      receiptCoreSha256: "7e2a247ab9d1e4bed7db8fdd56486cc25b68441ac1213a8cee69391917dabf48",
+      beforeProjectionHash: "460b040f3fe396e3cf4086d94132c77db66fd1b46a3498fa44afde2b03384a81",
+      afterProjectionHash: "7e981e83d9a81a2cb07f603ecbc6dfdb6ae7df590b492e5e5ab12851e817647a",
+      newKeys: [],
+      newQuestions: [],
+    });
+    expect(koreanMigration.answerChoiceRevisions).toHaveLength(10);
+    expect(canonicalEvidenceHash(koreanMigration.answerChoiceRevisions))
+      .toBe("994bf57c028f32483050547cefa5baba67d2ec831e953318b86f7702fba600e3");
     expect(() => selectExistingMigrationPlan([{
       identity: { entryId: "ebsi:stale", oldReceipt: { sha256: oldReceiptSha } },
     }], "ebsi:5695028", oldReceiptSha)).toThrow("충돌");
@@ -309,6 +321,15 @@ describe("existing corpus migration v1", () => {
       stableAfterProjectionHash: "26dc5162061716a98b85a3d22468a0c92c3d897d95eaa11b39c26cc2878acb1e",
       accepted: 12,
     },
+    {
+      entryId: "ebsi:5525982",
+      entryToken: "bb876a67170089dfb2022f47",
+      oldReceiptSha256: "7e2a247ab9d1e4bed7db8fdd56486cc25b68441ac1213a8cee69391917dabf48",
+      beforeProjectionHash: "460b040f3fe396e3cf4086d94132c77db66fd1b46a3498fa44afde2b03384a81",
+      afterProjectionHash: "7e981e83d9a81a2cb07f603ecbc6dfdb6ae7df590b492e5e5ab12851e817647a",
+      stableAfterProjectionHash: "151811cfa19fadbcc99381123df01916c0c6008653b0173efef189f7e32d0317",
+      accepted: 30,
+    },
   ] satisfies SameKeyMigrationCase[])(
     "migrates $entryId from persisted authority without AI",
     async (migration) => {
@@ -334,7 +355,8 @@ describe("existing corpus migration v1", () => {
       } finally {
         rmSync(root, { recursive: true, force: true });
       }
-    }
+    },
+    120_000
   );
 
   it("migrates 5656592 from the exact current audit and replays without AI", async () => {
@@ -957,6 +979,92 @@ describe("existing corpus migration v1", () => {
       officialAnswer: "④",
     })).toThrow("보기 내용");
   });
+
+  it("requires exact selected-choice revision pins and rejects unused authority", () => {
+    const spec = EXISTING_CORPUS_MIGRATION_ALLOWLIST.find(({ entryId }) => entryId === "ebsi:5525982")!;
+    const revision = spec.answerChoiceRevisions!.find(({ key }) => key === "12:31")!;
+    const before = {
+      id: 1, src_page: 12, printed_number: "31", qtype: "mcq", answer: "④",
+      choices: JSON.stringify([
+        "① dummy 1", "② dummy 2", "③ dummy 3",
+        "④ 「느낌, 극락같은」의 ‘돌부처’를 만들며 가는 ‘길’은 ‘하늘’과 대비되는 곳으로 서연의 예술관이 조승인에게 전수되는 공간이군.",
+        "⑤ dummy 5",
+      ]),
+    };
+    const current = {
+      qtype: "mcq", number: "31", printedNumber: "31", officialAnswer: "④",
+      choices: [
+        "① dummy 1", "② dummy 2", "③ dummy 3",
+        "④ (나)의 ‘돌부처’를 만들며 가는 ‘길’은 ‘하늘’과 대비되는 곳으로 서연의 예술관이 조숭인에게 전수되는 공간이군.",
+        "⑤ dummy 5",
+      ],
+    } as ImportedQuestion;
+    expect(assertMigrationAnswerEquivalent(before, current, revision)).toBe(true);
+    for (const tampered of [
+      { ...revision, key: "12:32" },
+      { ...revision, choiceIndex: 3 },
+      { ...revision, beforeSelectedChoiceHash: "0".repeat(64) },
+      { ...revision, afterSelectedChoiceHash: "0".repeat(64) },
+    ]) expect(() => assertMigrationAnswerEquivalent(before, current, tampered)).toThrow("보기 내용");
+    expect(() => assertMigrationAnswerEquivalent(before, current)).toThrow("보기 내용");
+    expect(() => assertMigrationAnswerEquivalent(before, {
+      ...current, officialAnswer: "③",
+    })).toThrow("정답 의미");
+
+    const exactBefore = {
+      ...before, src_page: 16, printed_number: "44", answer: "⑤",
+      choices: JSON.stringify(["① a", "② b", "③ c", "④ d", "⑤ ㉤: 계절감을 드러내는 표현"]),
+    };
+    const exactCurrent = {
+      ...current, page: 16, number: "44", printedNumber: "44", officialAnswer: "⑤",
+      choices: ["① a", "② b", "③ c", "④ d", "⑤ ㉤ : 계절감을 드러내는 표현"],
+    };
+    expect(() => assertMigrationAnswerEquivalent(exactBefore, exactCurrent, {
+      ...revision, key: "16:44",
+    })).toThrow("revision pin이 불필요합니다");
+  });
+
+  it("fails 5525982 migration before sidecars when approved DB ownership changes", async () => {
+    const migration = {
+      entryId: "ebsi:5525982",
+      entryToken: "bb876a67170089dfb2022f47",
+      oldReceiptSha256: "7e2a247ab9d1e4bed7db8fdd56486cc25b68441ac1213a8cee69391917dabf48",
+      beforeProjectionHash: "460b040f3fe396e3cf4086d94132c77db66fd1b46a3498fa44afde2b03384a81",
+      afterProjectionHash: "7e981e83d9a81a2cb07f603ecbc6dfdb6ae7df590b492e5e5ab12851e817647a",
+      stableAfterProjectionHash: "151811cfa19fadbcc99381123df01916c0c6008653b0173efef189f7e32d0317",
+      accepted: 30,
+    } satisfies SameKeyMigrationCase;
+    const root = mkdtempSync(join(tmpdir(), "studywork-5525982-migration-prewrite-"));
+    try {
+      const stateDir = await prepareSameKeySnapshot(root, migration);
+      const receiptPath = join(stateDir, "receipt.json");
+      const db = new Database(join(root, "studywork.db"));
+      try {
+        db.prepare("UPDATE questions SET question = 'tampered' WHERE id = 3003").run();
+      } finally {
+        db.close();
+      }
+      const before = {
+        db: sha256(join(root, "studywork.db")),
+        receipt: sha256(receiptPath),
+        state: stateSnapshot(stateDir),
+      };
+      await expect(runSameKeyMigration(root, migration)).rejects.toMatchObject({
+        stderr: expect.stringContaining("승인 DB projection이 다릅니다"),
+      });
+      expect({
+        db: sha256(join(root, "studywork.db")),
+        receipt: sha256(receiptPath),
+        state: stateSnapshot(stateDir),
+      }).toEqual(before);
+      for (const path of ["migration-plans", "receipt-history", "migration-commits", "answer-attestation"]) {
+        expect(existsSync(join(stateDir, path))).toBe(false);
+      }
+      expect(existsSync(join(root, "backups"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 120_000);
 
   it("migrates 5695028 once and resumes OLD/NEW filesystem phases", async () => {
     const root = mkdtempSync(join(tmpdir(), "studywork-existing-migration-"));

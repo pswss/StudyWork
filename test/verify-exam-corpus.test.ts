@@ -9966,9 +9966,16 @@ function pinnedManualRecoveryParent(
   return { input, failed: { question, classification }, parent };
 }
 
+function stripManualAuthorityFixtureAnswerBoundary(stateDir: string): void {
+  for (const directory of ["answer-audit", "answer-attestation"]) {
+    rmSync(join(stateDir, directory), { recursive: true, force: true });
+  }
+}
+
 async function q27ManualAuthorityFixture() {
   const stateDir = mkdtempSync(join(tmpdir(), "verify-q27-manual-authority-"));
   cpSync(Q27_MANUAL_STATE, stateDir, { recursive: true });
+  stripManualAuthorityFixtureAnswerBoundary(stateDir);
   for (const directory of [
     "problem-manual-evidence",
     "problem-manual-adjudications",
@@ -10012,6 +10019,7 @@ async function q27ManualAuthorityFixture() {
 async function q43To45ManualAuthorityFixture() {
   const stateDir = mkdtempSync(join(tmpdir(), "verify-q43-45-manual-authority-"));
   cpSync(Q27_MANUAL_STATE, stateDir, { recursive: true });
+  stripManualAuthorityFixtureAnswerBoundary(stateDir);
   for (const directory of [
     "problem-manual-evidence",
     "problem-manual-adjudications",
@@ -10060,6 +10068,7 @@ async function q43To45ManualAuthorityFixture() {
 async function q8Q16ManualAuthorityFixture() {
   const stateDir = mkdtempSync(join(tmpdir(), "verify-q8-q16-manual-authority-"));
   cpSync(Q27_MANUAL_STATE, stateDir, { recursive: true });
+  stripManualAuthorityFixtureAnswerBoundary(stateDir);
   for (const directory of [
     "problem-manual-evidence",
     "problem-manual-adjudications",
@@ -10113,6 +10122,7 @@ async function q8Q16ManualAuthorityFixture() {
 async function q17Q20ManualAuthorityFixture() {
   const stateDir = mkdtempSync(join(tmpdir(), "verify-q17-q20-manual-authority-"));
   cpSync(Q27_MANUAL_STATE, stateDir, { recursive: true });
+  stripManualAuthorityFixtureAnswerBoundary(stateDir);
   for (const directory of [
     "problem-manual-evidence",
     "problem-manual-adjudications",
@@ -10166,6 +10176,7 @@ async function q17Q20ManualAuthorityFixture() {
 async function q23Q29ManualAuthorityFixture() {
   const stateDir = mkdtempSync(join(tmpdir(), "verify-q23-q29-manual-authority-"));
   cpSync(Q27_MANUAL_STATE, stateDir, { recursive: true });
+  stripManualAuthorityFixtureAnswerBoundary(stateDir);
   for (const directory of [
     "problem-manual-evidence",
     "problem-manual-adjudications",
@@ -10216,6 +10227,7 @@ async function q23Q29ManualAuthorityFixture() {
 async function q30Q42ManualAuthorityFixture() {
   const stateDir = mkdtempSync(join(tmpdir(), "verify-q30-q42-manual-authority-"));
   cpSync(Q27_MANUAL_STATE, stateDir, { recursive: true });
+  stripManualAuthorityFixtureAnswerBoundary(stateDir);
   for (const directory of [
     "problem-manual-evidence",
     "problem-manual-adjudications",
@@ -10292,6 +10304,7 @@ async function q30Q42ManualAuthorityFixture() {
 async function q6Q26ManualAuthorityFixture() {
   const stateDir = mkdtempSync(join(tmpdir(), "verify-q6-q26-manual-authority-"));
   cpSync(Q27_MANUAL_STATE, stateDir, { recursive: true });
+  stripManualAuthorityFixtureAnswerBoundary(stateDir);
   for (const directory of [
     "problem-manual-evidence",
     "problem-manual-adjudications",
@@ -10951,7 +10964,7 @@ describe("exam corpus verifier", () => {
 
   it("keeps the exact existing-corpus migration allowlist aligned with the importer", () => {
     expect(existingCorpusMigrationAllowlistFingerprint())
-      .toBe("b36883e5558a211809420335ae95f5509f3b5b73acc4159542c1b0e130055921");
+      .toBe("0c6efd85302d9cf50e390df5281b78e7995314dac351e2005dc4da20947128a2");
     expect(existingCorpusMigrationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(EXISTING_CORPUS_MIGRATION_ALLOWLIST));
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.map((spec) => spec.entryId)).toEqual([
@@ -10975,6 +10988,7 @@ describe("exam corpus verifier", () => {
       "ebsi:5875877",
       "ebsi:5578423",
       "ebsi:5772823",
+      "ebsi:5525982",
     ]);
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.filter((spec) =>
       !["ebsi:5695028", "ebsi:5853841", "ebsi:5577055", "ebsi:5525984"].includes(spec.entryId)
@@ -11028,6 +11042,18 @@ describe("exam corpus verifier", () => {
           expect.objectContaining({ key: "7:18", difficulty: "중", answer: "④" }),
         ],
       });
+    const koreanMigration = EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((spec) => spec.entryId === "ebsi:5525982")!;
+    expect(koreanMigration).toMatchObject({
+      entryToken: "bb876a67170089dfb2022f47",
+      receiptCoreSha256: "7e2a247ab9d1e4bed7db8fdd56486cc25b68441ac1213a8cee69391917dabf48",
+      beforeProjectionHash: "460b040f3fe396e3cf4086d94132c77db66fd1b46a3498fa44afde2b03384a81",
+      afterProjectionHash: "7e981e83d9a81a2cb07f603ecbc6dfdb6ae7df590b492e5e5ab12851e817647a",
+      newKeys: [],
+      newQuestions: [],
+    });
+    expect(koreanMigration.answerChoiceRevisions).toHaveLength(10);
+    expect(canonicalEvidenceHash(koreanMigration.answerChoiceRevisions))
+      .toBe("994bf57c028f32483050547cefa5baba67d2ec831e953318b86f7702fba600e3");
   });
 
   it.skipIf(
@@ -11822,6 +11848,135 @@ describe("exam corpus verifier", () => {
       rmSync(files.root, { recursive: true, force: true });
     }
   }, 120_000);
+
+  it("verifies the completed 5525982 migration authority graph and exact selected-choice revisions", async () => {
+    const entryId = "ebsi:5525982";
+    const spec = EXISTING_CORPUS_MIGRATION_ALLOWLIST.find((candidate) => candidate.entryId === entryId)!;
+    const answerChoiceRevisions = spec.answerChoiceRevisions!;
+    const files = await migratedVerifierFixture(entryId);
+    const verify = () => verifyExamCorpus({
+      manifestPath: files.manifestPath,
+      dbPath: files.dbPath,
+      dataDir: files.dataDir,
+    });
+    const questionIds = Array.from({ length: 30 }, (_, index) => 3003 + index);
+    const itemIds = Array.from({ length: 60 }, (_, index) => 6536 + index);
+    try {
+      expect(files.plan.identity).toMatchObject({
+        receiptCore: { sha256: spec.receiptCoreSha256 },
+        beforeProjectionHash: spec.beforeProjectionHash,
+        afterProjectionHash: spec.afterProjectionHash,
+        stableAfterProjectionHash: "151811cfa19fadbcc99381123df01916c0c6008653b0173efef189f7e32d0317",
+        beforeSequences: { questions: 3651, bookItems: 7833 },
+        afterSequences: { questions: 3651, bookItems: 7833 },
+        answerAudit: {
+          path: spec.auditPath,
+          sha256: spec.auditSha256,
+          effectiveCorpusHash: spec.effectiveCorpusHash,
+          effectiveSolutionCorpusHash: spec.effectiveSolutionCorpusHash,
+        },
+        ownership: {
+          bookIds: [80, 81],
+          fileIds: [108, 109, 110, 111],
+          beforeQuestionIds: questionIds,
+          afterQuestionIds: questionIds,
+          beforeBookItemIds: itemIds,
+          afterBookItemIds: itemIds,
+        },
+      });
+      expect(files.plan.identity.beforeProjection.guards).toEqual({
+        attempts: 0,
+        materials: 0,
+        bookExtractionChunks: 0,
+        materialExtractionChunks: 0,
+      });
+      expect(files.plan.identity.operations.questionUpdates).toHaveLength(30);
+      expect(files.plan.identity.operations.itemUpdates).toHaveLength(60);
+      expect(files.plan.identity.operations.questionInserts).toHaveLength(0);
+      expect(files.plan.identity.operations.itemInserts).toHaveLength(0);
+
+      for (const revision of answerChoiceRevisions) {
+        const [page, number] = revision.key.split(":").map(Number);
+        const operation = files.plan.identity.operations.questionUpdates.find(
+          ({ before }: { before: Record<string, unknown> }) =>
+            before.src_page === page && Number(before.printed_number) === number,
+        );
+        expect(operation, revision.key).toBeDefined();
+        const beforeChoices = JSON.parse(operation.before.choices) as string[];
+        const afterChoices = JSON.parse(operation.after.choices) as string[];
+        expect(hash(beforeChoices[revision.choiceIndex - 1]), `${revision.key} OLD selected choice`)
+          .toBe(revision.beforeSelectedChoiceHash);
+        expect(hash(afterChoices[revision.choiceIndex - 1]), `${revision.key} NEW selected choice`)
+          .toBe(revision.afterSelectedChoiceHash);
+      }
+      expect(answerChoiceRevisions.map(({ key }) => key)).not.toContain("16:44");
+
+      const artifactNames = (directory: string, pattern: RegExp) =>
+        readdirSync(join(files.stateDir, directory)).filter((name) => pattern.test(name));
+      expect(artifactNames("receipt-history", /^v1-[a-f0-9]{64}\.json$/u)).toHaveLength(1);
+      expect(artifactNames("migration-plans", /^v1-[a-f0-9]{64}\.json$/u)).toHaveLength(1);
+      expect(artifactNames("migration-commits", /^v1-[a-f0-9]{64}\.json$/u)).toHaveLength(1);
+      expect(artifactNames("answer-attestation", /^v5-[a-f0-9]{64}\.json$/u)).toHaveLength(1);
+      expect(hash(readFileSync(join(files.stateDir, spec.auditPath)))).toBe(spec.auditSha256);
+      expect(existsSync(join(files.dataDir, files.plan.backup.path))).toBe(true);
+
+      const initial = verify();
+      expect(initial, JSON.stringify(initial.failures, null, 2))
+        .toMatchObject({ ok: true, failureCount: 0, questions: { expected: 30, actual: 30 } });
+
+      const db = new Database(files.dbPath, { readonly: true, fileMustExist: true });
+      try {
+        expect((db.prepare("SELECT id FROM questions WHERE book_id IN (80, 81) ORDER BY id")
+          .all() as Array<{ id: number }>).map(({ id }) => id)).toEqual(questionIds);
+        expect((db.prepare("SELECT id FROM book_items WHERE book_id IN (80, 81) ORDER BY id")
+          .all() as Array<{ id: number }>).map(({ id }) => id)).toEqual(itemIds);
+        expect(db.prepare("SELECT name, seq FROM sqlite_sequence WHERE name IN ('questions', 'book_items') ORDER BY name")
+          .all()).toEqual([
+          { name: "book_items", seq: 7833 },
+          { name: "questions", seq: 3651 },
+        ]);
+      } finally {
+        db.close();
+      }
+
+      const planBytes = readFileSync(files.planPath);
+      const tamperedPlan = structuredClone(files.plan);
+      const selectedChoiceUpdate = tamperedPlan.identity.operations.questionUpdates.find(
+        ({ before }: { before: Record<string, unknown> }) =>
+          before.src_page === 7 && Number(before.printed_number) === 17,
+      );
+      const tamperedChoices = JSON.parse(selectedChoiceUpdate.after.choices) as string[];
+      tamperedChoices[3] = `${tamperedChoices[3]} tampered`;
+      selectedChoiceUpdate.after.choices = JSON.stringify(tamperedChoices);
+      writeEvidence(files.planPath, tamperedPlan);
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "MIGRATION_INVALID" }),
+      ]));
+      writeFileSync(files.planPath, planBytes);
+
+      const orphanCommit = join(files.stateDir, "migration-commits", `v1-${"d".repeat(64)}.json`);
+      writeEvidence(orphanCommit, { version: 1, orphan: true });
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "MIGRATION_INVALID" }),
+      ]));
+      rmSync(orphanCommit);
+
+      const mutableDb = new Database(files.dbPath);
+      try {
+        mutableDb.prepare("UPDATE questions SET question = 'tampered current migration row' WHERE id = 3003").run();
+      } finally {
+        mutableDb.close();
+      }
+      expect(verify().failures).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          code: "MIGRATION_INVALID",
+          message: expect.stringContaining("stable projection"),
+        }),
+      ]));
+    } finally {
+      rmSync(files.root, { recursive: true, force: true });
+    }
+  }, 180_000);
 
   it("verifies the completed 5656592 hydrated-recovery migration and stable replay", async () => {
     const entryId = "ebsi:5656592";

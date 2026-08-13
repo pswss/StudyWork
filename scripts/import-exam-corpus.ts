@@ -164,6 +164,12 @@ type ExistingCorpusMigrationSpec = {
     answer: string;
     solutionPage: number;
   }>;
+  answerChoiceRevisions?: Array<{
+    key: string;
+    choiceIndex: number;
+    beforeSelectedChoiceHash: string;
+    afterSelectedChoiceHash: string;
+  }>;
 };
 
 export const EXISTING_CORPUS_MIGRATION_ALLOWLIST: readonly ExistingCorpusMigrationSpec[] = [{
@@ -586,6 +592,47 @@ export const EXISTING_CORPUS_MIGRATION_ALLOWLIST: readonly ExistingCorpusMigrati
   bookItemIds: [7100, 7101, 7102, 7103, 7104, 7105, 7106, 7107, 7108, 7109, 7110, 7111, 7112, 7113, 7114, 7115, 7116, 7117, 7118, 7119, 7120, 7121, 7122, 7123, 7124, 7125, 7126, 7127, 7128, 7129, 7130, 7131, 7132, 7133],
   newKeys: [],
   newQuestions: [],
+}, {
+  entryId: "ebsi:5525982",
+  entryToken: "bb876a67170089dfb2022f47",
+  oldReceiptSha256: "7e2a247ab9d1e4bed7db8fdd56486cc25b68441ac1213a8cee69391917dabf48",
+  receiptCoreSha256: "7e2a247ab9d1e4bed7db8fdd56486cc25b68441ac1213a8cee69391917dabf48",
+  beforeProjectionHash: "460b040f3fe396e3cf4086d94132c77db66fd1b46a3498fa44afde2b03384a81",
+  afterProjectionHash: "7e981e83d9a81a2cb07f603ecbc6dfdb6ae7df590b492e5e5ab12851e817647a",
+  auditPath: "answer-audit/v5-16c9c01acc8bb5aee6ed066438a99cd5e297ed460070459aa2bb42fffcc76d9f.json",
+  auditSha256: "ce9d585c5b4102c0c13398a25966389782523ec5340c2f9a39d72cad23820869",
+  effectiveCorpusHash: "5f5fc141fb05bcf6ca205bcb84b82f86bdabbaf2b365db2b071b20f53a75af5d",
+  effectiveSolutionCorpusHash: "9383ce9d6d1b708dc0ef4fd68e7184f128e57acb78cc44da1f4386ec85e0bf03",
+  problemHash: "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",
+  solutionHash: "41765adaef8826181042cf68889033ef77327169a2d8c2956e8a7d9f842e090f",
+  bookIds: [80, 81],
+  fileIds: [108, 109, 110, 111],
+  questionIds: Array.from({ length: 30 }, (_, index) => 3003 + index),
+  bookItemIds: Array.from({ length: 60 }, (_, index) => 6536 + index),
+  newKeys: [],
+  newQuestions: [],
+  answerChoiceRevisions: [
+    { key: "7:17", choiceIndex: 4, beforeSelectedChoiceHash: "bb50bd692cc145bddddf17a8be4fad1fd00b6288dee4ca8875142cb5b078ebf2",
+      afterSelectedChoiceHash: "36405905e9400e8a0c7be216a39cb575e50b392157de55c11f3793cba6fecc88" },
+    { key: "9:22", choiceIndex: 4, beforeSelectedChoiceHash: "e4220e9b770ee5664c5de2778c4209f9198d969e41e8f90b8f983d3faebf8cc2",
+      afterSelectedChoiceHash: "aae05afb00242edf69f46474bb0d420a23012320b0d401620dbc41300bc46308" },
+    { key: "9:23", choiceIndex: 5, beforeSelectedChoiceHash: "6f6f6bd19f2ce34173746d3062d59ae366ce103742f859818fa90b7da96dc824",
+      afterSelectedChoiceHash: "85f98b76bba22e0f5a190847590b51f65265d1f9f0b1de47b6f1ac90815cbba4" },
+    { key: "9:24", choiceIndex: 3, beforeSelectedChoiceHash: "b0c42e7e866c86e27b5cd25ae1b32d3518e6191873bf2f7db50a3821e25a1a98",
+      afterSelectedChoiceHash: "c0eef2d090fb86a8cc80e770a3f9bf9aed6b5426f0d0de56e222dfff1fe938df" },
+    { key: "12:31", choiceIndex: 4, beforeSelectedChoiceHash: "5c54a854eea9a4bb16df3414c02ca035799f57814d17c2d648e0d3a61b60edb3",
+      afterSelectedChoiceHash: "1f874275b0db416f40e6659673c8f8a17a8ed46017ffc92fd19c732cb7b0562c" },
+    { key: "12:32", choiceIndex: 3, beforeSelectedChoiceHash: "b3beda7053886dd9188cada5b943e68ce93c03ecd4ea0a5ef93d8b389e57c2fc",
+      afterSelectedChoiceHash: "e0c57d7c63d6cc7856a786cfb048beee3476db9f5f695a071554861127f52fdb" },
+    { key: "15:39", choiceIndex: 5, beforeSelectedChoiceHash: "1698d1dd9c05eb93b3769405e9cd2089c8e0b629b29ca6da7591f51081869779",
+      afterSelectedChoiceHash: "7f2cb738dde5c400956bd5ea216083121cb4d29301943949a0ab6e436a9a96c8" },
+    { key: "15:42", choiceIndex: 1, beforeSelectedChoiceHash: "3ab23534c50cd3129af891cbf1f6027be928092878e2215cca977541c692ad8a",
+      afterSelectedChoiceHash: "e228b9ccc2a196c776cc014ca867cfba4df2fa2e0401a412e002f281903f9704" },
+    { key: "16:43", choiceIndex: 3, beforeSelectedChoiceHash: "fa08f2d7e855b205c73bd06805f212222b7dd19c05a190b75a425c82e3a4b1c9",
+      afterSelectedChoiceHash: "5210af0db29f4157ce4b251b3672e53b065b028768d5b953ecf012c4f58df59b" },
+    { key: "16:45", choiceIndex: 1, beforeSelectedChoiceHash: "cd380195f1ade4d45c047cec54f2e763e2bdf8850473c23c96687a9c4d47758a",
+      afterSelectedChoiceHash: "02a329bdb522c5de3c88871123fcd5ce2b63eb282402cacddb0341c5c5d658aa" },
+  ],
 }] as const;
 
 const EXISTING_CORPUS_MIGRATION_HISTORICAL_RECOVERY = {
@@ -23600,7 +23647,11 @@ function parsedMigrationChoices(value: unknown, label: string): string[] | null 
   return parsed;
 }
 
-export function assertMigrationAnswerEquivalent(before: MigrationRow, after: ImportedQuestion): void {
+export function assertMigrationAnswerEquivalent(
+  before: MigrationRow,
+  after: ImportedQuestion,
+  choiceRevision?: NonNullable<ExistingCorpusMigrationSpec["answerChoiceRevisions"]>[number]
+): boolean {
   if (before.qtype !== after.qtype || typeof before.answer !== "string") {
     throw new Error(`${migrationQuestionKey(before)} migration qtype/answer가 바뀌었습니다`);
   }
@@ -23620,15 +23671,24 @@ export function assertMigrationAnswerEquivalent(before: MigrationRow, after: Imp
       oldResolution.choiceIndex === null || newResolution.choiceIndex === null ||
       oldResolution.choiceIndex !== newResolution.choiceIndex || oldMatches.length !== 1 || newMatches.length !== 1
     ) throw new Error(`${migrationQuestionKey(before)} 객관식 정답 의미가 바뀌었습니다`);
+    const beforeChoice = beforeChoices[oldResolution.choiceIndex];
+    const afterChoice = after.choices[newResolution.choiceIndex];
+    if (normalizedChoiceContent(beforeChoice) === normalizedChoiceContent(afterChoice)) {
+      if (choiceRevision) throw new Error(`${migrationQuestionKey(before)} migration 정답 보기 revision pin이 불필요합니다`);
+      return false;
+    }
     if (
-      normalizedChoiceContent(beforeChoices[oldResolution.choiceIndex]) !==
-      normalizedChoiceContent(after.choices[newResolution.choiceIndex])
+      !choiceRevision || choiceRevision.key !== migrationQuestionKey(before) ||
+      choiceRevision.choiceIndex !== oldResolution.choiceIndex + 1 ||
+      sha256Text(beforeChoice) !== choiceRevision.beforeSelectedChoiceHash ||
+      sha256Text(afterChoice) !== choiceRevision.afterSelectedChoiceHash
     ) throw new Error(`${migrationQuestionKey(before)} 객관식 정답 보기 내용이 바뀌었습니다`);
-    return;
+    return true;
   }
   if (normalizedAnswerText(before.answer) !== normalizedAnswerText(after.officialAnswer)) {
     throw new Error(`${migrationQuestionKey(before)} 주관식/OX 정답 의미가 바뀌었습니다`);
   }
+  return false;
 }
 
 type MigrationBookBinding = {
@@ -23892,12 +23952,19 @@ function buildMigrationOperations(
   const operations: MigrationOperations = {
     questionUpdates: [], questionInserts: [], itemUpdates: [], itemInserts: [],
   };
+  const choiceRevisions = new Map((spec?.answerChoiceRevisions ?? []).map((revision) => [revision.key, revision]));
+  if (choiceRevisions.size !== (spec?.answerChoiceRevisions?.length ?? 0)) {
+    throw new Error(`${entry.id} migration 정답 보기 revision pin이 중복입니다`);
+  }
+  const consumedChoiceRevisions = new Set<string>();
   const afterQuestions: MigrationRow[] = [];
   const afterItems: MigrationRow[] = [];
   for (const [key, beforeQuestion] of [...beforeByKey].sort(([left], [right]) => compareCorpusQuestionKeys(left, right))) {
     const question = currentByKey.get(key)!;
     const binding = bindings.get(question.targetSubject)!;
-    assertMigrationAnswerEquivalent(beforeQuestion, question);
+    if (assertMigrationAnswerEquivalent(beforeQuestion, question, choiceRevisions.get(key))) {
+      consumedChoiceRevisions.add(key);
+    }
     const items = migrationItemsForQuestion(before, beforeQuestion, binding);
     const afterQuestion = { ...beforeQuestion, ...questionMigrationFields(question, binding) };
     const afterProblem = { ...items.problem, ...itemMigrationFields(question, binding, "문제") };
@@ -23946,6 +24013,10 @@ function buildMigrationOperations(
       ) throw new Error(`${entry.id} migration 승인 신규 문항이 다릅니다`);
     }
   }
+  if (
+    consumedChoiceRevisions.size !== choiceRevisions.size ||
+    [...choiceRevisions.keys()].some((key) => !consumedChoiceRevisions.has(key))
+  ) throw new Error(`${entry.id} migration 정답 보기 revision pin coverage가 다릅니다`);
   const after: MigrationProjection = {
     books: before.books,
     files: before.files,
