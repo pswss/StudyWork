@@ -61,6 +61,7 @@ import {
   revisionScopeAdjudicationAllowlistFingerprint,
   runCli,
   solutionFalseNegativeRepairAllowlistFingerprint,
+  solutionSourceRevisionAllowlistFingerprint,
   solutionFidelityAdjudicationAllowlistFingerprint,
   solutionPromptUpgradeAllowlistFingerprint,
   scopeBoxRevisionAllowlistFingerprint,
@@ -70,6 +71,7 @@ import {
   verifyProblemManualAdjudicationForTest,
   verifyPersistedProblemRepairOverlapForTest,
   verifyCurrentSolutionFalseNegativeRepairForTest,
+  verifyCurrentSolutionFidelityForTest,
   verifySolutionFalseNegativeRepairAuthorityForTest,
   verifyPersistedSolutionFalseNegativeStateForTest,
   verificationContractAuditVersionForTest,
@@ -122,6 +124,7 @@ import {
   PROBLEM_SCOPE_BOX_REVISION_VERSION,
   repairAndAuditOfficialAnswers,
   SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST,
+  SOLUTION_SOURCE_REVISION_ALLOWLIST,
   SOLUTION_PROMPT_UPGRADE_ALLOWLIST,
   SOLUTION_PROMPT_UPGRADE_FIDELITY_VERSION,
   SOLUTION_PROMPT_UPGRADE_VERSION,
@@ -706,6 +709,7 @@ function q5525982CorrectedSolution(solutions: SolutionItem[], key: string): Solu
     expect(base.explanation.split(replacement.from)).toHaveLength(replacement.count + 1);
     base.explanation = base.explanation.split(replacement.from).join(replacement.to);
   }
+  if ("appendExplanation" in spec) base.explanation += `\n\n${spec.appendExplanation}`;
   expect(canonicalEvidenceHash(base)).toBe(spec.expectedSolutionItemHash);
   return base;
 }
@@ -748,8 +752,12 @@ function q5525982FixtureInputs(stateDir: string) {
   return { entry, problem, solution, classified, solutions };
 }
 
-function q5525982VerifierAuthorityInput(stateDir: string) {
+function q5525982VerifierAuthorityInput(
+  stateDir: string,
+  effectiveClassified?: ClassifiedQuestion[],
+) {
   const input = q5525982FixtureInputs(stateDir);
+  if (effectiveClassified) input.classified = effectiveClassified;
   const terminalName = readdirSync(join(stateDir, "problem-terminal-fidelity"))
     .find((name) => name.includes(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].effectiveProblemCorpusHash))!;
   const terminal = JSON.parse(readFileSync(join(stateDir, "problem-terminal-fidelity", terminalName), "utf8"));
@@ -757,7 +765,9 @@ function q5525982VerifierAuthorityInput(stateDir: string) {
     `${record.question.page}:${Number(record.question.number)}`,
     record,
   ]));
-  for (const [index, value] of (terminal.inputs as Array<Record<string, unknown>>).entries()) {
+  for (const [index, value] of (effectiveClassified
+    ? []
+    : terminal.inputs as Array<Record<string, unknown>>).entries()) {
     const key = String(value.key);
     const current = byKey.get(key);
     if (!current) throw new Error(`missing terminal effective row: ${key}`);
@@ -898,7 +908,22 @@ function q5525982BaseAuthorityInput(stateDir: string) {
 
 function q5525982CurrentRepairAuthorityInput(stateDir: string, key: string) {
   const base = q5525982BaseAuthorityInput(stateDir);
-  const item = base.items.find((candidate) => (candidate.input as { key: string }).key === key)!;
+  let item = base.items.find((candidate) => (candidate.input as { key: string }).key === key);
+  if (!item && key === SOLUTION_SOURCE_REVISION_ALLOWLIST[0].key) {
+    const persisted = q5525982VerifierAuthorityInput(stateDir);
+    const checkpointSpec = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].checkpoints
+      .find((candidate) => candidate.decisions.some((decision) => decision.key === key))!;
+    const checkpoint = JSON.parse(readFileSync(join(stateDir, checkpointSpec.path), "utf8"));
+    const input = checkpoint.inputs.find((candidate: Record<string, unknown>) => candidate.key === key)!;
+    item = {
+      input,
+      solution: persisted.baseSolutions.get(String(input.printedNumber))!,
+      decision: checkpoint.items.find((candidate: Record<string, unknown>) => candidate.key === key)!,
+      artifact: { path: checkpointSpec.path, sha256: hash(readFileSync(join(stateDir, checkpointSpec.path))) },
+      sliceTo: checkpointSpec.to,
+    };
+  }
+  if (!item) throw new Error(`missing current solution repair authority input: ${key}`);
   const repairName = readdirSync(join(stateDir, "solution-repairs"))
     .find((name) => name.includes(`-${String(Number(key.split(":")[1])).padStart(4, "0")}-`))!;
   const repairPath = `solution-repairs/${repairName}`;
@@ -908,11 +933,37 @@ function q5525982CurrentRepairAuthorityInput(stateDir: string, key: string) {
     return checkpoint.repairArtifact.path === repairPath;
   })!;
   const fidelityPath = `solution-fidelity-repairs/${fidelityName}`;
+  const sourceRevisionName = key === "15:40"
+    ? readdirSync(join(stateDir, "solution-source-revisions"))[0]
+    : undefined;
+  const sourceFidelityName = key === "15:40"
+    ? readdirSync(join(stateDir, "solution-fidelity-source-revisions"))[0]
+    : undefined;
+  const sourceRevision = sourceRevisionName && sourceFidelityName ? {
+    solutionArtifact: {
+      path: `solution-source-revisions/${sourceRevisionName}`,
+      sha256: hash(readFileSync(join(stateDir, "solution-source-revisions", sourceRevisionName))),
+      authorityKind: "source-literal-revision",
+    },
+    fidelityArtifact: {
+      path: `solution-fidelity-source-revisions/${sourceFidelityName}`,
+      sha256: hash(readFileSync(join(stateDir, "solution-fidelity-source-revisions", sourceFidelityName))),
+      authorityKind: "source-literal-revision-fidelity",
+    },
+    correctionSpecHash: canonicalEvidenceHash(SOLUTION_SOURCE_REVISION_ALLOWLIST[0]),
+    parentRepairSolutionItemHash: SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentRepairSolutionItemHash,
+    effectiveSolutionItemHash: SOLUTION_SOURCE_REVISION_ALLOWLIST[0].expectedSolutionItemHash,
+    parentRepairExplanationHash: SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentRepairExplanationHash,
+    effectiveExplanationHash: SOLUTION_SOURCE_REVISION_ALLOWLIST[0].expectedExplanationHash,
+  } : undefined;
+  const sourceItem = sourceRevisionName
+    ? JSON.parse(readFileSync(join(stateDir, "solution-source-revisions", sourceRevisionName), "utf8")).item
+    : undefined;
   const repair = {
     key,
     printedNumber: repairCheckpoint.printedNumber,
     basePage: repairCheckpoint.basePage,
-    effectivePage: repairCheckpoint.effectivePage,
+    effectivePage: sourceItem?.page ?? repairCheckpoint.effectivePage,
     contextFrom: repairCheckpoint.contextFrom,
     contextTo: repairCheckpoint.contextTo,
     baseOwnedFrom: repairCheckpoint.baseOwnedFrom,
@@ -921,18 +972,21 @@ function q5525982CurrentRepairAuthorityInput(stateDir: string, key: string) {
     baseFidelityCheckpoint: repairCheckpoint.baseFidelityCheckpoint,
     repairArtifact: { path: repairPath, sha256: hash(readFileSync(join(stateDir, repairPath))) },
     fidelityArtifact: {
-      path: fidelityPath,
-      sha256: hash(readFileSync(join(stateDir, fidelityPath))),
-      ...(fidelityName.startsWith("v2-")
+      path: sourceRevision?.fidelityArtifact.path ?? fidelityPath,
+      sha256: sourceRevision?.fidelityArtifact.sha256 ?? hash(readFileSync(join(stateDir, fidelityPath))),
+      ...(sourceRevision
+        ? { authorityKind: "source-literal-revision-fidelity" }
+        : fidelityName.startsWith("v2-")
         ? { authorityKind: "source-literal-fidelity" }
         : { promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST }),
     },
     baseSolutionItemHash: repairCheckpoint.baseSolutionItemHash,
-    effectiveSolutionItemHash: canonicalEvidenceHash(repairCheckpoint.item),
+    effectiveSolutionItemHash: canonicalEvidenceHash(sourceItem ?? repairCheckpoint.item),
     baseRawAnswerHash: repairCheckpoint.baseRawAnswerHash,
-    effectiveRawAnswerHash: hash(Buffer.from(repairCheckpoint.item.answer)),
+    effectiveRawAnswerHash: hash(Buffer.from((sourceItem ?? repairCheckpoint.item).answer)),
     baseExplanationHash: repairCheckpoint.baseExplanationHash,
-    effectiveExplanationHash: hash(Buffer.from(repairCheckpoint.item.explanation)),
+    effectiveExplanationHash: hash(Buffer.from((sourceItem ?? repairCheckpoint.item).explanation)),
+    ...(sourceRevision ? { sourceRevision } : {}),
   };
   return {
     stateDir,
@@ -16225,13 +16279,64 @@ describe("exam corpus verifier", () => {
     expect(verificationContractAuditVersionForTest(residue.stateDirs.math)).toBe(prior);
   });
 
+  it("forces current verification for orphan or invalid solution source revision authority", () => {
+    for (const directory of ["solution-source-revisions", "solution-fidelity-source-revisions"]) {
+      const orphan = fixture();
+      mkdirSync(join(orphan.stateDirs.math, directory), { recursive: true });
+      writeJson(join(orphan.stateDirs.math, directory, `v1-0001-0001-${"1".repeat(64)}-${"2".repeat(64)}.json`), {});
+      expect(verificationContractAuditVersionForTest(orphan.stateDirs.math)).toBe(5);
+      expect(verifyExamCorpus(orphan).ok).toBe(false);
+
+      for (const dangling of [false, true]) {
+        const files = fixture();
+        const target = mkdtempSync(join(tmpdir(), "verify-source-revision-dir-signal-"));
+        if (dangling) rmSync(target, { recursive: true, force: true });
+        const signalPath = join(files.stateDirs.math, directory);
+        symlinkSync(target, signalPath);
+        try {
+          expect(verificationContractAuditVersionForTest(files.stateDirs.math)).toBe(5);
+          expect(verifyExamCorpus(files).ok).toBe(false);
+        } finally {
+          rmSync(signalPath);
+          rmSync(target, { recursive: true, force: true });
+        }
+      }
+    }
+  });
+
   it.skipIf(!existsSync(join(Q5525982_STATE, "solution.pdf")))(
-    "reconstructs all eleven forced exact solution repairs and rejects tampered authority",
+    "reconstructs all sixteen forced exact solution repairs and Q40 source revision",
     async () => {
       expect(solutionFalseNegativeRepairAllowlistFingerprint())
         .toBe(canonicalEvidenceHash(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST));
       expect(solutionFalseNegativeRepairAllowlistFingerprint())
+        .toBe("90a2a84b2813204915a0e2df9daceabbd4b3a65e410838c590264752ec3a7015");
+      expect(canonicalEvidenceHash([{ ...SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0],
+        items: SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items.slice(0, 11) }]))
         .toBe("8f780112dc37cf0cd67b29fd3237c36a8a2dad4d81201f5f030a155f2303d8ad");
+      expect(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items.map((item) => canonicalEvidenceHash(item)))
+        .toEqual([
+          "e17b1ed3f0ed2c3c155fee47fd0ce1db65b01aac36ddfc152551839085854980",
+          "56be79294489fde849507d2f6a792331d8541e127fa65a42e55e8e3542365dd0",
+          "e144bac17721cd9bc5ebf19dbbd0cefbb18975fe80be000a595cdb50b80c2095",
+          "612c6ef1b6d77e58c171c3a2c42d6404cd72603a8e4964d2928a5a0344854e74",
+          "aaa638b3e3f56ebc38dcc8b1f35bdd40655fc492208761a88305a83db9fb84ee",
+          "72443e38d0a07797e7193dda0dd750a1bfda1f8a3f2e898aca2dcda918f719ea",
+          "75fdb9bc2568ca86975675c0f079f7f1bc91abb4b1dd1038cc7d92ea512c40b7",
+          "54cebc963a81df797998a4e368b9b06e97f16e5dcd4e84bd81e1e9702f83959d",
+          "a4bbeb2eedf1e5ce27e51fdd229ed2e9f8b291aa322c4d433cf325122d49b454",
+          "55673d5bf35b4ad22deae1b0c20fa9b97a41b4bbed858e5bd5cee992c09fde30",
+          "e7132199776a4979ebfd4e0cdc1103556ee7ef3c0b4433a4fa1c916c82693802",
+          "5de3213d9a314946ff9cc1e4899ea942a1e77d9fd0ae35971f94763cbba562d2",
+          "307af384fd2bce21dbad093f76e4d1ede7f027d108de4fffa8fee3830affd453",
+          "95a8609ae3b4486eb2d8d9fb6be4ca975ceb8f18759a48a23bf99ec9016dd023",
+          "164a1e36e9d18368e16bab527cb32e1a74a737b3661a109aa80a40c0ed1282c0",
+          "4a151d50050918237ce384f106e519a925af67679c3250140131b963dae3d983",
+        ]);
+      expect(solutionSourceRevisionAllowlistFingerprint())
+        .toBe("f4aa29744628e0699be8c1abdcfbc2f330bf4f5376085882ac6cc2d13d529ed3");
+      expect(canonicalEvidenceHash(SOLUTION_SOURCE_REVISION_ALLOWLIST[0]))
+        .toBe("afaf8a15ee23d5f6bf0d6a3a6ad7c7679a2d15813a23ddfb07f3ca51b43afd7e");
       const seed = async (evidenceSuffix = "") => {
         const stateDir = mkdtempSync(join(tmpdir(), "verify-solution-false-negative-"));
         cpSync(Q5525982_STATE, stateDir, { recursive: true });
@@ -16247,44 +16352,105 @@ describe("exam corpus verifier", () => {
             const number = Number(request.prompt.match(/printed solution (\d+)/u)?.[1]);
             const key = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items
               .find((item) => Number(item.key.split(":")[1]) === number)?.key ?? `15:${number}`;
-            if (number === 40) throw new Error("honest Q40 boundary");
+            if (number === 40) return { text: JSON.stringify([
+              input.solutions.find((solution) => Number(solution.number) === 40),
+            ]) };
             return { text: JSON.stringify([q5525982CorrectedSolution(input.solutions, key)]) };
+          }
+          if (request.schema?.name === "studywork_exam_corpus_semantic_choice_check") {
+            const items = JSON.parse(request.prompt.split("Items:\n")[1]) as Array<{ key: string }>;
+            return { text: JSON.stringify(items.map(({ key }) => {
+              const number = Number(key.split(":")[1]);
+              const question = input.classified.find((record) => Number(record.question.number) === number)!.question;
+              const solution = input.solutions.find((candidate) => Number(candidate.number) === number)!;
+              const resolution = resolveOfficialAnswer(question, solution.answer);
+              return {
+                key,
+                status: "resolved",
+                choiceIndex: resolution.choiceIndex! + 1,
+                evidence: "frozen official answer resolves one exact choice",
+              };
+            })) };
           }
           throw new Error(`unexpected AI call: ${request.schema?.name ?? "unknown"}`);
         });
-        await expect(repairAndAuditOfficialAnswers(
+        const result = await repairAndAuditOfficialAnswers(
           input.entry,
           input.problem,
           input.solution,
           stateDir,
           input.classified,
           input.solutions,
-        )).rejects.toThrow("honest Q40 boundary");
+        );
+        const imported = matchOfficialSolutions(
+          input.entry,
+          result.classified,
+          result.solutions,
+          baseDifficultyByQuestionKey(input.classified),
+        );
+        const receipt = buildCorpusReceipt(
+          input.entry,
+          input.problem,
+          input.solution,
+          result.classified,
+          imported,
+        );
+        await writeAnswerAttestation(
+          stateDir,
+          input.entry.id,
+          input.problem.sha256,
+          input.solution.sha256,
+          receipt,
+          result,
+        );
         providerMock.complete.mockReset();
-        return stateDir;
+        return { stateDir, result };
       };
       const expectedKeys = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items.map((item) => item.key)
         .sort(compareCorpusQuestionKeys);
-      const valid = await seed();
+      const seeded = await seed();
+      const valid = seeded.stateDir;
       try {
         expect(verifySolutionFalseNegativeRepairAuthorityForTest(q5525982BaseAuthorityInput(valid)))
           .toEqual(expectedKeys);
         expect(verifyPersistedSolutionFalseNegativeStateForTest(q5525982VerifierAuthorityInput(valid)))
           .toEqual(expectedKeys);
+        const currentAuthority = q5525982VerifierAuthorityInput(valid, seeded.result.classified);
+        const auditName = readdirSync(join(valid, "answer-audit")).find((name) => /^v5-/u.test(name))!;
+        const audit = JSON.parse(readFileSync(join(valid, "answer-audit", auditName), "utf8"));
+        expect(verifyCurrentSolutionFidelityForTest({ ...currentAuthority, audit })).toMatchObject({
+          solutionRepairKeys: [
+            ...expectedKeys,
+            SOLUTION_SOURCE_REVISION_ALLOWLIST[0].key,
+          ].sort(compareCorpusQuestionKeys),
+          effectiveSolutionCorpusHash: audit.effectiveSolutionCorpusHash,
+        });
         const repairs = readdirSync(join(valid, "solution-repairs"));
-        expect(repairs).toHaveLength(11);
-        expect(repairs.every((name) => /^v2-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u.test(name)))
-          .toBe(true);
-        const firstRepair = JSON.parse(readFileSync(join(valid, "solution-repairs", repairs[0]), "utf8"));
+        expect(repairs).toHaveLength(17);
+        expect(repairs.filter((name) => /^v2-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u.test(name)))
+          .toHaveLength(16);
+        const firstRepair = JSON.parse(readFileSync(
+          join(valid, "solution-repairs", repairs.find((name) => name.startsWith("v2-"))!),
+          "utf8",
+        ));
         expect(firstRepair).toMatchObject({ version: 2, authorityKind: "source-literal-replacement" });
         for (const field of ["promptVersion", "promptDigest", "model", "reasoningEffort"]) {
           expect(firstRepair).not.toHaveProperty(field);
         }
         const fidelities = readdirSync(join(valid, "solution-fidelity-repairs")).sort();
-        expect(fidelities).toHaveLength(11);
+        expect(fidelities).toHaveLength(17);
         expect(fidelities.filter((name) => name.startsWith("v1-")))
-          .toEqual([expect.stringMatching(/^v1-0011-0017-/u)]);
-        expect(fidelities.filter((name) => name.startsWith("v2-"))).toHaveLength(10);
+          .toEqual([
+            expect.stringMatching(/^v1-0011-0017-/u),
+            expect.stringMatching(/^v1-0025-0040-/u),
+          ]);
+        expect(fidelities.filter((name) => name.startsWith("v2-"))).toHaveLength(15);
+        expect(readdirSync(join(valid, "solution-source-revisions"))).toEqual([
+          expect.stringMatching(/^v1-0025-0040-/u),
+        ]);
+        expect(readdirSync(join(valid, "solution-fidelity-source-revisions"))).toEqual([
+          expect.stringMatching(/^v1-0025-0040-/u),
+        ]);
         const q18FidelityName = fidelities.find((name) => /^v2-0011-0018-/u.test(name))!;
         const q18Fidelity = JSON.parse(readFileSync(
           join(valid, "solution-fidelity-repairs", q18FidelityName),
@@ -16325,6 +16491,177 @@ describe("exam corpus verifier", () => {
             path: expect.stringMatching(/^solution-fidelity-repairs\/v1-0011-0017-/u),
           },
         });
+        expect(verifyCurrentSolutionFalseNegativeRepairForTest(
+          q5525982CurrentRepairAuthorityInput(valid, "15:40"),
+        )).toMatchObject({
+          key: "15:40",
+          sourceRevision: {
+            correctionSpecHash: "afaf8a15ee23d5f6bf0d6a3a6ad7c7679a2d15813a23ddfb07f3ca51b43afd7e",
+            effectiveSolutionItemHash: "8ca162b33a434c13885293a46cb20351022c07f0d79c1a2d43a407d73c61a69d",
+            solutionArtifact: { authorityKind: "source-literal-revision" },
+            fidelityArtifact: { authorityKind: "source-literal-revision-fidelity" },
+          },
+          fidelityArtifact: { authorityKind: "source-literal-revision-fidelity" },
+        });
+        const sourceRevisionName = readdirSync(join(valid, "solution-source-revisions"))[0];
+        const sourceFidelityName = readdirSync(join(valid, "solution-fidelity-source-revisions"))[0];
+        expect(`solution-source-revisions/${sourceRevisionName}`).toBe(
+          "solution-source-revisions/v1-0025-0040-" +
+          "09962f7d4b7ca05fcaec236021792af644c1a3565d8a7c8abecd38e3d4e31c62-" +
+          "afaf8a15ee23d5f6bf0d6a3a6ad7c7679a2d15813a23ddfb07f3ca51b43afd7e.json",
+        );
+        expect(hash(readFileSync(join(valid, "solution-source-revisions", sourceRevisionName))))
+          .toBe("5edaf315941096a05c7f77e6e3d2d5af74c01c5602cea3fbaf81b04bee2780f7");
+        expect(`solution-fidelity-source-revisions/${sourceFidelityName}`).toBe(
+          "solution-fidelity-source-revisions/v1-0025-0040-" +
+          "5edaf315941096a05c7f77e6e3d2d5af74c01c5602cea3fbaf81b04bee2780f7-" +
+          "afaf8a15ee23d5f6bf0d6a3a6ad7c7679a2d15813a23ddfb07f3ca51b43afd7e.json",
+        );
+        expect(hash(readFileSync(join(valid, "solution-fidelity-source-revisions", sourceFidelityName))))
+          .toBe("09049a9f46f71a25919863a8d74871b96bf179f1387f291b63de710756210801");
+        const sourceCases: Array<{
+          label: string;
+          mutate: (stateDir: string) => void;
+          error: RegExp;
+        }> = [{
+          label: "missing source fidelity",
+          mutate: (stateDir) => rmSync(join(stateDir, "solution-fidelity-source-revisions", sourceFidelityName)),
+          error: /source revision child coverage/u,
+        }, {
+          label: "source revision item tamper",
+          mutate: (stateDir) => {
+            const path = join(stateDir, "solution-source-revisions", sourceRevisionName);
+            const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+            checkpoint.item.explanation += " altered";
+            writeEvidence(path, checkpoint);
+          },
+          error: /source revision envelope/u,
+        }, {
+          label: "source fidelity status tamper",
+          mutate: (stateDir) => {
+            const path = join(stateDir, "solution-fidelity-source-revisions", sourceFidelityName);
+            const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+            checkpoint.item.explanationStatus = "mismatch";
+            writeEvidence(path, checkpoint);
+          },
+          error: /source revision fidelity envelope/u,
+        }, {
+          label: "source revision third child",
+          mutate: (stateDir) => {
+            const name = sourceRevisionName.replace(/-[a-f0-9]{64}\.json$/u, `-${"f".repeat(64)}.json`);
+            writeFileSync(
+              join(stateDir, "solution-source-revisions", name),
+              readFileSync(join(stateDir, "solution-source-revisions", sourceRevisionName)),
+            );
+          },
+          error: /source revision child coverage/u,
+        }, {
+          label: "source revision leaf symlink",
+          mutate: (stateDir) => {
+            const path = join(stateDir, "solution-source-revisions", sourceRevisionName);
+            renameSync(path, `${path}.tmp`);
+            symlinkSync(`${sourceRevisionName}.tmp`, path);
+          },
+          error: /malformed persisted solution authority/u,
+        }, {
+          label: "source revision directory symlink",
+          mutate: (stateDir) => {
+            const directory = join(stateDir, "solution-source-revisions");
+            const target = join(stateDir, "solution-source-revisions-target");
+            renameSync(directory, target);
+            symlinkSync("solution-source-revisions-target", directory);
+          },
+          error: /directory must be confined and non-symlink/u,
+        }, {
+          label: "source fidelity directory symlink",
+          mutate: (stateDir) => {
+            const directory = join(stateDir, "solution-fidelity-source-revisions");
+            const target = join(stateDir, "solution-fidelity-source-revisions-target");
+            renameSync(directory, target);
+            symlinkSync("solution-fidelity-source-revisions-target", directory);
+          },
+          error: /directory must be confined and non-symlink/u,
+        }];
+        const q41RepairName = repairs.find((name) => /-0041-/u.test(name))!;
+        const q45FidelityName = fidelities.find((name) => /-0045-/u.test(name))!;
+        sourceCases.push({
+          label: "Q40 pinned fidelity path with alternate SHA",
+          mutate: (stateDir) => {
+            rmSync(join(stateDir, "solution-source-revisions"), { recursive: true });
+            rmSync(join(stateDir, "solution-fidelity-source-revisions"), { recursive: true });
+            const path = join(stateDir, SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentFidelityArtifact.path);
+            const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+            checkpoint.item.evidence += " alternate";
+            writeEvidence(path, checkpoint);
+          },
+          error: /source revision child coverage|parent fidelity hash mismatch|parent authority/u,
+        }, {
+          label: "Q40 generic revision XOR",
+          mutate: (stateDir) => {
+            mkdirSync(join(stateDir, "solution-revisions"), { recursive: true });
+            writeEvidence(join(
+              stateDir,
+              "solution-revisions",
+              `v1-0025-0040-${"1".repeat(64)}.json`,
+            ), {
+              baseRepairArtifact: SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentRepairArtifact,
+            });
+          },
+          error: /revision child coverage|source revision/u,
+        }, {
+          label: "Q41 coherent v1 repair",
+          mutate: (stateDir) => {
+            const path = join(stateDir, "solution-repairs", q41RepairName);
+            const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+            const v1Name = `v1-${String(checkpoint.basePage).padStart(4, "0")}-` +
+              `${checkpoint.printedNumber.padStart(4, "0")}-${checkpoint.baseFidelityCheckpoint.sha256}.json`;
+            const { authorityKind: _authorityKind, allowlistId: _allowlistId,
+              correctionSpecHash: _correctionSpecHash, ...v1 } = checkpoint;
+            Object.assign(v1, {
+              version: 1,
+              promptVersion: TARGETED_SOLUTION_TRANSCRIPTION_VERSION,
+              promptDigest: TARGETED_SOLUTION_PROMPT_DIGEST,
+              model: "gpt-5.6-sol",
+              reasoningEffort: "high",
+            });
+            rmSync(path);
+            writeEvidence(join(stateDir, "solution-repairs", v1Name), v1);
+          },
+          error: /deterministic v2|child coverage|version\/path authority/u,
+        }, {
+          label: "Q45 coherent v1 fidelity",
+          mutate: (stateDir) => {
+            const path = join(stateDir, "solution-fidelity-repairs", q45FidelityName);
+            const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+            const v1Name = `v1-${String(checkpoint.basePage).padStart(4, "0")}-` +
+              `${checkpoint.printedNumber.padStart(4, "0")}-${checkpoint.baseFidelityCheckpoint.sha256}-` +
+              `${checkpoint.effectiveSolutionItemHash}.json`;
+            const { authorityKind: _authorityKind, allowlistId: _allowlistId,
+              correctionSpecHash: _correctionSpecHash, expectedSolutionItemHash: _expected,
+              baseRawAnswerHash: _raw, baseExplanationHash: _explanation, ...v1 } = checkpoint;
+            Object.assign(v1, {
+              version: 1,
+              promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+              model: "gpt-5.6-sol",
+              reasoningEffort: "high",
+            });
+            rmSync(path);
+            writeEvidence(join(stateDir, "solution-fidelity-repairs", v1Name), v1);
+          },
+          error: /deterministic v2|fidelity metadata/u,
+        });
+        for (const testCase of sourceCases) {
+          const tampered = mkdtempSync(join(tmpdir(), "verify-solution-source-revision-"));
+          try {
+            cpSync(valid, tampered, { recursive: true });
+            testCase.mutate(tampered);
+            expect(() => verifyPersistedSolutionFalseNegativeStateForTest(
+              q5525982VerifierAuthorityInput(tampered),
+            ), testCase.label).toThrow(testCase.error);
+          } finally {
+            rmSync(tampered, { recursive: true, force: true });
+          }
+        }
         expect(existsSync(join(valid, "solution-revisions"))
           ? readdirSync(join(valid, "solution-revisions")).length
           : 0).toBe(0);
@@ -16332,7 +16669,8 @@ describe("exam corpus verifier", () => {
         rmSync(valid, { recursive: true, force: true });
       }
 
-      const alternateEvidence = await seed(" alternate diagnostic wording");
+      const alternateSeed = await seed(" alternate diagnostic wording");
+      const alternateEvidence = alternateSeed.stateDir;
       try {
         expect(verifySolutionFalseNegativeRepairAuthorityForTest(
           q5525982BaseAuthorityInput(alternateEvidence),
@@ -16400,7 +16738,7 @@ describe("exam corpus verifier", () => {
         error: /directory must be confined and non-symlink/u,
       }];
       for (const testCase of persistedCases) {
-        const tampered = await seed();
+        const tampered = (await seed()).stateDir;
         try {
           const name = readdirSync(join(tampered, "solution-repairs")).find((candidate) => /-0017-/u.test(candidate))!;
           testCase.mutate(tampered, name);
@@ -16431,7 +16769,7 @@ describe("exam corpus verifier", () => {
         mutate: (checkpoint: Record<string, any>) => { checkpoint.unexpected = true; },
         error: /envelope/u,
       }]) {
-        const tampered = await seed();
+        const tampered = (await seed()).stateDir;
         try {
           const path = join(tampered, SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].checkpoints[0].path);
           const checkpoint = JSON.parse(readFileSync(path, "utf8"));
@@ -16445,7 +16783,7 @@ describe("exam corpus verifier", () => {
         }
       }
 
-      const wrongRepair = await seed();
+      const wrongRepair = (await seed()).stateDir;
       try {
         const path = join(wrongRepair, "solution-repairs", readdirSync(join(wrongRepair, "solution-repairs"))
           .find((name) => /-0017-/u.test(name))!);
@@ -16458,7 +16796,7 @@ describe("exam corpus verifier", () => {
         rmSync(wrongRepair, { recursive: true, force: true });
       }
 
-      const nonterminal = await seed();
+      const nonterminal = (await seed()).stateDir;
       try {
         const path = join(nonterminal, "solution-fidelity-repairs", readdirSync(
           join(nonterminal, "solution-fidelity-repairs"),
@@ -16472,7 +16810,7 @@ describe("exam corpus verifier", () => {
         rmSync(nonterminal, { recursive: true, force: true });
       }
 
-      const missing = await seed();
+      const missing = (await seed()).stateDir;
       try {
         const name = readdirSync(join(missing, "solution-fidelity-repairs"))
           .find((candidate) => /^v2-\d{4}-0018-/u.test(candidate))!;
@@ -16559,7 +16897,7 @@ describe("exam corpus verifier", () => {
         error: /directory must be confined and non-symlink/u,
       }];
       for (const testCase of fidelityCases) {
-        const tampered = await seed();
+        const tampered = (await seed()).stateDir;
         try {
           const name = readdirSync(join(tampered, "solution-fidelity-repairs"))
             .find((candidate) => /^v2-\d{4}-0018-/u.test(candidate))!;
@@ -16572,7 +16910,7 @@ describe("exam corpus verifier", () => {
         }
       }
 
-      const revision = await seed();
+      const revision = (await seed()).stateDir;
       try {
         mkdirSync(join(revision, "solution-revisions"), { recursive: true });
         const repair = readdirSync(join(revision, "solution-repairs")).find((name) => /-0017-/u.test(name))!;
@@ -16585,7 +16923,7 @@ describe("exam corpus verifier", () => {
         rmSync(revision, { recursive: true, force: true });
       }
 
-      const extraCheckpoint = await seed();
+      const extraCheckpoint = (await seed()).stateDir;
       try {
         const checkpoint = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].checkpoints[0];
         writeFileSync(join(

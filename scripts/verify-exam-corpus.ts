@@ -178,7 +178,18 @@ type EvidencePointer = { path: string; sha256: string };
 type SolutionRepairFidelityEvidence = EvidencePointer & (
   | { promptDigest: string; authorityKind?: never }
   | { authorityKind: "source-literal-fidelity"; promptDigest?: never }
+  | { authorityKind: "source-literal-revision-fidelity"; promptDigest?: never }
 );
+
+type SolutionSourceRevisionEvidence = {
+  solutionArtifact: EvidencePointer & { authorityKind: "source-literal-revision" };
+  fidelityArtifact: EvidencePointer & { authorityKind: "source-literal-revision-fidelity" };
+  correctionSpecHash: string;
+  parentRepairSolutionItemHash: string;
+  effectiveSolutionItemHash: string;
+  parentRepairExplanationHash: string;
+  effectiveExplanationHash: string;
+};
 
 type ClassifiedEvidence = {
   question: ProblemQuestion;
@@ -357,6 +368,8 @@ const SOLUTION_REPAIR_VERSION = 1;
 const SOLUTION_SOURCE_LITERAL_REPAIR_VERSION = 2;
 const SOLUTION_REPAIR_FIDELITY_VERSION = 1;
 const SOLUTION_SOURCE_LITERAL_REPAIR_FIDELITY_VERSION = 2;
+const SOLUTION_SOURCE_REVISION_VERSION = 1;
+const SOLUTION_SOURCE_REVISION_FIDELITY_VERSION = 1;
 const SOLUTION_REVISION_VERSION = 1;
 const SOLUTION_REVISION_FIDELITY_VERSION = 1;
 const PERSISTED_SOLUTION_REPAIR_SEED_VERSION = 1;
@@ -646,7 +659,104 @@ export const SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST = [{
     baseExplanationHash: "8fdd8537c2680d5e5b31a929a75ed669d77e3a3fffff053b502cac3537827efe",
     replacements: [{ from: "생존 유지와 성장에 사용", to: "생존 유지와 생장에 사용", count: 1 }],
     expectedSolutionItemHash: "1295f5f3ab27742c4294ce8832372edd7a7d7f75f072f9cb96edbc6d5cf1f00a",
+  }, {
+    key: "15:41",
+    baseSolutionItemHash: "0c3d1ba6465b54c3a8102b189c7a2da063cb1db5f3352ccc56dbe2e45dce974c",
+    baseExplanationHash: "ec8b95702911f6f20dfab88467f05b7feb9849865f9e8724c29b009d319b20e4",
+    replacements: [],
+    appendExplanation: `[오답피하기]
+① 5문단에서 보험 가입자가 고지 의무를 위반하면 보험사는 그것을 이유로 계약을 해지할 수 있고 해지를 하면 지급된 보험금에 대한 반환을 청구할 수 있다고 하였다. 하지만 보험사가 중대한 과실로 인해 고지 의무 위반에 대해 알지 못한 경우에는 보험 가입자가 고지 의무를 위반했어도 보험사의 해지권은 배제된다고 하였다. 따라서 A에게 중대한 과실이 있었다면 A의 해지권은 배제되므로 계약을 해지할 수도 없고, 해지에 따라 보험금을 반환받을 수도 없다고 할 수 있다.
+② 5문단에서 보험 가입자가 고지 의무를 위반하면 보험사는 그것을 이유로 계약을 해지할 수 있고 해지를 하면 지급된 보험금에 대한 반환을 청구할 수 있다고 하였다. 따라서 A에게 중대한 과실이 없으면 계약을 해지하고 보험금에 대한 반환을 청구할 수 있다고 할 수 있다.
+③ 5문단에서 보험사가 중대한 과실로 인해 고지 의무 위반에 대해 알지 못한 경우에는 보험 가입자가 고지 의무를 위반했어도 보험사의 해지권은 배제된다고 하였다. 따라서 A가 중대한 과실이 있었다면 A의 해지권은 배제되므로 계약을 해지할 수도 없고, 해지에 따라 보험금을 반환받을 수도 없다고 할 수 있다.
+⑤ 5문단에서 계약 체결 전 보험 가입자가 중요한 사실을 알리지 않으면 고지 의무를 위반한 것이라고 하였다. 따라서 B가 고지 의무 위반 사실을 보험 사고가 발생한 후 A에게 알렸다고 하더라도 고지 의무를 위반한 것이라고 할 수 있다.`,
+    expectedSolutionItemHash: "94dc0c9bfe82fecd6eb4795b780ab9e57e3afae76e2db8ceea205637d9f34b42",
+  }, {
+    key: "15:42",
+    baseSolutionItemHash: "cc755250339f22ba3ecd9094d005fcabfab88205da1caef2814e16be40037a19",
+    baseExplanationHash: "30bf348f44d365d33f86044daafb8ce0a28b3c96b43edf62742ca6b38e02bdab",
+    replacements: [],
+    appendExplanation: `[오답피하기]
+② ⓑ와 선지 모두, ‘어떤 대상의 내용이나 본질을 확실하게 이해하여 앎.’을 의미하므로 적절하다.
+③ ⓒ와 선지 모두, ‘물건값, 봉급, 요금 따위를 올림.’을 의미하므로 적절하다.
+④ ⓓ와 선지 모두, ‘받아들이지 아니하고 물리쳐 제외함.’을 의미하므로 적절하다.
+⑤ ⓔ와 선지 모두, ‘잘못이나 책임을 다른 사람에게 넘겨씌움.’을 의미하므로 적절하다.`,
+    expectedSolutionItemHash: "419928a11498f6a7132e7dd24d35b6bbd972db9f21d4efc369d4fd3ca3ca86b5",
+  }, {
+    key: "16:43",
+    baseSolutionItemHash: "07a82e21a37a7a8f4ffc6b23f2ebf0ecb1b21959eee01ee4a7588f1ad8bd4b05",
+    baseExplanationHash: "e28011d5c0821aeaec663d9e37e8c1fc15803131a50ffa0beed710ae3a5d6a99",
+    replacements: [{ from: "이 글에서 여행을 하는 화자는", to: "이 글에서 연행을 하는 화자는", count: 1 }],
+    appendExplanation: `[오답피하기]
+① 자연의 경이로운 풍광에 대한 감상을 장황하게 서술한 내용은 찾을 수 없다.
+② ‘당연(唐硯)에 먹을 갈아~시전지(詩箋紙)를 빼어 들고’를 학문과 관련한 사물을 나열한 것으로 볼 여지는 있으나, 이것은 필담을 위한 과정을 제시한 것이지 화자의 입신양명에 대한 관심을 드러낸 것은 아니다.
+④ 청나라 황궁의 공식적 행사에 참여한 것은 맞지만 이 글에서 행사에 참여한 다양한 사람들의 외양과 감정을 묘사한 내용은 찾을 수 없다.
+⑤ ‘곡식 추수가 한창이요’를 구체적인 시간을 나타내는 표현으로 볼 수 있으나, ‘숭문문 내달아서 통주로 향해 가니’로 볼 때 화자는 귀국하는 도중이지 여정이 마무리된 것은 아니다.`,
+    expectedSolutionItemHash: "c81eb4854cbaf1d84a3e65b239e2ee35734a1ee1564005df6533d05c3cb1c163",
+  }, {
+    key: "16:44",
+    baseSolutionItemHash: "e5f4f384c2336649173a65bbbac24ec582cfadab42ad230f52ea0abafeb800ef",
+    baseExplanationHash: "4962f6e3b26a5bae314b49878e8ed9e88c01ae0cd36abbeb2b3a278dc6885916",
+    replacements: [{
+      from: "㉠은 ‘올 적에 심은",
+      to: "㉤은 ‘올 적에 심은",
+      count: 1,
+    }],
+    appendExplanation: `[오답피하기]
+① ‘절로 울어 소리하며’에서 청각적 이미지가 사용되었으나, 이것은 대상이 지닌 슬픔을 표현한 것과는 관련이 없다.
+② ‘이편저편’이라는 지시적 표현을 사용하였으나 상대와의 친밀감을 드러내는 상황이 아니라 처음 만난 사람들이 고급 목재로 된 의자에 마주 앉은 상황을 나타낸 것이다. 다음 행의 ‘처음 인사’로 이를 확인할 수 있다.
+③ ㉢은 귀국 준비를 위해 바쁘게 짐을 싸고 있는 것이지 여유로운 분위기를 드러내는 것은 아니다. ‘분분하고’는 음성 상징어가 아니라 형용사로, 떠들썩하고 뒤숭숭한 상황을 나타낸다.
+④ ㉣의 앞 구절과 뒷 구절을 대구적 표현으로 볼 여지는 있으나 새로운 계책을 마련한 기쁨을 드러내는 것으로 볼 수는 없다.`,
+    expectedSolutionItemHash: "fed58f0108b8aed76953edd758c735eda4fbd542a1cdf851d425e5660ecd8828",
+  }, {
+    key: "16:45",
+    baseSolutionItemHash: "c7676e28eb8a9067361634b7b6feebad0c9e81bf0e9b23a90e81096a5d167e54",
+    baseExplanationHash: "12688ddde68a263f5961e7b09711e998a6c978bbc925f7476716fb592e37a08f",
+    replacements: [],
+    appendExplanation: `[오답피하기]
+② [A]의 ‘거기 사람 처음 인사 차 한 그릇 갖다 준다’와 [B]의 ‘황상이 상을 주사 예부상서 거행한다’에서 확인할 수 있다.
+③ [A]에서는 ‘필담’을 통해 서로 간에 간곡한 정을 전달하고 있으며, [B]의 ‘구고두’는 청나라 시대에 황제에게 머리를 조아려 절하는 공식적 예법으로, 황상(황제)이 조선 사신 일행에게 상을 주고 잔치를 베풀어 주는 은혜에 의례적인 감사를 표하는 것이다.
+④ [A]의 ‘글귀 절로 오락가락’은 필담을 통해 비로소 의사소통이 이루어지는 상황을, [B]의 ‘비위가 뒤집혀서’는 푸짐한 잔칫상을 받았으나 막상 먹을 것이 없는 곤란한 상황을 드러낸 것이다.
+⑤ [A]의 ‘귀머거리 벙어린 듯’은 언어가 같지 않아 대화가 이루어지지 못하는 상황을, [B]의 ‘메밀떡에 밀다식에 겉밤’은 음식을 나열하여 잔칫상에 여러 가지 음식을 차려 놓은 상황을 알려 주고 있다.`,
+    expectedSolutionItemHash: "6f8dd2824799d901da3b758f4baf3b4759560f0dedcf8b12e8f671662e69259b",
   }],
+}] as const;
+
+export const SOLUTION_SOURCE_REVISION_ALLOWLIST = [{
+  allowlistId: "ebsi-5525982-q40-solution-source-revision-v1",
+  entryId: "ebsi:5525982",
+  key: "15:40",
+  printedNumber: "40",
+  sourceHash: "41765adaef8826181042cf68889033ef77327169a2d8c2956e8a7d9f842e090f",
+  effectiveProblemCorpusHash: "5f5fc141fb05bcf6ca205bcb84b82f86bdabbaf2b365db2b071b20f53a75af5d",
+  baseSolutionCheckpoint: {
+    path: "solution-chunks/v3-0006.json",
+    sha256: "abb01f173dd25d62bfc55455fc356d125a59c7c8758e328b87ec399969d7639f",
+  },
+  baseFidelityCheckpoint: {
+    path: "solution-fidelity/v1-0001-5f5fc141fb05bcf6ca205bcb84b82f86bdabbaf2b365db2b071b20f53a75af5d-" +
+      "66005e9442043b6c29ffef0fb46a629a2428c4091f61ce453ea9f83088887f10.json",
+    sha256: "f7076c81812b0ef90398cd1f486229428385ab75ddfa35485254535f64d25423",
+  },
+  baseSolutionItemHash: "2906afac2f5245da645edd97de687e77a026096ff2e393bbe32bc6062c65d302",
+  parentRepairArtifact: {
+    path: "solution-repairs/v1-0025-0040-" +
+      "f7076c81812b0ef90398cd1f486229428385ab75ddfa35485254535f64d25423.json",
+    sha256: "c35fa21aa133c7c901c710312176c6d09c2ef3000a7c2c772cc0daa2792b1556",
+  },
+  parentRepairSolutionItemHash: "e47d6d2f7e12582efcf22d35f09ece6b3f5668b22a9f03fa433d42be9905f39b",
+  parentRepairExplanationHash: "f6673b0d761f780d9976aa6fa127a115ba80f92236d2af8f01efaa7248208cc4",
+  parentFidelityArtifact: {
+    path: "solution-fidelity-repairs/v1-0025-0040-" +
+      "f7076c81812b0ef90398cd1f486229428385ab75ddfa35485254535f64d25423-" +
+      "e47d6d2f7e12582efcf22d35f09ece6b3f5668b22a9f03fa433d42be9905f39b.json",
+    sha256: "09962f7d4b7ca05fcaec236021792af644c1a3565d8a7c8abecd38e3d4e31c62",
+  },
+  parentFidelityDecisionHash: "9668a4c55d7b017d59d9727443a9c4c52e673124aedb9e1f4ce1bed312ad8dfa",
+  parentFidelityEvidenceHash: "f1c178febfff771e4ad91b5dddf6f8e73a7c0c6a4a6e0889a1ef2ac06e842e39",
+  parentFidelityInputHash: "171950e35c9135872d2c47f71849dc02bc9ee0cd62dd642850495564a1689e48",
+  replacements: [{ from: "계약 해지 권한을", to: "계약 해지권만", count: 1 }],
+  expectedSolutionItemHash: "8ca162b33a434c13885293a46cb20351022c07f0d79c1a2d43a407d73c61a69d",
+  expectedExplanationHash: "fcd78b166cfe4666d146873eb429080a6df4444f422174ecbc188f340f636eee",
 }] as const;
 
 type ProblemCropAdjudicationSpec = {
@@ -4139,6 +4249,10 @@ export function manualClassificationPolicyRevisionAllowlistFingerprint(): string
 
 export function solutionFalseNegativeRepairAllowlistFingerprint(): string {
   return canonicalEvidenceHash(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST);
+}
+
+export function solutionSourceRevisionAllowlistFingerprint(): string {
+  return canonicalEvidenceHash(SOLUTION_SOURCE_REVISION_ALLOWLIST);
 }
 
 export function scopeBoxRevisionAllowlistFingerprint(): string {
@@ -13205,6 +13319,7 @@ function expectedFalseNegativeSolution(
     }
     explanation = explanation.split(replacement.from).join(replacement.to);
   }
+  if ("appendExplanation" in spec) explanation += `\n\n${spec.appendExplanation}`;
   const evidence = { ...base.evidence, explanation };
   if (canonicalEvidenceHash(evidence) !== spec.expectedSolutionItemHash) {
     throw new Error(`${spec.key}: false-negative corrected solution item hash is stale`);
@@ -13353,6 +13468,263 @@ function solutionRepairFidelityEvidence(
   return sourceLiteral
     ? { ...pointer, authorityKind: "source-literal-fidelity" }
     : { ...pointer, promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST };
+}
+
+type SolutionSourceRevisionSpec = (typeof SOLUTION_SOURCE_REVISION_ALLOWLIST)[number];
+
+type VerifiedSolutionSourceRevision = {
+  solution: OfficialSolution;
+  decision: SolutionFidelityDecision;
+  fidelityArtifact: SolutionRepairFidelityEvidence;
+  evidence: SolutionSourceRevisionEvidence;
+};
+
+function expectedSolutionSourceRevision(
+  parent: OfficialSolution,
+  spec: SolutionSourceRevisionSpec,
+): OfficialSolution {
+  let explanation = parent.explanation;
+  for (const replacement of spec.replacements) {
+    if (exactOccurrenceCount(explanation, replacement.from) !== replacement.count) {
+      throw new Error(`${spec.key}: solution source revision replacement occurrence is not exact`);
+    }
+    explanation = explanation.split(replacement.from).join(replacement.to);
+  }
+  const evidence = { ...parent.evidence, explanation };
+  if (canonicalEvidenceHash(evidence) !== spec.expectedSolutionItemHash
+    || sha256(explanation) !== spec.expectedExplanationHash) {
+    throw new Error(`${spec.key}: solution source revision item hash is stale`);
+  }
+  return { ...parent, explanation, evidence };
+}
+
+function solutionSourceRevisionPath(spec: SolutionSourceRevisionSpec): string {
+  return `solution-source-revisions/v${SOLUTION_SOURCE_REVISION_VERSION}-0025-` +
+    `${spec.printedNumber.padStart(4, "0")}-${spec.parentFidelityArtifact.sha256}-` +
+    `${canonicalEvidenceHash(spec)}.json`;
+}
+
+function solutionSourceRevisionCheckpoint(
+  spec: SolutionSourceRevisionSpec,
+  item: OfficialSolution,
+): Record<string, unknown> {
+  return {
+    version: SOLUTION_SOURCE_REVISION_VERSION,
+    authorityKind: "source-literal-revision",
+    entryId: spec.entryId,
+    key: spec.key,
+    printedNumber: spec.printedNumber,
+    sourceHash: spec.sourceHash,
+    effectiveProblemCorpusHash: spec.effectiveProblemCorpusHash,
+    baseSolutionCheckpoint: spec.baseSolutionCheckpoint,
+    baseFidelityCheckpoint: spec.baseFidelityCheckpoint,
+    baseSolutionItemHash: spec.baseSolutionItemHash,
+    parentRepairArtifact: spec.parentRepairArtifact,
+    parentRepairSolutionItemHash: spec.parentRepairSolutionItemHash,
+    parentRepairExplanationHash: spec.parentRepairExplanationHash,
+    parentFidelityArtifact: spec.parentFidelityArtifact,
+    parentFidelityDecisionHash: spec.parentFidelityDecisionHash,
+    parentFidelityEvidenceHash: spec.parentFidelityEvidenceHash,
+    parentFidelityInputHash: spec.parentFidelityInputHash,
+    allowlistId: spec.allowlistId,
+    correctionSpecHash: canonicalEvidenceHash(spec),
+    expectedSolutionItemHash: spec.expectedSolutionItemHash,
+    expectedExplanationHash: spec.expectedExplanationHash,
+    effectivePage: item.page,
+    item: item.evidence,
+  };
+}
+
+function solutionSourceRevisionFidelityPath(
+  spec: SolutionSourceRevisionSpec,
+  revisionArtifact: EvidencePointer,
+): string {
+  return `solution-fidelity-source-revisions/v${SOLUTION_SOURCE_REVISION_FIDELITY_VERSION}-0025-` +
+    `${spec.printedNumber.padStart(4, "0")}-${revisionArtifact.sha256}-` +
+    `${canonicalEvidenceHash(spec)}.json`;
+}
+
+function solutionSourceRevisionFidelityCheckpoint(
+  base: SolutionFidelityInput,
+  spec: SolutionSourceRevisionSpec,
+  revisionArtifact: EvidencePointer,
+  item: OfficialSolution,
+): Record<string, unknown> {
+  const input: SolutionFidelityInput = {
+    ...base,
+    sourcePage: item.page,
+    rawAnswer: item.rawAnswer,
+    explanation: item.explanation,
+  };
+  return {
+    version: SOLUTION_SOURCE_REVISION_FIDELITY_VERSION,
+    authorityKind: "source-literal-revision-fidelity",
+    entryId: spec.entryId,
+    key: spec.key,
+    printedNumber: spec.printedNumber,
+    sourceHash: spec.sourceHash,
+    from: 25,
+    to: 28,
+    basePage: 25,
+    effectivePage: 25,
+    baseOwnedFrom: 25,
+    baseOwnedTo: 28,
+    effectiveProblemCorpusHash: spec.effectiveProblemCorpusHash,
+    baseSolutionCheckpoint: spec.baseSolutionCheckpoint,
+    baseFidelityCheckpoint: spec.baseFidelityCheckpoint,
+    parentRepairArtifact: spec.parentRepairArtifact,
+    parentFidelityArtifact: spec.parentFidelityArtifact,
+    revisionArtifact,
+    baseSolutionItemHash: spec.baseSolutionItemHash,
+    parentRepairSolutionItemHash: spec.parentRepairSolutionItemHash,
+    parentFidelityDecisionHash: spec.parentFidelityDecisionHash,
+    parentFidelityEvidenceHash: spec.parentFidelityEvidenceHash,
+    parentFidelityInputHash: spec.parentFidelityInputHash,
+    allowlistId: spec.allowlistId,
+    correctionSpecHash: canonicalEvidenceHash(spec),
+    expectedSolutionItemHash: spec.expectedSolutionItemHash,
+    effectiveSolutionItemHash: canonicalEvidenceHash(item.evidence),
+    inputHash: canonicalEvidenceHash(input),
+    input,
+    item: {
+      key: spec.key,
+      sourcePage: item.page,
+      answerStatus: "exact",
+      explanationStatus: "exact",
+      evidence: "SOURCE_LITERAL_REVISION_AUTHORITY",
+    },
+  };
+}
+
+function solutionSourceRevisionSpecForParent(
+  entry: ManifestEntry,
+  key: string,
+  repairArtifact: EvidencePointer,
+  fidelityArtifact?: EvidencePointer,
+): SolutionSourceRevisionSpec | undefined {
+  const matches = SOLUTION_SOURCE_REVISION_ALLOWLIST.filter((candidate) =>
+    candidate.entryId === entry.id && candidate.key === key);
+  if (matches.length > 1) throw new Error(`${entry.id}: duplicate solution source revision authority`);
+  const spec = matches[0];
+  return spec && (isDeepStrictEqual(repairArtifact, spec.parentRepairArtifact)
+    || fidelityArtifact !== undefined && fidelityArtifact.path === spec.parentFidelityArtifact.path)
+    ? spec
+    : undefined;
+}
+
+function verifySolutionSourceRevision(
+  stateDir: string,
+  entry: ManifestEntry,
+  solutionEvidence: DownloadEvidence,
+  effectiveProblemCorpusHash: string,
+  baseInput: SolutionFidelityInput,
+  parent: OfficialSolution,
+  parentDecision: SolutionFidelityDecision,
+  parentRepairArtifact: EvidencePointer,
+  parentFidelityArtifact: EvidencePointer,
+  declared?: unknown,
+  revisionFiles?: CanonicalSolutionArtifact[],
+  fidelityFiles?: CanonicalSolutionArtifact[],
+): VerifiedSolutionSourceRevision | undefined {
+  const matches = SOLUTION_SOURCE_REVISION_ALLOWLIST.filter((candidate) =>
+    candidate.entryId === entry.id && candidate.key === baseInput.key);
+  if (matches.length > 1) throw new Error(`${entry.id}: duplicate solution source revision authority`);
+  const spec = matches[0];
+  if (!spec) return undefined;
+  const revisions = revisionFiles ?? readCanonicalSolutionArtifacts(
+    stateDir,
+    "solution-source-revisions",
+    /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u,
+  );
+  const fidelities = fidelityFiles ?? readCanonicalSolutionArtifacts(
+    stateDir,
+    "solution-fidelity-source-revisions",
+    /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u,
+  );
+  if (revisions.length !== 1 || fidelities.length !== 1) {
+    throw new Error(`${spec.key}: solution source revision child coverage is not exact`);
+  }
+  for (const [label, pointer] of [
+    ["base solution", spec.baseSolutionCheckpoint],
+    ["base fidelity", spec.baseFidelityCheckpoint],
+    ["parent repair", spec.parentRepairArtifact],
+    ["parent fidelity", spec.parentFidelityArtifact],
+  ] as const) {
+    if (hashFile(confinedEvidencePath(stateDir, pointer, `${spec.key} ${label}`)) !== pointer.sha256) {
+      throw new Error(`${spec.key}: solution source revision ${label} hash mismatch`);
+    }
+  }
+  if (solutionEvidence.sha256 !== spec.sourceHash
+    || effectiveProblemCorpusHash !== spec.effectiveProblemCorpusHash
+    || baseInput.printedNumber !== spec.printedNumber || baseInput.sourcePage !== 25
+    || !isDeepStrictEqual(baseInput.baseSolutionCheckpoint, spec.baseSolutionCheckpoint)
+    || baseInput.baseSolutionItemHash !== spec.baseSolutionItemHash
+    || !isDeepStrictEqual(parentRepairArtifact, spec.parentRepairArtifact)
+    || !isDeepStrictEqual(parentFidelityArtifact, spec.parentFidelityArtifact)
+    || canonicalEvidenceHash(parent.evidence) !== spec.parentRepairSolutionItemHash
+    || sha256(parent.explanation) !== spec.parentRepairExplanationHash
+    || canonicalEvidenceHash(parentDecision) !== spec.parentFidelityDecisionHash
+    || sha256(parentDecision.evidence) !== spec.parentFidelityEvidenceHash) {
+    throw new Error(`${spec.key}: solution source revision parent authority is stale`);
+  }
+  const parentInput: SolutionFidelityInput = {
+    ...baseInput,
+    sourcePage: parent.page,
+    rawAnswer: parent.rawAnswer,
+    explanation: parent.explanation,
+  };
+  const parentFidelity = readBoundEvidence(stateDir, spec.parentFidelityArtifact, `${spec.key} parent fidelity`);
+  if (parentFidelity.inputHash !== spec.parentFidelityInputHash
+    || canonicalEvidenceHash(parentFidelity.input) !== spec.parentFidelityInputHash
+    || !isTerminalSolutionDecision(parentInput, parent, parentDecision)) {
+    throw new Error(`${spec.key}: solution source revision parent fidelity is stale`);
+  }
+  const corrected = expectedSolutionSourceRevision(parent, spec);
+  const revision = revisions[0];
+  const revisionArtifact = { path: revision.path, sha256: revision.sha256 };
+  const expectedRevision = solutionSourceRevisionCheckpoint(spec, corrected);
+  if (revision.path !== solutionSourceRevisionPath(spec)
+    || !isDeepStrictEqual(revision.checkpoint, expectedRevision)) {
+    throw new Error(`${spec.key}: solution source revision envelope is stale`);
+  }
+  const fidelity = fidelities[0];
+  const expectedFidelity = solutionSourceRevisionFidelityCheckpoint(
+    baseInput,
+    spec,
+    revisionArtifact,
+    corrected,
+  );
+  if (fidelity.path !== solutionSourceRevisionFidelityPath(spec, revisionArtifact)
+    || !isDeepStrictEqual(fidelity.checkpoint, expectedFidelity)) {
+    throw new Error(`${spec.key}: solution source revision fidelity envelope is stale`);
+  }
+  const decision = solutionFidelityDecision(
+    fidelity.checkpoint.item,
+    { ...baseInput, sourcePage: corrected.page, rawAnswer: corrected.rawAnswer, explanation: corrected.explanation },
+    `${fidelity.path}.item`,
+  );
+  const evidence: SolutionSourceRevisionEvidence = {
+    solutionArtifact: { ...revisionArtifact, authorityKind: "source-literal-revision" },
+    fidelityArtifact: {
+      path: fidelity.path,
+      sha256: fidelity.sha256,
+      authorityKind: "source-literal-revision-fidelity",
+    },
+    correctionSpecHash: canonicalEvidenceHash(spec),
+    parentRepairSolutionItemHash: spec.parentRepairSolutionItemHash,
+    effectiveSolutionItemHash: spec.expectedSolutionItemHash,
+    parentRepairExplanationHash: spec.parentRepairExplanationHash,
+    effectiveExplanationHash: spec.expectedExplanationHash,
+  };
+  if (declared !== undefined && !isDeepStrictEqual(declared, evidence)) {
+    throw new Error(`${spec.key}: solution source revision evidence envelope is stale`);
+  }
+  return {
+    solution: corrected,
+    decision,
+    fidelityArtifact: evidence.fidelityArtifact,
+    evidence,
+  };
 }
 
 function assertFalseNegativeRepairFidelity(
@@ -13589,8 +13961,20 @@ export function verifyCurrentSolutionFalseNegativeRepairForTest(input: {
   const baseInput = input.baseInput as SolutionFidelityInput;
   const spec = SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST.find((candidate) => candidate.entryId === entry.id)
     ?.items.find((candidate) => candidate.key === baseInput.key);
-  if (!spec) throw new Error(`${baseInput.key}: no solution false-negative authority`);
   const repair = object(input.repair, `${baseInput.key}.repair`);
+  const repairArtifact = evidencePointer(repair.repairArtifact, `${baseInput.key}.repairArtifact`);
+  const sourceSpec = solutionSourceRevisionSpecForParent(entry, baseInput.key, repairArtifact);
+  if (!spec && !sourceSpec) throw new Error(`${baseInput.key}: no solution repair authority`);
+  const parentRepair = sourceSpec ? {
+    ...repair,
+    fidelityArtifact: {
+      ...sourceSpec.parentFidelityArtifact,
+      promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+    },
+    effectiveSolutionItemHash: sourceSpec.parentRepairSolutionItemHash,
+    effectiveExplanationHash: sourceSpec.parentRepairExplanationHash,
+  } : repair;
+  if (sourceSpec) delete parentRepair.sourceRevision;
   const first = verifyFirstSolutionRepair(
     input.stateDir,
     entry,
@@ -13599,10 +13983,37 @@ export function verifyCurrentSolutionFalseNegativeRepairForTest(input: {
     baseInput,
     input.baseSolution as OfficialSolution,
     evidencePointer(input.baseFidelityArtifact, `${baseInput.key}.baseFidelityArtifact`),
-    repair,
+    parentRepair,
     undefined,
     spec,
   );
+  if (sourceSpec) {
+    const sourceRevision = verifySolutionSourceRevision(
+      input.stateDir,
+      entry,
+      input.solutionEvidence as DownloadEvidence,
+      input.effectiveProblemCorpusHash,
+      baseInput,
+      first.solution,
+      first.decision,
+      first.repairArtifact,
+      first.fidelityArtifact,
+      repair.sourceRevision,
+    )!;
+    const expected = {
+      ...first.evidence,
+      effectivePage: sourceRevision.solution.page,
+      fidelityArtifact: sourceRevision.fidelityArtifact,
+      effectiveSolutionItemHash: canonicalEvidenceHash(sourceRevision.solution.evidence),
+      effectiveRawAnswerHash: sha256(sourceRevision.solution.rawAnswer),
+      effectiveExplanationHash: sha256(sourceRevision.solution.explanation),
+      sourceRevision: sourceRevision.evidence,
+    };
+    if (!isDeepStrictEqual(repair, expected)) {
+      throw new Error(`${baseInput.key}: solution source revision evidence does not match its exact chain`);
+    }
+    return expected;
+  }
   if (!isDeepStrictEqual(repair, first.evidence)) {
     throw new Error(`${baseInput.key}: solution repair evidence envelope does not match its exact chain`);
   }
@@ -13811,6 +14222,7 @@ type PersistedSolutionGeneration = {
   seededFromGenerationId?: string;
   revision?: PersistedSolutionRevisionAuthority;
   revisionTrigger?: Record<string, unknown>;
+  sourceRevision?: VerifiedSolutionSourceRevision;
 };
 
 type PersistedSolutionHistory = {
@@ -14440,6 +14852,16 @@ function verifyPersistedSolutionHistory(
     "solution-fidelity-revisions",
     /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u,
   );
+  const sourceRevisionFiles = readCanonicalSolutionArtifacts(
+    stateDir,
+    "solution-source-revisions",
+    /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u,
+  );
+  const sourceRevisionFidelityFiles = readCanonicalSolutionArtifacts(
+    stateDir,
+    "solution-fidelity-source-revisions",
+    /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u,
+  );
   const revisionFidelityAdjudicationFiles = readCanonicalSolutionArtifacts(
     stateDir,
     "solution-fidelity-adjudications",
@@ -14465,6 +14887,7 @@ function verifyPersistedSolutionHistory(
     requiredRevisionKeys: new Set<string>(),
   };
   if (repairFiles.length + repairFidelityFiles.length + revisionFiles.length + revisionFidelityFiles.length
+    + sourceRevisionFiles.length + sourceRevisionFidelityFiles.length
     + revisionFidelityAdjudicationFiles.length
     + promptUpgradeFiles.length + promptUpgradeFidelityFiles.length === 0
     && !hasAdjudicationEvidence) {
@@ -14487,6 +14910,8 @@ function verifyPersistedSolutionHistory(
   const assignedRepairFidelity = new Set<string>();
   const assignedRevision = new Set<string>();
   const assignedRevisionFidelity = new Set<string>();
+  const assignedSourceRevision = new Set<string>();
+  const assignedSourceRevisionFidelity = new Set<string>();
   const assignedRevisionFidelityAdjudication = new Set<string>();
   const assignedRevisionFidelityAdjudicationEvidence = new Set<string>();
   const assignedPromptUpgrade = new Set<string>();
@@ -14743,7 +15168,7 @@ function verifyPersistedSolutionHistory(
       || repair.promptDigest !== TARGETED_SOLUTION_PROMPT_DIGEST
       || repair.model !== "gpt-5.6-sol"
       || repair.reasoningEffort !== "high"
-    )) {
+    ) || v1Match && forcedFalseNegative && "appendExplanation" in forcedFalseNegative) {
       throw new Error(`${repairFile.path}: persisted repair version/path authority is stale`);
     }
     if (forcedFalseNegative && repairedItemHash !== forcedFalseNegative.expectedSolutionItemHash) {
@@ -14804,6 +15229,10 @@ function verifyPersistedSolutionHistory(
       ? sourceLiteralSolutionRepairFidelityPath(input, repairArtifact, forcedAuthority.correctionSpecHash)
       : undefined;
     const sourceLiteralFidelity = fidelity.version === SOLUTION_SOURCE_LITERAL_REPAIR_FIDELITY_VERSION;
+    if (forcedFalseNegative && "appendExplanation" in forcedFalseNegative
+      && (!v2Match || !sourceLiteralFidelity)) {
+      throw new Error(`${key}: appended false-negative solution authority must be deterministic v2`);
+    }
     const expectedFidelity = sourceLiteralFidelity && forcedFalseNegative && v2Match
       ? sourceLiteralSolutionRepairFidelityCheckpoint(
         entry,
@@ -14822,10 +15251,36 @@ function verifyPersistedSolutionHistory(
     }
     if (forcedFalseNegative) assertFalseNegativeRepairFidelity(forcedFalseNegative, repaired, firstDecision);
     const firstTerminal = isTerminalSolutionDecision(repairedInput, repaired, firstDecision);
+    const sourceRevisionSpec = solutionSourceRevisionSpecForParent(
+      entry,
+      key,
+      repairArtifact,
+      { path: fidelityFile.path, sha256: fidelityFile.sha256 },
+    );
+    const sourceRevision = sourceRevisionSpec
+      ? verifySolutionSourceRevision(
+        stateDir,
+        entry,
+        solutionEvidence,
+        effectiveProblemCorpusHash,
+        input,
+        repaired,
+        firstDecision,
+        repairArtifact,
+        { path: fidelityFile.path, sha256: fidelityFile.sha256 },
+        undefined,
+        sourceRevisionFiles,
+        sourceRevisionFidelityFiles,
+      )
+      : undefined;
+    if (sourceRevision) {
+      assignedSourceRevision.add(sourceRevision.evidence.solutionArtifact.path);
+      assignedSourceRevisionFidelity.add(sourceRevision.evidence.fidelityArtifact.path);
+    }
     const revisionChildren = revisionFiles.filter((candidate) =>
       object(candidate.checkpoint.baseRepairArtifact, `${candidate.path}.baseRepairArtifact`).path === repairFile.path);
     if (revisionChildren.length > 1 || (!firstTerminal && revisionChildren.length !== 1)
-      || forcedFalseNegative && revisionChildren.length !== 0) {
+      || (forcedFalseNegative || sourceRevision) && revisionChildren.length !== 0) {
       throw new Error(`${repairFile.path}: persisted revision child coverage is not exact`);
     }
 
@@ -15112,7 +15567,7 @@ function verifyPersistedSolutionHistory(
         if (rawTrigger.kind !== "persisted") revisionTrigger = trigger;
       }
     }
-    if (!revisionAuthority && !firstTerminal) {
+    if (!revisionAuthority && !sourceRevision && !firstTerminal) {
       throw new Error(`${fidelityFile.path}: persisted first repair is nonterminal without a revision`);
     }
     generations.set(generationId, {
@@ -15126,6 +15581,7 @@ function verifyPersistedSolutionHistory(
       ...(persistedSeed ? { persistedSeed, seededFromGenerationId } : {}),
       ...(revisionAuthority ? { revision: revisionAuthority } : {}),
       ...(revisionTrigger ? { revisionTrigger } : {}),
+      ...(sourceRevision ? { sourceRevision } : {}),
     });
     generationContexts.set(generationId, {
       input,
@@ -15345,6 +15801,12 @@ function verifyPersistedSolutionHistory(
   if (revisionFidelityFiles.some((file) => !assignedRevisionFidelity.has(file.path))) {
     throw new Error("orphan persisted solution revision fidelity artifact");
   }
+  if (sourceRevisionFiles.some((file) => !assignedSourceRevision.has(file.path))) {
+    throw new Error("orphan persisted solution source revision artifact");
+  }
+  if (sourceRevisionFidelityFiles.some((file) => !assignedSourceRevisionFidelity.has(file.path))) {
+    throw new Error("orphan persisted solution source revision fidelity artifact");
+  }
   if (revisionFidelityAdjudicationFiles.some((file) =>
     !assignedRevisionFidelityAdjudication.has(file.path))) {
     throw new Error("orphan solution revision fidelity adjudication artifact");
@@ -15498,6 +15960,9 @@ function verifyFirstSolutionRepair(
     )
     : undefined;
   const sourceLiteralRepair = sourceLiteralRepairPath === repairArtifact.path;
+  if (falseNegativeSpec && "appendExplanation" in falseNegativeSpec && !sourceLiteralRepair) {
+    throw new Error(`${key}: appended false-negative solution repair must be deterministic v2`);
+  }
   if (repairArtifact.path !== legacyRepairPath && !sourceLiteralRepair) {
     throw new Error(`${key}: solution repair path is invalid`);
   }
@@ -15554,6 +16019,9 @@ function verifyFirstSolutionRepair(
 
   const fidelityArtifactRow = object(repair.fidelityArtifact, `${key}.fidelityArtifact`);
   const sourceLiteralFidelity = fidelityArtifactRow.authorityKind === "source-literal-fidelity";
+  if (falseNegativeSpec && "appendExplanation" in falseNegativeSpec && !sourceLiteralFidelity) {
+    throw new Error(`${key}: appended false-negative repair fidelity must be deterministic v2`);
+  }
   const expectedFidelityFields = sourceLiteralFidelity
     ? "authorityKind,path,sha256"
     : "path,promptDigest,sha256";
@@ -16235,6 +16703,22 @@ function verifySolutionFidelity(
   const firstRepairSolutions = new Map(baseSolutions);
   for (const key of expectedRepairKeys) {
     const result = baseResults.get(key)!;
+    const declaredRepair = declaredRepairs.get(key)!;
+    const declaredRepairPointer = evidencePointer(
+      declaredRepair.repairArtifact,
+      `${key}.repairArtifact`,
+    );
+    const sourceRevisionSpec = solutionSourceRevisionSpecForParent(entry, key, declaredRepairPointer);
+    const parentRepair = sourceRevisionSpec ? {
+      ...declaredRepair,
+      fidelityArtifact: {
+        ...sourceRevisionSpec.parentFidelityArtifact,
+        promptDigest: SOLUTION_FIDELITY_PROMPT_DIGEST,
+      },
+      effectiveSolutionItemHash: sourceRevisionSpec.parentRepairSolutionItemHash,
+      effectiveExplanationHash: sourceRevisionSpec.parentRepairExplanationHash,
+    } : declaredRepair;
+    if (sourceRevisionSpec) delete parentRepair.sourceRevision;
     const first = verifyFirstSolutionRepair(
       stateDir,
       entry,
@@ -16243,12 +16727,15 @@ function verifySolutionFidelity(
       result.input,
       result.solution,
       result.artifact,
-      declaredRepairs.get(key)!,
+      parentRepair,
       persistedHistory.currentByKey.get(key),
       falseNegativeSpecs.get(key),
     );
     firstRepairs.set(key, first);
-    firstRepairSolutions.set(result.input.printedNumber, first.solution);
+    firstRepairSolutions.set(
+      result.input.printedNumber,
+      persistedHistory.currentByKey.get(key)?.sourceRevision?.solution ?? first.solution,
+    );
   }
   const stagedFidelityRevisions = new Map<string, ReturnType<typeof verifySolutionRevision>>();
   const semanticStageSolutions = new Map(firstRepairSolutions);
@@ -16342,7 +16829,43 @@ function verifySolutionFidelity(
       fidelityArtifact: first.fidelityArtifact,
     };
     let expectedRepair: Record<string, unknown> = first.evidence;
-    if (repair.revision === undefined) {
+    const sourceRevisionSpec = solutionSourceRevisionSpecForParent(entry, key, first.repairArtifact);
+    const sourceRevision = sourceRevisionSpec
+      ? verifySolutionSourceRevision(
+        stateDir,
+        entry,
+        solutionEvidence,
+        effectiveProblemCorpusHash,
+        input,
+        first.solution,
+        first.decision,
+        first.repairArtifact,
+        first.fidelityArtifact,
+        repair.sourceRevision,
+      )
+      : undefined;
+    if (sourceRevision) {
+      if (repair.revision !== undefined) {
+        throw new Error(`${key}: solution source revision must not declare another revision`);
+      }
+      terminal = sourceRevision;
+      expectedRepair = {
+        ...first.evidence,
+        effectivePage: sourceRevision.solution.page,
+        fidelityArtifact: sourceRevision.fidelityArtifact,
+        effectiveSolutionItemHash: canonicalEvidenceHash(sourceRevision.solution.evidence),
+        effectiveRawAnswerHash: sha256(sourceRevision.solution.rawAnswer),
+        effectiveExplanationHash: sha256(sourceRevision.solution.explanation),
+        sourceRevision: sourceRevision.evidence,
+      };
+      const persistedSourceRevision = persistedHistory.currentByKey.get(key)?.sourceRevision;
+      if (!persistedSourceRevision
+        || !isDeepStrictEqual(persistedSourceRevision.evidence, sourceRevision.evidence)) {
+        throw new Error(`${key}: current source revision does not match persisted authority`);
+      }
+    } else if (repair.sourceRevision !== undefined) {
+      throw new Error(`${key}: unallowlisted solution source revision evidence`);
+    } else if (repair.revision === undefined) {
       if (persistedHistory.requiredRevisionKeys.has(key)) {
         throw new Error(`${key}: sticky solution revision authority is omitted from the current audit`);
       }
@@ -16422,6 +16945,33 @@ function verifySolutionFidelity(
     derivedAnswerKeys: items.filter((item) => item.answerStatus === "not_visible")
       .map((item) => String(item.key)).sort(compareCorpusQuestionKeys),
     effectiveSolutionCorpusHash: canonicalEvidenceHash(effectiveSolutionCorpus),
+  };
+}
+
+export function verifyCurrentSolutionFidelityForTest(input: {
+  stateDir: string;
+  entry: unknown;
+  problemEvidence: unknown;
+  solutionEvidence: unknown;
+  rulesDigest: string;
+  effective: unknown;
+  baseSolutions: Map<string, unknown>;
+  audit: unknown;
+}): { solutionRepairKeys: string[]; effectiveSolutionCorpusHash: string } {
+  const verified = verifySolutionFidelity(
+    input.stateDir,
+    input.entry as ManifestEntry,
+    input.problemEvidence as DownloadEvidence,
+    input.solutionEvidence as DownloadEvidence,
+    input.rulesDigest,
+    input.effective as DecisionSummary,
+    input.baseSolutions as Map<string, OfficialSolution>,
+    input.audit as Record<string, unknown>,
+    CURRENT_CONTRACT,
+  );
+  return {
+    solutionRepairKeys: verified.solutionRepairKeys,
+    effectiveSolutionCorpusHash: verified.effectiveSolutionCorpusHash,
   };
 }
 
@@ -16535,14 +17085,21 @@ function hasPersistedSolutionGenerationSignal(stateDir: string): boolean {
     if (existsSync(absolute) && readdirSync(absolute, { withFileTypes: true }).some((entry) =>
       !(entry.isFile() && entry.name.endsWith(".tmp")))) return true;
   }
-  for (const directory of ["solution-repairs", "solution-fidelity-repairs"]) {
+  for (const directory of [
+    "solution-repairs",
+    "solution-fidelity-repairs",
+    "solution-source-revisions",
+    "solution-fidelity-source-revisions",
+  ]) {
     const absolute = join(stateDir, directory);
     try {
       const info = lstatSync(absolute);
       if (info.isSymbolicLink() || !info.isDirectory()
         || realpathSync(absolute) !== resolve(realpathSync(stateDir), directory)) return true;
       if (readdirSync(absolute, { withFileTypes: true }).some((entry) =>
-        !(entry.isFile() && entry.name.endsWith(".tmp")) && entry.name.startsWith("v2-"))) return true;
+        !(entry.isFile() && entry.name.endsWith(".tmp"))
+        && (directory.startsWith("solution-") && directory.includes("source-revisions")
+          || entry.name.startsWith("v2-")))) return true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") return true;
     }

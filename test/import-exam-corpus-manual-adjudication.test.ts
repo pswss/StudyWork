@@ -40,6 +40,7 @@ import {
   PROBLEM_TERMINAL_FIDELITY_VERSION,
   PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST,
   SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST,
+  SOLUTION_SOURCE_REVISION_ALLOWLIST,
   TRANSCRIPTION_GATE_VERSION,
   TRANSCRIPTION_PROMPT_DIGEST,
   actionableTerminalFidelityIssues,
@@ -55,6 +56,7 @@ import {
   parseDecisions,
   repairAndAuditOfficialAnswers,
   solutionRepairFidelityEvidence,
+  writeAnswerAttestation,
   type ClassificationDecision,
   type ClassifiedQuestion,
   type PdfEvidence,
@@ -134,6 +136,7 @@ function q5525982CorrectedSolution(solutions: SolutionItem[], key: string): Solu
     expect(base.explanation.split(replacement.from)).toHaveLength(replacement.count + 1);
     base.explanation = base.explanation.split(replacement.from).join(replacement.to);
   }
+  if ("appendExplanation" in spec) base.explanation += `\n\n${spec.appendExplanation}`;
   expect(canonicalEvidenceHash(base)).toBe(spec.expectedSolutionItemHash);
   return base;
 }
@@ -179,6 +182,8 @@ function removeSolutionRepairArtifacts(stateDir: string): void {
   for (const directory of [
     "solution-repairs",
     "solution-fidelity-repairs",
+    "solution-source-revisions",
+    "solution-fidelity-source-revisions",
     "solution-revisions",
     "solution-fidelity-revisions",
     "solution-fidelity-adjudications",
@@ -1251,8 +1256,11 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
 }
 
 describe("exact allowlisted problem manual adjudication", () => {
-  it("pins the complete Q17-Q34 solution false-negative authority", () => {
+  it("pins the complete Q17-Q45 solution false-negative and Q40 source-revision authority", () => {
     expect(canonicalEvidenceHash(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST))
+      .toBe("90a2a84b2813204915a0e2df9daceabbd4b3a65e410838c590264752ec3a7015");
+    expect(canonicalEvidenceHash([{ ...SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0],
+      items: SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items.slice(0, 11) }]))
       .toBe("8f780112dc37cf0cd67b29fd3237c36a8a2dad4d81201f5f030a155f2303d8ad");
     expect(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items.map((item) => canonicalEvidenceHash(item))).toEqual([
       "e17b1ed3f0ed2c3c155fee47fd0ce1db65b01aac36ddfc152551839085854980",
@@ -1266,7 +1274,16 @@ describe("exact allowlisted problem manual adjudication", () => {
       "a4bbeb2eedf1e5ce27e51fdd229ed2e9f8b291aa322c4d433cf325122d49b454",
       "55673d5bf35b4ad22deae1b0c20fa9b97a41b4bbed858e5bd5cee992c09fde30",
       "e7132199776a4979ebfd4e0cdc1103556ee7ef3c0b4433a4fa1c916c82693802",
+      "5de3213d9a314946ff9cc1e4899ea942a1e77d9fd0ae35971f94763cbba562d2",
+      "307af384fd2bce21dbad093f76e4d1ede7f027d108de4fffa8fee3830affd453",
+      "95a8609ae3b4486eb2d8d9fb6be4ca975ceb8f18759a48a23bf99ec9016dd023",
+      "164a1e36e9d18368e16bab527cb32e1a74a737b3661a109aa80a40c0ed1282c0",
+      "4a151d50050918237ce384f106e519a925af67679c3250140131b963dae3d983",
     ]);
+    expect(canonicalEvidenceHash(SOLUTION_SOURCE_REVISION_ALLOWLIST))
+      .toBe("f4aa29744628e0699be8c1abdcfbc2f330bf4f5376085882ac6cc2d13d529ed3");
+    expect(canonicalEvidenceHash(SOLUTION_SOURCE_REVISION_ALLOWLIST[0]))
+      .toBe("afaf8a15ee23d5f6bf0d6a3a6ad7c7679a2d15813a23ddfb07f3ca51b43afd7e");
   });
 
   it("pins the thirty-six audited sources and exhausted child hashes", () => {
@@ -1686,6 +1703,15 @@ describe("exact allowlisted problem manual adjudication", () => {
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-terminal-defer-live-"));
     cpSync(q27LiveState, root, { recursive: true });
+    rmSync(join(root, SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentRepairArtifact.path));
+    rmSync(join(root, SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentFidelityArtifact.path));
+    rmSync(join(root, "solution-source-revisions"), { recursive: true, force: true });
+    rmSync(join(root, "solution-fidelity-source-revisions"), { recursive: true, force: true });
+    const seededRepairNumbers = readdirSync(join(root, "solution-repairs"))
+      .map((name) => Number(/^v[12]-\d{4}-(\d{4})-/u.exec(name)?.[1]));
+    expect(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items.slice(0, 11)
+      .every((spec) => seededRepairNumbers.includes(Number(spec.key.split(":")[1])))).toBe(true);
+    expect(seededRepairNumbers.some((number) => number >= 41 && number <= 45)).toBe(false);
     const terminalRelativePath =
       "problem-terminal-fidelity/v2-0000-01acbf628ec2f45a8c7024b7851c396c3e9b5ad12c59480ec573ecb8e6d5028e-" +
       "4bc1636d679f790075a71a3f79c5a35e522dac90ccb5c40d60137fadb952dd22.json";
@@ -4843,7 +4869,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(repairFiles).toHaveLength(11);
     expect(fidelityFiles).toHaveLength(11);
     expect(fidelityFiles.every((name) => name.startsWith("v2-"))).toBe(true);
-    for (const spec of SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items) {
+    for (const spec of SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items.slice(0, 11)) {
       const number = Number(spec.key.split(":")[1]);
       const name = repairFiles.find((candidate) => candidate.includes(`-${String(number).padStart(4, "0")}-`))!;
       const checkpoint = JSON.parse(readFileSync(join(root, "solution-repairs", name), "utf8"));
@@ -4982,6 +5008,317 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(providerMock.complete).not.toHaveBeenCalled();
     expect(stateSnapshot(root)).toEqual(before);
   }, 240_000);
+
+  it.skipIf(!existsSync(join(q27LiveState, "solution.pdf")))(
+    "resumes partial Q40 source authority and preflights Q40-Q45 corruption before writes",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-q40-q45-source-negative-seed-"));
+    cpSync(q27LiveState, root, { recursive: true });
+    const seedInput = q27FixtureInputs(root);
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
+        return { text: JSON.stringify(q5525982FidelityDecisions(request.prompt)) };
+      }
+      if (request.schema?.name === "studywork_exam_corpus_semantic_choice_check") {
+        throw new Error("seeded source negative boundary");
+      }
+      throw new Error(`unexpected AI call: ${request.schema?.name ?? "unknown"}`);
+    });
+    await expect(repairAndAuditOfficialAnswers(
+      seedInput.entry,
+      seedInput.problem,
+      seedInput.solution,
+      root,
+      seedInput.classified,
+      seedInput.solutions
+    )).rejects.toThrow("seeded source negative boundary");
+    const sourceRevisionName = readdirSync(join(root, "solution-source-revisions"))[0];
+    const sourceFidelityName = readdirSync(join(root, "solution-fidelity-source-revisions"))[0];
+    const q41RepairName = readdirSync(join(root, "solution-repairs"))
+      .find((name) => /^v2-0026-0041-/u.test(name))!;
+    const q41FidelityName = readdirSync(join(root, "solution-fidelity-repairs"))
+      .find((name) => /^v2-0026-0041-/u.test(name))!;
+    const q45RepairName = readdirSync(join(root, "solution-repairs"))
+      .find((name) => /^v2-0028-0045-/u.test(name))!;
+    const q45FidelityName = readdirSync(join(root, "solution-fidelity-repairs"))
+      .find((name) => /^v2-0028-0045-/u.test(name))!;
+    const partialState = mkdtempSync(join(tmpdir(), "studywork-q40-source-partial-"));
+    try {
+      cpSync(root, partialState, { recursive: true });
+      rmSync(join(partialState, "solution-fidelity-source-revisions", sourceFidelityName));
+      providerMock.complete.mockReset();
+      const partialInput = q27FixtureInputs(partialState);
+      providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+        expect(request.schema?.name).toBe("studywork_exam_corpus_semantic_choice_check");
+        const items = JSON.parse(request.prompt.split("Items:\n")[1]) as Array<{
+          key: string;
+          choices: string[];
+        }>;
+        return { text: JSON.stringify(items.map((item) => {
+          const number = Number(item.key.split(":")[1]);
+          const answer = partialInput.solutions.find((solution) => Number(solution.number) === number)!.answer.trim();
+          const markerIndex = ["①", "②", "③", "④", "⑤"].indexOf(answer);
+          const choiceIndex = markerIndex >= 0 ? markerIndex + 1 : item.choices.indexOf(answer) + 1;
+          return { key: item.key, status: "resolved", choiceIndex, evidence: "seeded semantic evidence" };
+        })) };
+      });
+      await repairAndAuditOfficialAnswers(
+        partialInput.entry,
+        partialInput.problem,
+        partialInput.solution,
+        partialState,
+        partialInput.classified,
+        partialInput.solutions
+      );
+      expect(providerMock.complete).toHaveBeenCalledTimes(1);
+      expect(providerMock.complete.mock.calls[0][0].schema?.name)
+        .toBe("studywork_exam_corpus_semantic_choice_check");
+      expect(hash(readFileSync(join(
+        partialState,
+        "solution-fidelity-source-revisions",
+        sourceFidelityName
+      )))).toBe("09049a9f46f71a25919863a8d74871b96bf179f1387f291b63de710756210801");
+      const completed = stateSnapshot(partialState);
+      providerMock.complete.mockClear();
+      await repairAndAuditOfficialAnswers(
+        partialInput.entry,
+        partialInput.problem,
+        partialInput.solution,
+        partialState,
+        partialInput.classified,
+        partialInput.solutions
+      );
+      expect(providerMock.complete).not.toHaveBeenCalled();
+      expect(stateSnapshot(partialState)).toEqual(completed);
+    } finally {
+      rmSync(partialState, { recursive: true, force: true });
+    }
+    const legacyState = mkdtempSync(join(tmpdir(), "studywork-q40-source-legacy-"));
+    try {
+      cpSync(root, legacyState, { recursive: true });
+      rmSync(join(legacyState, "solution-source-revisions"), { recursive: true });
+      rmSync(join(legacyState, "solution-fidelity-source-revisions"), { recursive: true });
+      rmSync(join(legacyState, "semantic-choice-checks"), { recursive: true, force: true });
+      const repairPath = join(legacyState, SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentRepairArtifact.path);
+      const repair = JSON.parse(readFileSync(repairPath, "utf8"));
+      repair.item.explanation += " legacy exact candidate";
+      writeCanonicalJson(repairPath, repair);
+      const repairedItemHash = canonicalEvidenceHash(repair.item);
+      expect(hash(readFileSync(repairPath))).not.toBe(
+        SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentRepairArtifact.sha256
+      );
+      const pinnedFidelityPath = join(
+        legacyState,
+        SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentFidelityArtifact.path
+      );
+      const fidelity = JSON.parse(readFileSync(pinnedFidelityPath, "utf8"));
+      fidelity.repairArtifact.sha256 = hash(readFileSync(repairPath));
+      fidelity.effectiveSolutionItemHash = repairedItemHash;
+      fidelity.input.explanation = repair.item.explanation;
+      fidelity.inputHash = canonicalEvidenceHash(fidelity.input);
+      const fidelityName = `v1-0025-0040-${fidelity.baseFidelityCheckpoint.sha256}-${repairedItemHash}.json`;
+      rmSync(pinnedFidelityPath);
+      writeCanonicalJson(join(legacyState, "solution-fidelity-repairs", fidelityName), fidelity);
+      providerMock.complete.mockReset();
+      providerMock.complete.mockRejectedValue(new Error("seeded nonmatching Q40 legacy boundary"));
+      const legacyInput = q27FixtureInputs(legacyState);
+      const runLegacy = () => repairAndAuditOfficialAnswers(
+        legacyInput.entry,
+        legacyInput.problem,
+        legacyInput.solution,
+        legacyState,
+        legacyInput.classified,
+        legacyInput.solutions
+      );
+      const before = stateSnapshot(legacyState);
+      await expect(runLegacy()).rejects.toThrow("seeded nonmatching Q40 legacy boundary");
+      expect(providerMock.complete).toHaveBeenCalledTimes(1);
+      expect(providerMock.complete.mock.calls[0][0].schema?.name)
+        .toBe("studywork_exam_corpus_semantic_choice_check");
+      expect(existsSync(join(legacyState, "solution-source-revisions"))).toBe(false);
+      expect(existsSync(join(legacyState, "solution-fidelity-source-revisions"))).toBe(false);
+      expect(stateSnapshot(legacyState)).toEqual(before);
+      providerMock.complete.mockClear();
+      await expect(runLegacy()).rejects.toThrow("seeded nonmatching Q40 legacy boundary");
+      expect(providerMock.complete).toHaveBeenCalledTimes(1);
+      expect(stateSnapshot(legacyState)).toEqual(before);
+    } finally {
+      rmSync(legacyState, { recursive: true, force: true });
+    }
+    const cases: Array<{ label: string; mutate: (stateDir: string) => void; error: RegExp }> = [{
+      label: "Q40 source revision extra field",
+      mutate: (stateDir) => {
+        const path = join(stateDir, "solution-source-revisions", sourceRevisionName);
+        const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+        checkpoint.unexpected = true;
+        writeCanonicalJson(path, checkpoint);
+      },
+      error: /solution source revision envelope/u,
+    }, {
+      label: "Q40 source revision wrong item",
+      mutate: (stateDir) => {
+        const path = join(stateDir, "solution-source-revisions", sourceRevisionName);
+        const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+        checkpoint.item.explanation += " altered";
+        writeCanonicalJson(path, checkpoint);
+      },
+      error: /solution source revision envelope/u,
+    }, {
+      label: "Q40 source fidelity wrong status",
+      mutate: (stateDir) => {
+        const path = join(stateDir, "solution-fidelity-source-revisions", sourceFidelityName);
+        const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+        checkpoint.item.explanationStatus = "mismatch";
+        writeCanonicalJson(path, checkpoint);
+      },
+      error: /solution source revision fidelity envelope/u,
+    }, {
+      label: "Q40 source revision third child",
+      mutate: (stateDir) => writeFileSync(
+        join(stateDir, "solution-source-revisions", sourceRevisionName.replace(
+          /-[a-f0-9]{64}\.json$/u,
+          `-${"f".repeat(64)}.json`
+        )),
+        readFileSync(join(stateDir, "solution-source-revisions", sourceRevisionName))
+      ),
+      error: /solution source revision child coverage/u,
+    }, {
+      label: "Q40 source fidelity orphan",
+      mutate: (stateDir) => {
+        const source = join(stateDir, "solution-fidelity-source-revisions", sourceFidelityName);
+        const checkpoint = JSON.parse(readFileSync(source, "utf8"));
+        checkpoint.revisionArtifact.path = "solution-source-revisions/missing.json";
+        writeCanonicalJson(join(
+          stateDir,
+          "solution-fidelity-source-revisions",
+          sourceFidelityName.replace(/-[a-f0-9]{64}-/u, `-${"e".repeat(64)}-`)
+        ), checkpoint);
+        rmSync(source);
+      },
+      error: /solution source revision fidelity envelope/u,
+    }, {
+      label: "Q40 source revision leaf symlink",
+      mutate: (stateDir) => {
+        const path = join(stateDir, "solution-source-revisions", sourceRevisionName);
+        renameSync(path, `${path}.tmp`);
+        symlinkSync(`${sourceRevisionName}.tmp`, path);
+      },
+      error: /malformed solution authority/u,
+    }, {
+      label: "Q40 source revision directory symlink",
+      mutate: (stateDir) => {
+        const source = join(stateDir, "solution-source-revisions");
+        const target = join(stateDir, "solution-source-revisions-target");
+        renameSync(source, target);
+        symlinkSync("solution-source-revisions-target", source);
+      },
+      error: /디렉터리가 유효하지 않습니다/u,
+    }, {
+      label: "Q40 source fidelity directory symlink",
+      mutate: (stateDir) => {
+        const source = join(stateDir, "solution-fidelity-source-revisions");
+        const target = join(stateDir, "solution-fidelity-source-revisions-target");
+        renameSync(source, target);
+        symlinkSync("solution-fidelity-source-revisions-target", source);
+      },
+      error: /디렉터리가 유효하지 않습니다/u,
+    }, {
+      label: "Q41 legacy v1 repair",
+      mutate: (stateDir) => {
+        const repair = JSON.parse(readFileSync(join(stateDir, "solution-repairs", q41RepairName), "utf8"));
+        const name = `v1-0026-0041-${repair.baseFidelityCheckpoint.sha256}.json`;
+        writeCanonicalJson(join(stateDir, "solution-repairs", name), { ...repair, version: 1 });
+      },
+      error: /solution repair v1\/v2 parent coverage/u,
+    }, {
+      label: "Q45 legacy v1 fidelity",
+      mutate: (stateDir) => {
+        const fidelity = JSON.parse(readFileSync(
+          join(stateDir, "solution-fidelity-repairs", q45FidelityName),
+          "utf8"
+        ));
+        const name = `v1-0028-0045-${fidelity.baseFidelityCheckpoint.sha256}-${fidelity.effectiveSolutionItemHash}.json`;
+        writeCanonicalJson(join(stateDir, "solution-fidelity-repairs", name), { ...fidelity, version: 1 });
+      },
+      error: /repair fidelity child가 중복/u,
+    }, {
+      label: "Q40 exact repair parent only",
+      mutate: (stateDir) => {
+        rmSync(join(stateDir, "solution-source-revisions"), { recursive: true });
+        rmSync(join(stateDir, "solution-fidelity-source-revisions"), { recursive: true });
+        rmSync(join(stateDir, SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentFidelityArtifact.path));
+      },
+      error: /15:40 solution source revision parent coverage/u,
+    }, {
+      label: "Q40 exact fidelity parent only",
+      mutate: (stateDir) => {
+        rmSync(join(stateDir, "solution-source-revisions"), { recursive: true });
+        rmSync(join(stateDir, "solution-fidelity-source-revisions"), { recursive: true });
+        rmSync(join(stateDir, SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentRepairArtifact.path));
+      },
+      error: /15:40 solution source revision parent coverage/u,
+    }, {
+      label: "Q40 parent repair symlink",
+      mutate: (stateDir) => {
+        const path = join(stateDir, SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentRepairArtifact.path);
+        renameSync(path, `${path}.tmp`);
+        symlinkSync(`${path.split("/").at(-1)}.tmp`, path);
+      },
+      error: /solution source revision parent repair이 regular file이 아닙니다/u,
+    }, {
+      label: "Q40 parent repair directory",
+      mutate: (stateDir) => {
+        const path = join(stateDir, SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentRepairArtifact.path);
+        renameSync(path, `${path}.tmp`);
+        mkdirSync(path);
+      },
+      error: /solution source revision parent repair이 regular file이 아닙니다/u,
+    }, {
+      label: "Q40 parent fidelity symlink",
+      mutate: (stateDir) => {
+        const path = join(stateDir, SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentFidelityArtifact.path);
+        renameSync(path, `${path}.tmp`);
+        symlinkSync(`${path.split("/").at(-1)}.tmp`, path);
+      },
+      error: /solution source revision parent fidelity이 regular file이 아닙니다/u,
+    }, {
+      label: "Q41 missing before Q45 self-consistent tamper",
+      mutate: (stateDir) => {
+        rmSync(join(stateDir, "solution-repairs", q41RepairName));
+        rmSync(join(stateDir, "solution-fidelity-repairs", q41FidelityName));
+        const path = join(stateDir, "solution-repairs", q45RepairName);
+        const checkpoint = JSON.parse(readFileSync(path, "utf8"));
+        checkpoint.item.explanation += " altered";
+        writeCanonicalJson(path, checkpoint);
+      },
+      error: /16:45 persisted forced false-negative 해설 repair item이 source candidate와 다릅니다/u,
+    }];
+    for (const testCase of cases) {
+      const stateDir = mkdtempSync(join(tmpdir(), "studywork-q40-q45-source-negative-"));
+      try {
+        cpSync(root, stateDir, { recursive: true });
+        rmSync(join(stateDir, "semantic-choice-checks"), { recursive: true, force: true });
+        rmSync(join(stateDir, "answer-audit"), { recursive: true, force: true });
+        testCase.mutate(stateDir);
+        const before = stateSnapshot(stateDir);
+        providerMock.complete.mockReset();
+        providerMock.complete.mockRejectedValue(new Error("AI must not run"));
+        const input = q27FixtureInputs(stateDir);
+        await expect(repairAndAuditOfficialAnswers(
+          input.entry,
+          input.problem,
+          input.solution,
+          stateDir,
+          input.classified,
+          input.solutions
+        ), testCase.label).rejects.toThrow(testCase.error);
+        expect(providerMock.complete, testCase.label).not.toHaveBeenCalled();
+        expect(stateSnapshot(stateDir), testCase.label).toEqual(before);
+      } finally {
+        rmSync(stateDir, { recursive: true, force: true });
+      }
+    }
+  }, 360_000);
 
   it.skipIf(!existsSync(join(q27LiveState, "solution.pdf")))(
     "rejects v2 repair XOR, envelope, pointer, and symlink corruption before AI or writes",
@@ -5137,6 +5474,20 @@ describe("exact allowlisted problem manual adjudication", () => {
       if (request.schema?.name === "studywork_solution_file_items") {
         throw new Error("seeded live mixed Q40 boundary");
       }
+      if (request.schema?.name === "studywork_exam_corpus_semantic_choice_check") {
+        const items = JSON.parse(request.prompt.split("Items:\n")[1]) as Array<{
+          key: string;
+          choices: string[];
+        }>;
+        return { text: JSON.stringify(items.map((item) => {
+          const number = Number(item.key.split(":")[1]);
+          const answer = input.solutions.find((solution) => Number(solution.number) === number)!.answer.trim();
+          const markerIndex = ["①", "②", "③", "④", "⑤"].indexOf(answer);
+          const choiceIndex = markerIndex >= 0 ? markerIndex + 1 : item.choices.indexOf(answer) + 1;
+          expect(choiceIndex, item.key).toBeGreaterThan(0);
+          return { key: item.key, status: "resolved", choiceIndex, evidence: "seeded semantic evidence" };
+        })) };
+      }
       throw new Error(`unexpected AI call: ${request.schema?.name ?? "unknown"}`);
     });
     const run = () => repairAndAuditOfficialAnswers(
@@ -5155,7 +5506,8 @@ describe("exact allowlisted problem manual adjudication", () => {
     const q17FidelityName = readdirSync(join(root, "solution-fidelity-repairs"))
       .find((name) => /^v1-0011-0017-/u.test(name))!;
     const q17Fidelity = readFileSync(join(root, "solution-fidelity-repairs", q17FidelityName));
-    await expect(run()).rejects.toThrow("seeded live mixed Q40 boundary");
+    const completedAudit = await run();
+    expect(completedAudit.auditPath).toMatch(/^answer-audit\/v\d+-[a-f0-9]{64}\.json$/u);
     expect(providerMock.complete).toHaveBeenCalledTimes(1);
     expect(readFileSync(join(
       root,
@@ -5164,8 +5516,11 @@ describe("exact allowlisted problem manual adjudication", () => {
     ))).toEqual(q17Repair);
     expect(readFileSync(join(root, "solution-fidelity-repairs", q17FidelityName))).toEqual(q17Fidelity);
     const fidelityFiles = readdirSync(join(root, "solution-fidelity-repairs")).sort();
-    expect(fidelityFiles.filter((name) => name.startsWith("v1-"))).toEqual([q17FidelityName]);
-    expect(fidelityFiles.filter((name) => name.startsWith("v2-"))).toHaveLength(10);
+    expect(fidelityFiles.filter((name) => name.startsWith("v1-"))).toEqual([
+      q17FidelityName,
+      SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentFidelityArtifact.path.split("/").at(-1),
+    ].sort());
+    expect(fidelityFiles.filter((name) => name.startsWith("v2-"))).toHaveLength(15);
     const q18Fidelity = JSON.parse(readFileSync(join(
       root,
       "solution-fidelity-repairs",
@@ -5202,14 +5557,102 @@ describe("exact allowlisted problem manual adjudication", () => {
       sha256: hash(q18FidelityBytes),
       authorityKind: "source-literal-fidelity",
     });
+    const sourceRevisions = readdirSync(join(root, "solution-source-revisions"));
+    const sourceFidelities = readdirSync(join(root, "solution-fidelity-source-revisions"));
+    expect(sourceRevisions).toEqual([
+      "v1-0025-0040-09962f7d4b7ca05fcaec236021792af644c1a3565d8a7c8abecd38e3d4e31c62-" +
+        "afaf8a15ee23d5f6bf0d6a3a6ad7c7679a2d15813a23ddfb07f3ca51b43afd7e.json",
+    ]);
+    expect(sourceFidelities).toEqual([
+      "v1-0025-0040-5edaf315941096a05c7f77e6e3d2d5af74c01c5602cea3fbaf81b04bee2780f7-" +
+        "afaf8a15ee23d5f6bf0d6a3a6ad7c7679a2d15813a23ddfb07f3ca51b43afd7e.json",
+    ]);
+    const q40Revision = JSON.parse(readFileSync(join(root, "solution-source-revisions", sourceRevisions[0]), "utf8"));
+    const q40Fidelity = JSON.parse(readFileSync(
+      join(root, "solution-fidelity-source-revisions", sourceFidelities[0]),
+      "utf8"
+    ));
+    expect(hash(readFileSync(join(root, "solution-source-revisions", sourceRevisions[0]))))
+      .toBe("5edaf315941096a05c7f77e6e3d2d5af74c01c5602cea3fbaf81b04bee2780f7");
+    expect(hash(readFileSync(join(root, "solution-fidelity-source-revisions", sourceFidelities[0]))))
+      .toBe("09049a9f46f71a25919863a8d74871b96bf179f1387f291b63de710756210801");
+    expect(canonicalEvidenceHash(q40Revision.item)).toBe(SOLUTION_SOURCE_REVISION_ALLOWLIST[0].expectedSolutionItemHash);
+    expect(q40Fidelity).toMatchObject({
+      authorityKind: "source-literal-revision-fidelity",
+      inputHash: "6d67669ba73d4c8b0d0be02abdb1f378cc714a753c1eebe5acb1a9b2096d18c8",
+      item: { answerStatus: "exact", explanationStatus: "exact", evidence: "SOURCE_LITERAL_REVISION_AUTHORITY" },
+    });
+    for (const spec of SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items.slice(11)) {
+      const number = Number(spec.key.split(":")[1]);
+      const repairName = readdirSync(join(root, "solution-repairs"))
+        .find((name) => name.startsWith("v2-") && name.includes(`-${String(number).padStart(4, "0")}-`))!;
+      const repair = JSON.parse(readFileSync(join(root, "solution-repairs", repairName), "utf8"));
+      expect(canonicalEvidenceHash(repair.item), spec.key).toBe(spec.expectedSolutionItemHash);
+    }
     expect(existsSync(join(root, "solution-revisions"))).toBe(false);
-    expect(existsSync(join(root, "answer-audit"))).toBe(false);
+    expect(existsSync(join(root, "answer-audit"))).toBe(true);
     expect(existsSync(join(root, "answer-attestation"))).toBe(false);
     const completed = stateSnapshot(root);
-    providerMock.complete.mockClear();
-    await expect(run()).rejects.toThrow("seeded live mixed Q40 boundary");
-    expect(providerMock.complete).toHaveBeenCalledTimes(1);
+    providerMock.complete.mockReset();
+    providerMock.complete.mockRejectedValue(new Error("AI must not run"));
+    await expect(auditAcceptedSolutions(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      completedAudit.classified,
+      input.solutions,
+      new Map([["15:40", {
+        kind: "semantic" as const,
+        semanticCheckpoint: {
+          path: "semantic-choice-checks/missing.json",
+          sha256: "0".repeat(64),
+          inputHash: "0".repeat(64),
+          effectiveCorpusHash: "0".repeat(64),
+          effectiveSolutionCorpusHash: "0".repeat(64),
+        },
+        semanticDecision: {
+          key: "15:40",
+          status: "ambiguous" as const,
+          choiceIndex: null,
+          evidence: "seeded forbidden source revision trigger",
+        },
+      }]])
+    )).rejects.toThrow(/15:40 solution source revision 뒤에는 추가 revision이 허용되지 않습니다/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(existsSync(join(root, "solution-revisions"))).toBe(false);
     expect(stateSnapshot(root)).toEqual(completed);
+    providerMock.complete.mockClear();
+    const replayed = await run();
+    expect(replayed.auditHash).toBe(completedAudit.auditHash);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root)).toEqual(completed);
+    const receipt = JSON.parse(readFileSync(join(root, "receipt.json"), "utf8"));
+    const attestation = await writeAnswerAttestation(
+      root,
+      input.entry.id,
+      input.problem.sha256,
+      input.solution.sha256,
+      receipt,
+      completedAudit
+    );
+    expect(attestation.path).toMatch(/^answer-attestation\/v\d+-[a-f0-9]{64}\.json$/u);
+    expect(hash(readFileSync(join(root, attestation.path)))).toBe(attestation.sha256);
+    rmSync(join(root, "answer-attestation"), { recursive: true, force: true });
+    const revisionPath = join(root, "solution-source-revisions", sourceRevisions[0]);
+    const revisionBytes = readFileSync(revisionPath);
+    const tampered = JSON.parse(revisionBytes.toString("utf8"));
+    tampered.unexpected = true;
+    writeCanonicalJson(revisionPath, tampered);
+    await expect(writeAnswerAttestation(
+      root,
+      input.entry.id,
+      input.problem.sha256,
+      input.solution.sha256,
+      receipt,
+      completedAudit
+    )).rejects.toThrow(/solution source revision child hash/u);
+    writeFileSync(revisionPath, revisionBytes);
   }, 240_000);
 
   it.skipIf(!existsSync(join(q27LiveState, "solution.pdf")))(
