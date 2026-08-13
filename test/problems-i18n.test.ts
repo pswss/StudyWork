@@ -7,15 +7,17 @@ import { figureAlt } from "../web/src/pages/Quiz";
 import QuizInkWorkspace from "../web/src/pages/QuizScratchpad";
 
 const expected = {
-  ko: { start: "문제 풀기" },
-  en: { start: "Start problems" },
-  "zh-CN": { start: "开始答题" },
-  es: { start: "Empezar" },
-} satisfies Record<Locale, { start: string }>;
+  ko: { start: "문제 풀기", list: "문제 목록", back: "문제 목록으로" },
+  en: { start: "Start problems", list: "Problem list", back: "Back to problem list" },
+  "zh-CN": { start: "开始答题", list: "题目列表", back: "返回题目列表" },
+  es: { start: "Empezar", list: "Lista de problemas", back: "Volver a la lista de problemas" },
+} satisfies Record<Locale, { start: string; list: string; back: string }>;
 
 describe("문제 도메인 다국어", () => {
   it.each(LOCALES)("%s UI 사전과 실제 풀이판을 해당 언어로 렌더링한다", locale => {
     expect(translate(locale, "problems.bank.start")).toBe(expected[locale].start);
+    expect(translate(locale, "workspace.problemBank")).toBe(expected[locale].list);
+    expect(translate(locale, "problems.run.backToBank")).toBe(expected[locale].back);
     const workspace = renderToStaticMarkup(createElement(I18nProvider, {
       initialLocale: locale,
       children: createElement(QuizInkWorkspace, {
