@@ -1353,6 +1353,8 @@ a.q-chip:hover { color: var(--ink); border-color: var(--lime-dim); background: r
 .q-chip.diff-하 { color: var(--ink-2); border-color: var(--line-strong); }
 .q-chip.diff-중 { color: var(--ink); border-color: var(--line-strong); }
 .q-chip.diff-상 { color: var(--warn); border-color: var(--warn-line); background: var(--warn-fill); }
+.q-chip.pending { color: var(--warn); border-color: var(--warn-line); background: var(--warn-fill); }
+.quiz-row.pending { opacity: .78; }
 
 .quiz-row-detail {
   width: 100%; padding: 14px 16px 16px; margin-top: 4px;

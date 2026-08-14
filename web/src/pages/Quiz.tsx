@@ -459,9 +459,9 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   }
 
   // ── 문제 목록 로드 ────────────────────────────────────────────────────────────
-  async function loadBank() {
+  async function loadBank(background = false) {
     const request = ++bankRequestRef.current;
-    setLoading(true);
+    if (!background) setLoading(true);
     setLoadErr("");
     try {
       const qs = await apiQuestions(subject.id);
@@ -493,6 +493,15 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     setGenMsgs(savedJobIds.length > 0 ? [{ key: "problems.generation.resume" }] : []);
     void loadBank();
   }, [subject.id]);
+
+  const questionsProcessing = materials.some(material => material.book_status === "processing");
+  useEffect(() => {
+    if (!active) return;
+    void loadBank(true);
+    if (!questionsProcessing) return;
+    const timer = setInterval(() => void loadBank(true), 2500);
+    return () => clearInterval(timer);
+  }, [active, questionsProcessing, subject.id]);
 
   // 추적 중인 생성 작업 전부를 한 주기에 확인 — 끝난 작업만 제거하고 나머지는 계속 돈다.
   useEffect(() => {
@@ -594,40 +603,45 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   }
 
   // ── 요약 ──────────────────────────────────────────────────────────────────────
-  const total = bankQs.length;
-  const uploadedCount = bankQs.filter(q => q.source === "uploaded").length;
-  const generatedCount = bankQs.filter(q => q.source === "generated").length;
+  const readyBankQs = useMemo(() => bankQs.filter(q => !q.pending), [bankQs]);
+  const pendingCount = bankQs.length - readyBankQs.length;
+  const total = readyBankQs.length;
+  const uploadedCount = readyBankQs.filter(q => q.source === "uploaded").length;
+  const generatedCount = readyBankQs.filter(q => q.source === "generated").length;
   const diffCounts = {
-    "하": bankQs.filter(q => q.difficulty === "하").length,
-    "중": bankQs.filter(q => q.difficulty === "중").length,
-    "상": bankQs.filter(q => q.difficulty === "상").length,
+    "하": readyBankQs.filter(q => q.difficulty === "하").length,
+    "중": readyBankQs.filter(q => q.difficulty === "중").length,
+    "상": readyBankQs.filter(q => q.difficulty === "상").length,
   };
-  const eligibleStartCount = useMemo(() => bankQs.filter(q =>
+  const eligibleStartCount = useMemo(() => readyBankQs.filter(q =>
     (allInScope || selected.has(q.id))
     && (startSource === "all" || q.source === startSource)
     && (startDiff === "all" || q.difficulty === startDiff)
     && (!startWrong || q.wrong_count > 0)
-  ).length, [bankQs, allInScope, selected, startSource, startDiff, startWrong]);
+  ).length, [readyBankQs, allInScope, selected, startSource, startDiff, startWrong]);
   const plannedStartCount = Math.min(startCount, eligibleStartCount);
 
   // ── 체크박스 ──────────────────────────────────────────────────────────────────
   function toggleSelect(id: number) {
-    const next = allInScope ? new Set(bankQs.map(q => q.id)) : new Set(selected);
+    if (bankQs.find(q => q.id === id)?.pending) return;
+    const next = allInScope ? new Set(readyBankQs.map(q => q.id)) : new Set(selected);
     next.has(id) ? next.delete(id) : next.add(id);
     setSelected(next);
-    setAllInScope(next.size === bankQs.length);
+    setAllInScope(next.size === readyBankQs.length);
   }
   function toggleGroupSelection(items: Question[]) {
-    const next = allInScope ? new Set(bankQs.map(q => q.id)) : new Set(selected);
-    const groupSelected = items.every(q => next.has(q.id));
-    for (const q of items) {
+    const selectable = items.filter(q => !q.pending);
+    if (selectable.length === 0) return;
+    const next = allInScope ? new Set(readyBankQs.map(q => q.id)) : new Set(selected);
+    const groupSelected = selectable.every(q => next.has(q.id));
+    for (const q of selectable) {
       if (groupSelected) next.delete(q.id); else next.add(q.id);
     }
     setSelected(next);
-    setAllInScope(next.size === bankQs.length);
+    setAllInScope(next.size === readyBankQs.length);
   }
   function toggleAll() {
-    if (allInScope || selected.size === bankQs.length) {
+    if (allInScope || selected.size === readyBankQs.length) {
       setAllInScope(false);
       setSelected(new Set());
     } else {
@@ -758,7 +772,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     if (allInScope) {
       return runQuiz({ source: startSource, diff: startDiff, count: startCount, wrong: startWrong || undefined });
     }
-    const eligible = bankQs.filter(q =>
+    const eligible = readyBankQs.filter(q =>
       selected.has(q.id)
       && (startSource === "all" || q.source === startSource)
       && (startDiff === "all" || q.difficulty === startDiff)
@@ -803,6 +817,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   // ── 문제 삭제 ─────────────────────────────────────────────────────────────────
   function doDelete(id: number) {
     const question = bankQs.find(item => item.id === id);
+    if (!question || question.pending) return;
     scheduleDelete({
       key: `question:${id}`,
       label: question
@@ -835,7 +850,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
   const [explGenBusy, setExplGenBusy] = useState<Set<number>>(new Set());
   const [explGenNotice, setExplGenNotice] = useState<Map<number, { tone: "warn" | "bad"; text: string }>>(new Map());
   async function generateExplanation(id: number) {
-    if (explGenBusy.has(id)) return;
+    if (explGenBusy.has(id) || bankQs.find(question => question.id === id)?.pending) return;
     setExplGenBusy(prev => new Set(prev).add(id));
     setExplGenNotice(prev => { const next = new Map(prev); next.delete(id); return next; });
     try {
@@ -864,9 +879,9 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
 
   // ── 인쇄 ──────────────────────────────────────────────────────────────────────
   function doPrint(type: "question" | "answer", questions?: Question[], title = subject.name) {
-    const targets = questions ?? (!allInScope
+    const targets = (questions ?? (!allInScope
       ? bankQs.filter(q => selected.has(q.id))
-      : bankQs);
+      : bankQs)).filter(q => !q.pending);
     const error = printQuestions(title, targets, type, locale, t, formatNumber);
     if (error) setBankErr(error);
   }
@@ -1255,6 +1270,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
           medium: formatNumber(diffCounts["중"]),
           high: formatNumber(diffCounts["상"]),
         })}
+        {pendingCount > 0 && ` · ${t("problems.pending.summary", { count: formatNumber(pendingCount) })}`}
       </div>
 
       {loadErr && (
@@ -1487,17 +1503,18 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
             <label className="quiz-check-label">
               <input
                 type="checkbox"
-                checked={allInScope}
+                checked={readyBankQs.length > 0 && allInScope}
                 ref={el => { if (el) el.indeterminate = !allInScope && selected.size > 0; }}
                 onChange={toggleAll}
+                disabled={readyBankQs.length === 0}
               />
               {t("problems.list.all")}
             </label>
             <div className="quiz-list-actions">
-              <button className="btn sm" onClick={() => doPrint("question")}>
+              <button className="btn sm" onClick={() => doPrint("question")} disabled={readyBankQs.length === 0}>
                 {t("problems.list.printQuestion")}
               </button>
-              <button className="btn sm" onClick={() => doPrint("answer")}>
+              <button className="btn sm" onClick={() => doPrint("answer")} disabled={readyBankQs.length === 0}>
                 {t("problems.list.printAnswer")}
               </button>
             </div>
@@ -1505,7 +1522,8 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
 
           {groups.map((g, groupIndex) => {
             const open = openGroups.has(g.key) || groups.length === 1; // 그룹 하나뿐이면 항상 펼침
-            const gsel = allInScope ? g.items.length : g.items.filter(q => selected.has(q.id)).length;
+            const selectableItems = g.items.filter(q => !q.pending);
+            const gsel = allInScope ? selectableItems.length : selectableItems.filter(q => selected.has(q.id)).length;
             return (
               <div key={g.key} className="quiz-file-group">
                 <div className="quiz-file-head">
@@ -1515,9 +1533,10 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                   >
                     <input
                       type="checkbox"
-                      checked={gsel === g.items.length}
-                      ref={el => { if (el) el.indeterminate = gsel > 0 && gsel < g.items.length; }}
+                      checked={selectableItems.length > 0 && gsel === selectableItems.length}
+                      ref={el => { if (el) el.indeterminate = gsel > 0 && gsel < selectableItems.length; }}
                       onChange={() => toggleGroupSelection(g.items)}
+                      disabled={selectableItems.length === 0}
                       aria-label={t("problems.list.groupSelectAria", { file: g.label })}
                     />
                     <span>{t("problems.list.materialAll")}</span>
@@ -1563,15 +1582,17 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
 
                 <div id={`quiz-file-panel-${groupIndex}`} className="quiz-file-panel" hidden={!open}>
                 {open && g.items.map(q => (
-                  <div key={q.id} className="quiz-row">
+                  <div key={q.id} className={`quiz-row${q.pending ? " pending" : ""}`}>
                     <label className="quiz-check-label quiz-check-box" title={t("problems.list.selectTitle")}>
                       <input
                         type="checkbox"
-                        checked={allInScope || selected.has(q.id)}
+                        checked={!q.pending && (allInScope || selected.has(q.id))}
                         onChange={() => toggleSelect(q.id)}
+                        disabled={q.pending}
                         aria-label={t("problems.select.aria", { question: q.question.slice(0, 40) })}
                       />
                     </label>
+                    {q.pending && <span className="q-chip pending">{t("problems.pending.badge")}</span>}
                     <span className="q-chip qtype">{qtypeLabel(q.qtype, t)}</span>
                     <span className={`q-chip diff-${q.difficulty}`}>{difficultyLabel(q.difficulty, t)}</span>
                     <button
@@ -1582,13 +1603,13 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                       aria-expanded={expanded.has(q.id)}
                       aria-controls={`quiz-question-detail-${q.id}`}
                     ><MdInlineText text={numberedQuestionText(q)} /></button>
-                    <span className="quiz-accuracy">{accuracyLabel(q, t, formatNumber)}</span>
+                    <span className="quiz-accuracy">{q.pending ? t("problems.pending.badge") : accuracyLabel(q, t, formatNumber)}</span>
                     <button
                       className="del-btn"
                       aria-label={pendingDelete?.key === `question:${q.id}`
                         ? t("problems.delete.pending")
                         : t("problems.delete.aria", { question: q.question.slice(0, 40) })}
-                      disabled={pendingDelete !== null}
+                      disabled={q.pending || pendingDelete !== null}
                       onClick={() => doDelete(q.id)}
                     >✕</button>
 
@@ -1610,6 +1631,9 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                             {q.choices.map((c, i) => <li key={i}><MdInline text={c} /></li>)}
                           </ol>
                         )}
+                        {q.pending ? (
+                          <div className="quiz-row-explanation">{t("problems.pending.detail")}</div>
+                        ) : (<>
                         <div className="quiz-row-answer">
                           {t("problems.run.answer")} <strong><MdInline text={q.answer} /></strong>
                         </div>
@@ -1633,6 +1657,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                             )}
                           </div>
                         )}
+                        </>)}
                         {q.src_file_id && q.has_figure === 1 && (
                           <img
                             className="quiz-figure compact"

@@ -490,6 +490,72 @@ describe("GET /api/subjects/:id/questions", () => {
     expect(Array.isArray(mcq?.choices)).toBe(true);
   });
 
+  it("업로드 청크의 문제를 검증 전에 즉시 보여주고 확정본이 생기면 교체", async () => {
+    const book = await env.DB.prepare(
+      "INSERT INTO books (subject_id, title) VALUES (?, '즉시 문제 표시') RETURNING id"
+    ).bind(subjectId).first<{ id: number }>();
+    const file = await env.DB.prepare(
+      `INSERT INTO book_files (book_id, name, r2_key, mime, status)
+       VALUES (?, '즉시.pdf', 'pending-questions.pdf', 'application/pdf', 'processing') RETURNING id`
+    ).bind(book!.id).first<{ id: number }>();
+    const payload = [
+      {
+        number: "1", qtype: "mcq", difficulty: "중", question: "청크에서 먼저 보이는 객관식",
+        choices: ["보기 1", "보기 2"], answer: "보기 1", explanation: "검증 전 해설",
+        page: 3, figure: true, figure_description: "좌표평면", box: [0.1, 0.6],
+      },
+      {
+        number: "2", qtype: "short", difficulty: "상", question: "청크에서 먼저 보이는 단답형",
+        choices: null, answer: "정답", explanation: "검증 전 해설",
+        page: 4, figure: false, figure_description: null, box: null,
+      },
+    ];
+    try {
+      await env.DB.prepare(
+        "INSERT INTO book_extraction_chunks (file_id, chunk_index, payload) VALUES (?, 0, ?)"
+      ).bind(file!.id, JSON.stringify(payload)).run();
+
+      const res = await call(env, `/api/subjects/${subjectId}/questions`, { headers: { cookie } });
+      const rows = (await res.json()) as Array<Record<string, unknown>>;
+      const pending = rows.filter(row => row.src_file_id === file!.id);
+      expect(pending).toEqual([
+        expect.objectContaining({
+          pending: true, question: "청크에서 먼저 보이는 객관식", choices: ["보기 1", "보기 2"],
+          answer: "", explanation: "", printed_number: "1", has_figure: 1,
+        }),
+        expect.objectContaining({
+          pending: true, question: "청크에서 먼저 보이는 단답형", answer: "", explanation: "",
+          printed_number: "2", has_figure: 0,
+        }),
+      ]);
+      expect(pending.every(row => Number(row.id) < 0)).toBe(true);
+
+      const generated = await call(
+        env,
+        `/api/subjects/${subjectId}/questions?source=generated`,
+        { headers: { cookie } },
+      );
+      expect(((await generated.json()) as Array<Record<string, unknown>>)
+        .some(row => row.src_file_id === file!.id)).toBe(false);
+
+      await env.DB.prepare(
+        `INSERT INTO questions
+           (subject_id, source, qtype, difficulty, question, answer, src_file_id)
+         VALUES (?, 'uploaded', 'short', '중', '전체 검증 완료 문제', '정답', ?)`
+      ).bind(subjectId, file!.id).run();
+      const finalized = await call(env, `/api/subjects/${subjectId}/questions`, { headers: { cookie } });
+      expect(((await finalized.json()) as Array<Record<string, unknown>>)
+        .filter(row => row.src_file_id === file!.id)).toEqual([
+          expect.objectContaining({ pending: false, question: "전체 검증 완료 문제" }),
+        ]);
+    } finally {
+      await env.DB.prepare("DELETE FROM questions WHERE src_file_id = ?").bind(file!.id).run();
+      await env.DB.prepare("DELETE FROM book_extraction_chunks WHERE file_id = ?").bind(file!.id).run();
+      await env.DB.prepare("DELETE FROM book_files WHERE id = ?").bind(file!.id).run();
+      await env.DB.prepare("DELETE FROM books WHERE id = ?").bind(book!.id).run();
+    }
+  });
+
   it("문제집 번호가 다시 시작되어도 원본 페이지 순서와 번호를 보존", async () => {
     const book = await env.DB.prepare(
       "INSERT INTO books (subject_id, title) VALUES (?, '원본 순서 검증') RETURNING id"

@@ -1205,9 +1205,9 @@ describe("문제 추출 라우트 (파일 → questions 직행)", () => {
     await expect(second.json()).resolves.toMatchObject({ error: expect.stringContaining("같은 과목") });
   });
 
-  it("PDF 첫 청크 실패 뒤 새 AI 호출을 멈추고 provider 재시도 정책에 위임", async () => {
+  it("PDF 청크가 실패해도 나머지를 모두 만든 뒤 실패 청크를 재시도", async () => {
     const doc = await PDFDocument.create();
-    for (let i = 0; i < 96; i++) doc.addPage([613, 793]);
+    for (let i = 0; i < 400; i++) doc.addPage([613, 793]);
     const saved = await doc.save();
     const bytes = saved.buffer.slice(saved.byteOffset, saved.byteOffset + saved.byteLength) as ArrayBuffer;
     const fd = new FormData();
@@ -1226,9 +1226,9 @@ describe("문제 추출 라우트 (파일 → questions 직행)", () => {
       const body = (await res.json()) as { id: number };
       const book = await waitReady(body.id);
       expect(book.files[0].status).toBe("error");
-      expect(book.files[0].error).toBe("문제 추출 실패: 페이지 구간 5/5개");
-      // 5청크를 한 번에 실행한 뒤 누락 청크만 자동 1회 재시도하고 멈춘다.
-      expect(mockState.problemCalls).toBe(10);
+      expect(book.files[0].error).toBe("문제 추출 실패: 페이지 구간 21/21개");
+      // 병렬 한도(20)를 넘는 마지막 청크도 두 번 모두 실행되어야 한다.
+      expect(mockState.problemCalls).toBe(42);
     } finally {
       mockState.failProblems = false;
       mockState.problemCalls = 0;

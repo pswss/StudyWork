@@ -1,7 +1,10 @@
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import type { Env } from "./index";
-import { generateMockExam, generateQuestions, type QuizQuestion } from "./claude";
+import {
+  generateMockExam, generateQuestions,
+  type QuizItemEx, type QuizQuestion,
+} from "./claude";
 import { checkAndIncrementUsage } from "./usage";
 import { createAIJob, readyAIJobStatement, runAIJob, setAIJobProgress } from "./ai-jobs";
 import {
@@ -131,8 +134,82 @@ quizRoutes.get("/subjects/:id/questions", async (c) => {
     choices: r.choices ? JSON.parse(r.choices as string) : null,
     src_file_id: r.src_file_name != null ? r.src_file_id : null,
     src_file_name: r.src_file_name ?? null,
+    pending: false,
   }));
-  return c.json(rows);
+
+  // 추출 청크는 이미 개별 저장된다. 최종 원자 검증·교체는 그대로 두고,
+  // 새 업로드에 아직 확정 문항이 없을 때만 검증 전 읽기 전용 문제로 먼저 보여준다.
+  const pendingRows: Record<string, unknown>[] = [];
+  if (source !== "generated") {
+    const { results: chunks } = await c.env.DB.prepare(
+      `SELECT bec.file_id, bec.chunk_index, bec.payload, bec.created_at,
+              bf.name AS src_file_name, b.id AS book_id
+       FROM book_extraction_chunks bec
+       JOIN book_files bf ON bf.id = bec.file_id AND bf.status != 'ready'
+       JOIN books b ON b.id = bf.book_id
+       WHERE b.subject_id = ?
+         AND NOT EXISTS (SELECT 1 FROM questions q WHERE q.src_file_id = bf.id)
+       ORDER BY bec.file_id DESC, bec.chunk_index`
+    ).bind(subjectId).all<{
+      file_id: number;
+      chunk_index: number;
+      payload: string;
+      created_at: string;
+      src_file_name: string;
+      book_id: number;
+    }>();
+    const seen = new Set<string>();
+    for (const chunk of chunks) {
+      let items: QuizItemEx[];
+      try {
+        const parsed: unknown = JSON.parse(chunk.payload);
+        if (!Array.isArray(parsed)) continue;
+        items = parsed as QuizItemEx[];
+      } catch {
+        continue;
+      }
+      for (let index = 0; index < items.length; index++) {
+        const item = items[index];
+        if (difficulty && item.difficulty !== difficulty) continue;
+        const key = `${chunk.file_id}:${item.page ?? ""}:${item.number ?? ""}:${item.question}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const printedNumber = item.number?.trim() || null;
+        pendingRows.push({
+          id: -(chunk.file_id * 10_000_000 + chunk.chunk_index * 10_000 + index + 1),
+          subject_id: Number(subjectId),
+          source: "uploaded",
+          qtype: item.qtype,
+          difficulty: item.difficulty,
+          question: item.question,
+          choices: item.choices,
+          answer: "",
+          explanation: "",
+          correct_count: 0,
+          wrong_count: 0,
+          created_at: chunk.created_at,
+          book_id: chunk.book_id,
+          book_number: printedNumber,
+          printed_number: printedNumber,
+          src_file_id: chunk.file_id,
+          src_file_name: chunk.src_file_name,
+          src_page: item.page,
+          has_figure: item.figure ? 1 : 0,
+          figure_description: item.figure_description,
+          figure_box: item.box ? item.box.join(",") : null,
+          mock_exam_job_id: null,
+          mock_exam_title: null,
+          exam_order: null,
+          exam_points: null,
+          exam_section: null,
+          passage_group: null,
+          passage: null,
+          pending: true,
+        });
+      }
+    }
+  }
+  return c.json([...pendingRows, ...rows]);
 });
 
 // 문제 파일 업로드 추출 라우트는 제거 — 문제집화(to-book)가 문제 등록을 담당한다

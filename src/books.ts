@@ -468,7 +468,9 @@ async function extractAllQuestions(
   let limitHit = false; // 청크 실패가 '사용량 한도' 때문이면 표시 — 부분 성공을 완료로 오인 저장하지 않게
   let autoRetryBlocked = false;
   let terminalError: unknown;
-  let stopLaunching = false; // 한 청크라도 실패하면 이번 원자 교체는 불가능하므로 새 AI 호출을 막는다
+  // 인증·한도처럼 뒤 청크도 전부 실패할 오류만 중단한다. 개별 청크 오류는 나머지를 먼저
+  // 끝까지 만들어 화면에 보여주고, 아래 재시도에서 누락 청크만 다시 처리한다.
+  let stopLaunching = false;
   const noteLimit = (e: unknown) => { if (isUsageLimitText(String(e))) limitHit = true; };
   const sliced = isPdf ? await slicePdf(absPath, CHUNK, CHUNK - 1) : null;
 
@@ -500,7 +502,7 @@ async function extractAllQuestions(
           onProgress?.(Math.round((chunkCache.size / chunks) * 100));
           return items;
         } catch (e) {
-          stopLaunching = true;
+          stopLaunching = blocksAutomaticRetry(e) || isUsageLimitText(String(e));
           terminalError = e;
           console.error(`[문제추출] 청크 실패 (p.${s.from}~): ${e instanceof AIProviderError ? e.code : e instanceof Error ? e.message : String(e)}`);
           noteLimit(e);

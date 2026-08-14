@@ -241,6 +241,7 @@ export async function updateAISettings(update: AISettingsUpdate): Promise<AISett
 // ===== quiz / questions =====
 export interface Question {
   id: number;
+  pending: boolean; // 추출 청크에는 있으나 전체 자료 검증 전인 읽기 전용 문제
   subject_id: number;
   source: "uploaded" | "generated";
   qtype: "mcq" | "short" | "ox";
