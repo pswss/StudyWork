@@ -1503,6 +1503,141 @@ const Q7_5578421_REPLACEMENTS: ProblemManualReplacement[] = [
   { field: "question", from: "㉤붉은", to: "㉤ 붉은", count: 1 },
 ];
 
+const Q19_Q21_5578421_SOURCE_NA = [
+  "(나)",
+  "이 밤 이제 조금만 있으면 닭이 울어서 귀신이 제 집으로 가고 육보름달*이 오겠습니다. " +
+    "이 좋은 밤에 시꺼먼 잠을 자면 하얗게 눈썹이 센다는 말은 얼마나 무서운 말입니까. " +
+    "육보름이면 옛사람의 인정 같은 고사리의 반가운 맛이 나를 울려도 좋듯이 허연 영감 귀신의 " +
+    "호통 같은 이 무서운 말이 이 밤에 내 잠을 쫓아 버려도 나는 좋습니다. 고요하니 즐거운 이 밤 " +
+    "초롱초롱 맑게 괸 샘물 같은 눈으로 나는 지금 당신께서 보내 주신 맑고 고운 수선화 한 폭을 " +
+    "들여다봅니다. 들여다보노라니 그윽한 향기와 새파란 꿈이 안개같이 오르고 또 노란 슬픔이 " +
+    "냇내같이 오릅니다.",
+  "나는 이제 이 긴긴밤을 당신께 이 노란 슬픔의 이야기 나 해서 보내도 좋겠습니다. 남쪽 바닷가 " +
+    "어떤 낡은 항구의 처녀 하나를 나는 좋아했습니다. 머리가 까맣고 눈이 크고 코가 높고 목이 패고 " +
+    "키가 호리낭창했습니다. 그가 열 살이 못 되어 젊디젊은 그 아버지는 가슴을 앓아 죽고 그는 " +
+    "아름다운 젊은 홀어머니와 둘이 동지섣달에도 눈이 오지 않는 따뜻한 이 낡은 항구의 크나큰 " +
+    "기와집에서 그늘진 풀같이 살아왔습니다.",
+  "어느 해 유월이 저물게 실비 오는 무더운 밤에 처음으로 그를 안 나는 여러 아름다운 것에 그를 " +
+    "견주어 보았습니다. 당신께서 좋아하시는 산새에도 해오라비에도 또 진달래에도 그리고 산호에도…. " +
+    "그러나 나는 어리석어서 아름다움이 닮은 것을 골라낼 수 없었습니다. 총명한 내 친구 하나가 그를 " +
+    "비겨서 수선이라고 했습니다. 그제는 나도 기뻐서 그를 비겨 수선이라고 했습니다. 그러한 나의 " +
+    "수선이 시들어갑니다. 그는 스물을 넘지 못하고 또 가슴의 병을 얻었습니다. 이 이야기는 이만하고 " +
+    "나의 노란 슬픔이 더 떠오르지 않게 나는 당신의 보내 주신 맑고 고운 수선화의 폭을 치워 놓아야 " +
+    "하겠습니다.",
+  "밤이 아직 샐 때가 멀고 복밥을 먹을 때도 아직 되지 않았습니다. 이제 나는 어머니의 바느질 그릇이 " +
+    "있는 데로 가서 무새 헝겊이나 얻어다가 알록달록한 각시나 만들면서 이 남은 밤을 당신께서 " +
+    "좋아하실 내 시골 육보름 밤의 이야기 나 해서 보내도 좋겠습니까.",
+  "육보름으로 넘어서는 밤은 집집이 안간으로 사랑으로 윗간에도 맏윗간에도 누방에도 허청에도 " +
+    "고방에도 부엌에도 대문간에도 외양간에도 모두 쩨듯하니 불을 켜 놓고 복을 맞이하는 밤입니다. " +
+    "달 밝은 마을의 행길 어디로는 복덩이가 돌아다닐 것도 같은 밤입니다. 닭이 수잠을 자고 개가 " +
+    "밤물을 먹고 도야지 깃을 들썩이는 밤입니다. 새악시 처녀들은 새 옷을 입고 복물을 긷는다고 벌을 " +
+    "건너기도 하고 고개를 넘기도 하여 부잣집 우물로 가서 반동이에 옹패기에 찰락찰락 물을 길어오며 " +
+    "별 같은 이야기를 재깔재깔하는 밤입니다.",
+  "새악시 처녀들은 또 복을 가져오느라고 달을 보고 웃어 가며 살기같이 여우같이 부잣집으로 가서는 " +
+    "날쌔기도 하게 기왓골의 기왓장을 벗겨 오고 부엌의 솥뚜껑을 들어오고 곱새담의 짚날을 뽑아 오고…. " +
+    "이렇게 허물없는 즐거움 속에 끼득깨득하는 그들은 산에서 내린 무슨 암짐승들이 되어 버리는 " +
+    "밤입니다. 그러다는 집으로 들어가서 마음 고요히 세 마디 달린 수숫대에 마디마디 콩 한 알씩을 " +
+    "박아 물독 안에 넣는 밤인데 밝은 날 산골이라는 윗마디, 중산이라는 가운뎃마디, 해변이라는 " +
+    "밑마디의 그 어느 마디의 콩이 붇는가를 보고 그 어느 고장에 풍년이 들 것을 점칠 것입니다. " +
+    "그러다는 닭이 울어서 새날이 되면 아홉 가지 나물에 아홉 그릇 밥을 먹으면, 먹으면 몸 솔쐐기*가 " +
+    "쏜다는 김치와 먹으면 김맬 때 비가 온다는 물을 자꾸 먹고 싶어 하는 밤입니다.",
+  "이렇게 해서 육보름의 아침이 됩니다. 새악시 처녀들은 해뜨기 전에 동리 국수당의 스무나무 가지를 " +
+    "쪄 오려서 가시가시에 하얀 솜을 피우고 그 솜밭 속에 며칠 앞서부터 스물이고 서른이고 만들어 놓은 " +
+    "울긋불긋한 각시와 새하얀 할미를 세워서는 굴통 담에 곱새담에 장독담에 꽂아 놓는데, 이렇게 하면 " +
+    "이 해에는 하루같이 목화밭에서 천 근 목화가 난다고 믿는 그들이 새 옷의 스적이는 소리도 좋게 " +
+    "의좋은 짝패들끼리 끼리끼리 밀려다니며 담장마다 머물러서는 목화 따는 할미며 각시와 무슨 " +
+    "이야기나 하는 듯이 즐거워하는 것입니다.",
+  "(닭이 우나?) 아, 닭이 웁니다. 나는 이만 이야기를 그치고 복밥을 기다리는 얼마 아닌 동안 신선과 " +
+    "고사리와 수선화와 병든 내 사람이나 생각하겠습니다.",
+  "- 백석, ｢ 편지｣ -",
+  "*육보름달: 정월 대보름날 밤에 뜨는 가장 둥근 달을 의미함.\n" +
+    "*곱새담: 풀 짚으로 만든 담.\n*솔쐐기: 소나무 송충이.",
+].join("\n\n");
+
+const Q19_5578421_REPLACEMENTS: ProblemManualReplacement[] = [
+  { field: "question", from: "다음 글을 읽고 물음에 답하시오.",
+    to: "[19 ~ 21] 다음 글을 읽고 물음에 답하시오.", count: 1 },
+  { field: "question", from: "빼걱빼걱", to: "삐걱삐걱", count: 1 },
+  { field: "question", from: "- 허난설헌, 「빈녀음(貧女吟)」 -",
+    to: "- 허난설헌, ｢ 빈녀음(貧女吟) ｣ -", count: 1 },
+  { field: "question", from: "\n\n(나)\n이 밤 이제", to: "\n\n(나)\n\n이 밤 이제", count: 1 },
+  { field: "question", from: "육보름달이 오겠습니다.", to: "육보름달*이 오겠습니다.", count: 1 },
+  { field: "question", from: "백사람의 인정", to: "옛사람의 인정", count: 1 },
+  { field: "question", from: "맑게 켠 샘물", to: "맑게 괸 샘물", count: 1 },
+  { field: "question", from: "새파란 꿈이 한꺼번에 오르고 또 노란 슬픔이 빛내같이",
+    to: "새파란 꿈이 안개같이 오르고 또 노란 슬픔이 냇내같이", count: 1 },
+  { field: "question", from: "이 노란 슬픔의 이야기나 해서 보내도 좋겠습니다.",
+    to: "이 노란 슬픔의 이야기 나 해서 보내도 좋겠습니다.", count: 1 },
+  { field: "question", from: "따뜻한 이 남쪽 항구", to: "따뜻한 이 낡은 항구", count: 1 },
+  { field: "question", from: "산호에도…….", to: "산호에도….", count: 1 },
+  { field: "question", from: "내 시골 육보름 밤의 이야기나 해서",
+    to: "내 시골 육보름 밤의 이야기 나 해서", count: 1 },
+  { field: "question", from: "윗간에도 말칸에도 누방에도 헛청에도",
+    to: "윗간에도 맏윗간에도 누방에도 허청에도", count: 1 },
+  { field: "question", from: "쩡하니", to: "쩨듯하니", count: 1 },
+  { field: "question", from: "행길 어디로든", to: "행길 어디로는", count: 1 },
+  { field: "question", from: "도야지 젖을", to: "도야지 깃을", count: 1 },
+  { field: "question", from: "바가지에 옹배기에", to: "반동이에 옹패기에", count: 1 },
+  { field: "question", from: "복을 가져온다고", to: "복을 가져오느라고", count: 1 },
+  { field: "question", from: "곱새담의 짚단을 빼아 오고……",
+    to: "곱새담의 짚날을 뽑아 오고….", count: 1 },
+  { field: "question", from: "끼득끼득", to: "끼득깨득", count: 1 },
+  { field: "question", from: "가운데마디", to: "가운뎃마디", count: 1 },
+  { field: "question", from: "그 어느 고장이 풍년이", to: "그 어느 고장에 풍년이", count: 1 },
+  { field: "question", from: "몸 슬쩍기가 쉽다는", to: "몸 솔쐐기*가 쏜다는", count: 1 },
+  { field: "question", from: "동네 국수당의 소무나무 가지를 꺾어 오려서",
+    to: "동리 국수당의 스무나무 가지를 쪄 오려서", count: 1 },
+  { field: "question", from: "그 솜발 속에", to: "그 솜밭 속에", count: 1 },
+  { field: "question", from: "굽새담에", to: "곱새담에", count: 1 },
+  { field: "question", from: "목화 때는", to: "목화 따는", count: 1 },
+  { field: "question", from: "- 백석, 「편지」 -", to: "- 백석, ｢ 편지｣ -", count: 1 },
+  { field: "question", from: "* 육보름달:", to: "*육보름달:", count: 1 },
+  { field: "question", from: "* 곱새담: 물 짚으로 만드는 담.",
+    to: "*곱새담: 풀 짚으로 만든 담.", count: 1 },
+  { field: "question", from: "* 슬쩍기: 소나무 송충이.",
+    to: "*솔쐐기: 소나무 송충이.", count: 1 },
+  { field: "choices", from: "적도시켜", to: "전도시켜", count: 1 },
+];
+
+const Q20_5578421_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question", from: "(가)\n",
+  to: "[19 ~ 21] 다음 글을 읽고 물음에 답하시오.\n\n(가)\n", count: 1,
+}, {
+  field: "question", from: "\n－ 허난설헌, 「빈녀음(貧女吟)」 －",
+  to: "\n\n- 허난설헌, ｢ 빈녀음(貧女吟) ｣ -", count: 1,
+}, {
+  field: "question", from: "\n\n시적 맥락을",
+  to: `\n\n${Q19_Q21_5578421_SOURCE_NA}\n\n시적 맥락을`, count: 1,
+}];
+
+const Q21_5578421_REPLACEMENTS: ProblemManualReplacement[] = [
+  { field: "question", from: "맑게 켠 샘물", to: "맑게 괸 샘물", count: 1 },
+  { field: "question", from: "꽃내같이", to: "냇내같이", count: 1 },
+  { field: "question", from: "이 노란 슬픔의 이야기나 해서 보내도 좋겠습니까.",
+    to: "이 노란 슬픔의 이야기 나 해서 보내도 좋겠습니다.", count: 1 },
+  { field: "question", from: "내 시골 육보름 밤의 이야기나 해서",
+    to: "내 시골 육보름 밤의 이야기 나 해서", count: 1 },
+  { field: "question", from: "윗간에도 말윗간에도 두방에도",
+    to: "윗간에도 맏윗간에도 누방에도", count: 1 },
+  { field: "question", from: "쩌듯하니", to: "쩨듯하니", count: 1 },
+  { field: "question", from: "복물을 길는다고", to: "복물을 긷는다고", count: 1 },
+  { field: "question", from: "찰랑찰랑", to: "찰락찰락", count: 1 },
+  { field: "question", from: "가운데마디", to: "가운뎃마디", count: 1 },
+  { field: "question", from: "붓는가", to: "붇는가", count: 1 },
+  { field: "question", from: "꺾어 오려서", to: "쪄 오려서", count: 1 },
+  { field: "question", from: "그 솜발 속에", to: "그 솜밭 속에", count: 1 },
+  { field: "question", from: "― 백석, 「편지」 ―", to: "- 백석, ｢ 편지｣ -", count: 1 },
+  { field: "question", from: "* 육보름달:", to: "*육보름달:", count: 1 },
+  { field: "question", from: "* 곱새담:", to: "*곱새담:", count: 1 },
+  { field: "question", from: "* 솔쐐기:", to: "*솔쐐기:", count: 1 },
+  { field: "question", from: "「편지」는 두 가지", to: "｢ 편지｣는 두 가지", count: 1 },
+];
+
+const Q21_5578421_FIGURE_DESCRIPTION =
+  "<보기> 중앙에 ㉮와 ㉯로 표시된 두 개의 직사각형 상자가 좌우로 배치되어 수평선으로 " +
+  "연결되어 있다. 왼쪽 ㉮ 상자에는 ‘노란 슬픔의 이야기’, 오른쪽 ㉯ 상자에는 ‘시골 육보름 " +
+  "밤의 이야기’라고 적혀 있다.";
+
 const Q34_MANUAL_FIGURE_DESCRIPTION =
   "공식 12쪽의 (가)에는 왼쪽 세로 묶음 괄호가 3개 있다. 각 괄호는 세로선 하나와 오른쪽을 향한 " +
   "위·아래 가로 캡 2개로 이루어져 가로 캡은 모두 6개이다. 첫째 [A] 괄호는 ‘마님, 나으리께서 " +
@@ -4278,6 +4413,87 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     ],
     replacements: Q7_5578421_REPLACEMENTS,
     expectedDecision: "reject",
+  },
+  {
+    allowlistId: "ebsi-5578421-q19-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "8:19",
+    sourcePage: 8,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "1e4c8241e9391c05b428cd2c561da4fcb2c0b090119e3f5182b107be3b42f9da",
+    dpi: 600,
+    failedQuestionHash: "19710fe3df82be5879b547dcd2bc9e30457ac8d7bf2e293d3272e979564e9635",
+    failedClassificationHash: "5b45cfb3e49eca278496d2619921690967e1cfab5162feb4d8d67b9ed37215e5",
+    failedClassificationEvidenceHash: "5f0fe308b659edc9e17936d83d2bf494be322029a1e89ef084bad7cf40f1bc83",
+    views: [
+      { sourcePage: 7, label: "p7 right Q19-Q21 shared passage start", rect: [0.50, 0.30, 0.95, 0.98] },
+      { sourcePage: 8, label: "p8 full Q19-Q21 passage and questions", rect: [0, 0, 1, 1] },
+    ],
+    requiredTokens: [
+      "[19 ~ 21] 다음 글을 읽고 물음에 답하시오.", "삐걱삐걱", "육보름달*",
+      "맑게 괸 샘물", "냇내같이", "복물을 긷는다고", "찰락찰락",
+      "동리 국수당의 스무나무 가지를 쪄 오려서", "- 백석, ｢ 편지｣ -",
+      "② 주체와 객체를 전도시켜 시의 긴장감을 부각하고 있다.",
+    ],
+    replacements: Q19_5578421_REPLACEMENTS,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  },
+  {
+    allowlistId: "ebsi-5578421-q20-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "8:20",
+    sourcePage: 8,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "f92b5c7a27643d72811332be77b20512e0c96ddab611ead75e68e157c583d394",
+    dpi: 600,
+    failedQuestionHash: "8a09ea48488566ab6de9ed12c9dd75e0cfc0cec5fa157749c875ebc8b7aa466a",
+    failedClassificationHash: "6e7f6cf883e96c44fb7961ff3c91b3bc3baf61092d5d6ba7416c7c0d3ae6da67",
+    failedClassificationEvidenceHash: "1fe762e671dd2cc41726128d5f6ca45f9cb41020df2a53215e9037002f4bc9a6",
+    views: [
+      { sourcePage: 7, label: "p7 right Q19-Q21 shared passage start", rect: [0.50, 0.30, 0.95, 0.98] },
+      { sourcePage: 8, label: "p8 full Q19-Q21 passage and Q20", rect: [0, 0, 1, 1] },
+    ],
+    requiredTokens: [
+      "[19 ~ 21] 다음 글을 읽고 물음에 답하시오.", "삐걱삐걱", "육보름달*",
+      "옛사람의 인정", "맑게 괸 샘물", "이 노란 슬픔의 이야기 나 해서 보내도 좋겠습니다.",
+      "동리 국수당의 스무나무 가지를 쪄 오려서", "*곱새담: 풀 짚으로 만든 담.",
+      "시적 맥락을 고려하여 (가)의 [A]～[D]를 이해한 내용으로 적절하지 않은 것은?",
+    ],
+    replacements: Q20_5578421_REPLACEMENTS,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  },
+  {
+    allowlistId: "ebsi-5578421-q21-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "8:21",
+    sourcePage: 8,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "be3348b3d4d34cb6450e3620a8aa8195ed8331c370b6a30e1458d70492afcda0",
+    dpi: 600,
+    failedQuestionHash: "e6224ee2a0c1888088cd189db93228eba62d966a8a800323c42c59dfad0ad8d1",
+    failedClassificationHash: "27a378a726117777e6d1bff71259b3fa84e661599f81da2e28ad75eaffb7c0a6",
+    failedClassificationEvidenceHash: "2af5ef4e59f6b46c3ad9e2a22f6702c55fccd152b59993feac963b16d8d53e28",
+    views: [
+      { sourcePage: 7, label: "p7 right Q19-Q21 shared passage start", rect: [0.50, 0.30, 0.95, 0.98] },
+      { sourcePage: 8, label: "p8 full Q19-Q21 passage, diagram, and Q21", rect: [0, 0, 1, 1] },
+    ],
+    requiredTokens: [
+      "육보름달*", "맑게 괸 샘물", "냇내같이",
+      "이 노란 슬픔의 이야기 나 해서 보내도 좋겠습니다.", "맏윗간에도 누방에도",
+      "복물을 긷는다고", "찰락찰락", "콩이 붇는가", "그 솜밭 속에",
+      "*곱새담: 풀 짚으로 만든 담.", "｢ 편지｣는 두 가지 이야기로 구성되어 있다.",
+      "왼쪽 ㉮ 상자에는 ‘노란 슬픔의 이야기’",
+    ],
+    replacements: Q21_5578421_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q21_5578421_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
   },
 ] as const;
 
