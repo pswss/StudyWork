@@ -2923,6 +2923,45 @@ const Q34_5578421_FIGURE_DESCRIPTION = Q30_FIGURE_DESCRIPTION +
   "들어간다. 게이트 오른쪽에서 수평 출력선 하나가 나와 Y로 표시되고, 아래에는 ‘Y = A + B’가 " +
   "적혀 있다.";
 
+const Q6_Q7_5578421_SHARED_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question", from: "[6~8]", to: "[6 ~ 8]", count: 1,
+}, {
+  field: "question", from: "■", to: "￭", count: 2,
+}, {
+  field: "question", from: "「매월당 김시습」", to: "｢ 매월당 김시습 ｣", count: 1,
+}, {
+  field: "question", from: "마치 육지 속 외로운 섬과 같이,", to: "마치 육지 속 외로운 섬과 같이.",
+  count: 1,
+}, {
+  field: "question", from: "고운 님 여의옵고", to: "고운 임 여의옵고", count: 1,
+}];
+
+const Q6_5578421_REPLACEMENTS: ProblemManualReplacement[] = [
+  ...Q6_Q7_5578421_SHARED_REPLACEMENTS,
+  {
+    field: "question", from: "엄흥도 ㉣ 같다고 혼잣말을 했다.",
+    to: "엄흥도 ㉣ 같다라고 혼잣말을 했다.", count: 1,
+  }, {
+    field: "question",
+    from: "단종을 위로한 엄흥도.\n\n손꼽아 기다렸다.",
+    to: "단종을 위로한 엄흥도.\n\n노산대는 서강을 따라 솟아 있는 산봉우리들이 보이는 절벽가에 " +
+      "있다. 어린 임금은 해질 무렵이면 여기에 올라 봉우리들 너머 그 너머에 있는 한양 쪽을 " +
+      "바라보면서 다시 돌아갈 날을 손꼽아 기다렸다.",
+    count: 1,
+  }, {
+    field: "question", from: "환연하여", to: "완연하여", count: 1,
+  },
+];
+
+const Q7_5578421_REPLACEMENTS: ProblemManualReplacement[] = [
+  ...Q6_Q7_5578421_SHARED_REPLACEMENTS,
+  { field: "question", from: "㉠마치게", to: "㉠ 마치게", count: 1 },
+  { field: "question", from: "㉡설레인다", to: "㉡ 설레인다", count: 1 },
+  { field: "question", from: "㉢그러나", to: "㉢ 그러나", count: 1 },
+  { field: "question", from: "㉣같다라고", to: "㉣ 같다라고", count: 1 },
+  { field: "question", from: "㉤붉은", to: "㉤ 붉은", count: 1 },
+];
+
 const Q34_FIGURE_DESCRIPTION =
   "공식 12쪽의 (가)에는 왼쪽 세로 묶음 괄호가 3개 있다. 각 괄호는 세로선 하나와 오른쪽을 향한 " +
   "위·아래 가로 캡 2개로 이루어져 가로 캡은 모두 6개이다. 첫째 [A] 괄호는 ‘마님, 나으리께서 " +
@@ -5657,6 +5696,59 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     figureDescription: Q34_5578421_FIGURE_DESCRIPTION,
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5578421-q6-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "3:6",
+    sourcePage: 3,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "86c2932460456351d20cb215d9e768cde33886f0326d25f84cf884f80f48309f",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "52aa42011ffd0f0194ee00aa1a104153b4fb94f19fdcb80f92d38bf00562df00",
+    failedClassificationHash: "060a78027618587eeadec5c7342e6cbaa4a77b6c7d3c2474d782da712e172d0e",
+    failedClassificationEvidenceHash: "d18a8a00eef9d4c3d439a7204a5dc442ef98a5290f5af6e37d7d67855ef2b82c",
+    views: [
+      { sourcePage: 2, label: "p2 right Q6-Q8 passage start", rect: [0.50, 0.42, 0.95, 0.99] },
+      { sourcePage: 3, label: "p3 left Q6-Q8 passage end and Q6", rect: [0.07, 0.06, 0.50, 0.50] },
+    ],
+    requiredTokens: [
+      "[6 ~ 8] 다음은 동아리 문학 기행 감상문이다.", "￭ 작문 상황", "￭ 초고",
+      "｢ 매월당 김시습 ｣", "마치 육지 속 외로운 섬과 같이.", "엄흥도 ㉣ 같다라고",
+      "노산대는 서강을 따라 솟아 있는 산봉우리들이 보이는 절벽가에 있다.",
+      "봉우리들 너머 그 너머에 있는 한양 쪽", "완연하여", "고운 임 여의옵고",
+      "6. 학생의 작문 계획 중 ‘초고’에 반영되지 않은 것은?",
+    ],
+    replacements: Q6_5578421_REPLACEMENTS,
+    expectedDecision: "reject",
+  },
+  {
+    allowlistId: "ebsi-5578421-q7-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "3:7",
+    sourcePage: 3,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "757964e9fb4368a06ae8c04e7fcbee1ec8d77d3f9024e5239b64498b73ca06f7",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "8b6ba03103bd8a26a105487d78254129255861465f4473b72a7f2333396b4bac",
+    failedClassificationHash: "6a27be7f925f1439600b35163617f20ab4e0013fe7cd35b40b9f1b8157a667dc",
+    failedClassificationEvidenceHash: "7a3e3f0d1375eb7ee3fa2028d8de342373639215d25e1d1f85d43f9d99d518f4",
+    views: [
+      { sourcePage: 2, label: "p2 right Q6-Q8 passage start", rect: [0.50, 0.42, 0.95, 0.99] },
+      { sourcePage: 3, label: "p3 left Q6-Q8 passage end and Q7", rect: [0.07, 0.06, 0.50, 0.72] },
+    ],
+    requiredTokens: [
+      "[6 ~ 8] 다음은 동아리 문학 기행 감상문이다.", "￭ 작문 상황", "￭ 초고",
+      "｢ 매월당 김시습 ｣", "㉠ 마치게", "㉡ 설레인다", "㉢ 그러나", "㉣ 같다라고", "㉤ 붉은",
+      "마치 육지 속 외로운 섬과 같이.", "봉우리들 너머 그 너머에 있는 한양 쪽",
+      "완연하여", "고운 임 여의옵고", "7. ㉠~㉤을 고쳐 쓰기 위한 방안으로",
+    ],
+    replacements: Q7_5578421_REPLACEMENTS,
+    expectedDecision: "reject",
   },
 ] as const;
 
@@ -16660,6 +16752,10 @@ function is5578421Q33Q34ManualBatchSpec(spec: ProblemManualAdjudicationSpec): bo
   return spec.entryId === "ebsi:5578421" && ["12:33", "12:34"].includes(spec.key);
 }
 
+function is5578421Q6Q7ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5578421" && ["3:6", "3:7"].includes(spec.key);
+}
+
 function isQ37ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5525982" && spec.key === "14:37";
 }
@@ -17015,7 +17111,9 @@ async function preflightProblemManualBatch(
     }
     return;
   }
-  const predicate = is5578421Q33Q34ManualBatchSpec(requestedSpec)
+  const predicate = is5578421Q6Q7ManualBatchSpec(requestedSpec)
+    ? is5578421Q6Q7ManualBatchSpec
+    : is5578421Q33Q34ManualBatchSpec(requestedSpec)
     ? is5578421Q33Q34ManualBatchSpec
     : is5578421Q31Q32ManualBatchSpec(requestedSpec)
     ? is5578421Q31Q32ManualBatchSpec
@@ -22401,6 +22499,10 @@ export async function repairAndAuditOfficialAnswers(
       manualNames.push(readdirSync(path));
     }
     for (const group of [{
+      predicate: is5578421Q6Q7ManualBatchSpec,
+      signal: /^v\d+-0003-000[67](?:-|\.)/u,
+      label: "Q6-Q7",
+    }, {
       predicate: is5578421Q31Q32ManualBatchSpec,
       signal: /^v\d+-0012-003[12](?:-|\.)/u,
       label: "Q31-Q32",
@@ -22486,18 +22588,21 @@ export async function repairAndAuditOfficialAnswers(
   ): Promise<Set<string>> => {
     const changedKeys = new Set<string>();
     const uniqueKeys = [...new Set(keys)];
-    const forced5578421ManualSpecs = revisionKind === "terminal" && entry.id === "ebsi:5578421" &&
-      problem.sha256 === "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e" &&
-      uniqueKeys.some((key) => key === "12:31" || key === "12:32") &&
-      ["12:31", "12:32"].every((key) => Boolean(repairs.get(key)?.revision))
-      ? PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(is5578421Q31Q32ManualBatchSpec)
-        .sort((left, right) => compareCorpusQuestionKeys(left.key, right.key))
+    const forced5578421ManualGroups = revisionKind === "terminal" && entry.id === "ebsi:5578421" &&
+      problem.sha256 === "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e"
+      ? [is5578421Q6Q7ManualBatchSpec, is5578421Q31Q32ManualBatchSpec].flatMap((predicate) => {
+          const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(predicate)
+            .sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+          return specs.some((spec) => uniqueKeys.includes(spec.key)) &&
+              specs.every((spec) => Boolean(repairs.get(spec.key)?.revision))
+            ? [specs]
+            : [];
+        })
       : [];
-    if (forced5578421ManualSpecs.length > 0) {
-      if (forced5578421ManualSpecs.length !== 2) {
-        throw new Error("ebsi:5578421 Q31-Q32 manual pair allowlist가 다릅니다");
-      }
-      await preflightProblemManualBatch(entry, problem, stateDir, forced5578421ManualSpecs[0]);
+    const forced5578421ManualSpecs = forced5578421ManualGroups.flat();
+    for (const specs of forced5578421ManualGroups) {
+      if (specs.length !== 2) throw new Error("ebsi:5578421 forced manual pair allowlist가 다릅니다");
+      await preflightProblemManualBatch(entry, problem, stateDir, specs[0]);
     }
     const triggeredManualCurrents = uniqueKeys.flatMap((key) => {
       const index = effective.findIndex((item) => questionKey(item.question) === key);
