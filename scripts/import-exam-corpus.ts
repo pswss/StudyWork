@@ -2591,6 +2591,160 @@ const Q30_FIGURE_DESCRIPTION =
   "가로선 하나가 있고, 그 아래 결론 ‘q’가 놓인다. 두 도식 사이에는 왼쪽에서 오른쪽을 가리키는 " +
   "‘⇒’가 하나 있다. 가로선은 총 2개이며 각각 두 전제와 한 결론을 구분한다.";
 
+const Q32_FIGURE_DESCRIPTION = Q30_FIGURE_DESCRIPTION +
+  " 또한 공식 12쪽 왼쪽 32번의 선택지 ①~⑤는 각각 두 전제, 수평 가로선 하나, 결론의 세로 " +
+  "논증 도식이다. 위에서 아래로 ①은 M-P/S-M/S-P, ②는 P-M/S-M/S-P, ③은 P-M/M-S/S-P, " +
+  "④는 M-P/P-S/S-P, ⑤는 M-P/M-S/S-P이며, 각 선택지에서 앞의 두 행은 가로선 위, 마지막 " +
+  "S-P는 가로선 아래에 놓인다. ①~③은 위 행에, ④~⑤는 아래 행에 배치되고 가로선은 총 5개이다.";
+
+const Q31_5578421_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "다음 글을 읽고 물음에 답하시오.",
+  to: "[29~34] 다음 글을 읽고 물음에 답하시오.",
+  count: 1,
+}, {
+  field: "question",
+  from: "• 모든 A는 B이다.\n• 모든 A는 B가 아니다.\n• 어떤 A는 B이다.\n• 어떤 A는 B가 아니다.",
+  to: "• 모든 A는 B이다.  • 모든 A는 B가 아니다.\n• 어떤 A는 B이다.  • 어떤 A는 B가 아니다.",
+  count: 1,
+}, {
+  field: "question",
+  from: "만약 술어가 ‘걷는다’와 같은 동사인 경우에는 ‘걷는 존재’와 같은 명사(名辭)로",
+  to: "만약 술어가 ‘걷는다’와 같이 동사인 경우에는 ‘걷는 존재’와 같은 명사(名辭)*로",
+  count: 1,
+}, {
+  field: "question",
+  from: "‘M, P, S’를 조합하여 ㉠ 정언 삼단 논증의 네 가지 유형을 만들 수 있다.",
+  to: "‘M, P, S’를 조합해서 ㉠ 정언 삼단 논증의 네 가지 유형을 만들 수 있다.",
+  count: 1,
+}, {
+  field: "question",
+  from: "단순 명제 ‘$p$’와 ‘$q$’를 ‘만약 …이면 …이다.’에 해당하는",
+  to: "단순 명제 ‘$p$’와 ‘$q$’는 ‘만약 …이면 …이다.’에 해당하는",
+  count: 1,
+}, {
+  field: "question",
+  from: "(4) 만약 $p$이면 $q$이다.          (4′) $p \\to q$\n" +
+    "$p$이다.                 $\\Rightarrow$          $p$\n" +
+    "그러므로 $q$이다.                       $q$",
+  to: "(4) 만약 $p$이면 $q$이다.      (4′) $p \\to q$\n" +
+    "$p$이다.                  ⇒       $p$\n" +
+    "────────                         ────────\n" +
+    "그러므로 $q$이다.                 $q$",
+  count: 1,
+}, {
+  field: "question",
+  from: "논증의 타당성을 평가한다.",
+  to: "논증의 타당성을 평가했다.",
+  count: 1,
+}, {
+  field: "question",
+  from: "<전제1>의 실행 조건인 $p$를 긍정함으로써 <전제1>의 결과인 $q$가 성립된다고",
+  to: "<전제1>의 선행 조건인 $p$를 긍정함으로써 <결론>인 $q$가 성립된다고",
+  count: 1,
+}, {
+  field: "question",
+  from: "ⓐ와 ⓑ의 입장에서 다음 <보기>를 분석한 것으로 적절하지 않은 것은?",
+  to: "ⓐ와 ⓑ의 입장에서 <보기>를 분석한 것으로 적절하지 않은 것은?",
+  count: 1,
+}, {
+  field: "question",
+  from: "민수는 일하거나 논다.\n민수는 일하지 않는다.\n민수는 논다.",
+  to: "민수는 일하거나 논다.  <전제1>\n민수는 일하지 않는다.  <전제2>\n민수는 논다.  <결론>",
+  count: 1,
+}];
+
+const Q32_5578421_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "• 모든 A는 B이다.        • 모든 A는 B가 아니다.\n" +
+    "• 어떤 A는 B이다.        • 어떤 A는 B가 아니다.",
+  to: "• 모든 A는 B이다.  • 모든 A는 B가 아니다.\n" +
+    "• 어떤 A는 B이다.  • 어떤 A는 B가 아니다.",
+  count: 1,
+}, {
+  field: "question",
+  from: "(1) 모든 [아버지]는 [남자]이다.  <전제1>\n" +
+    "    어떤 [사람]은 [아버지]이다.  <전제2>\n" +
+    "    그러므로 어떤 [사람]은 [남자]이다.  <결론>",
+  to: "(1) 모든 [아버지]는 [남자]이다.  <전제1>\n" +
+    "어떤 [사람]은 [아버지]이다.  <전제2>\n" +
+    "그러므로 어떤 [사람]은 [남자]이다.  <결론>",
+  count: 1,
+}, {
+  field: "question", from: "전제들을 연결할 수 있도록", to: "전제들을 엮을 수 있도록", count: 1,
+}, {
+  field: "question", from: "‘걷는다’와 같은 동사인", to: "‘걷는다’와 같이 동사인", count: 1,
+}, {
+  field: "question",
+  from: "(2) 모든 [M]은 [P]이다.  <대전제>\n" +
+    "    어떤 [S]는 [M]이다.  <소전제>\n" +
+    "    그러므로 어떤 [S]는 [P]이다.  <결론>",
+  to: "(2) 모든 [M]은 [P]이다.  <대전제>\n" +
+    "어떤 [S]는 [M]이다.  <소전제>\n" +
+    "그러므로 어떤 [S]는 [P]이다.  <결론>",
+  count: 1,
+}, {
+  field: "question", from: "유형을 만들어 냈다.", to: "유형을 만들 수 있다.", count: 1,
+}, {
+  field: "question",
+  from: "(3) 만약 비가 온다면, 소풍은 취소된다.  <전제1>\n" +
+    "    비가 온다.  <전제2>\n" +
+    "    그러므로 소풍은 취소된다.  <결론>",
+  to: "(3) 만약 비가 온다면, 소풍은 취소된다.  <전제1>\n" +
+    "비가 온다.  <전제2>\n" +
+    "그러므로 소풍은 취소된다.  <결론>",
+  count: 1,
+}, {
+  field: "question",
+  from: "그리고 더 이상 분해할 수 없는 명제를 단순 명제라 하여 ‘p, q, r’ 등의 기호로 표시하고, " +
+    "단순 명제에 논리적 연결사인 ‘∨(또는)’, ‘∧(그리고)’, ‘→(만약 …이면 …이다)’, " +
+    "‘∼(…가 아니다)’ 등을 사용하여 복합 명제를 만들었다.",
+  to: "그리고 더 이상 분해할 수 없는 명제를 단순 명제라 하여 ‘$p$, $q$, $r$’ 등의 기호로 " +
+    "표시하고, 단순 명제에 논리적 연결사인 ‘$\\lor$(또는)’, ‘$\\land$(그리고)’, " +
+    "‘$\\to$(만약 …이면 …이다)’, ‘$\\sim$(…가 아니다)’ 등을 사용하여 복합 명제를 만들었다.",
+  count: 1,
+}, {
+  field: "question",
+  from: "가령 (3)의 <전제1>은 ‘비가 온다.’와 ‘소풍은 취소된다.’의 두 개의 단순 명제가 연결된 " +
+    "복합 명제로, 각각의 단순 명제를 ‘p’와 ‘q’로 나타낼 수 있다. 그리고 단순 명제 ‘p’와 ‘q’는 " +
+    "‘만약 …이면 …이다.’에 해당하는 논리적 연결사 ‘→’를 사용하여 ‘p→q’와 같은 복합 명제로 " +
+    "나타낼 수 있다.",
+  to: "가령 (3)의 <전제1>은 ‘비가 온다.’와 ‘소풍은 취소된다.’의 두 개의 단순 명제가 연결된 " +
+    "복합 명제로, 각각의 단순 명제를 ‘$p$’와 ‘$q$’로 나타낼 수 있다. 그리고 단순 명제 ‘$p$’와 " +
+    "‘$q$’는 ‘만약 …이면 …이다.’에 해당하는 논리적 연결사 ‘$\\to$’를 사용하여 ‘$p \\to q$’와 " +
+    "같은 복합 명제로 나타낼 수 있다.",
+  count: 1,
+}, {
+  field: "question",
+  from: "(4) 만약 p이면 q이다.        (4′) p → q\n" +
+    "    p이다.                        p\n" +
+    "    그러므로 q이다.               q",
+  to: "(4) 만약 $p$이면 $q$이다.      (4′) $p \\to q$\n" +
+    "$p$이다.                  ⇒       $p$\n" +
+    "────────                         ────────\n" +
+    "그러므로 $q$이다.                 $q$",
+  count: 1,
+}, {
+  field: "question",
+  from: "아리스토텔레스는 정언 문장에서 명사들 간의 관계에 의존하여 논증의 타당성을 설명하였지만, " +
+    "명제 논리학에서는 명제들의 진릿값과 논리적 연결사에 의존하여 논증의 타당성을 평가했다. 가령, " +
+    "‘p∨q’는 ‘p’와 ‘q’ 중 하나라도 참이면 참이 되지만, ‘p∧q’는 ‘p’와 ‘q’ 모두 참일 때에만 참이 " +
+    "된다. 또한 ‘p→q’는 ‘p’와 ‘q’가 모두 참인 경우에는 참이지만, ‘p’가 참이고 ‘q’가 거짓인 " +
+    "경우에는 거짓이 된다. 따라서 복합 명제의 진릿값은 단순 명제의 진릿값과 논리적 연결사에 " +
+    "의존한다. (4′)는 <전제2>가 <전제1>의 실행 조건인 p를 긍정함으로써 <결론>인 q가 성립된다고 " +
+    "주장하는 논증인데,",
+  to: "아리스토텔레스는 정언 문장에서 명사들 간의 관계에 의존하여 논증의 타당성을 설명하였지만, " +
+    "명제 논리학에서는 명제들의 진릿값과 논리적 연결사에 의존하여 논증의 타당성을 평가했다. 가령, " +
+    "‘$p \\lor q$’는 ‘$p$’와 ‘$q$’ 중 하나라도 참이면 참이 되지만, ‘$p \\land q$’는 ‘$p$’와 " +
+    "‘$q$’ 모두 참일 때에만 참이 된다. 또한 ‘$p \\to q$’는 ‘$p$’와 ‘$q$’가 모두 참인 경우에는 " +
+    "참이지만, ‘$p$’가 참이고 ‘$q$’가 거짓인 경우에는 거짓이 된다. 따라서 복합 명제의 진릿값은 " +
+    "단순 명제의 진릿값과 논리적 연결사에 의존한다. (4′)는 <전제2>가 <전제1>의 선행 조건인 " +
+    "$p$를 긍정함으로써 <결론>인 $q$가 성립된다고 주장하는 논증인데,",
+  count: 1,
+}, {
+  field: "question", from: "ⓒ 명제 논리학", to: "㉢ 명제 논리학", count: 1,
+}];
+
 const Q34_FIGURE_DESCRIPTION =
   "공식 12쪽의 (가)에는 왼쪽 세로 묶음 괄호가 3개 있다. 각 괄호는 세로선 하나와 오른쪽을 향한 " +
   "위·아래 가로 캡 2개로 이루어져 가로 캡은 모두 6개이다. 첫째 [A] 괄호는 ‘마님, 나으리께서 " +
@@ -5165,6 +5319,67 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
       to: Q26_5525982_CORRECTED_QUESTION, count: 1 }],
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_literature",
+  },
+  {
+    allowlistId: "ebsi-5578421-q31-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "12:31",
+    sourcePage: 12,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "31736e6fcf16af511a3264db1bb97303bffe4c391643659b0c503d745de7f2de",
+    dpi: 600,
+    failedQuestionHash: "84039ac4a41b1b42ea333672688e23047b54eb4b7cf72778e85b2229f238e563",
+    failedClassificationHash: "50e59b85d46d182d9824147a4d74260e053cf804dad82e8fd826d46430ccda4b",
+    failedClassificationEvidenceHash: "19bf81cdc4be2f85d20ddd1c9535f8c01ac81af3387678017ed3a50b6e314fbb",
+    views: [
+      { sourcePage: 11, label: "p11 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 11, label: "p11 right passage", rect: [0.49, 0.08, 0.94, 0.90] },
+      { sourcePage: 11, label: "p11 (4) and (4-prime) diagram", rect: [0.50, 0.42, 0.92, 0.60] },
+      { sourcePage: 12, label: "p12 Q31", rect: [0.08, 0.25, 0.53, 0.66] },
+    ],
+    requiredTokens: [
+      "[29~34] 다음 글을 읽고 물음에 답하시오.", "같이 동사인 경우", "명사(名辭)*",
+      "단순 명제라 하여", "단순 명제 ‘$p$’와 ‘$q$’는", "(4)", "(4′)", "⇒", "────────",
+      "<전제1>의 선행 조건인 $p$", "<결론>인 $q$", "ⓐ와 ⓑ의 입장에서 <보기>를 분석한 것으로",
+      "민수는 일하거나 논다.  <전제1>", "가로선은 총 2개",
+    ],
+    replacements: Q31_5578421_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q30_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5578421-q32-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "12:32",
+    sourcePage: 12,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "0522267c8991e42758995b53ee672ced5c6d4ae97f83ea2c985f487bfcd6d464",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "fd2673426cc79df01f9271ab3aa388f16a0b60e1d64843f29c161d66cbe75ece",
+    failedClassificationHash: "81a9c43d6f1055cb142679d7db2c344fd715cf305271e0d7863c7ba66b56f2cc",
+    failedClassificationEvidenceHash: "b2af575597134c6dfa564670c8f91f033fd907c57f21ac89bbb40199c7b0dad0",
+    views: [
+      { sourcePage: 11, label: "p11 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 11, label: "p11 right passage", rect: [0.49, 0.08, 0.94, 0.90] },
+      { sourcePage: 11, label: "p11 (4) and (4-prime) diagram", rect: [0.50, 0.42, 0.92, 0.60] },
+      { sourcePage: 12, label: "p12 Q32 syllogism choices", rect: [0.08, 0.58, 0.53, 0.86] },
+    ],
+    requiredTokens: [
+      "[29~34] 다음 글을 읽고 물음에 답하시오.", "전제들을 엮을 수 있도록", "같이 동사인 경우",
+      "명사(名辭)*", "유형을 만들 수 있다.", "단순 명제라 하여", "(4′)", "⇒", "────────",
+      "<전제1>의 선행 조건인 $p$", "<결론>인 $q$", "㉢ 명제 논리학",
+      "32. ㉠에 해당하지 않는 것은?", "⑤는 M-P/M-S/S-P", "가로선은 총 5개",
+    ],
+    replacements: Q32_5578421_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q32_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
   },
 ] as const;
 
@@ -16040,6 +16255,10 @@ function isQ31Q32ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5525982" && ["12:31", "12:32"].includes(spec.key);
 }
 
+function is5578421Q31Q32ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5578421" && ["12:31", "12:32"].includes(spec.key);
+}
+
 function isQ37ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5525982" && spec.key === "14:37";
 }
@@ -16395,7 +16614,9 @@ async function preflightProblemManualBatch(
     }
     return;
   }
-  const predicate = isQ43To45ManualBatchSpec(requestedSpec)
+  const predicate = is5578421Q31Q32ManualBatchSpec(requestedSpec)
+    ? is5578421Q31Q32ManualBatchSpec
+    : isQ43To45ManualBatchSpec(requestedSpec)
     ? isQ43To45ManualBatchSpec
     : isQ8Q16ManualBatchSpec(requestedSpec)
       ? isQ8Q16ManualBatchSpec
@@ -21683,6 +21904,39 @@ export async function repairAndAuditOfficialAnswers(
     baseByKey,
     baseSolutionsByNumber
   );
+  if (
+    entry.id === "ebsi:5578421" &&
+    problem.sha256 === "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e"
+  ) {
+    const pairSpecs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(is5578421Q31Q32ManualBatchSpec)
+      .sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+    let hasPairSignal = false;
+    for (const directory of [
+      "problem-recoveries", "classification-recoveries", "problem-manual-evidence",
+      "problem-manual-adjudications", "classification-manual-adjudications",
+      "problem-manual-revisions", "classification-manual-revisions",
+      "problem-manual-second-revisions", "classification-manual-second-revisions",
+    ]) {
+      const path = join(stateDir, directory);
+      let stat;
+      try {
+        stat = lstatSync(path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
+      if (stat.isSymbolicLink() || !stat.isDirectory()) {
+        throw new Error(`${directory} 디렉터리가 유효하지 않습니다`);
+      }
+      if (readdirSync(path).some((name) => /^v\d+-0012-003[12](?:-|\.)/u.test(name))) {
+        hasPairSignal = true;
+      }
+    }
+    if (hasPairSignal) {
+      if (pairSpecs.length !== 2) throw new Error("ebsi:5578421 Q31-Q32 manual pair allowlist가 다릅니다");
+      await preflightProblemManualBatch(entry, problem, stateDir, pairSpecs[0]);
+    }
+  }
   let effective = [...initial];
   const repairs = new Map<string, ProblemRepairEvidence>();
   const persistedRepairs = await hydratePersistedProblemRepairBatches(
@@ -21751,6 +22005,19 @@ export async function repairAndAuditOfficialAnswers(
   ): Promise<Set<string>> => {
     const changedKeys = new Set<string>();
     const uniqueKeys = [...new Set(keys)];
+    const forced5578421ManualSpecs = revisionKind === "terminal" && entry.id === "ebsi:5578421" &&
+      problem.sha256 === "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e" &&
+      uniqueKeys.some((key) => key === "12:31" || key === "12:32") &&
+      ["12:31", "12:32"].every((key) => Boolean(repairs.get(key)?.revision))
+      ? PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(is5578421Q31Q32ManualBatchSpec)
+        .sort((left, right) => compareCorpusQuestionKeys(left.key, right.key))
+      : [];
+    if (forced5578421ManualSpecs.length > 0) {
+      if (forced5578421ManualSpecs.length !== 2) {
+        throw new Error("ebsi:5578421 Q31-Q32 manual pair allowlist가 다릅니다");
+      }
+      await preflightProblemManualBatch(entry, problem, stateDir, forced5578421ManualSpecs[0]);
+    }
     const initialRepairs = uniqueKeys.filter((key) => !repairs.has(key)).map((key) => {
       const original = baseByKey.get(key);
       if (!original) throw new Error(`${key} batch repair 대상이 base corpus에 없습니다`);
@@ -21799,6 +22066,7 @@ export async function repairAndAuditOfficialAnswers(
     }> = [];
     for (const key of uniqueKeys) {
       if (initialRepairKeys.has(key)) continue;
+      if (forced5578421ManualSpecs.some((spec) => spec.key === key)) continue;
       const index = effective.findIndex((item) => questionKey(item.question) === key);
       if (index < 0) throw new Error(`${key} effective corpus 교체 위치가 없습니다`);
       const existing = repairs.get(key);
@@ -21950,7 +22218,64 @@ export async function repairAndAuditOfficialAnswers(
         changedKeys.add(item.key);
       }
     }
-    for (const item of exactRecoveryManualCurrents.sort((left, right) =>
+    for (const spec of forced5578421ManualSpecs) {
+      const index = effective.findIndex((current) => questionKey(current.question) === spec.key);
+      const existing = repairs.get(spec.key);
+      const revision = existing?.revision;
+      if (index < 0 || !existing || !revision || revision.scopeAdjudication) {
+        throw new Error(`${spec.key} forced manual pair recovery authority가 없습니다`);
+      }
+      const restored = await restoredPinnedManualRecovery(entry, stateDir, spec);
+      const recovery = revision.recovery;
+      const activeParent = recovery
+        ? (({ manualAdjudication: _manual, ...parent }) => parent)(recovery)
+        : restored.parent;
+      if (
+        canonicalEvidenceHash(activeParent) !== spec.parentRecoveryEvidenceHash ||
+        canonicalEvidenceHash(restored.parent) !== spec.parentRecoveryEvidenceHash ||
+        canonicalEvidenceHash(restored.parent.baseProblemRepairArtifact) !==
+          canonicalEvidenceHash(revision.baseProblemRepairArtifact) ||
+        canonicalEvidenceHash(restored.parent.baseClassificationRepairArtifact) !==
+          canonicalEvidenceHash(revision.baseClassificationRepairArtifact) ||
+        canonicalEvidenceHash(restored.parent.baseProblemRevisionArtifact) !==
+          canonicalEvidenceHash(revision.problemArtifact) ||
+        restored.parent.baseProblemRevisionItemHash !==
+          (revision.problemArtifactItemHash ?? revision.effectiveQuestionHash) ||
+        canonicalEvidenceHash(restored.parent.baseClassificationRevisionArtifact) !==
+          canonicalEvidenceHash({ path: revision.classificationArtifact.path, sha256: revision.classificationArtifact.sha256 }) ||
+        restored.parent.baseClassificationRevisionItemHash !==
+          (revision.classificationArtifactItemHash ?? revision.effectiveClassificationHash)
+      ) {
+        throw new Error(`${spec.key} forced manual pair parent가 다릅니다`);
+      }
+      const adjudicated = await adjudicateProblemManualOne(
+        entry,
+        problem,
+        stateDir,
+        restored.failed,
+        restored.parent,
+        Boolean(recovery?.manualAdjudication)
+      );
+      if (!adjudicated) throw new Error(`${spec.key} forced manual pair child가 없습니다`);
+      if (
+        recovery?.manualAdjudication &&
+        canonicalEvidenceHash(recovery.manualAdjudication) !== canonicalEvidenceHash(adjudicated.evidence)
+      ) throw new Error(`${spec.key} forced manual pair evidence가 다릅니다`);
+      const changed = !recovery?.manualAdjudication ||
+        canonicalEvidenceHash(effective[index]) !== canonicalEvidenceHash(adjudicated.classified);
+      effective[index] = adjudicated.classified;
+      repairs.set(spec.key, {
+        ...existing,
+        revision: {
+          ...revision,
+          recovery: { ...restored.parent, manualAdjudication: adjudicated.evidence },
+        },
+      });
+      if (changed) changedKeys.add(spec.key);
+    }
+    for (const item of exactRecoveryManualCurrents.filter((item) =>
+      !forced5578421ManualSpecs.some((spec) => spec.key === item.key)
+    ).sort((left, right) =>
       compareCorpusQuestionKeys(left.key, right.key)
     )) {
       const adjudicated = await adjudicateProblemManual(

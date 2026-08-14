@@ -65,6 +65,7 @@ import {
 } from "../scripts/import-exam-corpus";
 
 const q27LiveState = join(process.cwd(), "data/import-exam-corpus/bb876a67170089dfb2022f47");
+const q31Q32LiveState = join(process.cwd(), "data/import-exam-corpus/f914a5cf8d2237d6c9319e23");
 const q30Q42ManualKeys: readonly string[] = [
   "11:30", "12:31", "12:32", "14:37", "15:38", "15:40", "15:41", "15:42",
 ];
@@ -567,6 +568,28 @@ function q42ExactRecoveryParent(stateDir: string) {
     "classification-recoveries/v1-0015-0042-b5e4a0d83309d7265085ae387c1cc0ecfc7905ebf587c546e85e7d91eae43a9e-" +
       "7bb7cb863c8c4855.json",
     "6abad04cb27498469134ea70ad3f872b8a69e5f009905f223ec52211ca3185c1"
+  );
+}
+
+function q31Q32ExactRecoveryParent5578421(stateDir: string, number: "31" | "32") {
+  const pins = {
+    "31": [
+      "5055fe6fd48bf51df91b6ce57ef4f949f430567ac3f3b3a27265d3e9a66ac6bd",
+      "c6100e65d06bdd72d07c1714eb98b33cee7b2f833ee2d3b7851ca342de055436",
+      "31736e6fcf16af511a3264db1bb97303bffe4c391643659b0c503d745de7f2de",
+    ],
+    "32": [
+      "fa06c96159bfaf04070ab67ad4a4b5ee493415b6174d32fd724822f7dea65556",
+      "5482a2008b0359682eccca0410a2c3eea583b03d35fb96f889d3cd75fec86965",
+      "0522267c8991e42758995b53ee672ced5c6d4ae97f83ea2c985f487bfcd6d464",
+    ],
+  } as const;
+  const [problemBasis, classificationBasis, parentHash] = pins[number];
+  return exactRecoveryParent(
+    stateDir,
+    `problem-recoveries/v1-0012-00${number}-${problemBasis}.json`,
+    `classification-recoveries/v1-0012-00${number}-${classificationBasis}-7bb7cb863c8c4855.json`,
+    parentHash
   );
 }
 
@@ -1256,6 +1279,395 @@ async function runRecoveryManualCase(testCase: typeof recoveryCases[number]) {
 }
 
 describe("exact allowlisted problem manual adjudication", () => {
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "pins and applies the source-exact 5578421 Q31-Q32 pair",
+    () => {
+    const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(-2);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(38);
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, -2)))
+      .toBe("e260bb5cd9c24507cb1c434e19b03a63961ef07a29392b28fc49f6897040dd64");
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
+      .toBe("0b7a1a11ce00035cadc96d8b7c2c79a94fa7c406d5a7c54ba99c48f53719aad5");
+    expect(specs.map((spec) => ({
+      key: spec.key,
+      rowHash: canonicalEvidenceHash(spec),
+      replacementsHash: canonicalEvidenceHash(spec.replacements),
+      parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash,
+      failedStatus: spec.failedStatus,
+    }))).toEqual([{
+      key: "12:31",
+      rowHash: "b5c5cfd215a05bb6f55f88aff21fae146465e33056a42a8c7cfff831148a51ca",
+      replacementsHash: "ff7c20d8564f20044eeac13207106bca16ea0964b1054f19fdd7aeaf8702ff22",
+      parentRecoveryEvidenceHash: "31736e6fcf16af511a3264db1bb97303bffe4c391643659b0c503d745de7f2de",
+      failedStatus: undefined,
+    }, {
+      key: "12:32",
+      rowHash: "3aed2606c06fcdd6e45647693d4cb251196aa8b4653b8c6378fd8f9a480e336d",
+      replacementsHash: "d41af9fce6387814e1e41c1af7ee2c9743f567d7d56eb7f2d8dd22c75b3ddc6d",
+      parentRecoveryEvidenceHash: "0522267c8991e42758995b53ee672ced5c6d4ae97f83ea2c985f487bfcd6d464",
+      failedStatus: "exact",
+    }]);
+
+    const q31 = q31Q32ExactRecoveryParent5578421(q31Q32LiveState, "31");
+    const q32 = q31Q32ExactRecoveryParent5578421(q31Q32LiveState, "32");
+    const corrected31 = applyAllowlistedProblemManualCorrection(
+      "ebsi:5578421", specs[0].sourceHash, q31.failed.question
+    );
+    const corrected32 = applyAllowlistedProblemManualCorrection(
+      "ebsi:5578421", specs[1].sourceHash, q32.failed.question
+    );
+    expect(canonicalEvidenceHash(corrected31))
+      .toBe("784b252cb42674978f332dc741bbca77366b1f7c72f7b60b24c235086b855f1f");
+    expect(canonicalEvidenceHash(corrected31.question))
+      .toBe("20abf86d91abeb8cabd386c786bd2e652e7dd8732e8b070919eb09f9eab6a319");
+    expect(canonicalEvidenceHash(corrected32))
+      .toBe("ec5a2c62639228e94c405ce9f5624fe7bb88c16d3e6add611f559edea9a9a804");
+    expect(canonicalEvidenceHash(corrected32.question))
+      .toBe("71710e20da7a5f0d13db0449f2eea88fd3ee522510c9611afe9fa16a7447c558");
+    expect(corrected31.question).toContain("단순 명제라 하여");
+    expect(corrected31.question).toContain("<결론>인 $q$");
+    expect(corrected31.question).not.toContain("입장에서 다음 <보기>");
+    expect(corrected31.figure_description).toContain("가로선은 총 2개");
+    expect(corrected32.question).toContain("전제들을 엮을 수 있도록");
+    expect(corrected32.question).toContain("㉢ 명제 논리학");
+    expect(corrected32.figure_description).toContain("⑤는 M-P/M-S/S-P");
+    expect(corrected32.figure_description).toContain("가로선은 총 5개");
+    expect(corrected31.choices).toEqual(q31.failed.question.choices);
+    expect(corrected32.choices).toEqual(q32.failed.question.choices);
+    expect(corrected31.answer).toBe(q31.failed.question.answer);
+    expect(corrected32.answer).toBe(q32.failed.question.answer);
+  });
+
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "preflights and crash-resumes the 5578421 Q31-Q32 manual pair byte-stably",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-5578421-q31-q32-manual-"));
+    cpSync(q31Q32LiveState, root, { recursive: true });
+    removeManualArtifacts(root, ["12:31", "12:32"]);
+    const input = q27FixtureInputs(root);
+    const q31 = q31Q32ExactRecoveryParent5578421(root, "31");
+    const q32 = q31Q32ExactRecoveryParent5578421(root, "32");
+    const calls: string[] = [];
+    let crashQ31 = true;
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      expect(request.schema?.name).toBe("studywork_exam_corpus_classification");
+      const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
+        key: string;
+        question: string;
+        figure_description: string | null;
+      }>;
+      expect(items).toHaveLength(1);
+      const item = items[0];
+      calls.push(item.key);
+      if (item.key === "12:31" && crashQ31) throw new Error("seeded 5578421 Q31 classification crash");
+      expect(item.question).toContain("[29~34] 다음 글을 읽고 물음에 답하시오.");
+      expect(item.question).toContain("<결론>인 $q$");
+      expect(item.figure_description).toContain("가로선은 총 2개");
+      if (item.key === "12:32") expect(item.figure_description).toContain("가로선은 총 5개");
+      return { text: JSON.stringify([{
+        key: item.key,
+        decision: "accept",
+        canonical_subject: "korean_reading",
+        curriculum_course: "독서와 작문",
+        domain: "독서—논리 개념의 이해와 적용",
+        achievement_codes: ["12독작01-03"],
+        confidence: 0.99,
+        reason_codes: ["SOURCE_EXACT", "NONFICTION_COMPREHENSION"],
+        transcription_status: "exact",
+        transcription_evidence: `공식 11~12쪽의 ${item.key} 지문·도식·발문·선택지가 일치한다.`,
+      }]) };
+    });
+
+    const run = (row: ReturnType<typeof q31Q32ExactRecoveryParent5578421>) =>
+      adjudicateProblemManual(input.entry, input.problem, root, row.failed, row.parent);
+    await expect(run(q31)).rejects.toThrow("seeded 5578421 Q31 classification crash");
+    expect(calls).toEqual(["12:31"]);
+    expect(readdirSync(join(root, "problem-manual-adjudications"))
+      .filter((name) => name.startsWith("v1-0012-0031-"))).toHaveLength(1);
+    expect(readdirSync(join(root, "classification-manual-adjudications"))
+      .filter((name) => name.startsWith("v1-0012-0031-"))).toHaveLength(0);
+
+    crashQ31 = false;
+    const completed31 = await run(q31);
+    const completed32 = await run(q32);
+    expect(calls).toEqual(["12:31", "12:31", "12:32"]);
+    expect(canonicalEvidenceHash(completed31.classified.question))
+      .toBe("784b252cb42674978f332dc741bbca77366b1f7c72f7b60b24c235086b855f1f");
+    expect(canonicalEvidenceHash(completed32.classified.question))
+      .toBe("ec5a2c62639228e94c405ce9f5624fe7bb88c16d3e6add611f559edea9a9a804");
+    const stable = stateSnapshot(root);
+    const beforeReplay = [...calls];
+    await run(q31);
+    await run(q32);
+    expect(calls).toEqual(beforeReplay);
+    expect(stateSnapshot(root)).toEqual(stable);
+
+    removeManualArtifacts(root, ["12:31"]);
+    const q32ProblemName = readdirSync(join(root, "problem-manual-adjudications"))
+      .find((name) => name.startsWith("v1-0012-0032-"))!;
+    const q32ProblemPath = join(root, "problem-manual-adjudications", q32ProblemName);
+    const q32ProblemBytes = readFileSync(q32ProblemPath);
+    writeFileSync(q32ProblemPath, Buffer.concat([q32ProblemBytes, Buffer.from(" ")]));
+    const beforeTamper = stateSnapshot(root);
+    providerMock.complete.mockClear();
+    await expect(run(q31)).rejects.toThrow(/12:32 manual adjudication hash가 다릅니다/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root)).toEqual(beforeTamper);
+
+    writeFileSync(q32ProblemPath, q32ProblemBytes);
+    removeManualArtifacts(root, ["12:31"]);
+    const q32ClassificationName = readdirSync(join(root, "classification-manual-adjudications"))
+      .find((name) => name.startsWith("v1-0012-0032-"))!;
+    const q32ClassificationPath = join(root, "classification-manual-adjudications", q32ClassificationName);
+    const q32ClassificationBytes = readFileSync(q32ClassificationPath);
+    unlinkSync(q32ClassificationPath);
+    symlinkSync(join(root, "problem.pdf"), q32ClassificationPath);
+    const beforeSymlink = stateSnapshot(root);
+    await expect(run(q31)).rejects.toThrow(/classification manual adjudication 파일이 유효하지 않습니다/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root)).toEqual(beforeSymlink);
+    unlinkSync(q32ClassificationPath);
+    writeFileSync(q32ClassificationPath, q32ClassificationBytes);
+  }, 300_000);
+
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "forces both 5578421 manual children through the full importer before a fresh terminal",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-5578421-q31-q32-full-flow-"));
+    cpSync(q31Q32LiveState, root, { recursive: true });
+    removeManualArtifacts(root, ["12:31", "12:32"]);
+    for (const directory of ["answer-audit", "answer-attestation", "semantic-choice-checks"]) {
+      rmSync(join(root, directory), { recursive: true, force: true });
+    }
+    const initialSnapshot = stateSnapshot(root);
+    const calls = { classification: [] as string[], terminal: 0 };
+    let crashQ32 = true;
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      if (request.schema?.name === "studywork_exam_corpus_classification") {
+        const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
+          key: string;
+          question: string;
+          figure_description: string | null;
+        }>;
+        expect(items).toHaveLength(1);
+        const item = items[0];
+        expect(["12:31", "12:32"]).toContain(item.key);
+        expect(item.question).toContain("[29~34] 다음 글을 읽고 물음에 답하시오.");
+        expect(item.figure_description).toContain("가로선은 총 2개");
+        if (item.key === "12:32") expect(item.figure_description).toContain("가로선은 총 5개");
+        calls.classification.push(item.key);
+        if (item.key === "12:32" && crashQ32) throw new Error("seeded 5578421 Q32 classification crash");
+        return { text: JSON.stringify([{
+          key: item.key,
+          decision: "accept",
+          canonical_subject: "korean_reading",
+          curriculum_course: "독서와 작문",
+          domain: "독서—논리 개념의 이해와 적용",
+          achievement_codes: ["12독작01-03"],
+          confidence: 0.99,
+          reason_codes: ["SOURCE_EXACT", "NONFICTION_COMPREHENSION"],
+          transcription_status: "exact",
+          transcription_evidence: `공식 11~12쪽의 ${item.key} 지문·도식·발문·선택지가 일치한다.`,
+        }]) };
+      }
+      if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
+        calls.terminal++;
+        const items = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{
+          key: string;
+          question: string;
+          figure_description: string | null;
+        }>;
+        expect(items).toHaveLength(45);
+        expect(new Set(items.map((item) => item.key)).size).toBe(45);
+        expect(items.find((item) => item.key === "12:31")?.question)
+          .toContain("ⓐ와 ⓑ의 입장에서 <보기>를 분석한 것으로");
+        expect(items.find((item) => item.key === "12:31")?.figure_description)
+          .toContain("가로선은 총 2개");
+        expect(items.find((item) => item.key === "12:32")?.question)
+          .toContain("32. ㉠에 해당하지 않는 것은?");
+        expect(items.find((item) => item.key === "12:32")?.figure_description)
+          .toContain("가로선은 총 5개");
+        throw new Error("seeded 5578421 post-pair terminal boundary");
+      }
+      throw new Error(`unexpected 5578421 pair AI call: ${request.schema?.name ?? "unknown"}`);
+    });
+    const run = () => {
+      const input = q27FixtureInputs(root);
+      return repairAndAuditOfficialAnswers(
+        input.entry,
+        input.problem,
+        input.solution,
+        root,
+        input.classified,
+        input.solutions
+      );
+    };
+
+    await expect(run()).rejects.toThrow("seeded 5578421 Q32 classification crash");
+    expect([...calls.classification].sort()).toEqual(["12:31", "12:32"]);
+    expect(calls.terminal).toBe(0);
+    expect(existsSync(join(root, "answer-audit"))).toBe(false);
+    expect(existsSync(join(root, "answer-attestation"))).toBe(false);
+    expect(stateSnapshot(root)).not.toEqual(initialSnapshot);
+    crashQ32 = false;
+    calls.classification = [];
+    await expect(run()).rejects.toThrow("seeded 5578421 post-pair terminal boundary");
+    expect(calls.classification).toEqual(["12:32"]);
+    expect(calls.terminal).toBe(1);
+    const problemChildren = readdirSync(join(root, "problem-manual-adjudications"));
+    const classificationChildren = readdirSync(join(root, "classification-manual-adjudications"));
+    expect(problemChildren.filter((name) => /^v1-0012-003[12]-/u.test(name))).toHaveLength(2);
+    expect(classificationChildren.filter((name) => /^v1-0012-003[12]-/u.test(name))).toHaveLength(2);
+    expect(["31", "32"].map((number) => {
+      const name = problemChildren.find((candidate) => candidate.startsWith(`v1-0012-00${number}-`))!;
+      const checkpoint = JSON.parse(readFileSync(join(root, "problem-manual-adjudications", name), "utf8"));
+      return canonicalEvidenceHash(checkpoint.item);
+    })).toEqual([
+      "784b252cb42674978f332dc741bbca77366b1f7c72f7b60b24c235086b855f1f",
+      "ec5a2c62639228e94c405ce9f5624fe7bb88c16d3e6add611f559edea9a9a804",
+    ]);
+    expect(existsSync(join(root, "answer-audit"))).toBe(false);
+    expect(existsSync(join(root, "answer-attestation"))).toBe(false);
+
+    const corrupted = mkdtempSync(join(tmpdir(), "studywork-5578421-q31-q32-preflight-"));
+    cpSync(q31Q32LiveState, corrupted, { recursive: true });
+    removeManualArtifacts(corrupted, ["12:31", "12:32"]);
+    const q32 = q31Q32ExactRecoveryParent5578421(corrupted, "32");
+    const corruptedFixture = q27FixtureInputs(corrupted);
+    const seededQ32 = await adjudicateProblemManual(
+      corruptedFixture.entry,
+      corruptedFixture.problem,
+      corrupted,
+      q32.failed,
+      q32.parent
+    );
+    const q32Path = join(corrupted, seededQ32.evidence.problemArtifact.path);
+    writeFileSync(q32Path, Buffer.concat([readFileSync(q32Path), Buffer.from(" ")]));
+    removeManualArtifacts(corrupted, ["12:31"]);
+    rmSync(join(corrupted, "classification-repair-batches"), { recursive: true, force: true });
+    providerMock.complete.mockClear();
+    const beforeCorruption = stateSnapshot(corrupted);
+    const corruptedInput = q27FixtureInputs(corrupted);
+    await expect(repairAndAuditOfficialAnswers(
+      corruptedInput.entry,
+      corruptedInput.problem,
+      corruptedInput.solution,
+      corrupted,
+      corruptedInput.classified,
+      corruptedInput.solutions
+    )).rejects.toThrow("manual adjudication base classification repair이 regular file이 아닙니다");
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(corrupted)).toEqual(beforeCorruption);
+    rmSync(corrupted, { recursive: true, force: true });
+
+    const missingParent = mkdtempSync(join(tmpdir(), "studywork-5578421-q31-missing-parent-"));
+    cpSync(q31Q32LiveState, missingParent, { recursive: true });
+    removeManualArtifacts(missingParent, ["12:31", "12:32"]);
+    const missingFixture = q27FixtureInputs(missingParent);
+    const missingQ32 = q31Q32ExactRecoveryParent5578421(missingParent, "32");
+    const missingSeed = await adjudicateProblemManual(
+      missingFixture.entry,
+      missingFixture.problem,
+      missingParent,
+      missingQ32.failed,
+      missingQ32.parent
+    );
+    const missingQ32Path = join(missingParent, missingSeed.evidence.problemArtifact.path);
+    writeFileSync(missingQ32Path, Buffer.concat([readFileSync(missingQ32Path), Buffer.from(" ")]));
+    unlinkSync(join(
+      missingParent,
+      "problem-recoveries/v1-0012-0031-5055fe6fd48bf51df91b6ce57ef4f949f430567ac3f3b3a27265d3e9a66ac6bd.json"
+    ));
+    providerMock.complete.mockClear();
+    const beforeMissing = stateSnapshot(missingParent);
+    await expect(repairAndAuditOfficialAnswers(
+      missingFixture.entry,
+      missingFixture.problem,
+      missingFixture.solution,
+      missingParent,
+      missingFixture.classified,
+      missingFixture.solutions
+    )).rejects.toThrow(/12:31 manual batch recovery exact-set가 다릅니다/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(missingParent)).toEqual(beforeMissing);
+    rmSync(missingParent, { recursive: true, force: true });
+
+    const orphan = mkdtempSync(join(tmpdir(), "studywork-5578421-q32-later-orphan-"));
+    cpSync(q31Q32LiveState, orphan, { recursive: true });
+    removeManualArtifacts(orphan, ["12:31", "12:32"]);
+    mkdirSync(join(orphan, "problem-manual-second-revisions"), { recursive: true });
+    writeFileSync(join(orphan, "problem-manual-second-revisions/v1-0012-0032-orphan.json"), "{}\n");
+    providerMock.complete.mockClear();
+    const beforeOrphan = stateSnapshot(orphan);
+    const orphanInput = q27FixtureInputs(orphan);
+    await expect(repairAndAuditOfficialAnswers(
+      orphanInput.entry,
+      orphanInput.problem,
+      orphanInput.solution,
+      orphan,
+      orphanInput.classified,
+      orphanInput.solutions
+    )).rejects.toThrow("problem manual second revision filename이 유효하지 않습니다: " +
+      "v1-0012-0032-orphan.json");
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(orphan)).toEqual(beforeOrphan);
+    rmSync(orphan, { recursive: true, force: true });
+
+    const dangling = mkdtempSync(join(tmpdir(), "studywork-5578421-q32-later-symlink-"));
+    cpSync(q31Q32LiveState, dangling, { recursive: true });
+    removeManualArtifacts(dangling, ["12:31", "12:32"]);
+    symlinkSync(join(dangling, "missing-directory"), join(dangling, "classification-manual-second-revisions"));
+    providerMock.complete.mockClear();
+    const beforeDangling = stateSnapshot(dangling);
+    const danglingInput = q27FixtureInputs(dangling);
+    await expect(repairAndAuditOfficialAnswers(
+      danglingInput.entry,
+      danglingInput.problem,
+      danglingInput.solution,
+      dangling,
+      danglingInput.classified,
+      danglingInput.solutions
+    )).rejects.toThrow("classification-manual-second-revisions 디렉터리가 유효하지 않습니다");
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(dangling)).toEqual(beforeDangling);
+    rmSync(dangling, { recursive: true, force: true });
+
+    const linked = mkdtempSync(join(tmpdir(), "studywork-5578421-q32-later-linked-dir-"));
+    cpSync(q31Q32LiveState, linked, { recursive: true });
+    removeManualArtifacts(linked, ["12:31", "12:32"]);
+    const linkedTarget = join(linked, "classification-manual-second-revisions-target");
+    mkdirSync(linkedTarget);
+    symlinkSync(linkedTarget, join(linked, "classification-manual-second-revisions"));
+    providerMock.complete.mockClear();
+    const beforeLinked = stateSnapshot(linked);
+    const linkedInput = q27FixtureInputs(linked);
+    await expect(repairAndAuditOfficialAnswers(
+      linkedInput.entry,
+      linkedInput.problem,
+      linkedInput.solution,
+      linked,
+      linkedInput.classified,
+      linkedInput.solutions
+    )).rejects.toThrow("classification-manual-second-revisions 디렉터리가 유효하지 않습니다");
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(linked)).toEqual(beforeLinked);
+    rmSync(linked, { recursive: true, force: true });
+
+    const q32ClassificationName = classificationChildren
+      .find((name) => name.startsWith("v1-0012-0032-"))!;
+    unlinkSync(join(root, "classification-manual-adjudications", q32ClassificationName));
+    calls.classification = [];
+    calls.terminal = 0;
+    await expect(run()).rejects.toThrow("seeded 5578421 post-pair terminal boundary");
+    expect(calls).toEqual({ classification: ["12:32"], terminal: 1 });
+    const stable = stateSnapshot(root);
+    calls.classification = [];
+    calls.terminal = 0;
+    await expect(run()).rejects.toThrow("seeded 5578421 post-pair terminal boundary");
+    expect(calls).toEqual({ classification: [], terminal: 1 });
+    expect(stateSnapshot(root)).toEqual(stable);
+  }, 300_000);
+
   it("pins the complete Q17-Q45 solution false-negative and Q40 source-revision authority", () => {
     expect(canonicalEvidenceHash(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST))
       .toBe("90a2a84b2813204915a0e2df9daceabbd4b3a65e410838c590264752ec3a7015");
@@ -1286,7 +1698,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       .toBe("afaf8a15ee23d5f6bf0d6a3a6ad7c7679a2d15813a23ddfb07f3ca51b43afd7e");
   });
 
-  it("pins the thirty-six audited sources and exhausted child hashes", () => {
+  it("pins the thirty-eight audited sources and exhausted child hashes", () => {
     expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 29).map((item) => ({
       entryId: item.entryId,
       key: item.key,
@@ -1508,8 +1920,10 @@ describe("exact allowlisted problem manual adjudication", () => {
       .toBe("4d844c71cc01ae752974edb5941ed475d80e76dd03bb5ee1a51a7b256512bb80");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 29)))
       .toBe("0b5d7d19255cd91566a55b289b11f8a9460a3014a06f255f9a266ebd62980cf9");
-    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 36)))
       .toBe("e260bb5cd9c24507cb1c434e19b03a63961ef07a29392b28fc49f6897040dd64");
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
+      .toBe("0b7a1a11ce00035cadc96d8b7c2c79a94fa7c406d5a7c54ba99c48f53719aad5");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 18)))
       .toBe("463fceef246487e1ec791ffb0489048f874cd5944d946f9c6d819f3fd3c76eda");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST[11]))
@@ -1526,7 +1940,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       .toBe("b82020b2dd5fae081a3031887b345b337b5860156b75d6d7ce6137eb7bf40beb");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST[17]))
       .toBe("fb9f306bf484870e7a355e6bd59dae03430d12c855acda631d8f7a191e74ef60");
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(18).map(canonicalEvidenceHash)).toEqual([
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(18, 36).map(canonicalEvidenceHash)).toEqual([
       "0d5d73306f77fc61f30ccde3e970f80499e4db7be3fbefc646350170cde9696e",
       "a68cbd6c6b2c4f27f2db4784b2b15a1e45f2255a764a2df7b48840514bf4abd4",
       "974562dc407ca854aebb49fb2fe9a56df97383a9f44407bd54ae949d2a85a796",
@@ -1707,6 +2121,20 @@ describe("exact allowlisted problem manual adjudication", () => {
     rmSync(join(root, SOLUTION_SOURCE_REVISION_ALLOWLIST[0].parentFidelityArtifact.path));
     rmSync(join(root, "solution-source-revisions"), { recursive: true, force: true });
     rmSync(join(root, "solution-fidelity-source-revisions"), { recursive: true, force: true });
+    for (const directory of ["solution-repairs", "solution-fidelity-repairs"]) {
+      const removed = readdirSync(join(root, directory)).flatMap((name) => {
+        const match = /^v2-\d{4}-(\d{4})-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u.exec(name);
+        if (!match) return [];
+        const number = Number(match[1]);
+        if (number < 41 || number > 45) return [];
+        rmSync(join(root, directory, name));
+        return [number];
+      });
+      expect(removed.sort((left, right) => left - right), directory).toEqual([41, 42, 43, 44, 45]);
+    }
+    for (const directory of ["semantic-choice-checks", "answer-audit", "answer-attestation"]) {
+      rmSync(join(root, directory), { recursive: true, force: true });
+    }
     const seededRepairNumbers = readdirSync(join(root, "solution-repairs"))
       .map((name) => Number(/^v[12]-\d{4}-(\d{4})-/u.exec(name)?.[1]));
     expect(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST[0].items.slice(0, 11)
@@ -2141,9 +2569,9 @@ describe("exact allowlisted problem manual adjudication", () => {
       { key: "3:6", decision: "reject", subject: undefined },
       { key: "3:7", decision: "reject", subject: undefined },
     ]);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(31).map((item) => item.key))
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(31, 36).map((item) => item.key))
       .toEqual(["9:21", "9:22", "9:24", "9:25", "9:26"]);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(29).filter((item) =>
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(29, 36).filter((item) =>
       item.failedStatus === "exact").map((item) => item.key)).toEqual(["3:6", "9:21", "9:26"]);
 
     const mutableQ7 = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST[30] as unknown as {
@@ -5014,6 +5442,9 @@ describe("exact allowlisted problem manual adjudication", () => {
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-q40-q45-source-negative-seed-"));
     cpSync(q27LiveState, root, { recursive: true });
+    for (const directory of ["semantic-choice-checks", "answer-audit", "answer-attestation"]) {
+      rmSync(join(root, directory), { recursive: true, force: true });
+    }
     const seedInput = q27FixtureInputs(root);
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
@@ -5464,6 +5895,13 @@ describe("exact allowlisted problem manual adjudication", () => {
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-q17-q18-solution-fidelity-mixed-"));
     cpSync(q27LiveState, root, { recursive: true });
+    const q18FidelityChildren = readdirSync(join(root, "solution-fidelity-repairs"))
+      .filter((name) => /^v2-\d{4}-0018-[a-f0-9]{64}-[a-f0-9]{64}\.json$/u.test(name));
+    expect(q18FidelityChildren).toHaveLength(1);
+    rmSync(join(root, "solution-fidelity-repairs", q18FidelityChildren[0]));
+    for (const directory of ["semantic-choice-checks", "answer-audit", "answer-attestation"]) {
+      rmSync(join(root, directory), { recursive: true, force: true });
+    }
     const input = q27FixtureInputs(root);
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       if (request.schema?.name === "studywork_exam_corpus_solution_fidelity") {
