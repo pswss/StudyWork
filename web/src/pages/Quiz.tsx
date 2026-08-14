@@ -238,6 +238,50 @@ export function figureAlt(
   return t(number === undefined ? "problems.figure.alt" : "problems.figure.altNumbered", values);
 }
 
+const KOREAN_MOCK_EXAM_SECTIONS = new Set(["화법과 언어", "독서와 작문", "문학"]);
+
+export type QuizBankBlock =
+  | { kind: "question"; key: string; item: Question }
+  | {
+    kind: "passage";
+    key: string;
+    section: string;
+    passageGroup: string;
+    passage: string;
+    items: Question[];
+  };
+
+/** 국어 모의고사는 공통 지문 하나와 연결 문항 전체를 같은 목록 단위로 보여 준다. */
+export function groupKoreanPassageQuestions(items: readonly Question[]): QuizBankBlock[] {
+  const blocks: QuizBankBlock[] = [];
+  const passages = new Map<string, Extract<QuizBankBlock, { kind: "passage" }>>();
+  for (const item of items) {
+    const koreanPassage = item.mock_exam_job_id !== null && item.passage_group !== null &&
+      item.passage?.trim() && KOREAN_MOCK_EXAM_SECTIONS.has(item.exam_section ?? "");
+    if (!koreanPassage) {
+      blocks.push({ kind: "question", key: `question:${item.id}`, item });
+      continue;
+    }
+    const key = `passage:${item.mock_exam_job_id}:${item.passage_group}`;
+    const existing = passages.get(key);
+    if (existing) {
+      existing.items.push(item);
+      continue;
+    }
+    const block: Extract<QuizBankBlock, { kind: "passage" }> = {
+      kind: "passage",
+      key,
+      section: item.exam_section!,
+      passageGroup: item.passage_group!,
+      passage: item.passage!,
+      items: [item],
+    };
+    passages.set(key, block);
+    blocks.push(block);
+  }
+  return blocks;
+}
+
 // ── 인쇄 헬퍼 ──────────────────────────────────────────────────────────────────
 function printQuestions(
   subjectName: string,
@@ -403,6 +447,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
 
   // 은행 - 문제 상세 토글
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [expandedPassages, setExpandedPassages] = useState<Set<string>>(new Set());
 
   // 플레이
   const [play, setPlay] = useState<PlayState | null>(null);
@@ -483,6 +528,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
     setSelected(new Set());
     setAllInScope(true);
     setOpenGroups(new Set());
+    setExpandedPassages(new Set());
     setGenExcluded(new Set());
     const savedJobIds = storedGenerationJobs(subject.id);
     setGenerationJobIds(savedJobIds);
@@ -599,6 +645,13 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
       const n = new Set(prev);
       if (n.has(key)) n.delete(key); else n.add(key);
       return n;
+    });
+  }
+  function togglePassage(key: string) {
+    setExpandedPassages(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
     });
   }
 
@@ -1581,8 +1634,150 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                 </div>
 
                 <div id={`quiz-file-panel-${groupIndex}`} className="quiz-file-panel" hidden={!open}>
-                {open && g.items.map(q => (
-                  <div key={q.id} className={`quiz-row${q.pending ? " pending" : ""}`}>
+                {open && groupKoreanPassageQuestions(g.items).map(block => {
+                  if (block.kind === "passage") {
+                    const passageOpen = expandedPassages.has(block.key);
+                    const selectable = block.items.filter(item => !item.pending);
+                    const selectedCount = allInScope
+                      ? selectable.length
+                      : selectable.filter(item => selected.has(item.id)).length;
+                    const firstNumber = questionNumber(block.items[0]) ?? "1";
+                    const lastNumber = questionNumber(block.items[block.items.length - 1]) ?? firstNumber;
+                    const range = firstNumber === lastNumber ? `${firstNumber}번` : `${firstNumber}~${lastNumber}번`;
+                    const panelId = `quiz-passage-detail-${block.items[0].id}`;
+                    return (
+                      <article key={block.key} className="quiz-passage-set">
+                        <div className="quiz-passage-set-head">
+                          <label className="quiz-check-label quiz-check-box quiz-passage-select" title={t("problems.list.selectTitle")}>
+                            <input
+                              type="checkbox"
+                              checked={selectable.length > 0 && selectedCount === selectable.length}
+                              ref={element => {
+                                if (element) element.indeterminate = selectedCount > 0 && selectedCount < selectable.length;
+                              }}
+                              onChange={() => toggleGroupSelection(block.items)}
+                              disabled={selectable.length === 0}
+                              aria-label={t("problems.list.groupSelectAria", { file: block.passageGroup })}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            className="quiz-passage-set-toggle"
+                            onClick={() => togglePassage(block.key)}
+                            aria-expanded={passageOpen}
+                            aria-controls={panelId}
+                            title={t("problems.list.detailsTitle")}
+                          >
+                            <span className={`quiz-file-chev${passageOpen ? " open" : ""}`} aria-hidden="true">⌄</span>
+                            <span className="q-chip qtype">{t("problems.mock.passage")}</span>
+                            <span className="quiz-passage-set-title">{block.passageGroup}</span>
+                            <span className="quiz-passage-set-meta">
+                              {block.section} · {range} · {problemCountLabel(block.items.length, t, formatNumber)}
+                            </span>
+                          </button>
+                        </div>
+                        <div id={panelId} className="quiz-passage-set-body" hidden={!passageOpen}>
+                          {passageOpen && (<>
+                            <section className="quiz-korean-passage-document" aria-label={t("problems.mock.passage")}>
+                              <div className="quiz-korean-passage-heading">
+                                <span>{block.section}</span>
+                                <strong>{range}</strong>
+                              </div>
+                              <Md text={block.passage} />
+                            </section>
+                            <div className="quiz-passage-question-list">
+                              {block.items.map(q => (
+                                <section key={q.id} className={`quiz-passage-question${q.pending ? " pending" : ""}`}>
+                                  <div className="quiz-passage-question-head">
+                                    <label className="quiz-check-label quiz-check-box" title={t("problems.list.selectTitle")}>
+                                      <input
+                                        type="checkbox"
+                                        checked={!q.pending && (allInScope || selected.has(q.id))}
+                                        onChange={() => toggleSelect(q.id)}
+                                        disabled={q.pending}
+                                        aria-label={t("problems.select.aria", { question: q.question.slice(0, 40) })}
+                                      />
+                                    </label>
+                                    <strong className="quiz-passage-question-number">{questionNumber(q) ?? "—"}</strong>
+                                    {q.exam_points != null && (
+                                      <span className="q-chip qtype">{t("problems.mock.points", { points: formatNumber(q.exam_points) })}</span>
+                                    )}
+                                    <span className={`q-chip diff-${q.difficulty}`}>{difficultyLabel(q.difficulty, t)}</span>
+                                    <span className="quiz-accuracy">
+                                      {q.pending ? t("problems.pending.badge") : accuracyLabel(q, t, formatNumber)}
+                                    </span>
+                                    <button
+                                      className="del-btn"
+                                      aria-label={pendingDelete?.key === `question:${q.id}`
+                                        ? t("problems.delete.pending")
+                                        : t("problems.delete.aria", { question: q.question.slice(0, 40) })}
+                                      disabled={q.pending || pendingDelete !== null}
+                                      onClick={() => doDelete(q.id)}
+                                    >✕</button>
+                                  </div>
+                                  <Md className="quiz-passage-question-text" text={questionTextWithoutNumber(q)} />
+                                  {q.choices && (
+                                    <ol className="quiz-passage-choices">
+                                      {q.choices.map((choice, index) => <li key={index}><MdInline text={choice} /></li>)}
+                                    </ol>
+                                  )}
+                                  {q.src_file_id && q.has_figure === 1 && (
+                                    <img
+                                      className="quiz-figure compact"
+                                      width={1200}
+                                      height={900}
+                                      src={pageImageUrl(q.src_file_id, q.src_page, q.figure_box)}
+                                      alt={figureAlt(q.figure_description, q.src_page, undefined, t, formatNumber)}
+                                      loading="lazy"
+                                    />
+                                  )}
+                                  {q.pending ? (
+                                    <div className="quiz-row-explanation">{t("problems.pending.detail")}</div>
+                                  ) : (
+                                    <details className="quiz-passage-solution">
+                                      <summary>{t("problems.wrong.detailsTitle")}</summary>
+                                      <div className="quiz-row-answer">
+                                        {t("problems.run.answer")} <strong><MdInline text={q.answer} /></strong>
+                                      </div>
+                                      {q.explanation ? (
+                                        <Md className="quiz-row-explanation" text={q.explanation} />
+                                      ) : (
+                                        <div className="quiz-row-expl-gen">
+                                          {explGenBusy.has(q.id) ? (
+                                            <AiPending label={t("problems.explanation.pending")} />
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              className="btn sm"
+                                              onClick={() => void generateExplanation(q.id)}
+                                            >{t("problems.explanation.generate")}</button>
+                                          )}
+                                          {explGenNotice.has(q.id) && (
+                                            <span className={`expl-gen-notice ${explGenNotice.get(q.id)!.tone}`} role="status">
+                                              {explGenNotice.get(q.id)!.text}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </details>
+                                  )}
+                                  {q.src_file_id && (
+                                    <a className="q-chip qtype" href={bookFileUrl(q.src_file_id, q.src_page)} target="_blank" rel="noreferrer">
+                                      {t("problems.run.originalView")}
+                                      {q.src_page ? ` p.${formatNumber(q.src_page)}` : ""}
+                                    </a>
+                                  )}
+                                </section>
+                              ))}
+                            </div>
+                          </>)}
+                        </div>
+                      </article>
+                    );
+                  }
+                  const q = block.item;
+                  return (
+                  <div key={block.key} className={`quiz-row${q.pending ? " pending" : ""}`}>
                     <label className="quiz-check-label quiz-check-box" title={t("problems.list.selectTitle")}>
                       <input
                         type="checkbox"
@@ -1678,7 +1873,8 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                       )}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
                 </div>
               </div>
             );

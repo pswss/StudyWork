@@ -1,6 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { figureAlt, numberedQuestionText, quizResultScore, quizShortcutChoice } from "../web/src/pages/Quiz";
+import {
+  figureAlt,
+  groupKoreanPassageQuestions,
+  numberedQuestionText,
+  quizResultScore,
+  quizShortcutChoice,
+} from "../web/src/pages/Quiz";
+import type { Question } from "../web/src/api";
 
 describe("quiz interaction polish", () => {
   it("maps answer shortcuts and keeps setup progressively disclosed", () => {
@@ -52,5 +59,34 @@ describe("quiz interaction polish", () => {
     expect(numberedQuestionText({ question: "레거시 문항", book_number: "8" }))
       .toBe("8. 레거시 문항");
     expect(numberedQuestionText({ question: "AI 생성 문항" })).toBe("AI 생성 문항");
+  });
+
+  it("국어 공통 지문은 펼침 단위 하나에 연결 문항을 모두 묶음", () => {
+    const question = (id: number, section: string, group: string | null, passage: string | null) => ({
+      id,
+      mock_exam_job_id: 8,
+      exam_section: section,
+      passage_group: group,
+      passage,
+    } as Question);
+    const blocks = groupKoreanPassageQuestions([
+      question(11, "독서와 작문", "인문·예술", "긴 공통 지문"),
+      question(12, "독서와 작문", "인문·예술", "긴 공통 지문"),
+      question(13, "독서와 작문", "인문·예술", "긴 공통 지문"),
+      question(14, "영어", "독해", "English passage"),
+    ]);
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      kind: "passage",
+      passageGroup: "인문·예술",
+      passage: "긴 공통 지문",
+      items: [{ id: 11 }, { id: 12 }, { id: 13 }],
+    });
+    expect(blocks[1]).toMatchObject({ kind: "question", item: { id: 14 } });
+
+    const source = readFileSync("web/src/pages/Quiz.tsx", "utf8");
+    expect(source).toContain('className="quiz-korean-passage-document"');
+    expect(source).toContain('className="quiz-passage-question-list"');
   });
 });
