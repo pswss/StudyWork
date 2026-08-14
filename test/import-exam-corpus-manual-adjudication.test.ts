@@ -593,6 +593,28 @@ function q31Q32ExactRecoveryParent5578421(stateDir: string, number: "31" | "32")
   );
 }
 
+function q33Q34ExactRecoveryParent5578421(stateDir: string, number: "33" | "34") {
+  const pins = {
+    "33": [
+      "7a5af6b99f37155fe6589b01bd3c0d91af28409d8dccc1b7b29addec7d66a477",
+      "5583504ce366c1ce323ff7bc992121c7b2ee9424e643feabe69f36861f757b36",
+      "3bfbc6ff981d7c04b5803bd03ca44171950a14727490e5cf01f0382592bbab70",
+    ],
+    "34": [
+      "8ebd97d430525b0fb6acb9fb6f5d5140857c82bb229f24574d48197799574784",
+      "1ba05579bb4777640336e306502b2ee87e181dbf2f59da9cd812e674d897ca9f",
+      "9ee5f4a5e633fd3354269c261f6a5a08a83f181ce7f56e2ae0d47ec33127e052",
+    ],
+  } as const;
+  const [problemBasis, classificationBasis, parentHash] = pins[number];
+  return exactRecoveryParent(
+    stateDir,
+    `problem-recoveries/v1-0012-00${number}-${problemBasis}.json`,
+    `classification-recoveries/v1-0012-00${number}-${classificationBasis}-7bb7cb863c8c4855.json`,
+    parentHash
+  );
+}
+
 const Q43_CORRECTED_SOLUTION =
   "(가)에서는 ‘여기 하나의 상심한 사람이 있다.’와 ‘여기 하나의 굳세게 살아온 인생이 있다.’와 " +
   "같이 변주함으로써 주제 의식을 강조하고 있고, (나)에서는 ‘더 추워야겠다’와 ‘한껏 " +
@@ -1282,12 +1304,14 @@ describe("exact allowlisted problem manual adjudication", () => {
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
     "pins and applies the source-exact 5578421 Q31-Q32 pair",
     () => {
-    const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(-3, -1);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(39);
-    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, -3)))
+    const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
+      spec.entryId === "ebsi:5578421" && ["12:31", "12:32"].includes(spec.key)
+    );
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(41);
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 36)))
       .toBe("e260bb5cd9c24507cb1c434e19b03a63961ef07a29392b28fc49f6897040dd64");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("d467b16d4920979dde096e8373f8af636f6763d9d2b5da4d7205f5dc0c6f55b5");
+      .toBe("59740d698e7106aeb935675f4537adaf2b4c7b519f57c583adb706108012f7ed");
     expect(specs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -1336,6 +1360,52 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(corrected32.choices).toEqual(q32.failed.question.choices);
     expect(corrected31.answer).toBe(q31.failed.question.answer);
     expect(corrected32.answer).toBe(q32.failed.question.answer);
+  });
+
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "pins and applies the source-exact 5578421 Q33-Q34 pair",
+    () => {
+    const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
+      spec.entryId === "ebsi:5578421" && ["12:33", "12:34"].includes(spec.key)
+    );
+    expect(specs).toHaveLength(2);
+    expect(specs.map((spec) => ({
+      rowHash: canonicalEvidenceHash(spec),
+      replacementsHash: canonicalEvidenceHash(spec.replacements),
+    }))).toEqual([{
+      rowHash: "a744e96366190c657c16a10e17053c1aa098e9de01543fe2787ef7c989bb9427",
+      replacementsHash: "e1b798db9879f472ca70baaeab924563811a518512f71b97baea40f598a16ff4",
+    }, {
+      rowHash: "a620f1b2e47c0554fd2bc0956aecc3ba26622a72ddf0a9006252bce5351e0f48",
+      replacementsHash: "c5c2e15127480ffac4cfaf471441e2f316a3ae057f045df6ad3f2b95c0d65577",
+    }]);
+    const q33 = q33Q34ExactRecoveryParent5578421(q31Q32LiveState, "33");
+    const q34 = q33Q34ExactRecoveryParent5578421(q31Q32LiveState, "34");
+    const corrected33 = applyAllowlistedProblemManualCorrection(
+      "ebsi:5578421", specs[0].sourceHash, q33.failed.question
+    );
+    const corrected34 = applyAllowlistedProblemManualCorrection(
+      "ebsi:5578421", specs[1].sourceHash, q34.failed.question
+    );
+    expect(canonicalEvidenceHash(corrected33))
+      .toBe("51c280a2726a0316148f5f9fea647a1f36f291d8623af351c485110810acf91e");
+    expect(canonicalEvidenceHash(corrected33.question))
+      .toBe("d30bacae21df5b21a5752a1d6d9a9555cebfecc7b1324bd694bd6e11cea1bc9a");
+    expect(canonicalEvidenceHash(corrected34))
+      .toBe("cd41ed6a20382fed6f21385228b1698369e81d0cb0e1c0744a0f1f77d3d479c8");
+    expect(canonicalEvidenceHash(corrected34.question))
+      .toBe("0846bb9134af1046402bb67e607122612901ab36ab70edf2323283b7e2814f96");
+    expect(corrected33.question).toContain("㉡의 사례로 가장 적절한 것은?");
+    expect(corrected33.question).toContain("<결론>인 $q$");
+    expect(corrected33.figure_description).toContain("가로선은 총 2개");
+    expect(corrected34.question).toContain("34. <보기>는 ㉢을 심화 학습");
+    expect(corrected34.question).toContain("컴퓨터로 프로그래밍할 수 있는 길");
+    expect(corrected34.figure_description).toContain("OR 게이트 회로도");
+    expect(corrected34.figure_description).toContain("Y = A + B");
+    expect(corrected33.choices).toEqual(q33.failed.question.choices);
+    expect(corrected34.choices).toEqual(q34.failed.question.choices);
+    expect(corrected33.answer).toBe(q33.failed.question.answer);
+    expect(corrected34.answer).toBe(q34.failed.question.answer);
   });
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
@@ -2021,7 +2091,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 36)))
       .toBe("e260bb5cd9c24507cb1c434e19b03a63961ef07a29392b28fc49f6897040dd64");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("d467b16d4920979dde096e8373f8af636f6763d9d2b5da4d7205f5dc0c6f55b5");
+      .toBe("59740d698e7106aeb935675f4537adaf2b4c7b519f57c583adb706108012f7ed");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 18)))
       .toBe("463fceef246487e1ec791ffb0489048f874cd5944d946f9c6d819f3fd3c76eda");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST[11]))

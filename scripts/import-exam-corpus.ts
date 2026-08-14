@@ -2763,6 +2763,166 @@ const Q32_5578421_REPLACEMENTS: ProblemManualReplacement[] = [{
   field: "question", from: "ⓒ 명제 논리학", to: "㉢ 명제 논리학", count: 1,
 }];
 
+const Q33_5578421_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "• 모든 A는 B이다.　　• 모든 A는 B가 아니다.\n" +
+    "• 어떤 A는 B이다.　　• 어떤 A는 B가 아니다.",
+  to: "• 모든 A는 B이다.  • 모든 A는 B가 아니다.\n" +
+    "• 어떤 A는 B이다.  • 어떤 A는 B가 아니다.",
+  count: 1,
+}, {
+  field: "question",
+  from: "(1) 모든 [아버지]는 [남자]이다.　<전제1>\n" +
+    "　　어떤 [사람]은 [아버지]이다.　<전제2>\n" +
+    "　　그러므로 어떤 [사람]은 [남자]이다.　<결론>",
+  to: "(1) 모든 [아버지]는 [남자]이다.  <전제1>\n" +
+    "어떤 [사람]은 [아버지]이다.  <전제2>\n" +
+    "그러므로 어떤 [사람]은 [남자]이다.  <결론>",
+  count: 1,
+}, {
+  field: "question", from: "전제에 있으면서", to: "전제에만 있으면서", count: 1,
+}, {
+  field: "question", from: "증명사", to: "중명사", count: 5,
+}, {
+  field: "question",
+  from: "‘걷는다’와 같은 동사인 경우에는 ‘걷는 존재’와 같은 명사(名辭)로",
+  to: "‘걷는다’와 같이 동사인 경우에는 ‘걷는 존재’와 같은 명사(名辭)*로",
+  count: 1,
+}, {
+  field: "question",
+  from: "(2) 모든 [M]은 [P]이다.　<대전제>\n" +
+    "　　어떤 [S]는 [M]이다.　<소전제>\n" +
+    "　　그러므로 어떤 [S]는 [P]이다.　<결론>",
+  to: "(2) 모든 [M]은 [P]이다.  <대전제>\n" +
+    "어떤 [S]는 [M]이다.  <소전제>\n" +
+    "그러므로 어떤 [S]는 [P]이다.  <결론>",
+  count: 1,
+}, {
+  field: "question",
+  from: "(3) 만약 비가 온다면, 소풍은 취소된다.　<전제1>\n" +
+    "　　비가 온다.　<전제2>\n" +
+    "　　그러므로 소풍은 취소된다.　<결론>",
+  to: "(3) 만약 비가 온다면, 소풍은 취소된다.  <전제1>\n" +
+    "비가 온다.  <전제2>\n" +
+    "그러므로 소풍은 취소된다.  <결론>",
+  count: 1,
+}, {
+  field: "question",
+  from: "그리고 더 이상 분해할 수 없는 명제를 단순 명제라 하며 ‘p, q, r’ 등의 기호로 " +
+    "표시하고, 단순 명제에 논리적 연결사인 ‘∨(또는)’, ‘∧(그리고)’, ‘→(만약 …이면 …이다)’, " +
+    "‘∼(…가 아니다)’ 등을 사용하여 복합 명제를 만들었다.",
+  to: "그리고 더 이상 분해할 수 없는 명제를 단순 명제라 하여 ‘$p$, $q$, $r$’ 등의 기호로 " +
+    "표시하고, 단순 명제에 논리적 연결사인 ‘$\\lor$(또는)’, ‘$\\land$(그리고)’, " +
+    "‘$\\to$(만약 …이면 …이다)’, ‘$\\sim$(…가 아니다)’ 등을 사용하여 복합 명제를 만들었다.",
+  count: 1,
+}, {
+  field: "question",
+  from: "가령 (3)의 <전제1>은 ‘비가 온다.’와 ‘소풍은 취소된다.’의 두 개의 단순 명제가 연결된 " +
+    "복합 명제로, 각각의 단순 명제를 ‘p’와 ‘q’로 나타낼 수 있다. 그리고 단순 명제 ‘p’와 ‘q’는 " +
+    "‘만약 …이면 …이다.’에 해당하는 논리적 연결사 ‘→’를 사용하여 ‘p→q’와 같은 복합 명제로 " +
+    "나타낼 수 있다.",
+  to: "가령 (3)의 <전제1>은 ‘비가 온다.’와 ‘소풍은 취소된다.’의 두 개의 단순 명제가 연결된 " +
+    "복합 명제로, 각각의 단순 명제를 ‘$p$’와 ‘$q$’로 나타낼 수 있다. 그리고 단순 명제 ‘$p$’와 " +
+    "‘$q$’는 ‘만약 …이면 …이다.’에 해당하는 논리적 연결사 ‘$\\to$’를 사용하여 ‘$p \\to q$’와 " +
+    "같은 복합 명제로 나타낼 수 있다.",
+  count: 1,
+}, {
+  field: "question",
+  from: "(4) 만약 p이면 q이다.　　　(4′) $p\\to q$\n" +
+    "　　p이다.　　　　　　　　　　 $p$\n" +
+    "　　그러므로 q이다.　　　　　　$q$",
+  to: "(4) 만약 $p$이면 $q$이다.      (4′) $p \\to q$\n" +
+    "$p$이다.                  ⇒       $p$\n" +
+    "────────                         ────────\n" +
+    "그러므로 $q$이다.                 $q$",
+  count: 1,
+}, {
+  field: "question",
+  from: "아리스토텔레스는 정언 문장에서 명사들 간의 관계에 의존하여 논증의 타당성을 " +
+    "설명하였지만, 명제 논리학에서는 명제들의 진릿값과 논리적 연결사에 의존하여 논증의 " +
+    "타당성을 평가했다. 가령, ‘p∨q’는 ‘p’와 ‘q’ 중 하나라도 참이면 참이 되지만, ‘p∧q’는 ‘p’와 " +
+    "‘q’ 모두 참일 때에만 참이 된다. 또한 ‘p→q’는 ‘p’와 ‘q’가 모두 참인 경우에는 참이지만, " +
+    "‘p’가 참이고 ‘q’가 거짓인 경우에는 거짓이 된다. 따라서 복합 명제의 진릿값은 단순 명제의 " +
+    "진릿값과 논리적 연결사에 의존한다. (4′)는 <전제2>가 <전제1>의 실행 조건인 p를 " +
+    "긍정함으로써 <전제1>의 q가 성립된다고 주장하는 논증인데,",
+  to: "아리스토텔레스는 정언 문장에서 명사들 간의 관계에 의존하여 논증의 타당성을 " +
+    "설명하였지만, 명제 논리학에서는 명제들의 진릿값과 논리적 연결사에 의존하여 논증의 " +
+    "타당성을 평가했다. 가령, ‘$p \\lor q$’는 ‘$p$’와 ‘$q$’ 중 하나라도 참이면 참이 되지만, " +
+    "‘$p \\land q$’는 ‘$p$’와 ‘$q$’ 모두 참일 때에만 참이 된다. 또한 ‘$p \\to q$’는 ‘$p$’와 " +
+    "‘$q$’가 모두 참인 경우에는 참이지만, ‘$p$’가 참이고 ‘$q$’가 거짓인 경우에는 거짓이 된다. " +
+    "따라서 복합 명제의 진릿값은 단순 명제의 진릿값과 논리적 연결사에 의존한다. (4′)는 " +
+    "<전제2>가 <전제1>의 선행 조건인 $p$를 긍정함으로써 <결론>인 $q$가 성립된다고 주장하는 " +
+    "논증인데,",
+  count: 1,
+}, {
+  field: "question", from: "ⓒ 명제 논리학", to: "㉢ 명제 논리학", count: 1,
+}];
+
+const Q34_5578421_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question", from: "[공유 지문]\n", to: "[29~34] 다음 글을 읽고 물음에 답하시오.\n\n", count: 1,
+}, ...Q33_5578421_REPLACEMENTS.filter((_, index) => [0, 1, 2, 5, 6].includes(index)), {
+  field: "question", from: "‘걷는다’와 같은 동사인 경우에는", to: "‘걷는다’와 같이 동사인 경우에는",
+  count: 1,
+}, {
+  field: "question", from: "‘p, q, r’ 등의 기호로", to: "‘$p$, $q$, $r$’ 등의 기호로", count: 1,
+}, {
+  field: "question",
+  from: "가령 (3)의 <전제1>은 ‘비가 온다.’와 ‘소풍은 취소된다.’의 두 개의 단순 명제가 연결된 " +
+    "복합 명제로, 각각의 단순 명제를 ‘p’와 ‘q’로 나타낼 수 있다. 그리고 단순 명제 ‘p’와 ‘q’는 " +
+    "‘만약 …이면 …이다.’에 해당하는 논리적 연결사 ‘$\\to$’를 사용하여 ‘$p\\to q$’와 같은 " +
+    "복합 명제로 나타낼 수 있다.",
+  to: "가령 (3)의 <전제1>은 ‘비가 온다.’와 ‘소풍은 취소된다.’의 두 개의 단순 명제가 연결된 " +
+    "복합 명제로, 각각의 단순 명제를 ‘$p$’와 ‘$q$’로 나타낼 수 있다. 그리고 단순 명제 ‘$p$’와 " +
+    "‘$q$’는 ‘만약 …이면 …이다.’에 해당하는 논리적 연결사 ‘$\\to$’를 사용하여 ‘$p \\to q$’와 " +
+    "같은 복합 명제로 나타낼 수 있다.",
+  count: 1,
+}, {
+  field: "question",
+  from: "(4) 만약 p이면 q이다.　　(4′) $p\\to q$\n" +
+    "　　p이다.　　　　　　$\\Rightarrow$　p\n" +
+    "　　그러므로 q이다.　　　　　q",
+  to: "(4) 만약 $p$이면 $q$이다.      (4′) $p \\to q$\n" +
+    "$p$이다.                  ⇒       $p$\n" +
+    "────────                         ────────\n" +
+    "그러므로 $q$이다.                 $q$",
+  count: 1,
+}, {
+  field: "question",
+  from: "아리스토텔레스는 정언 문장에서 명사들 간의 관계에 의존하여 논증의 타당성을 " +
+    "설명하였지만, 명제 논리학에서는 명제들의 진릿값과 논리적 연결사에 의존하여 논증의 " +
+    "타당성을 평가했다. 가령, ‘$p\\lor q$’는 ‘p’와 ‘q’ 중 하나라도 참이면 참이 되지만, " +
+    "‘$p\\land q$’는 ‘p’와 ‘q’ 모두 참일 때에만 참이 된다. 또한 ‘$p\\to q$’는 ‘p’와 ‘q’가 " +
+    "모두 참인 경우에는 참이지만, ‘p’가 참이고 ‘q’가 거짓인 경우에는 거짓이 된다. 따라서 복합 " +
+    "명제의 진릿값은 단순 명제의 진릿값과 논리적 연결사에 의존한다. (4′)는 <전제2>가 <전제1>의 " +
+    "실행 조건인 p를 긍정함으로써 <결론>의 q가 성립된다고 주장하는 논증인데, 이러한 형식을 ⓒ " +
+    "전건 긍정이라 한다.",
+  to: "아리스토텔레스는 정언 문장에서 명사들 간의 관계에 의존하여 논증의 타당성을 " +
+    "설명하였지만, 명제 논리학에서는 명제들의 진릿값과 논리적 연결사에 의존하여 논증의 " +
+    "타당성을 평가했다. 가령, ‘$p \\lor q$’는 ‘$p$’와 ‘$q$’ 중 하나라도 참이면 참이 되지만, " +
+    "‘$p \\land q$’는 ‘$p$’와 ‘$q$’ 모두 참일 때에만 참이 된다. 또한 ‘$p \\to q$’는 ‘$p$’와 " +
+    "‘$q$’가 모두 참인 경우에는 참이지만, ‘$p$’가 참이고 ‘$q$’가 거짓인 경우에는 거짓이 된다. " +
+    "따라서 복합 명제의 진릿값은 단순 명제의 진릿값과 논리적 연결사에 의존한다. (4′)는 " +
+    "<전제2>가 <전제1>의 선행 조건인 $p$를 긍정함으로써 <결론>인 $q$가 성립된다고 주장하는 " +
+    "논증인데, 이러한 형식을 ㉡ 전건 긍정이라 한다.",
+  count: 1,
+}, {
+  field: "question",
+  from: "㉡ 명제 논리학은 자연 언어를 컴퓨터화할 수 있는 길을 열어 주었다.",
+  to: "㉢ 명제 논리학은 자연 언어를 컴퓨터로 프로그래밍할 수 있는 길을 열어 주었다.",
+  count: 1,
+}, {
+  field: "question",
+  from: "34. <보기>는 ⓒ을 심화 학습하는 과정에서 얻은 자료이다.",
+  to: "34. <보기>는 ㉢을 심화 학습하는 과정에서 얻은 자료이다.",
+  count: 1,
+}];
+
+const Q34_5578421_FIGURE_DESCRIPTION = Q30_FIGURE_DESCRIPTION +
+  " 또한 공식 12쪽 오른쪽 34번 <보기> 중앙에는 OR 게이트 회로도가 있다. 왼쪽의 두 수평 " +
+  "입력선은 위에서부터 A, B이며, 왼쪽 면이 오목하고 오른쪽 끝이 뾰족한 OR 게이트 기호로 " +
+  "들어간다. 게이트 오른쪽에서 수평 출력선 하나가 나와 Y로 표시되고, 아래에는 ‘Y = A + B’가 " +
+  "적혀 있다.";
+
 const Q34_FIGURE_DESCRIPTION =
   "공식 12쪽의 (가)에는 왼쪽 세로 묶음 괄호가 3개 있다. 각 괄호는 세로선 하나와 오른쪽을 향한 " +
   "위·아래 가로 캡 2개로 이루어져 가로 캡은 모두 6개이다. 첫째 [A] 괄호는 ‘마님, 나으리께서 " +
@@ -5433,6 +5593,68 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     }],
     figure: true,
     figureDescription: Q30_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5578421-q33-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "12:33",
+    sourcePage: 12,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "3bfbc6ff981d7c04b5803bd03ca44171950a14727490e5cf01f0382592bbab70",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "0363f4b7b2dc70f10a8f77db2b347f333514843c3e3ea0ecae57d69f8ef08ddb",
+    failedClassificationHash: "917e0efbc50cc77e3869fbe6b2e785d1e339a7dc59fa33f38e1d0ca91d82d5c8",
+    failedClassificationEvidenceHash: "b3697d6bdf39cb8d0f7d9ae3a8c56a1b77c7fb04d558db13d4e2da6139c39141",
+    views: [
+      { sourcePage: 11, label: "p11 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 11, label: "p11 (4) and (4-prime) diagram", rect: [0.50, 0.42, 0.92, 0.60] },
+      { sourcePage: 12, label: "p12 Q33", rect: [0.07, 0.72, 0.53, 0.98] },
+    ],
+    requiredTokens: [
+      "[29~34] 다음 글을 읽고 물음에 답하시오.", "전제에만 있으면서", "중명사(M)",
+      "같이 동사인 경우", "명사(名辭)*", "단순 명제라 하여", "(4′)", "⇒", "────────",
+      "<전제1>의 선행 조건인 $p$", "<결론>인 $q$", "㉢ 명제 논리학",
+      "㉡의 사례로 가장 적절한 것은?", "④ 교실 청소가 끝나면 집에 갈 수 있다.",
+      "가로선은 총 2개",
+    ],
+    replacements: Q33_5578421_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q30_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5578421-q34-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "12:34",
+    sourcePage: 12,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "9ee5f4a5e633fd3354269c261f6a5a08a83f181ce7f56e2ae0d47ec33127e052",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "2be6bd0e721cf5f784f1a1f74dfd2481b009e27d3bcbef4cd9a1e2d07af81920",
+    failedClassificationHash: "d3f5f58810307b0ff52c2da43da184e7d3ef666d90e1dfa94b4d9c374079941b",
+    failedClassificationEvidenceHash: "3c02a8df4cd35293dd601206fd748d251dcba741e6b9aa79e2284d3ac61113e8",
+    views: [
+      { sourcePage: 11, label: "p11 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 11, label: "p11 (4) and (4-prime) diagram", rect: [0.50, 0.42, 0.92, 0.60] },
+      { sourcePage: 12, label: "p12 Q34 and OR gate", rect: [0.50, 0.06, 0.95, 0.66] },
+    ],
+    requiredTokens: [
+      "[29~34] 다음 글을 읽고 물음에 답하시오.", "전제에만 있으면서", "같이 동사인 경우",
+      "명사(名辭)*", "단순 명제라 하여", "(4′)", "⇒", "────────",
+      "<전제1>의 선행 조건인 $p$", "<결론>인 $q$", "㉢ 명제 논리학",
+      "34. <보기>는 ㉢을 심화 학습하는 과정에서 얻은 자료이다.", "Y = A + B",
+      "⑤ ‘AND 게이트’에서 ‘Y’가 1인 것은", "가로선은 총 2개", "OR 게이트 회로도",
+    ],
+    replacements: Q34_5578421_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q34_5578421_FIGURE_DESCRIPTION,
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_reading",
   },
@@ -16434,6 +16656,10 @@ function is5578421Q31Q32ManualBatchSpec(spec: ProblemManualAdjudicationSpec): bo
   return spec.entryId === "ebsi:5578421" && ["12:31", "12:32"].includes(spec.key);
 }
 
+function is5578421Q33Q34ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5578421" && ["12:33", "12:34"].includes(spec.key);
+}
+
 function isQ37ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5525982" && spec.key === "14:37";
 }
@@ -16789,7 +17015,9 @@ async function preflightProblemManualBatch(
     }
     return;
   }
-  const predicate = is5578421Q31Q32ManualBatchSpec(requestedSpec)
+  const predicate = is5578421Q33Q34ManualBatchSpec(requestedSpec)
+    ? is5578421Q33Q34ManualBatchSpec
+    : is5578421Q31Q32ManualBatchSpec(requestedSpec)
     ? is5578421Q31Q32ManualBatchSpec
     : isQ43To45ManualBatchSpec(requestedSpec)
     ? isQ43To45ManualBatchSpec
@@ -22152,9 +22380,7 @@ export async function repairAndAuditOfficialAnswers(
     entry.id === "ebsi:5578421" &&
     problem.sha256 === "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e"
   ) {
-    const pairSpecs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(is5578421Q31Q32ManualBatchSpec)
-      .sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
-    let hasPairSignal = false;
+    const manualNames: string[][] = [];
     for (const directory of [
       "problem-recoveries", "classification-recoveries", "problem-manual-evidence",
       "problem-manual-adjudications", "classification-manual-adjudications",
@@ -22172,12 +22398,23 @@ export async function repairAndAuditOfficialAnswers(
       if (stat.isSymbolicLink() || !stat.isDirectory()) {
         throw new Error(`${directory} 디렉터리가 유효하지 않습니다`);
       }
-      if (readdirSync(path).some((name) => /^v\d+-0012-003[12](?:-|\.)/u.test(name))) {
-        hasPairSignal = true;
-      }
+      manualNames.push(readdirSync(path));
     }
-    if (hasPairSignal) {
-      if (pairSpecs.length !== 2) throw new Error("ebsi:5578421 Q31-Q32 manual pair allowlist가 다릅니다");
+    for (const group of [{
+      predicate: is5578421Q31Q32ManualBatchSpec,
+      signal: /^v\d+-0012-003[12](?:-|\.)/u,
+      label: "Q31-Q32",
+    }, {
+      predicate: is5578421Q33Q34ManualBatchSpec,
+      signal: /^v\d+-0012-003[34](?:-|\.)/u,
+      label: "Q33-Q34",
+    }]) {
+      if (!manualNames.some((names) => names.some((name) => group.signal.test(name)))) continue;
+      const pairSpecs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(group.predicate)
+        .sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+      if (pairSpecs.length !== 2) {
+        throw new Error(`ebsi:5578421 ${group.label} manual pair allowlist가 다릅니다`);
+      }
       await preflightProblemManualBatch(entry, problem, stateDir, pairSpecs[0]);
     }
   }
