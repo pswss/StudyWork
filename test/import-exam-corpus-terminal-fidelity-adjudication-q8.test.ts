@@ -41,6 +41,10 @@ const liveState = join(
   process.cwd(),
   "data/import-exam-corpus/7755c70fefaa45f755086e2b"
 );
+const q29LiveState = join(
+  process.cwd(),
+  "data/import-exam-corpus/f914a5cf8d2237d6c9319e23"
+);
 const available = existsSync(join(liveState, "problem.pdf")) && existsSync(join(liveState, "solution.pdf"));
 let roots: string[] = [];
 
@@ -138,6 +142,16 @@ describe.skipIf(!available)("Q8/Q20 terminal fidelity adjudication", () => {
         parentClassificationHash: "d9048c372b65ea1743efa80533f60babf0c825d816ac84441562f5b7884899ef",
         failedTerminalArtifactHash: "dcdeba5115626165988892bbe3ddcda57236e8dd5f48cb6171f3bc9092be37b6",
         failedItemHash: "ae7b656cae88d66a886cd484c9f08ef5f4b707a2bec7e8466f868836eea22105",
+      }),
+      expect.objectContaining({
+        entryId: "ebsi:5578421",
+        key: "11:29",
+        parentKind: "crop",
+        parentCropAllowlistId: "ebsi-5578421-q29-p11-v1",
+        parentQuestionHash: "f260c4fc3b64201fe1307181f45f00fb98648c3252b21e466fb2a9977958b4b1",
+        parentClassificationHash: "e6ce12aa23621404cb094e2a3c0e164d9ac4ffe194b4ad40eb10e36fe04dc276",
+        failedTerminalArtifactHash: "57669957b787de6422653161d5aff1cf0fdb543ba3e021e864e81402fffba579",
+        failedItemHash: "cf90936abe0ae9341269766b14e0dc01e00323f56cf8934ea1ab1f71b7a22a2a",
       }),
     ]);
   });
@@ -353,4 +367,75 @@ describe.skipIf(!available)("Q8/Q20 terminal fidelity adjudication", () => {
     expect(lstatSync(childDirectory).isSymbolicLink()).toBe(true);
     expect(readdirSync(outside)).toEqual([]);
   }, 90_000);
+});
+
+describe.skipIf(!existsSync(join(q29LiveState, "problem.pdf")))("Q29 crop terminal fidelity adjudication", () => {
+  it("uses the pinned crop authority and resumes without repeating the Q29 recovery", async () => {
+    const root = mkdtempSync(join(tmpdir(), "studywork-q29-terminal-adjudication-"));
+    roots.push(root);
+    cpSync(q29LiveState, root, { recursive: true });
+    rmSync(join(root, "problem-terminal-fidelity-adjudications"), { recursive: true, force: true });
+    const input = fixtureInputs(root);
+    let q29Calls = 0;
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      if (
+        request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity" &&
+        request.prompt.includes("Final question:\n")
+      ) {
+        const [item] = JSON.parse(request.prompt.split("Final question:\n")[1]) as Array<{
+          key: string;
+          question: string;
+        }>;
+        expect(item.key).toBe("11:29");
+        expect(item.question).toContain("중명사(M)");
+        q29Calls++;
+        return { text: JSON.stringify([{
+          key: item.key,
+          status: "exact",
+          evidence: "공식 11쪽 픽셀의 용어는 ‘중명사(M)’이며 현재 전사와 일치한다.",
+          scopeDecision: "accept",
+          scopeConfidence: 0.99,
+          scopeEvidence: "논리학 설명문의 전개 구조를 파악하는 독서 문항이다.",
+        }]) };
+      }
+      throw new Error(`seeded after Q29 adjudication: ${request.schema?.name ?? "unknown"}`);
+    });
+
+    const error = await repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions
+    ).then(() => null, (caught: unknown) => caught);
+    expect(q29Calls).toBe(1);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).not.toContain("11:29 problem recovery는 한 번만 허용됩니다");
+    const childNames = readdirSync(join(root, "problem-terminal-fidelity-adjudications"));
+    expect(childNames).toHaveLength(1);
+    const child = JSON.parse(readFileSync(
+      join(root, "problem-terminal-fidelity-adjudications", childNames[0]),
+      "utf8"
+    ));
+    expect(child.items).toEqual([expect.objectContaining({
+      key: "11:29",
+      status: "exact",
+      scopeDecision: "accept",
+    })]);
+
+    const stable = snapshot(root);
+    q29Calls = 0;
+    providerMock.complete.mockRejectedValue(new Error("seeded after persisted Q29 adjudication"));
+    await expect(repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions
+    )).rejects.not.toThrow("11:29 problem recovery는 한 번만 허용됩니다");
+    expect(q29Calls).toBe(0);
+    expect(snapshot(root)).toEqual(stable);
+  }, 120_000);
 });

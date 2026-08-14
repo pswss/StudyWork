@@ -1402,15 +1402,16 @@ export type ProblemTerminalFidelityAdjudicationEvidence = {
   sourcePage: number;
   sourceHash: string;
   solutionSourceHash: string;
-  parentKind: "manual" | "repair" | "scope-box";
+  parentKind: "manual" | "repair" | "crop" | "scope-box";
   parentRepairEvidenceHash: string;
   parentManualEvidenceHash?: string;
+  parentCropEvidenceHash?: string;
   parentScopeAdjudication?: ProblemScopeAdjudicationEvidence;
   parentScopeBox?: ProblemScopeBoxRevisionEvidence;
   parentScopeAdjudicationHash?: string;
   parentScopeBoxEvidenceHash?: string;
   sourceEvidence: EvidencePointer & {
-    kind: "manual-crop" | "problem-pdf" | "scope-box-crop";
+    kind: "manual-crop" | "crop-adjudication" | "problem-pdf" | "scope-box-crop";
   };
   cropEvidenceArtifact?: EvidencePointer;
   cropEvidencePdf?: EvidencePointer;
@@ -2530,8 +2531,9 @@ type PersistedTerminalRecoveryHydrationSpec = {
 
 type ProblemTerminalFidelityAdjudicationSpec = {
   allowlistId: string;
-  parentKind: "manual" | "repair" | "scope-box";
+  parentKind: "manual" | "repair" | "crop" | "scope-box";
   parentManualAllowlistId?: string;
+  parentCropAllowlistId?: string;
   parentScopeBoxAllowlistId?: string;
   parentScopeAdjudicationHash?: string;
   parentScopeBoxEvidenceHash?: string;
@@ -5925,6 +5927,34 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
         "필수로 사용한다. 적용 중인 교육과정 규칙은 좌표기하와 로그의 결합을 제외 대상으로 명시한다.",
     },
   },
+}, {
+  allowlistId: "ebsi-5578421-q29-terminal-fidelity-v1",
+  parentKind: "crop",
+  parentCropAllowlistId: "ebsi-5578421-q29-p11-v1",
+  entryId: "ebsi:5578421",
+  key: "11:29",
+  sourcePage: 11,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  solutionSourceHash: "95e7552f9264cec9649f648fe607bd12f9fe9f77bc9d06edb896971fcee34bf2",
+  parentQuestionHash: "f260c4fc3b64201fe1307181f45f00fb98648c3252b21e466fb2a9977958b4b1",
+  parentClassificationHash: "e6ce12aa23621404cb094e2a3c0e164d9ac4ffe194b4ad40eb10e36fe04dc276",
+  parentProblemArtifactPath: "problem-crop-adjudications/" +
+    "v1-0011-0029-6eef00833f4a5359f4e2403c822c0b7a2b3193dd95942e399de9a535242d9338.json",
+  parentProblemArtifactHash: "395d97f608b5e927728d5c0cf8be05331783691b993dd6a7daa2b6eee15a146f",
+  parentClassificationArtifactPath: "classification-crop-adjudications/" +
+    "v1-0011-0029-ae4ae88c2eaa0c52dc164e249fd11fb38bac576cc479208d9bb3542967576ee5-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "eb555a0ed8ceffe59fe35ab3892c690ce5855883f06cbb73b40c3427e6d41147",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-e4ced46b2b298a0fb752fffcc2975251c04c6d25b625311b8f510b374dfe34a1-" +
+    "3e83d6e5354dbf27d3d70ee20ec0b713c37088eec5fff383f238cae183fda4ce.json",
+  failedTerminalArtifactHash: "57669957b787de6422653161d5aff1cf0fdb543ba3e021e864e81402fffba579",
+  failedEffectiveCorpusHash: "e4ced46b2b298a0fb752fffcc2975251c04c6d25b625311b8f510b374dfe34a1",
+  failedInputHash: "3e83d6e5354dbf27d3d70ee20ec0b713c37088eec5fff383f238cae183fda4ce",
+  failedTerminalInputHash: "da2f4aaf72dcec9dee130d9563b0b485abfd163a707dc6e770fce76c47ddbed1",
+  failedItemHash: "cf90936abe0ae9341269766b14e0dc01e00323f56cf8934ea1ab1f71b7a22a2a",
+  failedEvidenceHash: "3067f9a6976e3fc924d5f84ef88d2b3f4496e03cc02d79fd007165656156834a",
+  failedScopeEvidenceHash: "fbc421e9b58a971ae42c4d6c6ec214450f3f2cf71afa803715c79dc74095758f",
 }] as const;
 
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(
@@ -17182,6 +17212,8 @@ type PreparedProblemTerminalFidelityAdjudication = {
   failedInput: ReturnType<typeof problemTerminalInput>;
   parentRepairEvidenceHash: string;
   parentManualEvidenceHash?: string;
+  parentCrop?: ProblemCropAdjudicationEvidence;
+  parentCropEvidenceHash?: string;
   parentScopeAdjudication?: ProblemScopeAdjudicationEvidence;
   parentScopeBox?: ProblemScopeBoxRevisionEvidence;
   parentScopeAdjudicationHash?: string;
@@ -17234,14 +17266,17 @@ async function prepareProblemTerminalFidelityAdjudication(
   if (!spec) throw new Error(`${key} terminal fidelity adjudication allowlist에 없습니다`);
   const { terminalAdjudication: _terminalAdjudication, ...parentRepair } = repair;
   const parentManual = parentRepair.revision?.recovery?.manualAdjudication;
+  const parentCrop = parentRepair.revision?.recovery?.adjudication;
   const parentScopeAdjudication = parentRepair.revision?.recovery?.scopeAdjudication;
   const parentScopeBox = parentScopeAdjudication?.boxRevision;
   const parentProblemArtifact = spec.parentKind === "manual"
     ? parentManual?.problemArtifact
-    : spec.parentKind === "scope-box" ? parentScopeBox?.problemArtifact : parentRepair.problemArtifact;
+    : spec.parentKind === "crop" ? parentCrop?.problemArtifact
+      : spec.parentKind === "scope-box" ? parentScopeBox?.problemArtifact : parentRepair.problemArtifact;
   const parentClassificationArtifact = spec.parentKind === "manual"
     ? parentManual?.classificationArtifact
-    : spec.parentKind === "scope-box" ? parentScopeBox?.classificationArtifact : parentRepair.classificationArtifact;
+    : spec.parentKind === "crop" ? parentCrop?.classificationArtifact
+      : spec.parentKind === "scope-box" ? parentScopeBox?.classificationArtifact : parentRepair.classificationArtifact;
   const effectiveCorpusHash = canonicalEvidenceHash(classified);
   const expectedParentDecision = spec.parentKind === "scope-box" ? "reject" : "accept";
   if (
@@ -17270,6 +17305,19 @@ async function prepareProblemTerminalFidelityAdjudication(
       parentManual.effectiveQuestionHash !== spec.parentQuestionHash ||
       parentManual.effectiveClassificationHash !== spec.parentClassificationHash
     ) throw new Error(`${key} terminal fidelity adjudication manual parent가 다릅니다`);
+  } else if (spec.parentKind === "crop") {
+    if (
+      !parentCrop || parentCrop.allowlistId !== spec.parentCropAllowlistId ||
+      parentCrop.sourceHash !== spec.sourceHash ||
+      parentCrop.problemArtifact.path !== spec.parentProblemArtifactPath ||
+      parentCrop.problemArtifact.sha256 !== spec.parentProblemArtifactHash ||
+      parentCrop.problemArtifactItemHash !== spec.parentQuestionHash ||
+      parentCrop.effectiveQuestionHash !== spec.parentQuestionHash ||
+      parentCrop.classificationArtifact.path !== spec.parentClassificationArtifactPath ||
+      parentCrop.classificationArtifact.sha256 !== spec.parentClassificationArtifactHash ||
+      parentCrop.classificationArtifactItemHash !== spec.parentClassificationHash ||
+      parentCrop.effectiveClassificationHash !== spec.parentClassificationHash
+    ) throw new Error(`${key} terminal fidelity adjudication crop parent가 다릅니다`);
   } else if (spec.parentKind === "repair" && (
     parentRepair.revision || parentRepair.baseProblemCheckpoint.sha256 !== spec.baseProblemCheckpointHash ||
     parentRepair.baseProblemCheckpoint.path !== spec.baseProblemCheckpointPath ||
@@ -17338,12 +17386,15 @@ async function prepareProblemTerminalFidelityAdjudication(
 
   const parentRepairEvidenceHash = canonicalEvidenceHash(parentRepair);
   const parentManualEvidenceHash = parentManual ? canonicalEvidenceHash(parentManual) : undefined;
+  const parentCropEvidenceHash = parentCrop ? canonicalEvidenceHash(parentCrop) : undefined;
   const parentScopeAdjudicationHash = parentScopeAdjudication
     ? canonicalEvidenceHash(parentScopeAdjudication)
     : undefined;
   const parentScopeBoxEvidenceHash = parentScopeBox ? canonicalEvidenceHash(parentScopeBox) : undefined;
   const sourceEvidence: ProblemTerminalFidelityAdjudicationEvidence["sourceEvidence"] = spec.parentKind === "manual"
     ? { ...parentManual!.cropEvidencePdf, kind: "manual-crop" }
+    : spec.parentKind === "crop"
+      ? { ...parentCrop!.cropEvidencePdf, kind: "crop-adjudication" }
     : spec.parentKind === "scope-box"
       ? { ...parentScopeBox!.cropEvidencePdf, kind: "scope-box-crop" }
       : { path: "problem.pdf", sha256: problem.sha256, kind: "problem-pdf" };
@@ -17363,6 +17414,13 @@ async function prepareProblemTerminalFidelityAdjudication(
       cropEvidenceArtifact: parentManual.cropEvidenceArtifact,
       cropEvidencePdf: parentManual.cropEvidencePdf,
       cropViews: parentManual.cropViews,
+    } : {}),
+    ...(parentCrop ? {
+      parentCrop,
+      parentCropEvidenceHash,
+      cropEvidenceArtifact: parentCrop.cropEvidenceArtifact,
+      cropEvidencePdf: parentCrop.cropEvidencePdf,
+      cropViews: parentCrop.cropViews,
     } : {}),
     ...(parentScopeAdjudication && parentScopeBox ? {
       parentScopeAdjudication,
@@ -17419,6 +17477,8 @@ async function prepareProblemTerminalFidelityAdjudication(
     failedInput,
     parentRepairEvidenceHash,
     ...(parentManualEvidenceHash ? { parentManualEvidenceHash } : {}),
+    ...(parentCrop ? { parentCrop } : {}),
+    ...(parentCropEvidenceHash ? { parentCropEvidenceHash } : {}),
     ...(parentScopeAdjudicationHash ? { parentScopeAdjudicationHash } : {}),
     ...(parentScopeBoxEvidenceHash ? { parentScopeBoxEvidenceHash } : {}),
     ...(parentScopeAdjudication && parentScopeBox ? { parentScopeAdjudication, parentScopeBox } : {}),
@@ -17468,6 +17528,14 @@ function problemTerminalFidelityAdjudicationEvidence(
     ...(prepared.parentManualEvidenceHash
       ? { parentManualEvidenceHash: prepared.parentManualEvidenceHash }
       : {}),
+    ...(prepared.parentCropEvidenceHash
+      ? { parentCropEvidenceHash: prepared.parentCropEvidenceHash }
+      : {}),
+    ...(prepared.parentCrop ? {
+      cropEvidenceArtifact: prepared.parentCrop.cropEvidenceArtifact,
+      cropEvidencePdf: prepared.parentCrop.cropEvidencePdf,
+      cropViews: prepared.parentCrop.cropViews,
+    } : {}),
     ...(prepared.parentScopeAdjudication && prepared.parentScopeBox ? {
       parentScopeAdjudication: prepared.parentScopeAdjudication,
       parentScopeAdjudicationHash: prepared.parentScopeAdjudicationHash,
@@ -17509,6 +17577,8 @@ function problemTerminalFidelityAdjudicationPrompt(
   ) throw new Error(`${spec.key} terminal fidelity adjudication solution context가 없습니다`);
   const mapping = spec.parentKind === "manual"
     ? `manual crop views bound in parent repair for original page ${spec.sourcePage}`
+    : spec.parentKind === "crop"
+      ? `crop adjudication views bound in parent recovery for original page ${spec.sourcePage}`
     : spec.parentKind === "scope-box"
       ? `page 1 is the official problem page ${spec.sourcePage} crop; pages 2-` +
         `${2 + solutionContextTo! - solutionContextFrom!} are official solution pages ` +
@@ -18615,6 +18685,9 @@ export async function assertProblemTerminalFidelityAdjudicationAuthority(
   }
   if (adjudicatedRepairs.some((repair) => repair.terminalAdjudication?.parentKind === "manual")) {
     await assertProblemManualAdjudicationAuthority(stateDir, repairList);
+  }
+  if (adjudicatedRepairs.some((repair) => repair.terminalAdjudication?.parentKind === "crop")) {
+    await assertProblemCropAdjudicationAuthority(stateDir, repairList);
   }
   if (adjudicatedRepairs.some((repair) => repair.terminalAdjudication?.parentKind === "scope-box")) {
     await assertProblemScopeBoxRevisionAuthority(
@@ -22428,6 +22501,9 @@ export async function repairAndAuditOfficialAnswers(
     }
     if (terminalAdjudicationSpecs.some((spec) => spec.parentKind === "manual")) {
       await assertProblemManualAdjudicationAuthority(stateDir, repairs.values());
+    }
+    if (terminalAdjudicationSpecs.some((spec) => spec.parentKind === "crop")) {
+      await assertProblemCropAdjudicationAuthority(stateDir, repairs.values());
     }
     if (terminalAdjudicationSpecs.some((spec) => spec.parentKind === "scope-box")) {
       await assertProblemScopeBoxRevisionAuthority(
