@@ -4063,6 +4063,29 @@ const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevi
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5578421-q30-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5578421-q30-manual-revision-v1",
+  parentRevisionEvidenceHash: "0b62182d67272fae88d147ddb2e80e4b4b973b16955d5c84215d7af831197be8",
+  entryId: "ebsi:5578421",
+  key: "12:30",
+  sourcePage: 12,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "cea6b791cba1ff2a19529d13cdd2c9fdef774bb5d17174e1ef1d2bfc6ad7c5fb",
+  failedClassificationHash: "c5868275075ef9d18656313b2cecb97fdc9b3d2d6c6a4e8b728365aea7c8b786",
+  failedClassificationEvidenceHash: "7d34789e5db02ef74ce06f85cbdee6c87318cd450bd9c9359f6688c7746b06e6",
+  replacement: {
+    field: "question",
+    from: "단순 명제라 하며 ‘$p$, $q$, $r$’",
+    to: "단순 명제라 하여 ‘$p$, $q$, $r$’",
+    count: 1,
+  },
+  requiredTokens: [
+    "단순 명제라 하여 ‘$p$, $q$, $r$’", "(4′) $p \\to q$", "⇒", "가로선은 총 2개",
+    "30. 윗글의 내용과 일치하지 않는 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_reading",
 }] as const;
 
 const PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST:

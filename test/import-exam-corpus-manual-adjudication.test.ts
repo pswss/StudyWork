@@ -2171,10 +2171,28 @@ describe("exact allowlisted problem manual adjudication", () => {
       failedQuestionHash: "e3649d8930138bdc731c8642e24507e5d98f12da8d83503877ef92c3f31981bb",
       failedClassificationHash: "e052bfaae96839742bad356f8235d214202d18baeb4bf3cc24d7e485b8042e2b",
       failedClassificationEvidenceHash: "d403219ab15a4d2584fb01f1abbed234cc824de7a7ef2df1e75f433c7442b205",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5578421-q30-manual-source-revision-v1",
+      parentRevisionAllowlistId: "ebsi-5578421-q30-manual-revision-v1",
+      parentRevisionEvidenceHash: "0b62182d67272fae88d147ddb2e80e4b4b973b16955d5c84215d7af831197be8",
+      failedQuestionHash: "cea6b791cba1ff2a19529d13cdd2c9fdef774bb5d17174e1ef1d2bfc6ad7c5fb",
+      failedClassificationHash: "c5868275075ef9d18656313b2cecb97fdc9b3d2d6c6a4e8b728365aea7c8b786",
+      failedClassificationEvidenceHash: "7d34789e5db02ef74ce06f85cbdee6c87318cd450bd9c9359f6688c7746b06e6",
     })]);
     expect(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.map(canonicalEvidenceHash)).toEqual([
       "e6287eb8f4eaef8f24099c08afc13d077ad7792a1345f0296b7ce39fa4b07d39",
+      "9f7304c54c2feab47dc28ee284924c8d4e8e8e82855a39de9310a33064b1b717",
     ]);
+    const q30SourceRevised = applyAllowlistedProblemManualSourceRevision(
+      "ebsi:5578421",
+      cases[1].sourceHash,
+      "ebsi-5578421-q30-manual-revision-v1",
+      revised
+    );
+    expect(canonicalEvidenceHash(q30SourceRevised))
+      .toBe("d901afd4a21376dc79a0d016a545db986c226c564d5a15fda47e47002c36a8dd");
+    expect(q30SourceRevised.question).toContain("단순 명제라 하여 ‘$p$, $q$, $r$’");
+    expect(q30SourceRevised.question).not.toContain("단순 명제라 하며 ‘$p$, $q$, $r$’");
     const q32SourceRevised = applyAllowlistedProblemManualSourceRevision(
       "ebsi:5525982",
       "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",

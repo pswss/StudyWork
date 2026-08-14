@@ -14519,7 +14519,7 @@ describe("exam corpus verifier", () => {
     expect(manualRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST));
     expect(manualSourceRevisionAllowlistFingerprint())
-      .toBe("d827fcf40ffaa5185cbc0073c08a4d11c4a808af073b958ed6e819dd8be7fb32");
+      .toBe("7c4de8efe8cb7d4169a11982bf66910eabfbb12fd1cde8db6ca11995d372f14a");
     expect(manualSourceRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST));
     expect(canonicalEvidenceHash(Q32_MANUAL_SOURCE_REVISION_SPEC))
