@@ -1295,6 +1295,13 @@ export type ProblemManualAdjudicationEvidence = {
   sourceHash: string;
   parentRecoveryEvidenceHash: string;
   parentCropAdjudicationHash?: string;
+  terminalTrigger?: {
+    artifact: EvidencePointer;
+    basisDigest: string;
+    itemHash: string;
+    evidenceHash: string;
+    scopeEvidenceHash: string;
+  };
   failedQuestionHash: string;
   failedClassificationHash: string;
   failedClassificationEvidenceHash: string;
@@ -2366,6 +2373,14 @@ type ProblemManualAdjudicationSpec = ProblemCropAdjudicationSpec & {
   parentKind: "recovery" | "crop";
   parentRecoveryEvidenceHash?: string;
   failedStatus?: "exact";
+  terminalTrigger?: {
+    artifactPath: string;
+    artifactHash: string;
+    basisDigest: string;
+    itemHash: string;
+    evidenceHash: string;
+    scopeEvidenceHash: string;
+  };
   dpi?: number;
   failedQuestionHash: string;
   failedClassificationHash: string;
@@ -5380,6 +5395,43 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     replacements: Q32_5578421_REPLACEMENTS,
     figure: true,
     figureDescription: Q32_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5578421-q29-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "11:29",
+    sourcePage: 11,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "crop",
+    parentRecoveryEvidenceHash: "e7e628d10f86a090c6f0d291fee22675edc1eba2ed5d34e3aad09fe0d4d3ff24",
+    failedStatus: "exact",
+    failedQuestionHash: "f260c4fc3b64201fe1307181f45f00fb98648c3252b21e466fb2a9977958b4b1",
+    failedClassificationHash: "e6ce12aa23621404cb094e2a3c0e164d9ac4ffe194b4ad40eb10e36fe04dc276",
+    failedClassificationEvidenceHash: "df1271605b5627c994676d95e0c5f7beec7db0b0728eb704eef3d5e3c8be5de3",
+    terminalTrigger: {
+      artifactPath: "problem-terminal-fidelity-adjudications/" +
+        "v1-0011-0029-7ce50336926f1c9a856efe53dadcc15be0f6bb84d68687bbab8026564c750216.json",
+      artifactHash: "81c7d52ea9ed22c65d396f8ebb006bb60d8cd850053338659e15b318a89387bc",
+      basisDigest: "7ce50336926f1c9a856efe53dadcc15be0f6bb84d68687bbab8026564c750216",
+      itemHash: "d1b536b832ebbcff391059092947e85100ab73ec74969824c81a1a36e05c3ab1",
+      evidenceHash: "11dba14995148d75b03bb7e28b28115ad19265ff7e437e1ea55daf152c8d5e4a",
+      scopeEvidenceHash: "fdb93bff2583ce5f21f5ce13830b1876a99605e368c82ac115c181f0c5441d0e",
+    },
+    views: [...PROBLEM_CROP_ADJUDICATION_ALLOWLIST[0].views],
+    requiredTokens: [
+      ...PROBLEM_CROP_ADJUDICATION_ALLOWLIST[0].requiredTokens,
+      "⇒", "가로선은 총 2개",
+    ],
+    replacements: [{
+      field: "question",
+      from: "　　p이다.　　　　　　　　　　　　　$p$",
+      to: "　　p이다.　　　　　　　⇒　　　　　$p$",
+      count: 1,
+    }],
+    figure: true,
+    figureDescription: Q30_FIGURE_DESCRIPTION,
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_reading",
   },
@@ -15357,6 +15409,7 @@ function problemManualCorrectionSpecHash(spec: ProblemManualAdjudicationSpec): s
       ? { parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash }
       : {}),
     ...(spec.failedStatus ? { failedStatus: spec.failedStatus } : {}),
+    ...(spec.terminalTrigger ? { terminalTrigger: spec.terminalTrigger } : {}),
     views: spec.views,
     ...(spec.dpi ? { dpi: spec.dpi } : {}),
     requiredTokens: spec.requiredTokens,
@@ -15369,6 +15422,51 @@ function problemManualCorrectionSpecHash(spec: ProblemManualAdjudicationSpec): s
       ? { expectedCanonicalSubject: spec.expectedCanonicalSubject }
       : {}),
   });
+}
+
+function problemManualTerminalTriggerEvidence(
+  spec: ProblemManualAdjudicationSpec
+): ProblemManualAdjudicationEvidence["terminalTrigger"] {
+  return spec.terminalTrigger ? {
+    artifact: {
+      path: spec.terminalTrigger.artifactPath,
+      sha256: spec.terminalTrigger.artifactHash,
+    },
+    basisDigest: spec.terminalTrigger.basisDigest,
+    itemHash: spec.terminalTrigger.itemHash,
+    evidenceHash: spec.terminalTrigger.evidenceHash,
+    scopeEvidenceHash: spec.terminalTrigger.scopeEvidenceHash,
+  } : undefined;
+}
+
+async function validatedProblemManualTerminalTrigger(
+  stateDir: string,
+  spec: ProblemManualAdjudicationSpec,
+  failed: ClassifiedQuestion
+): Promise<ProblemManualAdjudicationEvidence["terminalTrigger"]> {
+  const expected = problemManualTerminalTriggerEvidence(spec);
+  if (!expected) return undefined;
+  const path = confinedStateFile(stateDir, expected.artifact.path, `${spec.key} manual terminal trigger`);
+  const checkpoint = object(
+    JSON.parse(readFileSync(path, "utf8")),
+    `${spec.key} manual terminal trigger`
+  );
+  const items = parseProblemTerminalFidelity(checkpoint.items, [failed]);
+  const item = items[0];
+  if (
+    await sha256File(path) !== expected.artifact.sha256 ||
+    canonicalEvidenceHash(checkpoint) !== expected.artifact.sha256 ||
+    checkpoint.version !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION ||
+    checkpoint.entryId !== spec.entryId || checkpoint.basisDigest !== expected.basisDigest ||
+    checkpoint.promptDigest !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST ||
+    canonicalEvidenceHash(checkpoint.input) !== canonicalEvidenceHash(problemTerminalInput(failed.question)) ||
+    items.length !== 1 || !item || item.key !== spec.key || item.status === "exact" ||
+    item.scopeDecision !== "accept" || item.scopeConfidence < 0.9 ||
+    canonicalEvidenceHash(item) !== expected.itemHash ||
+    sha256Text(item.evidence) !== expected.evidenceHash ||
+    sha256Text(item.scopeEvidence) !== expected.scopeEvidenceHash
+  ) throw new Error(`${spec.key} manual terminal trigger authority가 다릅니다`);
+  return expected;
 }
 
 function problemManualRevisionCorrectionSpecHash(spec: ProblemManualRevisionSpec): string {
@@ -16753,6 +16851,8 @@ async function adjudicateProblemManualOne(
       : failed.classification.transcription_status === "exact")
   ) throw new Error(`${key} manual adjudication 입력이 exhausted recovery와 다릅니다`);
 
+  const terminalTrigger = await validatedProblemManualTerminalTrigger(stateDir, spec, failed);
+
   const sourcePages = [...new Set(spec.views.map((view) => view.sourcePage))].sort((a, b) => a - b);
   let pinnedProblemNames: string[] | null = null;
   let pinnedClassificationNames: string[] | null = null;
@@ -16825,6 +16925,7 @@ async function adjudicateProblemManualOne(
     ]);
     const evidenceExtras = evidenceNames.filter((name) => !expectedEvidenceNames.has(name));
     const hasEvidenceCheckpoint = evidenceNames.includes(`${evidenceStem}.json`);
+    const requiresManualEvidence = spec.parentKind === "recovery";
     if (
       evidenceExtras.length > 0 || pinnedProblemNames.length > 1 || pinnedClassificationNames.length > 1 ||
       revisionProblemNames.length > 1 || revisionClassificationNames.length > 1 ||
@@ -16832,12 +16933,12 @@ async function adjudicateProblemManualOne(
       (revisionClassificationNames.length > 0 && revisionProblemNames.length === 0) ||
       (sourceRevisionClassificationNames.length > 0 && sourceRevisionProblemNames.length === 0) ||
       (hasRevision && (
-        revisionSpecs.length !== 1 || !hasEvidenceCheckpoint ||
+        revisionSpecs.length !== 1 || (requiresManualEvidence && !hasEvidenceCheckpoint) ||
         pinnedProblemNames.length !== 1 || pinnedClassificationNames.length !== 1
       )) || (hasSourceRevision && (
         sourceRevisionSpecs.length !== 1 || revisionProblemNames.length !== 1 ||
         revisionClassificationNames.length !== 1
-      )) || (!hasEvidenceCheckpoint && (
+      )) || (requiresManualEvidence && !hasEvidenceCheckpoint && (
         pinnedProblemNames.length > 0 || pinnedClassificationNames.length > 0 || hasSourceRevision
       )) || (pinnedProblemNames.length === 0 && pinnedClassificationNames.length > 0)
     ) throw new Error(`${key} manual adjudication preflight orphan/conflict`);
@@ -16914,6 +17015,7 @@ async function adjudicateProblemManualOne(
     parentRecovery,
     parentRecoveryEvidenceHash,
     ...(parentCropAdjudicationHash ? { parentCropAdjudicationHash } : {}),
+    ...(terminalTrigger ? { terminalTrigger } : {}),
     failedQuestionHash: spec.failedQuestionHash,
     failedClassificationHash: spec.failedClassificationHash,
     failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
@@ -17052,6 +17154,7 @@ async function adjudicateProblemManualOne(
     sourceHash: problem.sha256,
     parentRecoveryEvidenceHash,
     ...(parentCropAdjudicationHash ? { parentCropAdjudicationHash } : {}),
+    ...(terminalTrigger ? { terminalTrigger } : {}),
     failedQuestionHash: spec.failedQuestionHash,
     failedClassificationHash: spec.failedClassificationHash,
     failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
@@ -18001,6 +18104,7 @@ export async function assertProblemManualAdjudicationAuthority(
     if (matches.length !== 1) throw new Error(`${repair.key} manual adjudication allowlist authority가 없습니다`);
     const spec = matches[0];
     const parentCrop = parentRecovery.adjudication;
+    const expectedTerminalTrigger = problemManualTerminalTriggerEvidence(spec);
     const expectedParentQuestionHash = spec.parentKind === "crop"
       ? parentCrop?.effectiveQuestionHash
       : parentRecovery.effectiveQuestionHash;
@@ -18014,6 +18118,9 @@ export async function assertProblemManualAdjudicationAuthority(
         manual.parentRecoveryEvidenceHash !== spec.parentRecoveryEvidenceHash) ||
       (spec.parentKind === "crop") !== Boolean(parentCrop) ||
       (parentCrop ? canonicalEvidenceHash(parentCrop) : undefined) !== manual.parentCropAdjudicationHash ||
+      Boolean(expectedTerminalTrigger) !== Boolean(manual.terminalTrigger) ||
+      (expectedTerminalTrigger &&
+        canonicalEvidenceHash(manual.terminalTrigger) !== canonicalEvidenceHash(expectedTerminalTrigger)) ||
       manual.failedQuestionHash !== spec.failedQuestionHash ||
       manual.failedQuestionHash !== expectedParentQuestionHash ||
       manual.failedClassificationHash !== spec.failedClassificationHash ||
@@ -18030,6 +18137,10 @@ export async function assertProblemManualAdjudicationAuthority(
       canonicalEvidenceHash(manual.cropViews.map(({ sourcePage, label, rect }) => ({ sourcePage, label, rect }))) !==
         canonicalEvidenceHash(spec.views)
     ) throw new Error(`${repair.key} manual adjudication evidence가 allowlist/parent와 다릅니다`);
+
+    if (expectedTerminalTrigger) {
+      await declare("manual terminal trigger", expectedTerminalTrigger.artifact, false);
+    }
 
     const isManualEvidence = spec.parentKind === "recovery";
     await declare("manual crop evidence", manual.cropEvidenceArtifact, isManualEvidence);
@@ -18100,6 +18211,7 @@ export async function assertProblemManualAdjudicationAuthority(
       ...(manual.parentCropAdjudicationHash
         ? { parentCropAdjudicationHash: manual.parentCropAdjudicationHash }
         : {}),
+      ...(expectedTerminalTrigger ? { terminalTrigger: expectedTerminalTrigger } : {}),
       failedQuestionHash: manual.failedQuestionHash,
       failedClassificationHash: manual.failedClassificationHash,
       failedClassificationEvidenceHash: manual.failedClassificationEvidenceHash,
@@ -18677,9 +18789,22 @@ export async function assertProblemTerminalFidelityAdjudicationAuthority(
   classified: ClassifiedQuestion[]
 ): Promise<void> {
   const repairList = [...repairs];
+  const declared = new Map<string, string>();
+  for (const repair of repairList) {
+    const trigger = repair.revision?.recovery?.manualAdjudication?.terminalTrigger;
+    if (!trigger) continue;
+    if (declared.has(trigger.artifact.path)) {
+      throw new Error(`manual terminal trigger artifact가 중복 선언됐습니다: ${trigger.artifact.path}`);
+    }
+    const path = confinedStateFile(stateDir, trigger.artifact.path, "manual terminal trigger");
+    if (await sha256File(path) !== trigger.artifact.sha256) {
+      throw new Error(`manual terminal trigger hash가 다릅니다: ${trigger.artifact.path}`);
+    }
+    declared.set(trigger.artifact.path, trigger.artifact.sha256);
+  }
   const adjudicatedRepairs = repairList.filter((repair) => repair.terminalAdjudication);
   if (adjudicatedRepairs.length === 0) {
-    assertProblemTerminalFidelityAdjudicationInventory(stateDir, new Set(), true);
+    assertProblemTerminalFidelityAdjudicationInventory(stateDir, new Set(declared.keys()), true);
     assertProblemTerminalFidelityPolicyRevisionInventory(stateDir, new Set(), true);
     return;
   }
@@ -18699,7 +18824,6 @@ export async function assertProblemTerminalFidelityAdjudicationAuthority(
       classified
     );
   }
-  const declared = new Map<string, string>();
   const problem = {
     path: confinedStateFile(stateDir, "problem.pdf", "terminal fidelity adjudication problem source"),
     sha256: sourceHash,
@@ -22091,6 +22215,47 @@ export async function repairAndAuditOfficialAnswers(
       }
       await preflightProblemManualBatch(entry, problem, stateDir, forced5578421ManualSpecs[0]);
     }
+    const triggeredManualCurrents = uniqueKeys.flatMap((key) => {
+      const index = effective.findIndex((item) => questionKey(item.question) === key);
+      const current = effective[index];
+      const repair = repairs.get(key);
+      const recovery = repair?.revision?.recovery;
+      const spec = current ? problemManualAdjudicationSpec(
+        entry.id,
+        key,
+        current.question.page!,
+        problem.sha256
+      ) : null;
+      return revisionKind === "terminal" && index >= 0 && current && repair?.revision && recovery &&
+        !recovery.manualAdjudication && spec?.failedStatus === "exact" && spec.terminalTrigger &&
+        canonicalEvidenceHash(current.question) === spec.failedQuestionHash &&
+        canonicalEvidenceHash(current.classification) === spec.failedClassificationHash
+        ? [{ key, index, current, repair, recovery, spec }]
+        : [];
+    }).sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+    if (triggeredManualCurrents.length > 0) {
+      for (const item of triggeredManualCurrents) {
+        await preflightProblemManualBatch(entry, problem, stateDir, item.spec);
+        const adjudicated = await adjudicateProblemManual(
+          entry,
+          problem,
+          stateDir,
+          item.current,
+          item.recovery
+        );
+        effective[item.index] = adjudicated.classified;
+        repairs.set(item.key, {
+          ...item.repair,
+          revision: {
+            ...item.repair.revision!,
+            recovery: { ...item.recovery, manualAdjudication: adjudicated.evidence },
+          },
+        });
+        changedKeys.add(item.key);
+      }
+      invalidateSemanticSolutionRevisionTriggers(solutionRevisionTriggers, true);
+      return changedKeys;
+    }
     const initialRepairs = uniqueKeys.filter((key) => !repairs.has(key)).map((key) => {
       const original = baseByKey.get(key);
       if (!original) throw new Error(`${key} batch repair 대상이 base corpus에 없습니다`);
@@ -22244,6 +22409,33 @@ export async function repairAndAuditOfficialAnswers(
         changedKeys.add(key);
       }
     }
+    for (const item of exactRecoveryManualCurrents.filter((item) =>
+      !forced5578421ManualSpecs.some((spec) => spec.key === item.key)
+    ).sort((left, right) =>
+      compareCorpusQuestionKeys(left.key, right.key)
+    )) {
+      const adjudicated = await adjudicateProblemManual(
+        entry,
+        problem,
+        stateDir,
+        item.current,
+        item.recovery
+      );
+      const index = effective.findIndex((current) => questionKey(current.question) === item.key);
+      const existing = repairs.get(item.key);
+      if (index < 0 || !existing?.revision?.recovery || existing.revision.recovery.manualAdjudication) {
+        throw new Error(`${item.key} exact recovery manual authority가 없습니다`);
+      }
+      effective[index] = adjudicated.classified;
+      repairs.set(item.key, {
+        ...existing,
+        revision: {
+          ...existing.revision,
+          recovery: { ...existing.revision.recovery, manualAdjudication: adjudicated.evidence },
+        },
+      });
+      changedKeys.add(item.key);
+    }
     if (terminalRecoveryCurrents.length > 0) {
       const recovered = await mapPool(terminalRecoveryCurrents, IMPORT_CONCURRENCY, async (item) => {
         const revision = item.repair.revision!;
@@ -22345,33 +22537,6 @@ export async function repairAndAuditOfficialAnswers(
         },
       });
       if (changed) changedKeys.add(spec.key);
-    }
-    for (const item of exactRecoveryManualCurrents.filter((item) =>
-      !forced5578421ManualSpecs.some((spec) => spec.key === item.key)
-    ).sort((left, right) =>
-      compareCorpusQuestionKeys(left.key, right.key)
-    )) {
-      const adjudicated = await adjudicateProblemManual(
-        entry,
-        problem,
-        stateDir,
-        item.current,
-        item.recovery
-      );
-      const index = effective.findIndex((current) => questionKey(current.question) === item.key);
-      const existing = repairs.get(item.key);
-      if (index < 0 || !existing?.revision?.recovery || existing.revision.recovery.manualAdjudication) {
-        throw new Error(`${item.key} exact recovery manual authority가 없습니다`);
-      }
-      effective[index] = adjudicated.classified;
-      repairs.set(item.key, {
-        ...existing,
-        revision: {
-          ...existing.revision,
-          recovery: { ...existing.revision.recovery, manualAdjudication: adjudicated.evidence },
-        },
-      });
-      changedKeys.add(item.key);
     }
     for (const item of manualSourceRevisionCurrents.sort((left, right) =>
       compareCorpusQuestionKeys(left.key, right.key)
@@ -22516,6 +22681,7 @@ export async function repairAndAuditOfficialAnswers(
       );
     }
     const preparedAdjudications: PreparedProblemTerminalFidelityAdjudication[] = [];
+    const historicalManualTriggerPaths = new Set<string>();
     for (const spec of terminalAdjudicationSpecs) {
       const item = finalProblemFidelity.items.find((candidate) => candidate.key === spec.key);
       const current = effective.find((candidate) => questionKey(candidate.question) === spec.key);
@@ -22527,7 +22693,7 @@ export async function repairAndAuditOfficialAnswers(
       if (!item || !current || !repair || checkpoints.length !== 1) {
         throw new Error(`${spec.key} terminal fidelity adjudication parent/checkpoint가 유일하지 않습니다`);
       }
-      preparedAdjudications.push(await prepareProblemTerminalFidelityAdjudication(
+      const prepared = await prepareProblemTerminalFidelityAdjudication(
         entry,
         problem,
         solutionEvidence,
@@ -22536,12 +22702,26 @@ export async function repairAndAuditOfficialAnswers(
         current,
         repair,
         checkpoints[0]
-      ));
+      );
+      const manualTriggerSpec = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((candidate) =>
+        candidate.entryId === entry.id && candidate.key === spec.key &&
+        candidate.sourceHash === problem.sha256 &&
+        candidate.terminalTrigger?.artifactPath === prepared.relativePath
+      );
+      if (manualTriggerSpec && existsSync(join(stateDir, prepared.relativePath))) {
+        await validatedProblemManualTerminalTrigger(stateDir, manualTriggerSpec, current);
+        historicalManualTriggerPaths.add(prepared.relativePath);
+        continue;
+      }
+      preparedAdjudications.push(prepared);
     }
-    if (preparedAdjudications.length > 0) {
+    if (preparedAdjudications.length > 0 || historicalManualTriggerPaths.size > 0) {
       assertProblemTerminalFidelityAdjudicationInventory(
         stateDir,
-        new Set(preparedAdjudications.map((prepared) => prepared.relativePath)),
+        new Set([
+          ...historicalManualTriggerPaths,
+          ...preparedAdjudications.map((prepared) => prepared.relativePath),
+        ]),
         false
       );
     }
@@ -22655,7 +22835,7 @@ export async function repairAndAuditOfficialAnswers(
           });
         }
         const changed = await applyRepairs(repairFirstIssues, "terminal", terminalTriggers);
-        if (repairFirstIssues.some((key) => !changed.has(key))) {
+        if (changed.size === 0 && repairFirstIssues.some((key) => !changed.has(key))) {
           throw new Error(`terminal 문제 fidelity 재검증에 실패했습니다: ${repairFirstIssues.join(", ")}`);
         }
         finalSemantic = null;
@@ -22700,7 +22880,7 @@ export async function repairAndAuditOfficialAnswers(
         });
       }
       const changed = await applyRepairs(actionableIssues, "terminal", terminalTriggers);
-      if (actionableIssues.some((key) => !changed.has(key))) {
+      if (changed.size === 0 && actionableIssues.some((key) => !changed.has(key))) {
         throw new Error(`terminal 문제 fidelity 재검증에 실패했습니다: ${actionableIssues.join(", ")}`);
       }
       finalSemantic = null;

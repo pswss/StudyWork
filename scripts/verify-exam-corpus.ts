@@ -801,6 +801,14 @@ type ProblemManualAdjudicationSpec = ProblemCropAdjudicationSpec & {
   parentKind: "recovery" | "crop";
   parentRecoveryEvidenceHash?: string;
   failedStatus?: "exact";
+  terminalTrigger?: {
+    artifactPath: string;
+    artifactHash: string;
+    basisDigest: string;
+    itemHash: string;
+    evidenceHash: string;
+    scopeEvidenceHash: string;
+  };
   dpi?: number;
   failedQuestionHash: string;
   failedClassificationHash: string;
@@ -3916,6 +3924,43 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     replacements: Q32_5578421_REPLACEMENTS,
     figure: true,
     figureDescription: Q32_MANUAL_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5578421-q29-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "11:29",
+    sourcePage: 11,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "crop",
+    parentRecoveryEvidenceHash: "e7e628d10f86a090c6f0d291fee22675edc1eba2ed5d34e3aad09fe0d4d3ff24",
+    failedStatus: "exact",
+    failedQuestionHash: "f260c4fc3b64201fe1307181f45f00fb98648c3252b21e466fb2a9977958b4b1",
+    failedClassificationHash: "e6ce12aa23621404cb094e2a3c0e164d9ac4ffe194b4ad40eb10e36fe04dc276",
+    failedClassificationEvidenceHash: "df1271605b5627c994676d95e0c5f7beec7db0b0728eb704eef3d5e3c8be5de3",
+    terminalTrigger: {
+      artifactPath: "problem-terminal-fidelity-adjudications/" +
+        "v1-0011-0029-7ce50336926f1c9a856efe53dadcc15be0f6bb84d68687bbab8026564c750216.json",
+      artifactHash: "81c7d52ea9ed22c65d396f8ebb006bb60d8cd850053338659e15b318a89387bc",
+      basisDigest: "7ce50336926f1c9a856efe53dadcc15be0f6bb84d68687bbab8026564c750216",
+      itemHash: "d1b536b832ebbcff391059092947e85100ab73ec74969824c81a1a36e05c3ab1",
+      evidenceHash: "11dba14995148d75b03bb7e28b28115ad19265ff7e437e1ea55daf152c8d5e4a",
+      scopeEvidenceHash: "fdb93bff2583ce5f21f5ce13830b1876a99605e368c82ac115c181f0c5441d0e",
+    },
+    views: [...PROBLEM_CROP_ADJUDICATION_ALLOWLIST[0].views],
+    requiredTokens: [
+      ...PROBLEM_CROP_ADJUDICATION_ALLOWLIST[0].requiredTokens,
+      "⇒", "가로선은 총 2개",
+    ],
+    replacements: [{
+      field: "question",
+      from: "　　p이다.　　　　　　　　　　　　　$p$",
+      to: "　　p이다.　　　　　　　⇒　　　　　$p$",
+      count: 1,
+    }],
+    figure: true,
+    figureDescription: Q30_MANUAL_FIGURE_DESCRIPTION,
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_reading",
   },
@@ -8313,6 +8358,20 @@ function verifyProblemRecoveryCoverage(
         recovery.manualAdjudication,
         `answer audit repairs[${index}].revision.recovery.manualAdjudication`,
       );
+      if (manual.terminalTrigger !== undefined) {
+        const trigger = object(
+          manual.terminalTrigger,
+          `answer audit repairs[${index}].revision.recovery.manualAdjudication.terminalTrigger`,
+        );
+        const pointer = evidencePointer(
+          trigger.artifact,
+          `answer audit repairs[${index}].revision.recovery.manualAdjudication.terminalTrigger.artifact`,
+        );
+        if (declaredTerminalAdjudication.has(pointer.path)) {
+          throw new Error(`${pointer.path}: duplicate manual terminal trigger authority`);
+        }
+        declaredTerminalAdjudication.add(pointer.path);
+      }
       const manualPointers: Array<[string, unknown, boolean]> = [
         ["manual crop evidence", manual.cropEvidenceArtifact, false],
         ["manual crop evidence PDF", manual.cropEvidencePdf, false],
@@ -8921,6 +8980,7 @@ function problemManualCorrectionSpecHash(spec: ProblemManualAdjudicationSpec): s
       ? { parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash }
       : {}),
     ...(spec.failedStatus ? { failedStatus: spec.failedStatus } : {}),
+    ...(spec.terminalTrigger ? { terminalTrigger: spec.terminalTrigger } : {}),
     views: spec.views,
     ...(spec.dpi ? { dpi: spec.dpi } : {}),
     requiredTokens: spec.requiredTokens,
@@ -10221,6 +10281,16 @@ function verifyProblemManualAdjudication(
     : object(parentRecovery.adjudication, `${key}.manual parent crop adjudication`);
   const parentRecoveryEvidenceHash = canonicalEvidenceHash(parentRecovery);
   const parentCropAdjudicationHash = parentCrop === null ? undefined : canonicalEvidenceHash(parentCrop);
+  const terminalTrigger = spec.terminalTrigger ? {
+    artifact: {
+      path: spec.terminalTrigger.artifactPath,
+      sha256: spec.terminalTrigger.artifactHash,
+    },
+    basisDigest: spec.terminalTrigger.basisDigest,
+    itemHash: spec.terminalTrigger.itemHash,
+    evidenceHash: spec.terminalTrigger.evidenceHash,
+    scopeEvidenceHash: spec.terminalTrigger.scopeEvidenceHash,
+  } : undefined;
   const manualDpi = spec.dpi ?? PROBLEM_CROP_DPI;
   const sourcePages = [...new Set(spec.views.map((view) => view.sourcePage))].sort((left, right) => left - right);
   if (sourcePages.some((page) => page < 1 || page > problemEvidence.pageCount)
@@ -10235,6 +10305,8 @@ function verifyProblemManualAdjudication(
     || (spec.parentRecoveryEvidenceHash !== undefined
       && parentRecoveryEvidenceHash !== spec.parentRecoveryEvidenceHash)
     || manual.parentCropAdjudicationHash !== parentCropAdjudicationHash
+    || Boolean(terminalTrigger) !== Boolean(manual.terminalTrigger)
+    || terminalTrigger !== undefined && !isDeepStrictEqual(manual.terminalTrigger, terminalTrigger)
     || manual.failedQuestionHash !== spec.failedQuestionHash
     || manual.failedQuestionHash !== canonicalEvidenceHash(failedQuestion.evidence)
     || manual.failedClassificationHash !== spec.failedClassificationHash
@@ -10244,6 +10316,32 @@ function verifyProblemManualAdjudication(
     || manual.correctionSpecHash !== problemManualCorrectionSpecHash(spec)
     || !isDeepStrictEqual(manual.sourcePages, sourcePages)) {
     throw new Error(`${key}: manual adjudication allowlist/parent authority is stale`);
+  }
+
+  if (terminalTrigger) {
+    const checkpoint = readBoundEvidenceCached(
+      cache,
+      stateDir,
+      terminalTrigger.artifact,
+      `${key} manual terminal trigger`,
+    );
+    if (!Array.isArray(checkpoint.items) || checkpoint.items.length !== 1) {
+      throw new Error(`${key}: manual terminal trigger item coverage is stale`);
+    }
+    const item = parseProblemTerminalFidelityItem(
+      checkpoint.items[0],
+      `${key}.manualTerminalTrigger.items[0]`,
+      contract,
+    );
+    if (checkpoint.version !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION
+      || checkpoint.entryId !== entry.id || checkpoint.basisDigest !== terminalTrigger.basisDigest
+      || checkpoint.promptDigest !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST
+      || item.key !== key || item.status === "exact" || item.scopeDecision !== "accept"
+      || item.scopeConfidence < 0.9 || canonicalEvidenceHash(item) !== terminalTrigger.itemHash
+      || sha256(item.evidence) !== terminalTrigger.evidenceHash
+      || item.scopeEvidence === undefined || sha256(item.scopeEvidence) !== terminalTrigger.scopeEvidenceHash) {
+      throw new Error(`${key}: manual terminal trigger authority is stale`);
+    }
   }
 
   const cropEvidenceArtifact = evidencePointer(
@@ -10386,6 +10484,7 @@ function verifyProblemManualAdjudication(
     parentRecovery,
     parentRecoveryEvidenceHash,
     ...(parentCropAdjudicationHash ? { parentCropAdjudicationHash } : {}),
+    ...(terminalTrigger ? { terminalTrigger } : {}),
     failedQuestionHash: spec.failedQuestionHash,
     failedClassificationHash: spec.failedClassificationHash,
     failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
@@ -10518,6 +10617,7 @@ function verifyProblemManualAdjudication(
     sourceHash: problemEvidence.sha256,
     parentRecoveryEvidenceHash,
     ...(parentCropAdjudicationHash ? { parentCropAdjudicationHash } : {}),
+    ...(terminalTrigger ? { terminalTrigger } : {}),
     failedQuestionHash: spec.failedQuestionHash,
     failedClassificationHash: spec.failedClassificationHash,
     failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,

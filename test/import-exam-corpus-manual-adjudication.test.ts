@@ -1282,12 +1282,12 @@ describe("exact allowlisted problem manual adjudication", () => {
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
     "pins and applies the source-exact 5578421 Q31-Q32 pair",
     () => {
-    const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(-2);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(38);
-    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, -2)))
+    const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(-3, -1);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(39);
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, -3)))
       .toBe("e260bb5cd9c24507cb1c434e19b03a63961ef07a29392b28fc49f6897040dd64");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("0b7a1a11ce00035cadc96d8b7c2c79a94fa7c406d5a7c54ba99c48f53719aad5");
+      .toBe("d467b16d4920979dde096e8373f8af636f6763d9d2b5da4d7205f5dc0c6f55b5");
     expect(specs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -1668,6 +1668,104 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(stateSnapshot(root)).toEqual(stable);
   }, 300_000);
 
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "repairs the source-grounded 5578421 Q29 diagram after its failed terminal adjudication",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-5578421-q29-terminal-manual-"));
+    cpSync(q31Q32LiveState, root, { recursive: true });
+    removeManualArtifacts(root, ["11:29"]);
+    const input = q27FixtureInputs(root);
+    const calls = { classification: 0, terminal: 0 };
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      if (request.schema?.name === "studywork_exam_corpus_classification") {
+        const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
+          key: string;
+          question: string;
+          figure: boolean;
+          figure_description: string | null;
+        }>;
+        expect(items).toHaveLength(1);
+        expect(items[0]).toMatchObject({ key: "11:29", figure: true });
+        expect(items[0].question).toContain("⇒");
+        expect(items[0].figure_description).toContain("가로선은 총 2개");
+        calls.classification++;
+        return { text: JSON.stringify([{
+          key: "11:29",
+          decision: "accept",
+          canonical_subject: "korean_reading",
+          curriculum_course: "독서와 작문",
+          domain: "독서—논리학 설명문의 전개 구조 파악",
+          achievement_codes: ["12독작01-03"],
+          confidence: 0.99,
+          reason_codes: ["SOURCE_EXACT", "NONFICTION_COMPREHENSION"],
+          transcription_status: "exact",
+          transcription_evidence: "공식 11쪽의 ⇒와 두 추론선, 지문, 발문, 선택지가 모두 일치한다.",
+        }]) };
+      }
+      if (
+        request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity" &&
+        request.prompt.includes("Final questions:\n")
+      ) {
+        calls.terminal++;
+        const items = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{
+          key: string;
+          question: string;
+          figure: boolean;
+          figure_description: string | null;
+        }>;
+        const q29 = items.find((item) => item.key === "11:29")!;
+        expect(q29.figure).toBe(true);
+        expect(q29.question).toContain("⇒");
+        expect(q29.figure_description).toContain("가로선은 총 2개");
+        throw new Error("seeded 5578421 post-Q29 manual terminal boundary");
+      }
+      throw new Error(`unexpected 5578421 Q29 AI call: ${request.schema?.name ?? "unknown"}`);
+    });
+    const run = () => repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions
+    );
+
+    await expect(run()).rejects.toThrow("seeded 5578421 post-Q29 manual terminal boundary");
+    expect(calls).toEqual({ classification: 1, terminal: 1 });
+    const problemName = readdirSync(join(root, "problem-manual-adjudications"))
+      .find((name) => name.startsWith("v1-0011-0029-"))!;
+    const classificationName = readdirSync(join(root, "classification-manual-adjudications"))
+      .find((name) => name.startsWith("v1-0011-0029-"))!;
+    const problemCheckpoint = JSON.parse(readFileSync(
+      join(root, "problem-manual-adjudications", problemName),
+      "utf8"
+    ));
+    expect(canonicalEvidenceHash(problemCheckpoint.item))
+      .toBe("abb687aa942feb2b5435afdaf2ccb6a2d7a4cae5a360c01bbc7f472130fe2011");
+    expect(classificationName).toMatch(/^v1-0011-0029-/u);
+    const stable = stateSnapshot(root);
+
+    calls.classification = 0;
+    calls.terminal = 0;
+    await expect(run()).rejects.toThrow("seeded 5578421 post-Q29 manual terminal boundary");
+    expect(calls).toEqual({ classification: 0, terminal: 1 });
+    expect(stateSnapshot(root)).toEqual(stable);
+
+    const triggerPath = join(
+      root,
+      "problem-terminal-fidelity-adjudications/" +
+        "v1-0011-0029-7ce50336926f1c9a856efe53dadcc15be0f6bb84d68687bbab8026564c750216.json"
+    );
+    writeFileSync(triggerPath, Buffer.concat([readFileSync(triggerPath), Buffer.from(" ")]));
+    const tampered = stateSnapshot(root);
+    calls.classification = 0;
+    calls.terminal = 0;
+    providerMock.complete.mockReset().mockRejectedValue(new Error("AI must not run"));
+    await expect(run()).rejects.toThrow(/manual terminal trigger.*(?:hash|authority)/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root)).toEqual(tampered);
+  }, 120_000);
+
   it("pins the complete Q17-Q45 solution false-negative and Q40 source-revision authority", () => {
     expect(canonicalEvidenceHash(SOLUTION_FALSE_NEGATIVE_REPAIR_ALLOWLIST))
       .toBe("90a2a84b2813204915a0e2df9daceabbd4b3a65e410838c590264752ec3a7015");
@@ -1923,7 +2021,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 36)))
       .toBe("e260bb5cd9c24507cb1c434e19b03a63961ef07a29392b28fc49f6897040dd64");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("0b7a1a11ce00035cadc96d8b7c2c79a94fa7c406d5a7c54ba99c48f53719aad5");
+      .toBe("d467b16d4920979dde096e8373f8af636f6763d9d2b5da4d7205f5dc0c6f55b5");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 18)))
       .toBe("463fceef246487e1ec791ffb0489048f874cd5944d946f9c6d819f3fd3c76eda");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST[11]))
