@@ -2181,7 +2181,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     })]);
     expect(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.map(canonicalEvidenceHash)).toEqual([
       "e6287eb8f4eaef8f24099c08afc13d077ad7792a1345f0296b7ce39fa4b07d39",
-      "9f7304c54c2feab47dc28ee284924c8d4e8e8e82855a39de9310a33064b1b717",
+      "5a41a08c9612227e83e4de3d53a6559a8cf37f515193cc783b7e51def4930743",
     ]);
     const q30SourceRevised = applyAllowlistedProblemManualSourceRevision(
       "ebsi:5578421",
@@ -2190,9 +2190,15 @@ describe("exact allowlisted problem manual adjudication", () => {
       revised
     );
     expect(canonicalEvidenceHash(q30SourceRevised))
-      .toBe("d901afd4a21376dc79a0d016a545db986c226c564d5a15fda47e47002c36a8dd");
+      .toBe("275d974518a67e12ed1b52c77fdb3fedbdf49e8673640c2195661a2a735aea2f");
+    expect(q30SourceRevised.question).toContain("‘걷는다’와 같이 동사인 경우");
     expect(q30SourceRevised.question).toContain("단순 명제라 하여 ‘$p$, $q$, $r$’");
+    expect(q30SourceRevised.question).toContain("논증의 타당성을 평가했다.");
+    expect(q30SourceRevised.question).toContain("<결론>인 $q$가");
+    expect(q30SourceRevised.question).not.toContain("‘걷는다’와 같은 동사인 경우");
     expect(q30SourceRevised.question).not.toContain("단순 명제라 하며 ‘$p$, $q$, $r$’");
+    expect(q30SourceRevised.question).not.toContain("논증의 타당성을 평가한다.");
+    expect(q30SourceRevised.question).not.toContain("<결론>의 $q$가");
     const q32SourceRevised = applyAllowlistedProblemManualSourceRevision(
       "ebsi:5525982",
       "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132",

@@ -2422,6 +2422,7 @@ type ProblemManualSourceRevisionSpec = {
   failedClassificationHash: string;
   failedClassificationEvidenceHash: string;
   replacement: ProblemManualReplacement;
+  additionalReplacements?: ProblemManualReplacement[];
   requiredTokens: string[];
   expectedDecision: "accept" | "reject";
   expectedCanonicalSubject?: CanonicalSubject;
@@ -5551,8 +5552,29 @@ export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSou
     to: "단순 명제라 하여 ‘$p$, $q$, $r$’",
     count: 1,
   },
+  additionalReplacements: [
+    {
+      field: "question",
+      from: "‘걷는다’와 같은 동사인 경우",
+      to: "‘걷는다’와 같이 동사인 경우",
+      count: 1,
+    },
+    {
+      field: "question",
+      from: "논증의 타당성을 평가한다.",
+      to: "논증의 타당성을 평가했다.",
+      count: 1,
+    },
+    {
+      field: "question",
+      from: "<결론>의 $q$가",
+      to: "<결론>인 $q$가",
+      count: 1,
+    },
+  ],
   requiredTokens: [
-    "단순 명제라 하여 ‘$p$, $q$, $r$’", "(4′) $p \\to q$", "⇒", "가로선은 총 2개",
+    "‘걷는다’와 같이 동사인 경우", "단순 명제라 하여 ‘$p$, $q$, $r$’",
+    "논증의 타당성을 평가했다.", "<결론>인 $q$가", "(4′) $p \\to q$", "⇒", "가로선은 총 2개",
     "30. 윗글의 내용과 일치하지 않는 것은?",
   ],
   expectedDecision: "accept",
@@ -15509,6 +15531,7 @@ function problemManualSourceRevisionCorrectionSpecHash(spec: ProblemManualSource
     parentRevisionAllowlistId: spec.parentRevisionAllowlistId,
     parentRevisionEvidenceHash: spec.parentRevisionEvidenceHash,
     replacement: spec.replacement,
+    ...(spec.additionalReplacements ? { additionalReplacements: spec.additionalReplacements } : {}),
     requiredTokens: spec.requiredTokens,
     expectedDecision: spec.expectedDecision,
     expectedCanonicalSubject: spec.expectedCanonicalSubject,
@@ -15597,27 +15620,28 @@ export function applyAllowlistedProblemManualSourceRevision(
     throw new Error(`${entryId} ${key} manual source revision failed question hash가 다릅니다`);
   }
   const corrected = structuredClone(item);
-  const replacement = spec.replacement;
-  if (replacement.field === "choices") {
-    const choices = corrected.choices ?? [];
-    if (choices.reduce((count, choice) => count + exactOccurrenceCount(choice, replacement.from), 0) !==
-        replacement.count) {
-      throw new Error(`${key} manual source revision replacement occurrence가 다릅니다`);
+  for (const replacement of [spec.replacement, ...(spec.additionalReplacements ?? [])]) {
+    if (replacement.field === "choices") {
+      const choices = corrected.choices ?? [];
+      if (choices.reduce((count, choice) => count + exactOccurrenceCount(choice, replacement.from), 0) !==
+          replacement.count) {
+        throw new Error(`${key} manual source revision replacement occurrence가 다릅니다`);
+      }
+      corrected.choices = choices.map((choice) => choice.split(replacement.from).join(replacement.to));
+    } else {
+      const current = replacement.field === "question"
+        ? corrected.question
+        : replacement.field === "answer"
+          ? corrected.answer
+          : corrected.figure_description ?? "";
+      if (exactOccurrenceCount(current, replacement.from) !== replacement.count) {
+        throw new Error(`${key} manual source revision replacement occurrence가 다릅니다`);
+      }
+      const next = current.split(replacement.from).join(replacement.to);
+      if (replacement.field === "question") corrected.question = next;
+      else if (replacement.field === "answer") corrected.answer = next;
+      else corrected.figure_description = next;
     }
-    corrected.choices = choices.map((choice) => choice.split(replacement.from).join(replacement.to));
-  } else {
-    const current = replacement.field === "question"
-      ? corrected.question
-      : replacement.field === "answer"
-        ? corrected.answer
-        : corrected.figure_description ?? "";
-    if (exactOccurrenceCount(current, replacement.from) !== replacement.count) {
-      throw new Error(`${key} manual source revision replacement occurrence가 다릅니다`);
-    }
-    const next = current.split(replacement.from).join(replacement.to);
-    if (replacement.field === "question") corrected.question = next;
-    else if (replacement.field === "answer") corrected.answer = next;
-    else corrected.figure_description = next;
   }
   if (questionKey(corrected) !== key || corrected.page !== spec.sourcePage) {
     throw new Error(`${key} manual source revision이 원본 key/page를 바꿨습니다`);
