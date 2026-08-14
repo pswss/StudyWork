@@ -2404,6 +2404,7 @@ type ProblemManualRevisionSpec = {
   failedQuestionHash: string;
   failedClassificationHash: string;
   failedClassificationEvidenceHash: string;
+  failedStatus?: "exact";
   replacement: ProblemManualReplacement;
   requiredTokens: string[];
   expectedDecision: "accept" | "reject";
@@ -6035,6 +6036,74 @@ export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSp
   requiredTokens: [
     "(서연 곁으로 가서 개울물을 바라본다).", "(물을 떠서 마신다).",
     "32. (나)의 등장인물에 대한 이해로 적절하지 않은 것은?", "이야기 속의 인물들을", "조숭인",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5578421-q19-manual-revision-v1",
+  parentAllowlistId: "ebsi-5578421-q19-manual-v1",
+  entryId: "ebsi:5578421",
+  key: "8:19",
+  sourcePage: 8,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "fa1c211a6703f9e08448276644c1be94f41a2a05b8d8e59b34491fad6c795147",
+  failedClassificationHash: "1925a66a39f4f02abe88d7a1d7a7793537e7e23cd9c66499dabf3bca59d40e4a",
+  failedClassificationEvidenceHash: "157836a03eab4dd54d94dd00dd323ca053f80d8aee8cdbd4748764961937bb60",
+  failedStatus: "exact",
+  replacement: {
+    field: "question",
+    from: "곱새담의 짚날을 뽑아 오고….",
+    to: "곱새담*의 짚날을 뽑아 오고….",
+    count: 1,
+  },
+  requiredTokens: [
+    "곱새담*의 짚날을 뽑아 오고….", "*곱새담: 풀 짚으로 만든 담.",
+    "(가), (나)의 공통점으로 가장 적절한 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5578421-q20-manual-revision-v1",
+  parentAllowlistId: "ebsi-5578421-q20-manual-v1",
+  entryId: "ebsi:5578421",
+  key: "8:20",
+  sourcePage: 8,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "f848a0ffa552671a10b588a0a1f936c6fbd12066030a1700bbbbe5b92a381929",
+  failedClassificationHash: "bdf07fc6c7b9561da35cdb509c52b2c82f37b8c02d5ec3c2404d1fc1abc01d3f",
+  failedClassificationEvidenceHash: "b6915221c6a1201280fc89b5f3c59fbfccafcfa233b3053cbb174d90db541fc3",
+  replacement: {
+    field: "question",
+    from: "곱새담의 짚날을 뽑아 오고….",
+    to: "곱새담*의 짚날을 뽑아 오고….",
+    count: 1,
+  },
+  requiredTokens: [
+    "곱새담*의 짚날을 뽑아 오고….", "*곱새담: 풀 짚으로 만든 담.",
+    "시적 맥락을 고려하여 (가)의 [A]～[D]를 이해한 내용으로 적절하지 않은 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5578421-q21-manual-revision-v1",
+  parentAllowlistId: "ebsi-5578421-q21-manual-v1",
+  entryId: "ebsi:5578421",
+  key: "8:21",
+  sourcePage: 8,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "220a5aa0e7224674bdd471008ceba6e70474a8b3e81d7a6ed808dd757f6d9e82",
+  failedClassificationHash: "14ab25e564224e879f5ddcece3754176903311ba0e9a26419b5445f955bb7d91",
+  failedClassificationEvidenceHash: "1c5de8e83ad2b6239e5589bdfdc1cd2b58501ac32719beaaac759f11ca8c0b7a",
+  failedStatus: "exact",
+  replacement: {
+    field: "question",
+    from: "곱새담의 짚날을 뽑아 오고….",
+    to: "곱새담*의 짚날을 뽑아 오고….",
+    count: 1,
+  },
+  requiredTokens: [
+    "곱새담*의 짚날을 뽑아 오고….", "*곱새담: 풀 짚으로 만든 담.",
+    "<보기>를 바탕으로 (나)를 감상할 때, 적절하지 않은 것은?",
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
@@ -15565,7 +15634,10 @@ function problemManualRevisionSpec(
     match.sourceHash !== sourceHash || match.parentAllowlistId !== parentManual.allowlistId ||
     canonicalEvidenceHash(failed.question) !== match.failedQuestionHash ||
     canonicalEvidenceHash(failed.classification) !== match.failedClassificationHash ||
-    sha256Text(failed.classification.transcription_evidence) !== match.failedClassificationEvidenceHash
+    sha256Text(failed.classification.transcription_evidence) !== match.failedClassificationEvidenceHash ||
+    (match.failedStatus === "exact"
+      ? failed.classification.transcription_status !== "exact"
+      : failed.classification.transcription_status === "exact")
   ) throw new Error(`${entryId} ${key} manual revision parent/allowlist가 다릅니다`);
   return match;
 }
@@ -17780,11 +17852,10 @@ async function adjudicateProblemManualOne(
     baseClassificationHash: spec.failedClassificationHash,
     effectiveClassificationHash: canonicalEvidenceHash(classification),
   };
-  if (
-    classification.transcription_status !== "exact" ||
-    !matchesProblemManualExpectedDecision(spec, classification)
-  ) {
-    const failedManual = { question: corrected, classification };
+  const failedManual = { question: corrected, classification };
+  const parentClassificationTerminal = classification.transcription_status === "exact" &&
+    matchesProblemManualExpectedDecision(spec, classification);
+  if (!parentClassificationTerminal) {
     const policySpec = problemManualClassificationPolicyRevisionSpec(
       entry.id,
       key,
@@ -17808,55 +17879,59 @@ async function adjudicateProblemManualOne(
         evidence: { ...evidence, policyRevision: policyRevised.evidence },
       };
     }
-    const revisionSpec = problemManualRevisionSpec(
-      entry.id,
-      key,
-      sourcePage,
-      problem.sha256,
-      evidence,
-      failedManual
-    );
-    if (!revisionSpec) throw new Error(`${key} allowlisted manual adjudication도 exact가 아닙니다`);
-    const revised = await reviseProblemManualAdjudication(
-      entry,
-      stateDir,
-      failedManual,
-      prepared,
-      evidence,
-      revisionSpec,
-      existingOnly
-    );
-    if (!revised) return null;
-    const sourceRevisionSpec = problemManualSourceRevisionSpec(
-      entry.id,
-      key,
-      sourcePage,
-      problem.sha256,
-      revised.evidence,
-      revised.classified
-    );
-    if (!sourceRevisionSpec) {
-      return { classified: revised.classified, evidence: { ...evidence, revision: revised.evidence } };
-    }
-    const sourceRevised = await reviseProblemManualSourceRevision(
-      entry,
-      stateDir,
-      revised.classified,
-      prepared,
-      revised.evidence,
-      sourceRevisionSpec,
-      existingOnly
-    );
-    if (!sourceRevised) return null;
-    return {
-      classified: sourceRevised.classified,
-      evidence: {
-        ...evidence,
-        revision: { ...revised.evidence, sourceRevision: sourceRevised.evidence },
-      },
-    };
   }
-  return { classified: { question: corrected, classification }, evidence };
+  const revisionSpec = problemManualRevisionSpec(
+    entry.id,
+    key,
+    sourcePage,
+    problem.sha256,
+    evidence,
+    failedManual
+  );
+  if (!revisionSpec) {
+    if (!parentClassificationTerminal) {
+      throw new Error(`${key} allowlisted manual adjudication도 exact가 아닙니다`);
+    }
+    return { classified: failedManual, evidence };
+  }
+  const revised = await reviseProblemManualAdjudication(
+    entry,
+    stateDir,
+    failedManual,
+    prepared,
+    evidence,
+    revisionSpec,
+    existingOnly
+  );
+  if (!revised) return null;
+  const sourceRevisionSpec = problemManualSourceRevisionSpec(
+    entry.id,
+    key,
+    sourcePage,
+    problem.sha256,
+    revised.evidence,
+    revised.classified
+  );
+  if (!sourceRevisionSpec) {
+    return { classified: revised.classified, evidence: { ...evidence, revision: revised.evidence } };
+  }
+  const sourceRevised = await reviseProblemManualSourceRevision(
+    entry,
+    stateDir,
+    revised.classified,
+    prepared,
+    revised.evidence,
+    sourceRevisionSpec,
+    existingOnly
+  );
+  if (!sourceRevised) return null;
+  return {
+    classified: sourceRevised.classified,
+    evidence: {
+      ...evidence,
+      revision: { ...revised.evidence, sourceRevision: sourceRevised.evidence },
+    },
+  };
 }
 
 function problemTerminalFidelityAdjudicationSpec(
@@ -18899,6 +18974,24 @@ export async function assertProblemManualAdjudicationAuthority(
     const parentClassificationTerminal = Boolean(
       manualClassification?.transcription_status === "exact" && !expectedDecisionMismatch
     );
+    const requiredManualRevisionMatches = manualClassification
+      ? PROBLEM_MANUAL_REVISION_ALLOWLIST.filter((candidate) =>
+          candidate.entryId === spec.entryId && candidate.key === manual.key &&
+          candidate.sourcePage === manual.sourcePage && candidate.sourceHash === manual.sourceHash &&
+          candidate.parentAllowlistId === manual.allowlistId &&
+          candidate.failedQuestionHash === manual.problemArtifactItemHash &&
+          candidate.failedClassificationHash === manual.classificationArtifactItemHash &&
+          candidate.failedClassificationEvidenceHash ===
+            sha256Text(String(manualClassification.transcription_evidence))
+        )
+      : [];
+    if (requiredManualRevisionMatches.length > 1) {
+      throw new Error(`${repair.key} manual revision allowlist가 중복입니다`);
+    }
+    const requiredManualRevisionSpec = requiredManualRevisionMatches[0];
+    const manualRevisionParentStatusMatches = requiredManualRevisionSpec?.failedStatus === "exact"
+      ? parentClassificationTerminal
+      : manualClassification?.transcription_status !== "exact";
     if (
       manual.classificationArtifact.path !== expectedClassificationPath ||
       classificationCheckpoint.version !== CLASSIFICATION_MANUAL_ADJUDICATION_VERSION ||
@@ -18915,7 +19008,10 @@ export async function assertProblemManualAdjudicationAuthority(
       classificationCheckpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
       !Array.isArray(classificationCheckpoint.items) || classificationCheckpoint.items.length !== 1 ||
       canonicalEvidenceHash(classificationCheckpoint.items[0]) !== manual.classificationArtifactItemHash ||
-      ((manualRevision || policyRevision) ? parentClassificationTerminal : !parentClassificationTerminal)
+      (manualRevision && policyRevision) ||
+      Boolean(manualRevision) !== Boolean(requiredManualRevisionSpec) ||
+      (manualRevision && !manualRevisionParentStatusMatches) ||
+      (policyRevision ? parentClassificationTerminal : !manualRevision && !parentClassificationTerminal)
     ) throw new Error(`${repair.key} classification manual adjudication checkpoint가 다릅니다`);
 
     if (policyRevision) {

@@ -832,6 +832,7 @@ type ProblemManualRevisionSpec = {
   failedQuestionHash: string;
   failedClassificationHash: string;
   failedClassificationEvidenceHash: string;
+  failedStatus?: "exact";
   replacement: ProblemManualReplacement;
   requiredTokens: readonly string[];
   expectedDecision: "accept" | "reject";
@@ -4564,6 +4565,74 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
   requiredTokens: [
     "(서연 곁으로 가서 개울물을 바라본다).", "(물을 떠서 마신다).",
     "32. (나)의 등장인물에 대한 이해로 적절하지 않은 것은?", "이야기 속의 인물들을", "조숭인",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5578421-q19-manual-revision-v1",
+  parentAllowlistId: "ebsi-5578421-q19-manual-v1",
+  entryId: "ebsi:5578421",
+  key: "8:19",
+  sourcePage: 8,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "fa1c211a6703f9e08448276644c1be94f41a2a05b8d8e59b34491fad6c795147",
+  failedClassificationHash: "1925a66a39f4f02abe88d7a1d7a7793537e7e23cd9c66499dabf3bca59d40e4a",
+  failedClassificationEvidenceHash: "157836a03eab4dd54d94dd00dd323ca053f80d8aee8cdbd4748764961937bb60",
+  failedStatus: "exact",
+  replacement: {
+    field: "question",
+    from: "곱새담의 짚날을 뽑아 오고….",
+    to: "곱새담*의 짚날을 뽑아 오고….",
+    count: 1,
+  },
+  requiredTokens: [
+    "곱새담*의 짚날을 뽑아 오고….", "*곱새담: 풀 짚으로 만든 담.",
+    "(가), (나)의 공통점으로 가장 적절한 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5578421-q20-manual-revision-v1",
+  parentAllowlistId: "ebsi-5578421-q20-manual-v1",
+  entryId: "ebsi:5578421",
+  key: "8:20",
+  sourcePage: 8,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "f848a0ffa552671a10b588a0a1f936c6fbd12066030a1700bbbbe5b92a381929",
+  failedClassificationHash: "bdf07fc6c7b9561da35cdb509c52b2c82f37b8c02d5ec3c2404d1fc1abc01d3f",
+  failedClassificationEvidenceHash: "b6915221c6a1201280fc89b5f3c59fbfccafcfa233b3053cbb174d90db541fc3",
+  replacement: {
+    field: "question",
+    from: "곱새담의 짚날을 뽑아 오고….",
+    to: "곱새담*의 짚날을 뽑아 오고….",
+    count: 1,
+  },
+  requiredTokens: [
+    "곱새담*의 짚날을 뽑아 오고….", "*곱새담: 풀 짚으로 만든 담.",
+    "시적 맥락을 고려하여 (가)의 [A]～[D]를 이해한 내용으로 적절하지 않은 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5578421-q21-manual-revision-v1",
+  parentAllowlistId: "ebsi-5578421-q21-manual-v1",
+  entryId: "ebsi:5578421",
+  key: "8:21",
+  sourcePage: 8,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "220a5aa0e7224674bdd471008ceba6e70474a8b3e81d7a6ed808dd757f6d9e82",
+  failedClassificationHash: "14ab25e564224e879f5ddcece3754176903311ba0e9a26419b5445f955bb7d91",
+  failedClassificationEvidenceHash: "1c5de8e83ad2b6239e5589bdfdc1cd2b58501ac32719beaaac759f11ca8c0b7a",
+  failedStatus: "exact",
+  replacement: {
+    field: "question",
+    from: "곱새담의 짚날을 뽑아 오고….",
+    to: "곱새담*의 짚날을 뽑아 오고….",
+    count: 1,
+  },
+  requiredTokens: [
+    "곱새담*의 짚날을 뽑아 오고….", "*곱새담: 풀 짚으로 만든 담.",
+    "<보기>를 바탕으로 (나)를 감상할 때, 적절하지 않은 것은?",
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
@@ -10291,9 +10360,6 @@ function verifyProblemManualRevision(
   contract: VerificationContract,
 ): { question: ProblemQuestion; classification: ClassificationEvidence; evidence: Record<string, unknown> } {
   const key = failedQuestion.key;
-  if (contract.auditVersion !== 5 || failedClassification.transcription_status === "exact") {
-    throw new Error(`${key}: manual revision requires a current non-exact manual parent`);
-  }
   const revisionEnvelope = object(value, `${key}.revision.recovery.manualAdjudication.revision`);
   const { sourceRevision, ...revision } = revisionEnvelope;
   const spec = problemManualRevisionSpec(
@@ -10303,6 +10369,11 @@ function verifyProblemManualRevision(
     problemEvidence.sha256,
     exactString(parentManual.allowlistId, `${key}.manualAdjudication.allowlistId`),
   );
+  if (contract.auditVersion !== 5 || (spec.failedStatus === "exact"
+    ? failedClassification.transcription_status !== "exact"
+    : failedClassification.transcription_status === "exact")) {
+    throw new Error(`${key}: manual revision requires its exact allowlisted parent status`);
+  }
   const parentProblemEnvelope = object(
     parentManual.problemArtifact,
     `${key}.manualAdjudication.problemArtifact`,
@@ -11178,10 +11249,26 @@ function verifyProblemManualAdjudication(
   };
   const parentClassificationTerminal = classification.transcription_status === "exact"
     && matchesProblemManualExpectedDecision(spec, classification);
+  const requiredManualRevisionMatches = PROBLEM_MANUAL_REVISION_ALLOWLIST.filter((candidate) =>
+    candidate.entryId === entry.id && candidate.key === key && candidate.sourcePage === spec.sourcePage
+      && candidate.sourceHash === problemEvidence.sha256 && candidate.parentAllowlistId === spec.allowlistId
+      && candidate.failedQuestionHash === problemArtifactItemHash
+      && candidate.failedClassificationHash === classificationArtifactItemHash
+      && candidate.failedClassificationEvidenceHash === sha256(classification.transcription_evidence));
+  if (requiredManualRevisionMatches.length > 1) {
+    throw new Error(`${key}: manual revision allowlist is duplicated`);
+  }
+  const requiredManualRevisionSpec = requiredManualRevisionMatches[0];
+  const manualRevisionParentStatusMatches = requiredManualRevisionSpec?.failedStatus === "exact"
+    ? parentClassificationTerminal
+    : classification.transcription_status !== "exact";
   if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)
-    || ((manualRevision === undefined && manualPolicyRevision === undefined)
-      ? !parentClassificationTerminal : parentClassificationTerminal)
     || manualRevision !== undefined && manualPolicyRevision !== undefined
+    || (manualRevision !== undefined) !== Boolean(requiredManualRevisionSpec)
+    || manualRevision !== undefined && !manualRevisionParentStatusMatches
+    || (manualPolicyRevision !== undefined
+      ? parentClassificationTerminal
+      : manualRevision === undefined && !parentClassificationTerminal)
     || manual.classificationArtifactItemHash !== classificationArtifactItemHash
     || manual.baseClassificationHash !== spec.failedClassificationHash
     || manual.effectiveClassificationHash !== classificationArtifactItemHash) {

@@ -1539,21 +1539,113 @@ describe("exact allowlisted problem manual adjudication", () => {
       "136fb0930954306d07226a476e99f95da9d3c6010270f846bd680f00f4fbe640",
       "125ef097bdedaa0fb3bec8e4451c6e6f27d75bf646203a03ccc9e6d3d974783e",
     ]);
-    const q19Na = corrected[0].question.slice(
-      corrected[0].question.indexOf("(나)"),
-      corrected[0].question.indexOf("\n\n(가), (나)의 공통점")
+    const revisionSpecs = PROBLEM_MANUAL_REVISION_ALLOWLIST.filter((spec) =>
+      spec.entryId === "ebsi:5578421" && ["8:19", "8:20", "8:21"].includes(spec.key)
     );
-    const q20Na = corrected[1].question.slice(
-      corrected[1].question.indexOf("(나)"),
-      corrected[1].question.indexOf("\n\n시적 맥락을")
+    expect(revisionSpecs.map((spec) => ({
+      key: spec.key,
+      rowHash: canonicalEvidenceHash(spec),
+      failedStatus: spec.failedStatus,
+    }))).toEqual([{
+      key: "8:19",
+      rowHash: "e27383cba8efdb66d85ac3e5c0c2632ec646182c54764039aff3687da458c2cc",
+      failedStatus: "exact",
+    }, {
+      key: "8:20",
+      rowHash: "647a2d54b19dc3e2b47e46f6b2905c84bd5f36d257b9378a78bedc229c6073c6",
+      failedStatus: undefined,
+    }, {
+      key: "8:21",
+      rowHash: "bb73db45feca8b695f6865792b5a86567bc0e6dda426bba14276c57867eb9cf4",
+      failedStatus: "exact",
+    }]);
+    const revised = corrected.map((item, index) => applyAllowlistedProblemManualRevision(
+      "ebsi:5578421", revisionSpecs[index].sourceHash, revisionSpecs[index].parentAllowlistId, item
+    ));
+    expect(revised.map((item) => canonicalEvidenceHash(item))).toEqual([
+      "9e97c0a2578c2f7006e3a56dcb85c2cad3fdedc960e6eda520826c65fa673950",
+      "644b9b2b70de017d86ea1eea7502809a6a803a8cf6f16a8910256c85b44afc82",
+      "8ed4e485cb98c1c585106ad934abaa97a6b73871a3ad4b6dc721ffb605e58a11",
+    ]);
+    expect(revised.map((item) => canonicalEvidenceHash(item.question))).toEqual([
+      "9f54a02bc5a2931327863797ce8be53d3c5d5e3901476d63590d691eba12b460",
+      "20e6f8455eedb52eeade5b42b26f3d7656df02ba3c04c846eb097cf24e0ee7bb",
+      "5b3cc64f98f9f88110406d8edc86eb005275ce45a84eb30d3bad2fe33a456419",
+    ]);
+    const q19Na = revised[0].question.slice(
+      revised[0].question.indexOf("(나)"),
+      revised[0].question.indexOf("\n\n(가), (나)의 공통점")
     );
-    const q21Na = corrected[2].question.split("\n\n<보기>")[0];
+    const q20Na = revised[1].question.slice(
+      revised[1].question.indexOf("(나)"),
+      revised[1].question.indexOf("\n\n시적 맥락을")
+    );
+    const q21Na = revised[2].question.split("\n\n<보기>")[0];
     expect(q19Na).toBe(q21Na);
     expect(q20Na).toBe(q21Na);
-    expect(corrected[0].choices?.[1]).toContain("주체와 객체를 전도시켜");
-    expect(corrected[2].figure_description).toContain("왼쪽 ㉮ 상자");
-    expect(corrected[2].figure_description).toContain("오른쪽 ㉯ 상자");
+    expect(q21Na).toContain("곱새담*의 짚날을 뽑아 오고….");
+    expect(q21Na).not.toContain("곱새담의 짚날을 뽑아 오고….");
+    expect(revised[0].choices?.[1]).toContain("주체와 객체를 전도시켜");
+    expect(revised[2].figure_description).toContain("왼쪽 ㉮ 상자");
+    expect(revised[2].figure_description).toContain("오른쪽 ㉯ 상자");
   });
+
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "writes and replays the 5578421 Q19-Q21 shared-passage revisions byte-stably",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-5578421-q19-q21-revision-"));
+    cpSync(q31Q32LiveState, root, { recursive: true });
+    removeManualRevisionArtifacts(root, ["8:19", "8:20", "8:21"]);
+    const input = q27FixtureInputs(root);
+    const rows = (["19", "20", "21"] as const).map((number) =>
+      q19Q21ExactRecoveryParent5578421(root, number)
+    );
+    const calls: string[] = [];
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      expect(request.schema?.name).toBe("studywork_exam_corpus_classification");
+      const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
+        key: string;
+        question: string;
+      }>;
+      expect(items).toHaveLength(1);
+      const item = items[0];
+      calls.push(item.key);
+      expect(item.question).toContain("곱새담*의 짚날을 뽑아 오고….");
+      expect(item.question).not.toContain("곱새담의 짚날을 뽑아 오고….");
+      return { text: JSON.stringify([{
+        key: item.key,
+        decision: "accept",
+        canonical_subject: "korean_literature",
+        curriculum_course: "문학",
+        domain: "현대시의 표현과 감상",
+        achievement_codes: ["12문학01-03"],
+        confidence: 0.99,
+        reason_codes: ["SOURCE_EXACT", "IN_SCOPE_KOREAN_LITERATURE"],
+        transcription_status: "exact",
+        transcription_evidence: `공식 7~8쪽의 ${item.key} 공통 지문·각주·발문·선지가 일치한다.`,
+      }]) };
+    });
+    const run = (row: ReturnType<typeof q19Q21ExactRecoveryParent5578421>) =>
+      adjudicateProblemManual(input.entry, input.problem, root, row.failed, row.parent);
+    const completed = [];
+    for (const row of rows) completed.push(await run(row));
+    expect(calls).toEqual(["8:19", "8:20", "8:21"]);
+    expect(completed.map((item) => canonicalEvidenceHash(item.classified.question))).toEqual([
+      "9e97c0a2578c2f7006e3a56dcb85c2cad3fdedc960e6eda520826c65fa673950",
+      "644b9b2b70de017d86ea1eea7502809a6a803a8cf6f16a8910256c85b44afc82",
+      "8ed4e485cb98c1c585106ad934abaa97a6b73871a3ad4b6dc721ffb605e58a11",
+    ]);
+    expect(completed.map((item) => item.evidence.revision?.allowlistId)).toEqual([
+      "ebsi-5578421-q19-manual-revision-v1",
+      "ebsi-5578421-q20-manual-revision-v1",
+      "ebsi-5578421-q21-manual-revision-v1",
+    ]);
+    const stable = stateSnapshot(root);
+    const beforeReplay = [...calls];
+    for (const row of rows) await run(row);
+    expect(calls).toEqual(beforeReplay);
+    expect(stateSnapshot(root)).toEqual(stable);
+  }, 180_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
     "preflights and crash-resumes the 5578421 Q31-Q32 manual pair byte-stably",
@@ -2324,11 +2416,25 @@ describe("exact allowlisted problem manual adjudication", () => {
       failedClassificationEvidenceHash: "5ee5ce7694d4178d8047f9d1e30e326058c1af244e43eaacb11aad257d0abc18",
       expectedDecision: "accept",
       expectedCanonicalSubject: "korean_literature",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5578421-q19-manual-revision-v1",
+      parentAllowlistId: "ebsi-5578421-q19-manual-v1",
+      failedStatus: "exact",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5578421-q20-manual-revision-v1",
+      parentAllowlistId: "ebsi-5578421-q20-manual-v1",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5578421-q21-manual-revision-v1",
+      parentAllowlistId: "ebsi-5578421-q21-manual-v1",
+      failedStatus: "exact",
     })]);
     expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.map(canonicalEvidenceHash)).toEqual([
       "479ebd4d7b57bd6ead1a4082b29d8c8c2cba1c7ebdb21634a3eda063986480b4",
       "9c38bfeaa57af0929eb5ec4f4a466588a5be42e59ff7be77576778d11a985792",
       "465a68f6f512ddc4e288552122287f9772ce3bddf63099b776dc5ab47663c943",
+      "e27383cba8efdb66d85ac3e5c0c2632ec646182c54764039aff3687da458c2cc",
+      "647a2d54b19dc3e2b47e46f6b2905c84bd5f36d257b9378a78bedc229c6073c6",
+      "bb73db45feca8b695f6865792b5a86567bc0e6dda426bba14276c57867eb9cf4",
     ]);
     const parent = JSON.parse(readFileSync(q30ManualProblemPath, "utf8")).item as QuizItemEx;
     expect(canonicalEvidenceHash(parent)).toBe(PROBLEM_MANUAL_REVISION_ALLOWLIST[0].failedQuestionHash);
