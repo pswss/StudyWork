@@ -4892,6 +4892,41 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     ],
     expectedDecision: "reject",
   },
+  {
+    allowlistId: "ebsi-5578421-q12-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "4:12",
+    sourcePage: 4,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "2cec6cbd5de6b7795867c7b1897ce4c7dd35adbbc34e6be17f445e060dee9207",
+    dpi: 600,
+    failedQuestionHash: "15f61a4f6073adbfa46c58526ef220b92a18c1db2bd576277fcd70909c666387",
+    failedClassificationHash: "386cbc0803aecd0daed93ffeb3a7fc9507a239d9b2c2e94bb399989db4137fac",
+    failedClassificationEvidenceHash: "a998ebbb9f8c7a9b5fac66bea6e67e482fcd886123f1af0a149e2e518cf1ff5c",
+    views: [
+      { sourcePage: 4, label: "p4 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 4, label: "p4 right Q12 table and choices", rect: [0.50, 0.62, 0.95, 0.98] },
+    ],
+    requiredTokens: [
+      "제시된 탐구 과정을 고려할 때, [A], [B]에 들어갈 ㉠～㉣을 바르게 분류한 것은?",
+      "관형어는 체언을, 부사어는 용언을 한정하는 기능을 함.",
+      "관형사는 명사를, 부사는 동사를 수식함.",
+      "② [A] ㉠, ㉡ / ㉢, ㉣　[B] ㉠, ㉢ / ㉡ / ㉣",
+    ],
+    replacements: [{
+      field: "question",
+      from: "관형어는 체언을, 부사는 용언을 한정하는 기능을 함.",
+      to: "관형어는 체언을, 부사어는 용언을 한정하는 기능을 함.",
+      count: 1,
+    }, {
+      field: "figure_description",
+      from: "관형어는 체언을, 부사는 용언을 한정하는 기능을 함.",
+      to: "관형어는 체언을, 부사어는 용언을 한정하는 기능을 함.",
+      count: 1,
+    }],
+    expectedDecision: "reject",
+  },
 ] as const;
 
 const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
