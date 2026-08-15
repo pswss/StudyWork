@@ -25127,6 +25127,7 @@ export async function repairAndAuditOfficialAnswers(
     repairs.set(key, repaired.evidence);
   }
   const persistedManualSpecs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
+    spec.entryId === entry.id && spec.sourceHash === problem.sha256 &&
     is5578421PersistedManualHydrationSpec(spec) && strictArtifactNames(
       join(stateDir, "problem-recoveries"),
       `${spec.key} persisted manual recovery`,

@@ -67,6 +67,7 @@ import {
 
 const q27LiveState = join(process.cwd(), "data/import-exam-corpus/bb876a67170089dfb2022f47");
 const q31Q32LiveState = join(process.cwd(), "data/import-exam-corpus/f914a5cf8d2237d6c9319e23");
+const q43LiveState5577054 = join(process.cwd(), "data/import-exam-corpus/4745f3573f575a93f6adcccb");
 const q30Q42ManualKeys: readonly string[] = [
   "11:30", "12:31", "12:32", "14:37", "15:38", "15:40", "15:41", "15:42",
 ];
@@ -2414,6 +2415,26 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(classificationKeys).not.toContain("12:33");
     expect(classificationKeys).not.toContain("12:34");
     expect(terminalCalls).toBeLessThanOrEqual(1);
+  }, 180_000);
+
+  it.skipIf(!existsSync(join(q43LiveState5577054, "problem.pdf")))(
+    "does not hydrate 5578421 manual generations into another entry",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-5577054-cross-entry-hydration-"));
+    cpSync(q43LiveState5577054, root, { recursive: true });
+    providerMock.complete.mockImplementation(async () => {
+      throw new Error("seeded 5577054 boundary after cross-entry preflight");
+    });
+    const input = q27FixtureInputs(root);
+    await expect(repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions,
+    )).rejects.toThrow("15:42 final source-grounded recovery도 exact가 아닙니다");
+    expect(providerMock.complete).not.toHaveBeenCalled();
   }, 180_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
