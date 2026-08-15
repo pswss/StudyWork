@@ -2674,6 +2674,73 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 180_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "hydrates persisted Q12 before writing Q43 in the full 5578421 flow",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-5578421-singleton-manual-flow-"));
+    cpSync(q31Q32LiveState, root, { recursive: true });
+    removeManualArtifacts(root, ["16:43"]);
+    const input = q27FixtureInputs(root);
+    const calls: string[] = [];
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      const schema = request.schema?.name ?? "unknown";
+      if (schema === "studywork_exam_corpus_classification") {
+        const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{ key: string }>;
+        if (items.length === 1 && items[0].key === "16:43") {
+          calls.push("16:43");
+          return { text: JSON.stringify([{
+            key: "16:43",
+            decision: "accept",
+            canonical_subject: "korean_literature",
+            curriculum_course: "문학",
+            domain: "현대시의 표현 방식과 작품 간 비교 감상",
+            achievement_codes: ["12문학01-02"],
+            confidence: 0.99,
+            reason_codes: ["SOURCE_EXACT", "IN_SCOPE_KOREAN_LITERATURE"],
+            transcription_status: "exact",
+            transcription_evidence: "공식 15~16쪽의 [43~45] 공통 시와 43번이 일치한다.",
+          }]) };
+        }
+      }
+      calls.push(schema);
+      throw new Error("seeded after persisted singleton manual hydration");
+    });
+    const run = () => repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions
+    );
+    await expect(run()).rejects.toThrow("seeded after persisted singleton manual hydration");
+    expect(calls[0]).toBe("16:43");
+    expect(calls.length).toBeGreaterThan(1);
+    const q12ProblemName = readdirSync(join(root, "problem-manual-adjudications"))
+      .find((name) => name.startsWith("v1-0004-0012-"))!;
+    const q43ProblemName = readdirSync(join(root, "problem-manual-adjudications"))
+      .find((name) => name.startsWith("v1-0016-0043-"))!;
+    expect(q12ProblemName).toBeTruthy();
+    expect(q43ProblemName).toBeTruthy();
+
+    const stable = stateSnapshot(root);
+    calls.length = 0;
+    providerMock.complete.mockClear();
+    providerMock.complete.mockRejectedValue(new Error("seeded replay boundary"));
+    await expect(run()).rejects.toThrow("seeded replay boundary");
+    expect(providerMock.complete).toHaveBeenCalledTimes(1);
+    expect(stateSnapshot(root)).toEqual(stable);
+
+    const q12Path = join(root, "problem-manual-adjudications", q12ProblemName);
+    const q12Bytes = readFileSync(q12Path);
+    writeFileSync(q12Path, Buffer.concat([q12Bytes, Buffer.from(" ")]));
+    const beforeTamper = stateSnapshot(root);
+    providerMock.complete.mockClear();
+    await expect(run()).rejects.toThrow(/Q12|4:12|hash|canonical|envelope/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root)).toEqual(beforeTamper);
+  }, 240_000);
+
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
     "writes and replays the 5578421 Q14 tone diagram byte-stably",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-5578421-q14-manual-"));

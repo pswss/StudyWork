@@ -18566,6 +18566,10 @@ function is5578421Q44Q45ManualBatchSpec(spec: ProblemManualAdjudicationSpec): bo
   return spec.entryId === "ebsi:5578421" && ["16:44", "16:45"].includes(spec.key);
 }
 
+function is5578421PersistedSingletonManualSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5578421" && ["4:12", "16:43"].includes(spec.key);
+}
+
 function isQ37ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5525982" && spec.key === "14:37";
 }
@@ -18921,6 +18925,15 @@ async function preflightProblemManualBatch(
     }
     return;
   }
+  if (is5578421PersistedSingletonManualSpec(requestedSpec)) {
+    if (
+      problem.sha256 !== requestedSpec.sourceHash ||
+      await sha256File(problem.path) !== problem.sha256
+    ) throw new Error(`${requestedSpec.key} persisted singleton manual preflight source가 다릅니다`);
+    const restored = await restoredPinnedManualRecovery(entry, stateDir, requestedSpec);
+    await adjudicateProblemManualOne(entry, problem, stateDir, restored.failed, restored.parent, true);
+    return;
+  }
   const predicate = is5578421Q44Q45ManualBatchSpec(requestedSpec)
     ? is5578421Q44Q45ManualBatchSpec
     : is5578421Q19Q20Q21ManualBatchSpec(requestedSpec)
@@ -18979,6 +18992,330 @@ async function preflightProblemManualBatch(
   for (const { failed, parent } of restored) {
     await adjudicateProblemManualOne(entry, problem, stateDir, failed, parent, true);
   }
+}
+
+async function restoredPersistedManualRevision(
+  entry: CorpusManifestEntry,
+  stateDir: string,
+  spec: ProblemManualAdjudicationSpec,
+  current: ClassifiedQuestion,
+  parent: ProblemRecoveryEvidence
+): Promise<{ classified: ClassifiedQuestion; evidence: ProblemRevisionEvidence }> {
+  const pointer = parent.baseProblemRevisionArtifact;
+  const path = confinedStateFile(stateDir, pointer.path, `${spec.key} persisted manual revision`);
+  const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), pointer.path);
+  if (await sha256File(path) !== pointer.sha256 || canonicalEvidenceHash(checkpoint) !== pointer.sha256) {
+    throw new Error(`${spec.key} persisted manual revision hash/envelope가 다릅니다`);
+  }
+  const members = Array.isArray(checkpoint.members)
+    ? checkpoint.members.map((value, index) => object(value, `${spec.key} persisted manual revision member ${index + 1}`))
+    : [];
+  const matches = members.filter((member) => member.key === spec.key);
+  if (matches.length !== 1) throw new Error(`${spec.key} persisted manual revision member가 유일하지 않습니다`);
+  const member = matches[0];
+  const revisedItems = restoredSparseQuizItems(checkpoint.items);
+  const revisedMatches = revisedItems.filter((item) => questionKey(item) === spec.key);
+  const revisedQuestion = revisedMatches[0];
+  const rawTrigger = object(member.trigger, `${spec.key} persisted manual revision trigger`);
+  if (
+    checkpoint.version !== PROBLEM_REVISION_BATCH_VERSION || checkpoint.entryId !== entry.id ||
+    checkpoint.sourceHash !== spec.sourceHash || checkpoint.contextFrom !== parent.contextFrom ||
+    checkpoint.contextTo !== parent.contextTo || checkpoint.sourcePage !== spec.sourcePage ||
+    member.sourcePage !== spec.sourcePage || member.printedNumber !== spec.key.split(":")[1] ||
+    canonicalEvidenceHash(member.baseProblemRepairArtifact) !== canonicalEvidenceHash(parent.baseProblemRepairArtifact) ||
+    member.baseProblemRepairItemHash !== parent.baseProblemRepairItemHash ||
+    canonicalEvidenceHash(member.baseClassificationRepairArtifact) !==
+      canonicalEvidenceHash(parent.baseClassificationRepairArtifact) ||
+    member.baseClassificationRepairItemHash !== parent.baseClassificationRepairItemHash ||
+    member.baseQuestionHash !== canonicalEvidenceHash(current.question) ||
+    member.baseClassificationHash !== canonicalEvidenceHash(current.classification) ||
+    revisedMatches.length !== 1 || !revisedQuestion ||
+    canonicalEvidenceHash(revisedQuestion) !== parent.baseProblemRevisionItemHash
+  ) throw new Error(`${spec.key} persisted manual revision parent가 다릅니다`);
+  let trigger: ProblemRevisionTrigger;
+  if (rawTrigger.kind === "classification") {
+    const evidence = current.classification.transcription_evidence;
+    if (
+      Object.keys(rawTrigger).sort().join(",") !== "evidenceHash,kind" ||
+      rawTrigger.evidenceHash !== sha256Text(evidence)
+    ) throw new Error(`${spec.key} persisted manual classification trigger가 다릅니다`);
+    trigger = { kind: "classification", evidence };
+  } else if (rawTrigger.kind !== "terminal") {
+    throw new Error(`${spec.key} persisted manual revision trigger kind가 다릅니다`);
+  } else {
+    const rawPointer = object(rawTrigger.terminalCheckpoint, `${spec.key} persisted manual terminal pointer`);
+    const terminalPointer: ProblemTerminalFidelityCheckpoint = {
+      path: exactString(rawPointer.path, `${spec.key} persisted manual terminal path`, 1000),
+      sha256: exactHash(rawPointer.sha256, `${spec.key} persisted manual terminal sha256`),
+      from: Number(rawPointer.from),
+      to: Number(rawPointer.to),
+      ownedFrom: Number(rawPointer.ownedFrom),
+      ownedTo: Number(rawPointer.ownedTo),
+      inputHash: exactHash(rawPointer.inputHash, `${spec.key} persisted manual terminal input hash`),
+    };
+    const terminalPath = confinedStateFile(stateDir, terminalPointer.path, `${spec.key} persisted manual terminal`);
+    const terminal = object(JSON.parse(readFileSync(terminalPath, "utf8")), terminalPointer.path);
+    const terminalItems = Array.isArray(terminal.items)
+      ? terminal.items.map((value, index) => pinnedTerminalRecoveryItem(
+          value,
+          exactString(object(value, `${spec.key} persisted manual terminal item ${index + 1}`).key,
+            `${spec.key} persisted manual terminal item ${index + 1}.key`, 100),
+          `${spec.key} persisted manual terminal item ${index + 1}`
+        ))
+      : [];
+    const targetItems = terminalItems.filter((item) => item.key === spec.key);
+    const target = targetItems[0];
+    const itemHash = target ? canonicalEvidenceHash(target) : "";
+    const expectedTrigger = target && {
+      kind: "terminal",
+      evidenceHash: sha256Text(target.evidence),
+      terminalCheckpoint: terminalPointer,
+      terminalItemHash: itemHash,
+    };
+    if (
+      targetItems.length !== 1 || !target || !expectedTrigger || target.status === "exact" ||
+      await sha256File(terminalPath) !== terminalPointer.sha256 ||
+      canonicalEvidenceHash(terminal) !== terminalPointer.sha256 ||
+      terminal.entryId !== entry.id || terminal.sourceHash !== spec.sourceHash ||
+      terminal.inputHash !== terminalPointer.inputHash ||
+      canonicalEvidenceHash(rawTrigger) !== canonicalEvidenceHash(expectedTrigger)
+    ) throw new Error(`${spec.key} persisted manual terminal trigger가 다릅니다`);
+    trigger = {
+      kind: "terminal",
+      evidence: target.evidence,
+      checkpoint: terminalPointer,
+      itemHash,
+      item: target,
+      effectiveCorpusHash: exactHash(
+        terminal.effectiveCorpusHash,
+        `${spec.key} persisted manual terminal corpus hash`
+      ),
+    };
+  }
+
+  const classificationPointer = parent.baseClassificationRevisionArtifact;
+  const classificationPath = confinedStateFile(
+    stateDir,
+    classificationPointer.path,
+    `${spec.key} persisted manual classification revision`
+  );
+  const classificationCheckpoint = object(
+    JSON.parse(readFileSync(classificationPath, "utf8")),
+    classificationPointer.path
+  );
+  if (
+    await sha256File(classificationPath) !== classificationPointer.sha256 ||
+    canonicalEvidenceHash(classificationCheckpoint) !== classificationPointer.sha256
+  ) throw new Error(`${spec.key} persisted manual classification revision hash/envelope가 다릅니다`);
+  const classificationMembers = Array.isArray(classificationCheckpoint.members)
+    ? classificationCheckpoint.members.map((value, index) => object(
+        value,
+        `${spec.key} persisted manual classification revision member ${index + 1}`
+      ))
+    : [];
+  const classificationMemberMatches = classificationMembers.filter((candidate) => candidate.key === spec.key);
+  const classificationItems = Array.isArray(classificationCheckpoint.items) ? classificationCheckpoint.items : [];
+  const classificationItemMatches = classificationItems.filter((value) =>
+    object(value, `${spec.key} persisted manual classification revision item`).key === spec.key
+  );
+  const classificationMember = classificationMemberMatches[0];
+  const classification = classificationItemMatches.length === 1
+    ? parseHistoricalDecision(
+        classificationItemMatches[0],
+        spec.key,
+        `${spec.key} persisted manual classification revision`
+      )
+    : null;
+  const storedTrigger = trigger.kind === "terminal" ? {
+    kind: trigger.kind,
+    evidenceHash: sha256Text(trigger.evidence),
+    terminalCheckpoint: trigger.checkpoint,
+    terminalItemHash: trigger.itemHash,
+  } : {
+    kind: trigger.kind,
+    evidenceHash: sha256Text(trigger.evidence),
+  };
+  const expectedClassificationMember = {
+    key: spec.key,
+    problemAuthority: {
+      key: spec.key,
+      path: pointer.path,
+      sha256: pointer.sha256,
+      itemHash: parent.baseProblemRevisionItemHash,
+    },
+    effectiveQuestionHash: parent.baseProblemRevisionItemHash,
+    baseClassificationRepairArtifact: parent.baseClassificationRepairArtifact,
+    baseClassificationRepairItemHash: parent.baseClassificationRepairItemHash,
+    triggerHash: canonicalEvidenceHash(storedTrigger),
+  };
+  if (
+    classificationCheckpoint.version !== CLASSIFICATION_REVISION_BATCH_VERSION ||
+    classificationCheckpoint.entryId !== entry.id || classificationCheckpoint.sourceHash !== spec.sourceHash ||
+    classificationCheckpoint.contextFrom !== parent.contextFrom ||
+    classificationCheckpoint.contextTo !== parent.contextTo ||
+    classificationCheckpoint.classifierVersion !== CLASSIFIER_VERSION ||
+    classificationCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+    classificationCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+    classificationCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+    classificationMemberMatches.length !== 1 || !classificationMember || !classification ||
+    canonicalEvidenceHash(classificationMember) !== canonicalEvidenceHash(expectedClassificationMember) ||
+    canonicalEvidenceHash(classification) !== parent.baseClassificationRevisionItemHash
+  ) throw new Error(`${spec.key} persisted manual classification revision parent가 다릅니다`);
+  return {
+    classified: { question: revisedQuestion, classification },
+    evidence: {
+      baseProblemRepairArtifact: parent.baseProblemRepairArtifact,
+      baseClassificationRepairArtifact: parent.baseClassificationRepairArtifact,
+      problemArtifact: parent.baseProblemRevisionArtifact,
+      problemArtifactItemHash: parent.baseProblemRevisionItemHash,
+      classificationArtifact: {
+        path: parent.baseClassificationRevisionArtifact.path,
+        sha256: parent.baseClassificationRevisionArtifact.sha256,
+        rulesDigest: CLASSIFIER_DIGEST,
+        transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+        transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      },
+      classificationArtifactItemHash: parent.baseClassificationRevisionItemHash,
+      diagnosticEvidenceHash: sha256Text(trigger.evidence),
+      baseQuestionHash: canonicalEvidenceHash(current.question),
+      effectiveQuestionHash: parent.baseProblemRevisionItemHash,
+      baseClassificationHash: canonicalEvidenceHash(current.classification),
+      effectiveClassificationHash: parent.baseClassificationRevisionItemHash,
+      trigger: storedTrigger,
+    },
+  };
+}
+
+async function restoredPersistedManualBaseRepair(
+  entry: CorpusManifestEntry,
+  problem: PdfEvidence,
+  solutionEvidence: PdfEvidence,
+  stateDir: string,
+  original: ClassifiedQuestion,
+  solution: SolutionItem,
+  parent: ProblemRecoveryEvidence
+): Promise<{ classified: ClassifiedQuestion; evidence: ProblemRepairEvidence }> {
+  const key = questionKey(original.question);
+  const baseQuestion = await baseQuestionEvidence(entry, problem, stateDir, original);
+  const baseSolution = await baseSolutionEvidence(solutionEvidence, stateDir, solution);
+  const problemPath = confinedStateFile(stateDir, parent.baseProblemRepairArtifact.path,
+    `${key} persisted manual base problem repair`);
+  const problemCheckpoint = object(
+    JSON.parse(readFileSync(problemPath, "utf8")),
+    parent.baseProblemRepairArtifact.path
+  );
+  const problemMembers = Array.isArray(problemCheckpoint.members)
+    ? problemCheckpoint.members.map((value, index) => object(value, `${key} base problem member ${index + 1}`))
+    : [];
+  const problemItems = restoredSparseQuizItems(problemCheckpoint.items);
+  const memberMatches = problemMembers.filter((member) => member.key === key);
+  const itemMatches = problemItems.filter((item) => questionKey(item) === key);
+  const member = memberMatches[0];
+  const question = itemMatches[0];
+  const expectedMember = {
+    key,
+    printedNumber: parent.printedNumber,
+    baseProblemCheckpoint: baseQuestion.problem,
+    baseQuestionHash: baseQuestion.questionHash,
+    baseClassificationCheckpoint: baseQuestion.classification,
+    baseClassificationHash: baseQuestion.classificationHash,
+    baseSolutionCheckpoint: baseSolution.checkpoint,
+    baseSolutionItemHash: baseSolution.itemHash,
+    officialRawAnswerHash: sha256Text(solution.answer),
+  };
+  const problemChecks = {
+    version: problemCheckpoint.version === 1,
+    entry: problemCheckpoint.entryId === entry.id,
+    source: problemCheckpoint.sourceHash === problem.sha256,
+    context: problemCheckpoint.contextFrom === parent.contextFrom && problemCheckpoint.contextTo === parent.contextTo,
+    page: problemCheckpoint.sourcePage === parent.sourcePage,
+    memberCount: memberMatches.length === 1,
+    itemCount: itemMatches.length === 1,
+    member: Boolean(member) && canonicalEvidenceHash(member) === canonicalEvidenceHash(expectedMember),
+    item: Boolean(question) && canonicalEvidenceHash(question) === parent.baseProblemRepairItemHash,
+    raw: await sha256File(problemPath) === parent.baseProblemRepairArtifact.sha256,
+    canonical: canonicalEvidenceHash(problemCheckpoint) === parent.baseProblemRepairArtifact.sha256,
+  };
+  if (!Object.values(problemChecks).every(Boolean)) {
+    throw new Error(`${key} persisted manual base problem repair가 다릅니다: ${JSON.stringify(problemChecks)}`);
+  }
+
+  const classificationPath = confinedStateFile(stateDir, parent.baseClassificationRepairArtifact.path,
+    `${key} persisted manual base classification repair`);
+  const classificationCheckpoint = object(
+    JSON.parse(readFileSync(classificationPath, "utf8")),
+    parent.baseClassificationRepairArtifact.path
+  );
+  const classificationMembers = Array.isArray(classificationCheckpoint.members)
+    ? classificationCheckpoint.members.map((value, index) => object(
+        value,
+        `${key} base classification member ${index + 1}`
+      ))
+    : [];
+  const classificationItems = Array.isArray(classificationCheckpoint.items) ? classificationCheckpoint.items : [];
+  const classificationMemberMatches = classificationMembers.filter((candidate) => candidate.key === key);
+  const classificationItemMatches = classificationItems.filter((value) =>
+    object(value, `${key} base classification item`).key === key
+  );
+  const classificationMember = classificationMemberMatches[0];
+  const classification = classificationItemMatches.length === 1
+    ? parseHistoricalDecision(classificationItemMatches[0], key, `${key} persisted manual base classification`)
+    : null;
+  const expectedClassificationMember = {
+    key,
+    problemAuthority: {
+      key,
+      path: parent.baseProblemRepairArtifact.path,
+      sha256: parent.baseProblemRepairArtifact.sha256,
+      itemHash: parent.baseProblemRepairItemHash,
+    },
+    effectiveQuestionHash: parent.baseProblemRepairItemHash,
+    baseClassificationCheckpoint: baseQuestion.classification,
+    baseClassificationHash: baseQuestion.classificationHash,
+  };
+  if (
+    classificationCheckpoint.version !== CLASSIFICATION_REPAIR_BATCH_VERSION ||
+    classificationCheckpoint.entryId !== entry.id || classificationCheckpoint.sourceHash !== problem.sha256 ||
+    classificationCheckpoint.contextFrom !== parent.contextFrom || classificationCheckpoint.contextTo !== parent.contextTo ||
+    classificationCheckpoint.classifierVersion !== CLASSIFIER_VERSION ||
+    classificationCheckpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+    classificationCheckpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+    classificationCheckpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+    classificationMemberMatches.length !== 1 || !classificationMember || !classification ||
+    canonicalEvidenceHash(classificationMember) !== canonicalEvidenceHash(expectedClassificationMember) ||
+    canonicalEvidenceHash(classification) !== parent.baseClassificationRepairItemHash ||
+    await sha256File(classificationPath) !== parent.baseClassificationRepairArtifact.sha256 ||
+    canonicalEvidenceHash(classificationCheckpoint) !== parent.baseClassificationRepairArtifact.sha256
+  ) throw new Error(`${key} persisted manual base classification repair가 다릅니다`);
+  return {
+    classified: { question, classification },
+    evidence: {
+      key,
+      printedNumber: parent.printedNumber,
+      sourcePage: parent.sourcePage,
+      contextFrom: parent.contextFrom,
+      contextTo: parent.contextTo,
+      baseProblemCheckpoint: baseQuestion.problem,
+      baseClassificationCheckpoint: baseQuestion.classification,
+      baseSolutionCheckpoint: baseSolution.checkpoint,
+      problemArtifact: parent.baseProblemRepairArtifact,
+      problemArtifactItemHash: parent.baseProblemRepairItemHash,
+      classificationArtifact: {
+        path: parent.baseClassificationRepairArtifact.path,
+        sha256: parent.baseClassificationRepairArtifact.sha256,
+        rulesDigest: CLASSIFIER_DIGEST,
+        transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+        transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+      },
+      classificationArtifactItemHash: parent.baseClassificationRepairItemHash,
+      baseQuestionHash: baseQuestion.questionHash,
+      effectiveQuestionHash: parent.baseProblemRepairItemHash,
+      baseClassificationHash: baseQuestion.classificationHash,
+      effectiveClassificationHash: parent.baseClassificationRepairItemHash,
+      baseSolutionItemHash: baseSolution.itemHash,
+      officialRawAnswerHash: sha256Text(solution.answer),
+    },
+  };
 }
 
 export async function adjudicateProblemManual(
@@ -24512,28 +24849,44 @@ export async function repairAndAuditOfficialAnswers(
       predicate: is5578421Q6Q7ManualBatchSpec,
       signal: /^v\d+-0003-000[67](?:-|\.)/u,
       label: "Q6-Q7",
+      expectedCount: 2,
     }, {
       predicate: is5578421Q19Q20Q21ManualBatchSpec,
       signal: /^v\d+-0008-00(?:19|20|21)(?:-|\.)/u,
       label: "Q19-Q21",
+      expectedCount: 3,
     }, {
       predicate: is5578421Q44Q45ManualBatchSpec,
       signal: /^v\d+-0016-004[45](?:-|\.)/u,
       label: "Q44-Q45",
+      expectedCount: 2,
     }, {
       predicate: is5578421Q31Q32ManualBatchSpec,
       signal: /^v\d+-0012-003[12](?:-|\.)/u,
       label: "Q31-Q32",
+      expectedCount: 2,
     }, {
       predicate: is5578421Q33Q34ManualBatchSpec,
       signal: /^v\d+-0012-003[34](?:-|\.)/u,
       label: "Q33-Q34",
+      expectedCount: 2,
+    }, {
+      predicate: (spec: ProblemManualAdjudicationSpec) =>
+        is5578421PersistedSingletonManualSpec(spec) && spec.key === "4:12",
+      signal: /^v\d+-0004-0012(?:-|\.)/u,
+      label: "Q12",
+      expectedCount: 1,
+    }, {
+      predicate: (spec: ProblemManualAdjudicationSpec) =>
+        is5578421PersistedSingletonManualSpec(spec) && spec.key === "16:43",
+      signal: /^v\d+-0016-0043(?:-|\.)/u,
+      label: "Q43",
+      expectedCount: 1,
     }]) {
       if (!manualNames.some((names) => names.some((name) => group.signal.test(name)))) continue;
       const pairSpecs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(group.predicate)
         .sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
-      const expectedCount = group.predicate === is5578421Q19Q20Q21ManualBatchSpec ? 3 : 2;
-      if (pairSpecs.length !== expectedCount) {
+      if (pairSpecs.length !== group.expectedCount) {
         throw new Error(`ebsi:5578421 ${group.label} manual pair allowlist가 다릅니다`);
       }
       await preflightProblemManualBatch(entry, problem, stateDir, pairSpecs[0]);
@@ -24555,6 +24908,78 @@ export async function repairAndAuditOfficialAnswers(
     if (index < 0 || repairs.has(key)) throw new Error(`${key} persisted problem repair hydration이 중복되었습니다`);
     effective[index] = repaired.classified;
     repairs.set(key, repaired.evidence);
+  }
+  const persistedSingletonManualSpecs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
+    is5578421PersistedSingletonManualSpec(spec) && strictArtifactNames(
+      join(stateDir, "problem-recoveries"),
+      `${spec.key} persisted singleton manual recovery`,
+      (name) => /^v\d+-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
+    ).some((name) => name.startsWith(
+      `v${PROBLEM_RECOVERY_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+      `${spec.key.split(":")[1]!.padStart(4, "0")}-`
+    ) || name.startsWith(
+      `v${PROBLEM_TERMINAL_RECOVERY_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
+      `${spec.key.split(":")[1]!.padStart(4, "0")}-`
+    ))
+  ).sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+  for (const spec of persistedSingletonManualSpecs) {
+    const index = effective.findIndex((item) => questionKey(item.question) === spec.key);
+    const restored = await restoredPinnedManualRecovery(entry, stateDir, spec);
+    const number = Number(spec.key.split(":")[1]);
+    const original = baseByKey.get(spec.key);
+    const solution = baseSolutionsByNumber.get(number);
+    if (index < 0 || !original || !solution) {
+      throw new Error(`${spec.key} persisted singleton manual base input이 없습니다`);
+    }
+    const pinnedBase = await restoredPersistedManualBaseRepair(
+      entry,
+      problem,
+      solutionEvidence,
+      stateDir,
+      original,
+      solution,
+      restored.parent
+    );
+    const currentRepair = repairs.get(spec.key);
+    if (currentRepair && (
+      currentRepair.revision ||
+      canonicalEvidenceHash(currentRepair) !== canonicalEvidenceHash(pinnedBase.evidence)
+    )) throw new Error(`${spec.key} persisted singleton manual base hydration authority가 다릅니다`);
+    const repair = currentRepair ?? pinnedBase.evidence;
+    effective[index] = pinnedBase.classified;
+    repairs.set(spec.key, repair);
+    const revision = await restoredPersistedManualRevision(
+      entry,
+      stateDir,
+      spec,
+      effective[index],
+      restored.parent
+    );
+    const manual = await adjudicateProblemManualOne(
+      entry,
+      problem,
+      stateDir,
+      restored.failed,
+      restored.parent,
+      false
+    );
+    if (!manual) throw new Error(`${spec.key} persisted singleton manual child가 없습니다`);
+    const hydratedRecovery = { ...restored.parent, manualAdjudication: manual.evidence };
+    const hydrationChecks = {
+      key: questionKey(manual.classified.question) === spec.key,
+      manual: Boolean(hydratedRecovery.manualAdjudication),
+      parent: canonicalEvidenceHash(
+        (({ manualAdjudication: _manual, ...parent }) => parent)(hydratedRecovery)
+      ) === spec.parentRecoveryEvidenceHash,
+    };
+    if (!Object.values(hydrationChecks).every(Boolean)) throw new Error(
+      `${spec.key} persisted singleton manual hydration이 다릅니다: ${JSON.stringify(hydrationChecks)}`
+    );
+    effective[index] = manual.classified;
+    repairs.set(spec.key, {
+      ...repair,
+      revision: { ...revision.evidence, recovery: hydratedRecovery },
+    });
   }
   if (persistedTerminalRecovery) {
     const { spec, revision, selected } = persistedTerminalRecovery;
