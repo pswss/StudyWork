@@ -5789,6 +5789,37 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
     itemHash: "603d5f6bebb158c51dbefdf0181c220b62b02b72ad9aabb47d605ea2cd409ded",
   },
 }, {
+  allowlistId: "ebsi-5578421-q2-terminal-fidelity-v3",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5578421-q2-manual-v1",
+  parentManualRevisionAllowlistId: "ebsi-5578421-q2-manual-source-revision-v1",
+  entryId: "ebsi:5578421",
+  key: "1:2",
+  sourcePage: 1,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  solutionSourceHash: "95e7552f9264cec9649f648fe607bd12f9fe9f77bc9d06edb896971fcee34bf2",
+  parentQuestionHash: "b3d4ca3602e31cff626c4f461c2f4929adf8be4ee5ad0b31f9a73c789780cd30",
+  parentClassificationHash: "574ffd49fa7269acd9905b9c46a598eb35e54b6a627399a813f34c13b858d72a",
+  parentProblemArtifactPath: "problem-manual-second-revisions/" +
+    "v1-0001-0002-7d3f800b787723b7285a9db27c8db844c6eca6adc1800ffc53077778f858f79a.json",
+  parentProblemArtifactHash: "62c99b2fb3a42e93272f02384bdb8d70a6024b750585eaeb705b82f991beb5e6",
+  parentClassificationArtifactPath: "classification-manual-second-revisions/" +
+    "v1-0001-0002-e940744e8ffeeff61f780b2430a57678bbf7a300abbf016b6bc60cd8e12bdc33-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "70afb8308b45a4a3657d9f31fc2e415374cc6420a25ee73eeefb05b3cfe3bada",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-54b563c6ea850bce015a99000baa61b2b6ff193d11a7fe155649a8e7e4cc0ae8-" +
+    "bde8ae819bb2a2bd18172f2d43ff13be80e3ff9ff434dbdd50249277a7f31bb0.json",
+  failedTerminalArtifactHash: "72d090d9a40cc1afa2f6352c118a68c3c97043d967f3c7f6df4714ffea7b7cc0",
+  failedEffectiveCorpusHash: "54b563c6ea850bce015a99000baa61b2b6ff193d11a7fe155649a8e7e4cc0ae8",
+  failedInputHash: "bde8ae819bb2a2bd18172f2d43ff13be80e3ff9ff434dbdd50249277a7f31bb0",
+  failedTerminalInputHash: "040c1ce5a5a22fc74f89c756c4580be3182f071e1582f544661fd0c3c2bba997",
+  failedItemHash: "6137f44dcf17e396dffdee2bd4ccea7b4b947b47cd1dcf8dbbecf41b7d5a39d4",
+  failedEvidenceHash: "77902840446ec5a7349de76988dbbeb99ff36113528a473c140c6cb1cd13bd1c",
+  failedScopeEvidenceHash: "c5fec472cfa764b97fbe2255c5834762e1f497dc8f85c71b6b88372d6d8f560d",
+  failedScopeDecision: "reject",
+  expectedScopeDecision: "reject",
+}, {
   allowlistId: "ebsi-5578421-q44-terminal-fidelity-v1",
   parentKind: "manual",
   parentManualAllowlistId: "ebsi-5578421-q44-manual-v1",

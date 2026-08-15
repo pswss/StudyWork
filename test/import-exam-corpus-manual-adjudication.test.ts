@@ -1884,7 +1884,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 6)))
       .toBe("ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048");
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST))
-      .toBe("65331091e8b8c01f66f901265be96b921e2818eefc0f58e464d40b3dd370ab44");
+      .toBe("290143282e466becdc9d78e686e1d44a7ea028faca78a0d688c23ba23f501ddf");
     expect(terminalSpecs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -2272,7 +2272,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         rowHash: canonicalEvidenceHash(candidate),
       })),
     }).toEqual({
-      allowlistHash: "65331091e8b8c01f66f901265be96b921e2818eefc0f58e464d40b3dd370ab44",
+      allowlistHash: "290143282e466becdc9d78e686e1d44a7ea028faca78a0d688c23ba23f501ddf",
       prefixHash: "e4601a183669f046f4cc1f52cd30a860fe6347f96ffa41b30bdc8db2123630b3",
       rows: [{
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",
@@ -2284,6 +2284,11 @@ describe("exact allowlisted problem manual adjudication", () => {
         parentManualRevisionAllowlistId: "ebsi-5578421-q2-manual-source-revision-v1",
         failedEffectiveCorpusHash: "89315957b0a571851f1fe43ed52d9751e050c7009307b1ec8d90ba87047dea99",
         rowHash: "de557e5cba2fcef89f669b19d22433ddc661664e029c38bd9641e72d4f4fd131",
+      }, {
+        allowlistId: "ebsi-5578421-q2-terminal-fidelity-v3",
+        parentManualRevisionAllowlistId: "ebsi-5578421-q2-manual-source-revision-v1",
+        failedEffectiveCorpusHash: "54b563c6ea850bce015a99000baa61b2b6ff193d11a7fe155649a8e7e4cc0ae8",
+        rowHash: "1aaee45d457ebe0df76d7ab3b50e00eef93074ac13a586763de4276a449028fb",
       }],
     });
     expect(terminalSpecs[1].pinnedAdjudicationArtifact).toEqual({
@@ -2561,6 +2566,10 @@ describe("exact allowlisted problem manual adjudication", () => {
     const spec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
       candidate.allowlistId === "ebsi-5578421-q2-terminal-fidelity-v2"
     )!;
+    const currentSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === "ebsi-5578421-q2-terminal-fidelity-v3"
+    )!;
+    rmSync(join(root, currentSpec.failedTerminalPath));
     const matchingChildren = (stateRoot: string) => {
       const directory = join(stateRoot, "problem-terminal-fidelity-adjudications");
       return existsSync(directory)
@@ -2612,6 +2621,7 @@ describe("exact allowlisted problem manual adjudication", () => {
 
     const tampered = mkdtempSync(join(tmpdir(), "studywork-5578421-q2-terminal-v2-tampered-"));
     cpSync(q31Q32LiveState, tampered, { recursive: true });
+    rmSync(join(tampered, currentSpec.failedTerminalPath));
     const tamperedPath = join(tampered, spec.pinnedAdjudicationArtifact!.path);
     writeFileSync(tamperedPath, Buffer.concat([readFileSync(tamperedPath), Buffer.from(" ")]));
     const beforeTamper = stateSnapshot(tampered);
