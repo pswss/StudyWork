@@ -4,6 +4,7 @@ import {
   figureAlt,
   groupKoreanPassageQuestions,
   numberedQuestionText,
+  passageQuestionText,
   quizResultScore,
   quizShortcutChoice,
 } from "../web/src/pages/Quiz";
@@ -88,5 +89,37 @@ describe("quiz interaction polish", () => {
     const source = readFileSync("web/src/pages/Quiz.tsx", "utf8");
     expect(source).toContain('className="quiz-korean-passage-document"');
     expect(source).toContain('className="quiz-passage-question-list"');
+  });
+
+  it("업로드한 국어 기출도 공식 번호 범위의 지문을 한 번만 표시", () => {
+    const passage = "[16 ~ 18] 다음 글을 읽고 물음에 답하시오.\n\n공통 지문 첫 문단입니다.\n\n공통 지문 둘째 문단입니다.\n\n";
+    const question = (id: number, number: string, stem: string) => ({
+      id,
+      source: "uploaded",
+      src_file_id: 42,
+      printed_number: number,
+      book_number: number,
+      question: passage + stem,
+      mock_exam_job_id: null,
+      exam_section: null,
+      passage_group: null,
+      passage: null,
+    } as Question);
+    const items = [
+      question(16, "16", "윗글의 주제로 적절한 것은?"),
+      question(17, "17", "윗글의 내용과 일치하는 것은?"),
+      question(18, "18", "윗글을 바탕으로 추론한 것은?"),
+    ];
+
+    const blocks = groupKoreanPassageQuestions(items);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      kind: "passage",
+      passageGroup: "16~18번 공통 지문",
+      passage: passage.trim(),
+      items: [{ id: 16 }, { id: 17 }, { id: 18 }],
+    });
+    if (blocks[0].kind !== "passage") throw new Error("공통 지문으로 묶이지 않았습니다");
+    expect(passageQuestionText(blocks[0], items[1])).toBe("윗글의 내용과 일치하는 것은?");
   });
 });

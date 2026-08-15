@@ -245,41 +245,122 @@ export type QuizBankBlock =
   | {
     kind: "passage";
     key: string;
-    section: string;
+    section: string | null;
     passageGroup: string;
     passage: string;
+    questionPrefix: string | null;
     items: Question[];
   };
 
-/** 국어 모의고사는 공통 지문 하나와 연결 문항 전체를 같은 목록 단위로 보여 준다. */
+type UploadedPassageCandidate = {
+  kind: "uploaded-passage";
+  key: string;
+  first: number;
+  last: number;
+  items: Question[];
+};
+
+const uploadedPassageRange = (item: Question) => {
+  if (item.source !== "uploaded" || item.src_file_id === null) return null;
+  const match = /^\s*\[\s*0*(\d{1,2})\s*[~～∼–—-]\s*0*(\d{1,2})\s*\]/u.exec(item.question);
+  if (!match) return null;
+  const first = Number(match[1]);
+  const last = Number(match[2]);
+  const number = Number(questionNumber(item));
+  return first < last && number >= first && number <= last ? { first, last } : null;
+};
+
+function commonPassagePrefix(items: readonly Question[]): string | null {
+  if (items.length < 2) return null;
+  let prefix = items[0].question;
+  for (const item of items.slice(1)) {
+    let length = 0;
+    const limit = Math.min(prefix.length, item.question.length);
+    while (length < limit && prefix[length] === item.question[length]) length += 1;
+    prefix = prefix.slice(0, length);
+  }
+  const end = prefix.lastIndexOf("\n\n");
+  if (end < 0) return null;
+  const shared = prefix.slice(0, end + 2);
+  return items.every(item => item.question.slice(shared.length).trim()) ? shared : null;
+}
+
+export function passageQuestionText(
+  block: Extract<QuizBankBlock, { kind: "passage" }>,
+  item: Question,
+): string {
+  const question = block.questionPrefix && item.question.startsWith(block.questionPrefix)
+    ? item.question.slice(block.questionPrefix.length).trim()
+    : item.question;
+  return questionTextWithoutNumber({ ...item, question });
+}
+
+/** 국어 모의고사와 업로드 기출은 공통 지문과 연결 문항 전체를 하나로 보여 준다. */
 export function groupKoreanPassageQuestions(items: readonly Question[]): QuizBankBlock[] {
-  const blocks: QuizBankBlock[] = [];
+  const blocks: Array<QuizBankBlock | UploadedPassageCandidate> = [];
   const passages = new Map<string, Extract<QuizBankBlock, { kind: "passage" }>>();
+  const uploadedPassages = new Map<string, UploadedPassageCandidate>();
   for (const item of items) {
     const koreanPassage = item.mock_exam_job_id !== null && item.passage_group !== null &&
       item.passage?.trim() && KOREAN_MOCK_EXAM_SECTIONS.has(item.exam_section ?? "");
-    if (!koreanPassage) {
+    if (koreanPassage) {
+      const key = `passage:${item.mock_exam_job_id}:${item.passage_group}`;
+      const existing = passages.get(key);
+      if (existing) {
+        existing.items.push(item);
+        continue;
+      }
+      const block: Extract<QuizBankBlock, { kind: "passage" }> = {
+        kind: "passage",
+        key,
+        section: item.exam_section!,
+        passageGroup: item.passage_group!,
+        passage: item.passage!,
+        questionPrefix: null,
+        items: [item],
+      };
+      passages.set(key, block);
+      blocks.push(block);
+      continue;
+    }
+
+    const range = uploadedPassageRange(item);
+    if (!range) {
       blocks.push({ kind: "question", key: `question:${item.id}`, item });
       continue;
     }
-    const key = `passage:${item.mock_exam_job_id}:${item.passage_group}`;
-    const existing = passages.get(key);
+    const key = `uploaded-passage:${item.src_file_id}:${range.first}-${range.last}`;
+    const existing = uploadedPassages.get(key);
     if (existing) {
       existing.items.push(item);
       continue;
     }
-    const block: Extract<QuizBankBlock, { kind: "passage" }> = {
-      kind: "passage",
+    const candidate: UploadedPassageCandidate = {
+      kind: "uploaded-passage",
       key,
-      section: item.exam_section!,
-      passageGroup: item.passage_group!,
-      passage: item.passage!,
+      ...range,
       items: [item],
     };
-    passages.set(key, block);
-    blocks.push(block);
+    uploadedPassages.set(key, candidate);
+    blocks.push(candidate);
   }
-  return blocks;
+
+  return blocks.flatMap(block => {
+    if (block.kind !== "uploaded-passage") return [block];
+    const questionPrefix = commonPassagePrefix(block.items);
+    if (!questionPrefix) {
+      return block.items.map(item => ({ kind: "question" as const, key: `question:${item.id}`, item }));
+    }
+    return [{
+      kind: "passage" as const,
+      key: block.key,
+      section: null,
+      passageGroup: `${block.first}~${block.last}번 공통 지문`,
+      passage: questionPrefix.trim(),
+      questionPrefix,
+      items: block.items,
+    }];
+  });
 }
 
 // ── 인쇄 헬퍼 ──────────────────────────────────────────────────────────────────
@@ -1672,7 +1753,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                             <span className="q-chip qtype">{t("problems.mock.passage")}</span>
                             <span className="quiz-passage-set-title">{block.passageGroup}</span>
                             <span className="quiz-passage-set-meta">
-                              {block.section} · {range} · {problemCountLabel(block.items.length, t, formatNumber)}
+                              {block.section ? `${block.section} · ` : ""}{range} · {problemCountLabel(block.items.length, t, formatNumber)}
                             </span>
                           </button>
                         </div>
@@ -1680,7 +1761,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                           {passageOpen && (<>
                             <section className="quiz-korean-passage-document" aria-label={t("problems.mock.passage")}>
                               <div className="quiz-korean-passage-heading">
-                                <span>{block.section}</span>
+                                <span>{block.section ?? block.passageGroup}</span>
                                 <strong>{range}</strong>
                               </div>
                               <Md text={block.passage} />
@@ -1715,7 +1796,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                                       onClick={() => doDelete(q.id)}
                                     >✕</button>
                                   </div>
-                                  <Md className="quiz-passage-question-text" text={questionTextWithoutNumber(q)} />
+                                  <Md className="quiz-passage-question-text" text={passageQuestionText(block, q)} />
                                   {q.choices && (
                                     <ol className="quiz-passage-choices">
                                       {q.choices.map((choice, index) => <li key={index}><MdInline text={choice} /></li>)}
