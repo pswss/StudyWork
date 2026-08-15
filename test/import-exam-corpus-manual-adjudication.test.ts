@@ -1891,6 +1891,59 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 120_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "routes the persisted Q21 mismatch recovery into its manual chain",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-5578421-q21-recovery-manual-"));
+    cpSync(q31Q32LiveState, root, { recursive: true });
+    const frozenQ21Classification = JSON.parse(readFileSync(join(
+      q31Q32LiveState,
+      "classification-manual-adjudications",
+      readdirSync(join(q31Q32LiveState, "classification-manual-adjudications"))
+        .find((name) => name.startsWith("v1-0008-0021-"))!
+    ), "utf8")).items[0];
+    removeManualArtifacts(root, ["8:21"]);
+    removeManualRevisionArtifacts(root, ["8:21"]);
+    for (const directory of ["semantic-choice-checks", "answer-audit", "answer-attestation"]) {
+      rmSync(join(root, directory), { recursive: true, force: true });
+    }
+    const input = q27FixtureInputs(root);
+    const q21Calls: string[] = [];
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      if (request.schema?.name === "studywork_exam_corpus_classification") {
+        const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
+          key: string;
+          question: string;
+        }>;
+        expect(items).toHaveLength(1);
+        const item = items[0];
+        if (item.key !== "8:21") throw new Error(`seeded post-Q21 boundary: ${item.key}`);
+        q21Calls.push(item.key);
+        expect(item.question).toContain("*곱새담: 풀 짚으로 만든 담.");
+        expect(item.question).not.toContain("*곱새담: 짚 풀로 만든 담.");
+        return { text: JSON.stringify([frozenQ21Classification]) };
+      }
+      throw new Error(`seeded post-Q21 boundary: ${request.schema?.name ?? "unknown"}`);
+    });
+    await expect(repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions
+    )).rejects.toThrow("seeded post-Q21 boundary");
+    expect(q21Calls).toEqual(["8:21", "8:21"]);
+    expect(readdirSync(join(root, "problem-manual-adjudications"))
+      .filter((name) => name.startsWith("v1-0008-0021-"))).toHaveLength(1);
+    expect(readdirSync(join(root, "classification-manual-adjudications"))
+      .filter((name) => name.startsWith("v1-0008-0021-"))).toHaveLength(1);
+    expect(readdirSync(join(root, "problem-manual-revisions"))
+      .filter((name) => name.startsWith("v1-0008-0021-"))).toHaveLength(1);
+    expect(readdirSync(join(root, "classification-manual-revisions"))
+      .filter((name) => name.startsWith("v1-0008-0021-"))).toHaveLength(1);
+  }, 120_000);
+
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
     "preflights and replays the 5578421 Q44-Q45 manual pair byte-stably",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-5578421-q44-q45-manual-"));

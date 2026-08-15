@@ -23901,12 +23901,13 @@ export async function repairAndAuditOfficialAnswers(
             current.question.page!,
             problem.sha256
           );
+          const expectedManualFailedStatus = exactManualSpec?.failedStatus ?? "mismatch";
           if (
             trigger.kind === "terminal" && recovery && !recovery.manualAdjudication &&
-            exactManualSpec?.failedStatus === "exact" &&
+            exactManualSpec &&
             canonicalEvidenceHash(current.question) === exactManualSpec.failedQuestionHash &&
             canonicalEvidenceHash(current.classification) === exactManualSpec.failedClassificationHash &&
-            current.classification.transcription_status === "exact"
+            current.classification.transcription_status === expectedManualFailedStatus
           ) {
             exactRecoveryManualCurrents.push({ key, current, repair: existing, recovery });
             continue;
