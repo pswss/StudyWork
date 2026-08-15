@@ -664,6 +664,28 @@ function q19Q21ExactRecoveryParent5578421(stateDir: string, number: "19" | "20" 
   );
 }
 
+function q44Q45ExactRecoveryParent5578421(stateDir: string, number: "44" | "45") {
+  const pins = {
+    "44": [
+      "1996e4e2840643bb3f669e15a6a91c220ac3024db1da762ab750350f9876c5d6",
+      "2ea5e9ad6ca8af868b14d280ad39a58a67d442acd6c392965e65642de0c63331",
+      "e0a4da2358b622c0b6ba44bb5b6a7f3c12773d4c5b63cf0b06ae9cd69413235e",
+    ],
+    "45": [
+      "26da0b021ebf360393ac84c67d203c4fc037ce66a7817803a87359a1ca7105cf",
+      "d0e3f2e1a275b55661d0b4f8e1e38d9738f96708c7d90fd29dbdf2c09f845819",
+      "509282a7d921720fc7c5507606bf80b03113c096aa5cadf3eaa59adfd8fecc33",
+    ],
+  } as const;
+  const [problemBasis, classificationBasis, parentHash] = pins[number];
+  return exactRecoveryParent(
+    stateDir,
+    `problem-recoveries/v2-0016-00${number}-${problemBasis}.json`,
+    `classification-recoveries/v2-0016-00${number}-${classificationBasis}-7bb7cb863c8c4855.json`,
+    parentHash
+  );
+}
+
 const Q43_CORRECTED_SOLUTION =
   "(가)에서는 ‘여기 하나의 상심한 사람이 있다.’와 ‘여기 하나의 굳세게 살아온 인생이 있다.’와 " +
   "같이 변주함으로써 주제 의식을 강조하고 있고, (나)에서는 ‘더 추워야겠다’와 ‘한껏 " +
@@ -1356,11 +1378,13 @@ describe("exact allowlisted problem manual adjudication", () => {
     const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
       spec.entryId === "ebsi:5578421" && ["12:31", "12:32"].includes(spec.key)
     );
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(46);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(48);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 36)))
       .toBe("e260bb5cd9c24507cb1c434e19b03a63961ef07a29392b28fc49f6897040dd64");
-    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
+      .toBe("66ff6014e0969fa9a2f13b53c9157eb8a5ca945097cba7ee1d6416cf93e0cc8d");
     expect(specs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -1646,6 +1670,136 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(calls).toEqual(beforeReplay);
     expect(stateSnapshot(root)).toEqual(stable);
   }, 180_000);
+
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "pins and applies the source-exact 5578421 Q44-Q45 shared passage",
+    () => {
+    const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
+      spec.entryId === "ebsi:5578421" && ["16:44", "16:45"].includes(spec.key)
+    );
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(48);
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
+      .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
+      .toBe("66ff6014e0969fa9a2f13b53c9157eb8a5ca945097cba7ee1d6416cf93e0cc8d");
+    expect(specs.map((spec) => ({
+      key: spec.key,
+      rowHash: canonicalEvidenceHash(spec),
+      replacementsHash: canonicalEvidenceHash(spec.replacements),
+      parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash,
+      failedStatus: spec.failedStatus,
+    }))).toEqual([{
+      key: "16:44",
+      rowHash: "a218df41070334840e83c6ca5a7bc689716ba892102764a32e90249c1ee95e4c",
+      replacementsHash: "2f54cb0fb33d67b812ddfc834849a52389fc7671babd287ae22cb874e9d5418c",
+      parentRecoveryEvidenceHash: "e0a4da2358b622c0b6ba44bb5b6a7f3c12773d4c5b63cf0b06ae9cd69413235e",
+      failedStatus: undefined,
+    }, {
+      key: "16:45",
+      rowHash: "1c6ba6d0191e25b6991175ebf57c6dfb07f650c7969e1c335ba4a361549a8bb5",
+      replacementsHash: "092952d05ee949af0b029d4ff7fd011edeeda8276e31cc0c04081f5a67d4f7cf",
+      parentRecoveryEvidenceHash: "509282a7d921720fc7c5507606bf80b03113c096aa5cadf3eaa59adfd8fecc33",
+      failedStatus: "exact",
+    }]);
+    const rows = (["44", "45"] as const).map((number) =>
+      q44Q45ExactRecoveryParent5578421(q31Q32LiveState, number)
+    );
+    const corrected = rows.map((row, index) => applyAllowlistedProblemManualCorrection(
+      "ebsi:5578421", specs[index].sourceHash, row.failed.question
+    ));
+    expect(corrected.map((item) => canonicalEvidenceHash(item))).toEqual([
+      "699e118886163261c7dfa82ae3b664c44c4b2b4de73cfb304df740161e645342",
+      "24999c59ff5e789d6193f2635937d9d56c380cda4bc9786fb327a8d1f8536b20",
+    ]);
+    expect(corrected.map((item) => canonicalEvidenceHash(item.question))).toEqual([
+      "ec7d75199b4d43492926a8de3c07aee17373ad5b5935014c50fd476288b4ca7e",
+      "9a350e5e81ac881db7058b1b6b08871229baa52644176ec0da00ad4cd8594d3d",
+    ]);
+    const shared44 = corrected[0].question.slice(
+      0,
+      corrected[0].question.indexOf("<보기>를 바탕으로 (가)의 ㉠과 (나)의 ㉡을 이해한")
+    );
+    const shared45 = corrected[1].question.slice(
+      0,
+      corrected[1].question.indexOf("45. <보기>를 바탕으로 아래의 탐구 과제를 수행한")
+    );
+    expect(shared44).toBe(shared45);
+    expect(shared44).toContain("※ <보기>를 읽고 44번과 45번 두 물음에 답하시오.");
+    expect(shared44).toContain("아아, 너는 산(山)ㅅ새처럼 날러갔구나!");
+    expect(shared44).toContain("단절과 소통, 소멸과 생성의 이미지를");
+    expect(shared44).not.toContain("파닥거린다");
+    expect(corrected[1].figure).toBe(true);
+    expect(corrected[1].figure_description).toContain("C의 두 판단 근거는 하나의 선택지 ⑤로 묶여 있다.");
+  });
+
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "preflights and replays the 5578421 Q44-Q45 manual pair byte-stably",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-5578421-q44-q45-manual-"));
+    cpSync(q31Q32LiveState, root, { recursive: true });
+    removeManualArtifacts(root, ["16:44", "16:45"]);
+    const input = q27FixtureInputs(root);
+    const rows = (["44", "45"] as const).map((number) =>
+      q44Q45ExactRecoveryParent5578421(root, number)
+    );
+    const calls: string[] = [];
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      expect(request.schema?.name).toBe("studywork_exam_corpus_classification");
+      const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
+        key: string;
+        question: string;
+        figure_description: string | null;
+      }>;
+      expect(items).toHaveLength(1);
+      const item = items[0];
+      calls.push(item.key);
+      expect(item.question).toContain("[43 ~ 45] 다음 글을 읽고 물음에 답하시오.");
+      expect(item.question).toContain("※ <보기>를 읽고 44번과 45번 두 물음에 답하시오.");
+      expect(item.question).toContain("아아, 너는 산(山)ㅅ새처럼 날러갔구나!");
+      expect(item.question).not.toContain("소멸과 재생의 이미지를");
+      if (item.key === "16:45") {
+        expect(item.figure_description).toContain("C의 두 판단 근거는 하나의 선택지 ⑤로 묶여 있다.");
+      }
+      return { text: JSON.stringify([{
+        key: item.key,
+        decision: "accept",
+        canonical_subject: "korean_literature",
+        curriculum_course: "문학",
+        domain: "현대시의 소재와 표현 효과",
+        achievement_codes: ["12문학01-03"],
+        confidence: 0.99,
+        reason_codes: ["SOURCE_EXACT", "IN_SCOPE_KOREAN_LITERATURE"],
+        transcription_status: "exact",
+        transcription_evidence: `공식 15~16쪽의 ${item.key} 공통 시·보기·발문·선지가 일치한다.`,
+      }]) };
+    });
+    const run = (row: ReturnType<typeof q44Q45ExactRecoveryParent5578421>) =>
+      adjudicateProblemManual(input.entry, input.problem, root, row.failed, row.parent);
+    const completed = [];
+    for (const row of rows) completed.push(await run(row));
+    expect(calls).toEqual(["16:44", "16:45"]);
+    expect(completed.map((item) => canonicalEvidenceHash(item.classified.question))).toEqual([
+      "699e118886163261c7dfa82ae3b664c44c4b2b4de73cfb304df740161e645342",
+      "24999c59ff5e789d6193f2635937d9d56c380cda4bc9786fb327a8d1f8536b20",
+    ]);
+    const stable = stateSnapshot(root);
+    const beforeReplay = [...calls];
+    for (const row of rows) await run(row);
+    expect(calls).toEqual(beforeReplay);
+    expect(stateSnapshot(root)).toEqual(stable);
+
+    removeManualArtifacts(root, ["16:44"]);
+    const q45ProblemName = readdirSync(join(root, "problem-manual-adjudications"))
+      .find((name) => name.startsWith("v1-0016-0045-"))!;
+    const q45ProblemPath = join(root, "problem-manual-adjudications", q45ProblemName);
+    const q45ProblemBytes = readFileSync(q45ProblemPath);
+    writeFileSync(q45ProblemPath, Buffer.concat([q45ProblemBytes, Buffer.from(" ")]));
+    const beforeTamper = stateSnapshot(root);
+    providerMock.complete.mockClear();
+    await expect(run(rows[0])).rejects.toThrow(/manual adjudication hash가 다릅니다/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root)).toEqual(beforeTamper);
+  }, 240_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
     "preflights and crash-resumes the 5578421 Q31-Q32 manual pair byte-stably",
@@ -2329,8 +2483,10 @@ describe("exact allowlisted problem manual adjudication", () => {
       .toBe("0b5d7d19255cd91566a55b289b11f8a9460a3014a06f255f9a266ebd62980cf9");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 36)))
       .toBe("e260bb5cd9c24507cb1c434e19b03a63961ef07a29392b28fc49f6897040dd64");
-    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
+      .toBe("66ff6014e0969fa9a2f13b53c9157eb8a5ca945097cba7ee1d6416cf93e0cc8d");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 18)))
       .toBe("463fceef246487e1ec791ffb0489048f874cd5944d946f9c6d819f3fd3c76eda");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST[11]))

@@ -5967,6 +5967,177 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_literature",
   },
+  {
+    allowlistId: "ebsi-5578421-q44-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "16:44",
+    sourcePage: 16,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "e0a4da2358b622c0b6ba44bb5b6a7f3c12773d4c5b63cf0b06ae9cd69413235e",
+    dpi: 600,
+    failedQuestionHash: "ff6b283ffa6c1792ea437153fe6f0a605cca448c606db0120622c0d528c209a5",
+    failedClassificationHash: "3573346d2a53968b8c81fd4e219c9100c43af8bff7cab18fa0a42b55de4668c9",
+    failedClassificationEvidenceHash: "a9e7f91a9ddd1cc6cc548e7d654bf49e04f6cda0e5f11ed572de77afb236d128",
+    views: [
+      { sourcePage: 15, label: "p15 right Q43-Q45 shared poems start", rect: [0.50, 0.62, 0.95, 0.99] },
+      { sourcePage: 16, label: "p16 Q43-Q45 poems, shared view, Q44 and Q45", rect: [0.07, 0.05, 0.95, 0.98] },
+    ],
+    requiredTokens: [
+      "[43 ~ 45] 다음 글을 읽고 물음에 답하시오.", "㉠ 유리(琉璃)에 차고 슬픈 것이 어린거린다.",
+      "길들은 양 언 날개를 파다거린다.", "외로운 황홀한 심사이어니",
+      "아아, 너는 산(山)ㅅ새처럼 날러갔구나!", "｢ 유리창(琉璃窓)1 ｣",
+      "구름 몇 점 별 몇 개 뛰어들기도 하는,", "푸른 날개를 마악 펴들고 있다",
+      "｢ 성(聖) 느티나무 ｣", "※ <보기>를 읽고 44번과 45번 두 물음에 답하시오.",
+      "단절과 소통, 소멸과 생성의 이미지를", "<보기>를 바탕으로 (가)의 ㉠과 (나)의 ㉡을 이해한",
+    ],
+    replacements: [
+      {
+        field: "question",
+        from: "다음 글과 <보기>를 읽고 물음에 답하시오.",
+        to: "[43 ~ 45] 다음 글을 읽고 물음에 답하시오.",
+        count: 1,
+      },
+      { field: "question", from: "유리(琉璃)에 차고", to: "유리(琉璃)에 차고", count: 1 },
+      {
+        field: "question",
+        from: "길들은 양 언 날개를 파닥거린다.",
+        to: "길들은 양 언 날개를 파다거린다.",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "외로운 황홀한 심사이거니",
+        to: "외로운 황홀한 심사이어니",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "- 정지용, 「유리창(琉璃窓)1」 -",
+        to: "- 정지용, ｢ 유리창(琉璃窓)1 ｣ -",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "구름 몇 점 별 몇 개 띄어놓기도 하는,",
+        to: "구름 몇 점 별 몇 개 뛰어들기도 하는,",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "푸른 날개를 마악 퍼들고 있다",
+        to: "푸른 날개를 마악 펴들고 있다",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "- 나희덕, 「성(聖) 느티나무」 -",
+        to: "- 나희덕, ｢ 성(聖) 느티나무 ｣ -",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "\n\n<보기>\n소재가 지닌 속성은",
+        to: "\n\n※ <보기>를 읽고 44번과 45번 두 물음에 답하시오.\n\n<보기>\n소재가 지닌 속성은",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "소멸과 재생의 이미지를",
+        to: "소멸과 생성의 이미지를",
+        count: 1,
+      },
+    ],
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  },
+  {
+    allowlistId: "ebsi-5578421-q45-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "16:45",
+    sourcePage: 16,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "509282a7d921720fc7c5507606bf80b03113c096aa5cadf3eaa59adfd8fecc33",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "b6e1245b5037b8529131ccbf3777e7d69feae3bb82517ad517266b66daf8cd36",
+    failedClassificationHash: "4349e9471740e2588eda36e9648f7ce97ff02014600dd918fd0494eea72d6147",
+    failedClassificationEvidenceHash: "87e2d5328399bb5ce1b1047e9b97e43a1b7a53726315c45054f1a8ae5b450d33",
+    views: [
+      { sourcePage: 15, label: "p15 right Q43-Q45 shared poems start", rect: [0.50, 0.62, 0.95, 0.99] },
+      { sourcePage: 16, label: "p16 Q43-Q45 poems, shared view, Q44 and Q45", rect: [0.07, 0.05, 0.95, 0.98] },
+    ],
+    requiredTokens: [
+      "[43 ~ 45] 다음 글을 읽고 물음에 답하시오.", "㉠ 유리(琉璃)에 차고 슬픈 것이 어린거린다.",
+      "길들은 양 언 날개를 파다거린다.", "아아, 너는 산(山)ㅅ새처럼 날러갔구나!",
+      "｢ 유리창(琉璃窓)1 ｣", "제 ㉡ 아궁이에서 자꾸만 잎사귀를 꺼낸다",
+      "구름 몇 점 별 몇 개 뛰어들기도 하는,", "푸른 날개를 마악 펴들고 있다",
+      "｢ 성(聖) 느티나무 ｣", "※ <보기>를 읽고 44번과 45번 두 물음에 답하시오.",
+      "단절과 소통, 소멸과 생성의 이미지를", "[탐구 과제]", "[탐구 결과]",
+      "C의 두 판단 근거는 하나의 선택지 ⑤로 묶여 있다.",
+    ],
+    replacements: [
+      {
+        field: "question",
+        from: "[43~45] 다음 글을 읽고 물음에 답하시오.",
+        to: "[43 ~ 45] 다음 글을 읽고 물음에 답하시오.",
+        count: 1,
+      },
+      { field: "question", from: "유리(琉璃)에 차고", to: "유리(琉璃)에 차고", count: 1 },
+      {
+        field: "question",
+        from: "차고 슬픈 것이 어른거린다.",
+        to: "차고 슬픈 것이 어린거린다.",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "길들은 양 언 날개를 파닥거린다.",
+        to: "길들은 양 언 날개를 파다거린다.",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "아아, 늬는 산(山)새처럼 날러갔구나!",
+        to: "아아, 너는 산(山)ㅅ새처럼 날러갔구나!",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "- 정지용, 「유리창(琉璃窓)1」 -",
+        to: "- 정지용, ｢ 유리창(琉璃窓)1 ｣ -",
+        count: 1,
+      },
+      { field: "question", from: "제 ㉡아궁이에서", to: "제 ㉡ 아궁이에서", count: 1 },
+      {
+        field: "question",
+        from: "구름 몇 점 별 몇 개 띄어놓기도 하는,",
+        to: "구름 몇 점 별 몇 개 뛰어들기도 하는,",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "- 나희덕, 「성(聖) 느티나무」 -",
+        to: "- 나희덕, ｢ 성(聖) 느티나무 ｣ -",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "\n\n<보기>\n소재가 지닌 속성은",
+        to: "\n\n※ <보기>를 읽고 44번과 45번 두 물음에 답하시오.\n\n<보기>\n소재가 지닌 속성은",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "소멸과 재생의 이미지를",
+        to: "소멸과 생성의 이미지를",
+        count: 1,
+      },
+    ],
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  },
 ] as const;
 
 export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
@@ -17048,6 +17219,10 @@ function is5578421Q19Q20Q21ManualBatchSpec(spec: ProblemManualAdjudicationSpec):
   return spec.entryId === "ebsi:5578421" && ["8:19", "8:20", "8:21"].includes(spec.key);
 }
 
+function is5578421Q44Q45ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5578421" && ["16:44", "16:45"].includes(spec.key);
+}
+
 function isQ37ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5525982" && spec.key === "14:37";
 }
@@ -17403,7 +17578,9 @@ async function preflightProblemManualBatch(
     }
     return;
   }
-  const predicate = is5578421Q19Q20Q21ManualBatchSpec(requestedSpec)
+  const predicate = is5578421Q44Q45ManualBatchSpec(requestedSpec)
+    ? is5578421Q44Q45ManualBatchSpec
+    : is5578421Q19Q20Q21ManualBatchSpec(requestedSpec)
     ? is5578421Q19Q20Q21ManualBatchSpec
     : is5578421Q6Q7ManualBatchSpec(requestedSpec)
     ? is5578421Q6Q7ManualBatchSpec
@@ -22825,6 +23002,10 @@ export async function repairAndAuditOfficialAnswers(
       predicate: is5578421Q19Q20Q21ManualBatchSpec,
       signal: /^v\d+-0008-00(?:19|20|21)(?:-|\.)/u,
       label: "Q19-Q21",
+    }, {
+      predicate: is5578421Q44Q45ManualBatchSpec,
+      signal: /^v\d+-0016-004[45](?:-|\.)/u,
+      label: "Q44-Q45",
     }, {
       predicate: is5578421Q31Q32ManualBatchSpec,
       signal: /^v\d+-0012-003[12](?:-|\.)/u,
