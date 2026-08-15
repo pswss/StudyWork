@@ -1729,9 +1729,9 @@ describe("exact allowlisted problem manual adjudication", () => {
       replacementHash: canonicalEvidenceHash(sourceSpec.replacement),
       triggerHash: canonicalEvidenceHash(sourceSpec.terminalTrigger),
     }).toEqual({
-      length: 4,
+      length: 5,
       prefixHash: "05d392d62117f4864b0a5964466970815e167655b12c69817909cdd43e006e1f",
-      allowlistHash: "ffc789e8918c8a5603c82d08faa7e2adefedba8aa15c5304f24a6ef8dd520922",
+      allowlistHash: "d23619465e340050bcf9598e78efc72332f143ff9cb50576f2dd87181296dc29",
       rowHash: "4c70814866ee7bcff53e2bb652f35158d4eada24cc14699fbcac2af4dc38a4a1",
       replacementHash: "b7c5384c744504673b8c9b0d28b3f4df5d88485c69d8e2ef192873da8773639b",
       triggerHash: "ccf2ee80611b4c2fd857538c26681d010982a8c421248b81337fc5312690b878",
@@ -1858,13 +1858,45 @@ describe("exact allowlisted problem manual adjudication", () => {
       "265a789249841b8bda6cdb5e992b23f67928397d57c8604523efacf6b00f14aa",
       "8438e3ea2f766d535d473002ff045b7724a5b29a0fe81cb249a820f40611ae5f",
     ]);
+    const sourceRevisionSpec = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.find((spec) =>
+      spec.allowlistId === "ebsi-5578421-q45-manual-source-revision-v1"
+    )!;
+    expect({
+      length: PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.length,
+      prefixHash: canonicalEvidenceHash(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.slice(0, 4)),
+      allowlistHash: canonicalEvidenceHash(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST),
+      rowHash: canonicalEvidenceHash(sourceRevisionSpec),
+      replacementsHash: canonicalEvidenceHash([
+        sourceRevisionSpec.replacement,
+        ...(sourceRevisionSpec.additionalReplacements ?? []),
+      ]),
+    }).toEqual({
+      length: 5,
+      prefixHash: "ffc789e8918c8a5603c82d08faa7e2adefedba8aa15c5304f24a6ef8dd520922",
+      allowlistHash: "d23619465e340050bcf9598e78efc72332f143ff9cb50576f2dd87181296dc29",
+      rowHash: "d1838baa7e6f533817722fca9207e3ca354e28c72b0474691cd17d950dbeeaa3",
+      replacementsHash: "c7d8df99440c1308c253b783a315c35360b97413e00913ef6658bdd74cec11ca",
+    });
+    const sourceRevised45 = applyAllowlistedProblemManualSourceRevision(
+      "ebsi:5578421",
+      sourceRevisionSpec.sourceHash,
+      sourceRevisionSpec.parentRevisionAllowlistId,
+      revised[1],
+    );
+    expect(canonicalEvidenceHash(sourceRevised45))
+      .toBe("06bc483a24e118a3b41c2da971bffeef560fb491c5b9625928dfce214b9b4a02");
+    expect(sourceRevised45.choices?.[2]).toContain("B-(가):");
+    expect(sourceRevised45.choices?.[2]).toContain("B-(나):");
+    expect(sourceRevised45.choices?.[3]).toContain("④ C-(가):");
+    expect(sourceRevised45.choices?.[4]).toContain("⑤ C-(나):");
+    expect(sourceRevised45.answer).toBe(sourceRevised45.choices?.[4]);
     const shared44 = revised[0].question.slice(
       0,
       revised[0].question.indexOf("<보기>를 바탕으로 (가)의 ㉠과 (나)의 ㉡을 이해한")
     );
-    const shared45 = revised[1].question.slice(
+    const shared45 = sourceRevised45.question.slice(
       0,
-      revised[1].question.indexOf("45. <보기>를 바탕으로 아래의 탐구 과제를 수행한")
+      sourceRevised45.question.indexOf("45. <보기>를 바탕으로 아래의 탐구 과제를 수행한")
     );
     expect(shared44).toBe(shared45);
     expect(shared44).toContain("※ <보기>를 읽고 44번과 45번 두 물음에 답하시오.");
@@ -1876,27 +1908,36 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(shared44).not.toContain("박힌다");
     expect(shared44).toContain("단절과 소통, 소멸과 생성의 이미지를");
     expect(shared44).not.toContain("파닥거린다");
-    expect(revised[1].figure).toBe(true);
-    expect(revised[1].figure_description).toContain("C의 두 판단 근거는 하나의 선택지 ⑤로 묶여 있다.");
+    expect(sourceRevised45.figure).toBe(true);
+    expect(sourceRevised45.figure_description).toContain("B-(가)와 B-(나)의 두 판단 근거는 선택지 ③ 하나");
+    expect(sourceRevised45.figure_description).toContain("C-(가)는 ④, C-(나)는 ⑤");
     const terminalSpecs = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.filter((spec) =>
       spec.entryId === "ebsi:5578421" && ["16:44", "16:45"].includes(spec.key)
     );
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 6)))
       .toBe("ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048");
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST))
-      .toBe("c67447276d0a1abcdea7be41320ee70cbe9050874b155079ed0333a3d7acffa6");
+      .toBe("08473a4ad4045d695f7ceca42742e11d81e46674569c3da910cb0d642afac17c");
     expect(terminalSpecs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
       failedItemHash: spec.failedItemHash,
     }))).toEqual([{
       key: "16:44",
-      rowHash: "e3957f21bb6ba35eddd413b06fdec1716058231e76169f2f94937d9ae989895a",
+      rowHash: "2705abdd799860ed0090f6d67e89303ccafb9c71e7703d2b53244c19ab1c368d",
       failedItemHash: "a18c117c38f96083dc886373293ea629f095e342c625e013f47f4a2eab4d5375",
     }, {
       key: "16:45",
-      rowHash: "2c18e317f7612d30acbaaf06cc368e707bce348cf5c8a000d31a09020681b7fa",
+      rowHash: "caa0e97bd439b8301ae93734be8f5f75d5741914b09adaf8d12111be9d1b5454",
       failedItemHash: "37573001f51bfc1b0ce117fe754972b880cbd7c08d99dee865296c6159faf460",
+    }, {
+      key: "16:44",
+      rowHash: "6a2989c239c4cb690595afa06003cd2515a0d898ce6517f2a9582cf84848afb5",
+      failedItemHash: "93082f2c676903c59ca65eaee755c626a0aefd3915c91443c60d61049c127c9d",
+    }, {
+      key: "16:45",
+      rowHash: "869d075a6618382044dbb6cb381c6c38befd6fb7b9a3462c8c38a2cb3498e40c",
+      failedItemHash: "047c2f80427da0e73855debf865eff4c36e345e865a1b8f7925923d04785d341",
     }]);
     expect(terminalSpecs[0].policyRevision).toMatchObject({
       allowlistId: "ebsi-5578421-q44-terminal-source-policy-v1",
@@ -1906,7 +1947,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       expectedItem: expect.objectContaining({ key: "16:44", status: "exact", scopeDecision: "accept" }),
     });
     expect(canonicalEvidenceHash(terminalSpecs[0].policyRevision))
-      .toBe("5086fa2581e0eb8343b0378be2b3d0287cf6af1118c136ee88f2c53253851537");
+      .toBe("0445f336e65a41b09d7c93ab6ca2cbaa7f5ced3ae736394f7d9b34ac92f9aa2e");
     expect(terminalSpecs[1].policyRevision).toMatchObject({
       allowlistId: "ebsi-5578421-q45-terminal-source-policy-v1",
       kind: "source",
@@ -1915,18 +1956,19 @@ describe("exact allowlisted problem manual adjudication", () => {
       expectedItem: expect.objectContaining({ key: "16:45", status: "exact", scopeDecision: "accept" }),
     });
     expect(canonicalEvidenceHash(terminalSpecs[1].policyRevision))
-      .toBe("8843e5a2fc6c81c5c75c34bdd589be10e13bcf0b947eec06c4916092fdd40c72");
+      .toBe("715e0b61ec3bde057b374c943adb63d28161b327be8352695fafb98e682e2c05");
+    expect(canonicalEvidenceHash(terminalSpecs[2].policyRevision))
+      .toBe("8288a5aaf2b1549e072d9c298b94aed49faff5e5bb9fe9f749ed88bd9e1de596");
   });
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
-    "source-revises the persisted Q44-Q45 unverifiable children before the next boundary",
+    "replays accumulated Q44-Q45 source policies and rejects historical tamper",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-5578421-q44-terminal-source-policy-"));
     cpSync(q31Q32LiveState, root, { recursive: true });
     for (const directory of ["semantic-choice-checks", "answer-audit", "answer-attestation"]) {
       rmSync(join(root, directory), { recursive: true, force: true });
     }
-    rmSync(join(root, "problem-terminal-fidelity-policy-revisions"), { recursive: true, force: true });
     const input = q27FixtureInputs(root);
     const terminalCalls: string[] = [];
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
@@ -1944,21 +1986,23 @@ describe("exact allowlisted problem manual adjudication", () => {
       root,
       input.classified,
       input.solutions
-    )).rejects.toThrow(/seeded next importer boundary|8:21 problem recovery는 한 번만 허용됩니다/u);
+    )).rejects.toThrow(/seeded next importer boundary|1:2 problem recovery는 한 번만 허용됩니다/u);
     expect(terminalCalls).toEqual([]);
     const policyFiles = readdirSync(join(root, "problem-terminal-fidelity-policy-revisions"))
       .filter((name) => /^v1-0016-004[45]-/u.test(name));
-    expect(policyFiles).toHaveLength(2);
+    expect(policyFiles).toHaveLength(3);
     const policies = policyFiles.map((name) => JSON.parse(readFileSync(join(
       root,
       "problem-terminal-fidelity-policy-revisions",
       name
-    ), "utf8"))).sort((left, right) => left.item.key.localeCompare(right.item.key));
+    ), "utf8"))).sort((left, right) => left.basis.allowlistId.localeCompare(right.basis.allowlistId));
     expect(policies.map((policy) => policy.basis.allowlistId)).toEqual([
       "ebsi-5578421-q44-terminal-source-policy-v1",
+      "ebsi-5578421-q44-terminal-source-policy-v2",
       "ebsi-5578421-q45-terminal-source-policy-v1",
     ]);
     expect(policies.map((policy) => policy.item)).toEqual([
+      expect.objectContaining({ key: "16:44", status: "exact", scopeDecision: "accept" }),
       expect.objectContaining({ key: "16:44", status: "exact", scopeDecision: "accept" }),
       expect.objectContaining({ key: "16:45", status: "exact", scopeDecision: "accept" }),
     ]);
@@ -1971,6 +2015,27 @@ describe("exact allowlisted problem manual adjudication", () => {
         },
       });
     }
+    const currentPolicy = policies.find((policy) =>
+      policy.basis.allowlistId === "ebsi-5578421-q44-terminal-source-policy-v2"
+    )!;
+    const currentPolicyPath = join(
+      root,
+      "problem-terminal-fidelity-policy-revisions",
+      `v1-0016-0044-${currentPolicy.basisDigest}.json`,
+    );
+    writeFileSync(currentPolicyPath, Buffer.concat([readFileSync(currentPolicyPath), Buffer.from(" ")]));
+    const beforeTamper = stateSnapshot(root);
+    providerMock.complete.mockClear();
+    await expect(repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions,
+    )).rejects.toThrow(/pinned terminal fidelity policy revision hash가 다릅니다/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root)).toEqual(beforeTamper);
   }, 120_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
@@ -2248,7 +2313,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       replacementHash: canonicalEvidenceHash(sourceRevisionSpec.replacement),
       triggerHash: canonicalEvidenceHash(sourceRevisionSpec.terminalTrigger),
     }).toEqual({
-      allowlistHash: "ffc789e8918c8a5603c82d08faa7e2adefedba8aa15c5304f24a6ef8dd520922",
+      allowlistHash: "d23619465e340050bcf9598e78efc72332f143ff9cb50576f2dd87181296dc29",
       rowHash: "99ec8e696ea73ba0c61d31df0df9f657bcb29e62fa6ff43e8db1389542e821aa",
       replacementHash: "b0751915ae3df15620b51fcbccf08d95e0b29abb6edc28c8ae68333a4bbbe90a",
       triggerHash: "240e0e1d3617c2d0de839ea55687ed7efb658037c62d4608f934c3426cfd4704",
@@ -2272,7 +2337,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         rowHash: canonicalEvidenceHash(candidate),
       })),
     }).toEqual({
-      allowlistHash: "c67447276d0a1abcdea7be41320ee70cbe9050874b155079ed0333a3d7acffa6",
+      allowlistHash: "08473a4ad4045d695f7ceca42742e11d81e46674569c3da910cb0d642afac17c",
       prefixHash: "e4601a183669f046f4cc1f52cd30a860fe6347f96ffa41b30bdc8db2123630b3",
       rows: [{
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",
@@ -2767,7 +2832,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       );
     };
     providerMock.complete.mockRejectedValue(new Error("unexpected Q3 terminal replay provider call"));
-    await expect(run(root)).rejects.toThrow(/16:44 problem recovery는 한 번만 허용됩니다/u);
+    await expect(run(root)).rejects.toThrow(/problem recovery는 한 번만 허용됩니다/u);
     expect(providerMock.complete).not.toHaveBeenCalled();
     expect(readFileSync(childPath)).toEqual(childBytes);
 

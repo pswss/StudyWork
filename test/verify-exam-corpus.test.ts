@@ -10106,11 +10106,20 @@ async function q44Q45ManualAuthorityFixture5578421() {
   for (const directory of [
     "problem-manual-revisions",
     "classification-manual-revisions",
+    "problem-manual-second-revisions",
+    "classification-manual-second-revisions",
   ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
   const rows = Q44_Q45_5578421_MANUAL_SPECS.map((spec) => ({
     spec,
     ...pinnedManualRecoveryParent(stateDir, spec),
   }));
+  const q45TerminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((spec) =>
+    spec.allowlistId === "ebsi-5578421-q45-terminal-fidelity-v1"
+  )!;
+  const q45FailedClassification = JSON.parse(readFileSync(join(
+    Q30_MANUAL_STATE,
+    q45TerminalSpec.parentClassificationArtifactPath,
+  ), "utf8")).items[0];
   providerMock.complete.mockReset();
   providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
     expect(request.schema?.name).toBe("studywork_exam_corpus_classification");
@@ -10123,8 +10132,9 @@ async function q44Q45ManualAuthorityFixture5578421() {
     expect(items[0].question).toContain("※ <보기>를 읽고 44번과 45번 두 물음에 답하시오.");
     expect(items[0].question).toContain("소멸과 생성의 이미지를");
     expect(items[0].question).toContain("열없이 붙어서서 입김을 흐리우니");
-    if (items[0].key === "16:45") {
+    if (items[0].key === "16:45" && items[0].figure_description?.includes("C의 두 판단 근거")) {
       expect(items[0].figure_description).toContain("C의 두 판단 근거는 하나의 선택지 ⑤로 묶여 있다.");
+      return { text: JSON.stringify([q45FailedClassification]) };
     }
     return { text: JSON.stringify([{
       key: items[0].key,
@@ -10136,7 +10146,9 @@ async function q44Q45ManualAuthorityFixture5578421() {
       confidence: 0.99,
       reason_codes: ["SOURCE_EXACT", "IN_SCOPE_KOREAN_LITERATURE"],
       transcription_status: "exact",
-      transcription_evidence: `공식 15~16쪽의 ${items[0].key} 공통 시·보기·발문·선지가 일치한다.`,
+      transcription_evidence: items[0].key === "16:45"
+        ? "공식 16쪽의 Q45 표는 B-(가)·B-(나)가 ③, C-(가)가 ④, C-(나)가 ⑤인 배치이며 교정본과 일치한다."
+        : `공식 15~16쪽의 ${items[0].key} 공통 시·보기·발문·선지가 일치한다.`,
     }]) };
   });
   for (const row of rows) {
@@ -10149,7 +10161,7 @@ async function q44Q45ManualAuthorityFixture5578421() {
     );
     Object.assign(row, { adjudicated });
   }
-  expect(providerMock.complete).toHaveBeenCalledTimes(2);
+  expect(providerMock.complete).toHaveBeenCalledTimes(3);
   providerMock.complete.mockReset();
   return rows.map((row) => ({
     ...row,
@@ -11385,7 +11397,7 @@ describe("exam corpus verifier", () => {
     expect(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST)
       .toBe("e92ed29fdd979e63d56635b2f7c99284ad01f14893384e680acd150cb2a29728");
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("c67447276d0a1abcdea7be41320ee70cbe9050874b155079ed0333a3d7acffa6");
+      .toBe("08473a4ad4045d695f7ceca42742e11d81e46674569c3da910cb0d642afac17c");
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST));
 
@@ -14294,21 +14306,23 @@ describe("exam corpus verifier", () => {
       const verified = rows.map(verify);
       expect(verified.map((row) => canonicalEvidenceHash(row.question))).toEqual([
         "9c38330638950ef2e46c3748001b36d2c7f8ddd86249f9c859581a6dec54a93c",
-        "9e7c7255f20d16b9d0f11e0ae3cdc81b51f56caf05e2df792a08c348012a0689",
+        "06bc483a24e118a3b41c2da971bffeef560fb491c5b9625928dfce214b9b4a02",
       ]);
       expect(verified.map((row) => row.evidence.revision.allowlistId)).toEqual([
         "ebsi-5578421-q44-manual-revision-v1",
         "ebsi-5578421-q45-manual-revision-v1",
       ]);
+      expect(verified[1].evidence.revision.sourceRevision.allowlistId)
+        .toBe("ebsi-5578421-q45-manual-source-revision-v1");
       expect(verified.map((row) => row.classification)).toEqual([
         expect.objectContaining({ key: "16:44", decision: "accept", transcription_status: "exact" }),
         expect.objectContaining({ key: "16:45", decision: "accept", transcription_status: "exact" }),
       ]);
       expect(verified[1].question.figure_description)
-        .toContain("C의 두 판단 근거는 하나의 선택지 ⑤로 묶여 있다.");
+        .toContain("B-(가)와 B-(나)의 두 판단 근거는 선택지 ③ 하나로 묶여 있다.");
       const q45ProblemPath = join(
         rows[1].stateDir,
-        rows[1].adjudicated.evidence.revision!.problemArtifact.path,
+        rows[1].adjudicated.evidence.revision!.sourceRevision!.problemArtifact.path,
       );
       const q45ProblemBytes = readFileSync(q45ProblemPath);
       writeFileSync(q45ProblemPath, Buffer.concat([q45ProblemBytes, Buffer.from("tampered")]));
@@ -14351,7 +14365,7 @@ describe("exam corpus verifier", () => {
       replacementHash: canonicalEvidenceHash(Q2_5578421_MANUAL_SOURCE_REVISION_SPEC.replacement),
       triggerHash: canonicalEvidenceHash(Q2_5578421_MANUAL_SOURCE_REVISION_SPEC.terminalTrigger),
     }).toEqual({
-      allowlistHash: "ffc789e8918c8a5603c82d08faa7e2adefedba8aa15c5304f24a6ef8dd520922",
+      allowlistHash: "d23619465e340050bcf9598e78efc72332f143ff9cb50576f2dd87181296dc29",
       rowHash: "99ec8e696ea73ba0c61d31df0df9f657bcb29e62fa6ff43e8db1389542e821aa",
       replacementHash: "b0751915ae3df15620b51fcbccf08d95e0b29abb6edc28c8ae68333a4bbbe90a",
       triggerHash: "240e0e1d3617c2d0de839ea55687ed7efb658037c62d4608f934c3426cfd4704",
@@ -15024,7 +15038,7 @@ describe("exam corpus verifier", () => {
     expect(manualRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST));
     expect(manualSourceRevisionAllowlistFingerprint())
-      .toBe("ffc789e8918c8a5603c82d08faa7e2adefedba8aa15c5304f24a6ef8dd520922");
+      .toBe("d23619465e340050bcf9598e78efc72332f143ff9cb50576f2dd87181296dc29");
     expect(manualSourceRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST));
     expect(canonicalEvidenceHash(Q32_MANUAL_SOURCE_REVISION_SPEC))
@@ -16240,7 +16254,7 @@ describe("exam corpus verifier", () => {
     expect(scopeBoxRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST));
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("c67447276d0a1abcdea7be41320ee70cbe9050874b155079ed0333a3d7acffa6");
+      .toBe("08473a4ad4045d695f7ceca42742e11d81e46674569c3da910cb0d642afac17c");
     const terminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((spec) =>
       spec.entryId === "ebsi:5577055" && spec.key === "4:11")!;
     const policySpec = terminalSpec.policyRevision!;

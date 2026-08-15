@@ -2635,6 +2635,7 @@ type ProblemTerminalFidelityPolicyRevisionSpec = {
   parentAdjudicationPromptHash?: string;
   curriculumRulesHash?: string;
   expectedItem: ProblemTerminalFidelityItem;
+  pinnedArtifact?: EvidencePointer & { itemHash: string };
 };
 
 const Q30_FIGURE_DESCRIPTION =
@@ -6750,6 +6751,76 @@ export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSou
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5578421-q45-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5578421-q45-manual-revision-v1",
+  parentRevisionEvidenceHash: "bbf611f583a65fb1914cd3e063281dad27a84ae7696fdf2473685e059dfd67d2",
+  entryId: "ebsi:5578421",
+  key: "16:45",
+  sourcePage: 16,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "9e7c7255f20d16b9d0f11e0ae3cdc81b51f56caf05e2df792a08c348012a0689",
+  failedClassificationHash: "e85b4fc5adc2630870311f4830c6cc4270ce29fdb203beb026177f40f6c83509",
+  failedClassificationEvidenceHash: "3ec2c2720635372c346818aa942489bd2ec5859ac0e9d219fa901e2eecac6a0e",
+  terminalTrigger: {
+    artifactPath: "problem-terminal-fidelity-adjudications/" +
+      "v1-0016-0045-a0619c31d0bc043bdae0958aba0ca0de5d6d9dba4395876fce3469522e53b2f4.json",
+    artifactHash: "54493f6c673399bedc5b4397b4648ea5eef4b1b55c2fa8eb875b684cf060bc11",
+    basisDigest: "a0619c31d0bc043bdae0958aba0ca0de5d6d9dba4395876fce3469522e53b2f4",
+    itemHash: "8f535b8e61439f6ed0925102ae24185122d8d590d9352a244ca941c862b14c7e",
+    evidenceHash: "e00db4e5336019c83e6af11efe946b2970daf0cf92bb86ee66d9936a864140e2",
+    scopeEvidenceHash: "9baf3135f5962012930e8e9c86ad57a8720ebadfb3585da14e4e3a3dac30b442",
+    expectedScopeDecision: "accept",
+  },
+  replacement: {
+    field: "choices",
+    from: "③ B-(가): ‘외로운 황홀한 심사’를 통해 죽은 자식을 떠올리고 있는 상황에서 나타나는 " +
+      "화자의 모순된 심리를 집약적으로 제시하고 있다.",
+    to: "③ B-(가): ‘외로운 황홀한 심사’를 통해 죽은 자식을 떠올리고 있는 상황에서 나타나는 " +
+      "화자의 모순된 심리를 집약적으로 제시하고 있다. / B-(나): ‘모든 빛이 모여 불타고 모든 " +
+      "빛이 나온다’를 통해 불에 타 버렸지만 생명을 이어가는 고목의 이중적 속성을 집약적으로 제시하고 있다.",
+    count: 1,
+  },
+  additionalReplacements: [{
+    field: "choices",
+    from: "④ B-(나): ‘모든 빛이 모여 불타고 모든 빛이 나온다’를 통해 불에 타 버렸지만 생명을 " +
+      "이어가는 고목의 이중적 속성을 집약적으로 제시하고 있다.",
+    to: "④ C-(가): ‘산(山)새’는 화자의 품을 떠나 버린 작고 연약한 자식을 비유한 것으로, 이를 " +
+      "통해 화자의 상실감을 형상화하고 있다.",
+    count: 1,
+  }, {
+    field: "choices",
+    from: "⑤ C-(가): ‘산(山)새’는 화자의 품을 떠나 버린 작고 연약한 자식을 비유한 것으로, 이를 " +
+      "통해 화자의 상실감을 형상화하고 있다. / C-(나): ‘날아오르는 새’는 하늘을 향해 가지를 뻗고 " +
+      "있는 느티나무의 모습을 비유적으로 표현한 것으로, 죽음도 기꺼이 감내하는 나무의 수용적 태도를 " +
+      "상징하고 있다.",
+    to: "⑤ C-(나): ‘날아오르는 새’는 하늘을 향해 가지를 뻗고 있는 느티나무의 모습을 비유적으로 " +
+      "표현한 것으로, 죽음도 기꺼이 감내하는 나무의 수용적 태도를 상징하고 있다.",
+    count: 1,
+  }, {
+    field: "answer",
+    from: "⑤ C-(가): ‘산(山)새’는 화자의 품을 떠나 버린 작고 연약한 자식을 비유한 것으로, 이를 " +
+      "통해 화자의 상실감을 형상화하고 있다. / C-(나): ‘날아오르는 새’는 하늘을 향해 가지를 뻗고 " +
+      "있는 느티나무의 모습을 비유적으로 표현한 것으로, 죽음도 기꺼이 감내하는 나무의 수용적 태도를 " +
+      "상징하고 있다.",
+    to: "⑤ C-(나): ‘날아오르는 새’는 하늘을 향해 가지를 뻗고 있는 느티나무의 모습을 비유적으로 " +
+      "표현한 것으로, 죽음도 기꺼이 감내하는 나무의 수용적 태도를 상징하고 있다.",
+    count: 1,
+  }, {
+    field: "figure_description",
+    from: "문제 상단에 사각형 테두리로 묶인 탐구 자료가 있다. 위쪽에는 ‘[탐구 과제]’와 그 설명, " +
+      "‘[탐구 결과]’ A·B·C가 차례로 제시되어 있다. 아래쪽 표는 왼쪽의 ‘대응 요소’ 열과 오른쪽의 " +
+      "‘판단 근거’ 열로 구성된다. 대응 요소 A, B, C마다 (가)와 (나)가 한 행씩 배치되어 있으며, 판단 " +
+      "근거의 끝에 ①부터 ⑤까지의 선택지 번호가 표시되어 있다. C의 두 판단 근거는 하나의 선택지 ⑤로 묶여 있다.",
+    to: "문제 상단에 사각형 테두리로 묶인 탐구 자료가 있다. 위쪽에는 ‘[탐구 과제]’와 그 설명, " +
+      "‘[탐구 결과]’ A·B·C가 차례로 제시되어 있다. 아래쪽 표는 왼쪽의 ‘대응 요소’ 열과 오른쪽의 " +
+      "‘판단 근거’ 열로 구성된다. A-(가)는 ①, A-(나)는 ②로 표시되고, B-(가)와 B-(나)의 두 판단 " +
+      "근거는 선택지 ③ 하나로 묶여 있다. C-(가)는 ④, C-(나)는 ⑤로 각각 표시되어 있다.",
+    count: 1,
+  }],
+  requiredTokens: ["③ B-(가):", "B-(나):", "④ C-(가):", "⑤ C-(나):", "선택지 ③ 하나로 묶여 있다"],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
 }] as const;
 
 export const PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST:
@@ -7412,6 +7483,12 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
       scopeConfidence: 1,
       scopeEvidence: "현대시의 소재 속성과 이미지, 주제 형상화를 비교·해석하는 국어 문학 문항이다.",
     },
+    pinnedArtifact: {
+      path: "problem-terminal-fidelity-policy-revisions/" +
+        "v1-0016-0044-18e81e66cd2f98d0b3326eb4d3bf046e910fa2f0b4d9a47e3725d066034ab962.json",
+      sha256: "588f14674653bb75f6e23c15f0ef504ec084e144533f58e50c3e2ffddcdc047f",
+      itemHash: "ae0a53375a681c904f74383c0503b86a6c1dd2e7bbf5cdf6c5b4afba32585ec6",
+    },
   },
 }, {
   allowlistId: "ebsi-5578421-q45-terminal-fidelity-v1",
@@ -7461,7 +7538,103 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
       scopeConfidence: 1,
       scopeEvidence: "두 현대시의 내용·형식·표현법과 주제 형상화를 비교·감상하는 국어 문학 문항이다.",
     },
+    pinnedArtifact: {
+      path: "problem-terminal-fidelity-policy-revisions/" +
+        "v1-0016-0045-320ca03aa05b75d33a94772593b7527934668b31d6753c4df787c243992407bf.json",
+      sha256: "5fc8ad09ac16b0bb64c279043051dcf7af489f48356dd7711196c9558df0f477",
+      itemHash: "0d053cdbd955b80e3d269b20569831cf2362bce85e11e09714316f4dd4ea0ef3",
+    },
   },
+}, {
+  allowlistId: "ebsi-5578421-q44-terminal-fidelity-v2",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5578421-q44-manual-v1",
+  parentManualRevisionAllowlistId: "ebsi-5578421-q44-manual-revision-v1",
+  entryId: "ebsi:5578421",
+  key: "16:44",
+  sourcePage: 16,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  solutionSourceHash: "95e7552f9264cec9649f648fe607bd12f9fe9f77bc9d06edb896971fcee34bf2",
+  parentQuestionHash: "9c38330638950ef2e46c3748001b36d2c7f8ddd86249f9c859581a6dec54a93c",
+  parentClassificationHash: "3075f22fd755d634d5fb2ce4778e3f599f501fd91fe9e58a1bb0a622d067fb88",
+  parentProblemArtifactPath: "problem-manual-revisions/" +
+    "v1-0016-0044-e68805c72fa61c0d254bfa5c2528d65de19ba427ac1ec0eac4af5e67a15d6a29.json",
+  parentProblemArtifactHash: "0eb4583ce36552387cec5118ed6b73d0c45bc670d1f3dbc219297deef76ad75d",
+  parentClassificationArtifactPath: "classification-manual-revisions/" +
+    "v1-0016-0044-e0ac235923f65bfe6bd802aa7342d090762617a970475ca2727ace56b092a801-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "d0f5f6b6cb39c094e7f1df6223515831876b49118d60e58beb43fa70dd18388b",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-54b563c6ea850bce015a99000baa61b2b6ff193d11a7fe155649a8e7e4cc0ae8-" +
+    "bde8ae819bb2a2bd18172f2d43ff13be80e3ff9ff434dbdd50249277a7f31bb0.json",
+  failedTerminalArtifactHash: "72d090d9a40cc1afa2f6352c118a68c3c97043d967f3c7f6df4714ffea7b7cc0",
+  failedEffectiveCorpusHash: "54b563c6ea850bce015a99000baa61b2b6ff193d11a7fe155649a8e7e4cc0ae8",
+  failedInputHash: "bde8ae819bb2a2bd18172f2d43ff13be80e3ff9ff434dbdd50249277a7f31bb0",
+  failedTerminalInputHash: "81643bd560e7b3938d2a4f1ef659e77e32146919e368c127ed4ae24e53810758",
+  failedItemHash: "93082f2c676903c59ca65eaee755c626a0aefd3915c91443c60d61049c127c9d",
+  failedEvidenceHash: "d71897edb3fb49997f8c0d2fa6524c204f64e9e3a51adec5a3a779393961766f",
+  failedScopeEvidenceHash: "32a74aa101f1cd506ab16a6720362061df57e7253849df2b8bf6a3388fb39d50",
+  pinnedAdjudicationArtifact: {
+    path: "problem-terminal-fidelity-adjudications/" +
+      "v1-0016-0044-eeb404966ce7a341e7eafd7002ae29377e87ddeabd894b0f00a72ce8d593a8d0.json",
+    sha256: "89632f220a17b02b6139c26011ef2de582462870fa4d1259e2dc76b8c624b2f4",
+    itemHash: "dd8d3c3be9414f5119c16b489706df2d06d0876f9ba6d8d128e41d8bf82c953b",
+  },
+  policyRevision: {
+    allowlistId: "ebsi-5578421-q44-terminal-source-policy-v2",
+    kind: "source",
+    parentAdjudicationArtifactPath: "problem-terminal-fidelity-adjudications/" +
+      "v1-0016-0044-eeb404966ce7a341e7eafd7002ae29377e87ddeabd894b0f00a72ce8d593a8d0.json",
+    parentAdjudicationArtifactHash: "89632f220a17b02b6139c26011ef2de582462870fa4d1259e2dc76b8c624b2f4",
+    parentAdjudicationBasisDigest: "eeb404966ce7a341e7eafd7002ae29377e87ddeabd894b0f00a72ce8d593a8d0",
+    parentAdjudicationItemHash: "dd8d3c3be9414f5119c16b489706df2d06d0876f9ba6d8d128e41d8bf82c953b",
+    parentAdjudicationEvidenceHash: "d7dd4f6f02c6b9abcc64bfde53860d2c707eaaa77c7aa26ceead46e373a01444",
+    parentAdjudicationScopeEvidenceHash: "5031f90e56c6c0147de6a0c03a5947fa5fccc63337e444182db3d6ce13cd4b32",
+    expectedItem: {
+      key: "16:44",
+      status: "exact",
+      evidence: "공식 문제 PDF 15쪽의 [43~45] 안내와 시 (가)의 시작, 16쪽의 나머지 시·<보기>·44번 " +
+        "발문·①~⑤가 공급 전사와 모두 일치한다. 공식 표기는 ‘부딪히고’, ‘백힌다’이다.",
+      scopeDecision: "accept",
+      scopeConfidence: 1,
+      scopeEvidence: "현대시의 소재 속성과 이미지, 주제 형상화를 비교·해석하는 국어 문학 문항이다.",
+    },
+    pinnedArtifact: {
+      path: "problem-terminal-fidelity-policy-revisions/" +
+        "v1-0016-0044-136be7bc4eaa3796b8b5f9dd4d8ba5594ba6be80f2e84496003af157d7a04be8.json",
+      sha256: "19e70ca078e92e660abe11639e16eb77a61737b3ddf36e849fd86149692239e8",
+      itemHash: "ae0a53375a681c904f74383c0503b86a6c1dd2e7bbf5cdf6c5b4afba32585ec6",
+    },
+  },
+}, {
+  allowlistId: "ebsi-5578421-q45-terminal-fidelity-v2",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5578421-q45-manual-v1",
+  parentManualRevisionAllowlistId: "ebsi-5578421-q45-manual-revision-v1",
+  entryId: "ebsi:5578421",
+  key: "16:45",
+  sourcePage: 16,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  solutionSourceHash: "95e7552f9264cec9649f648fe607bd12f9fe9f77bc9d06edb896971fcee34bf2",
+  parentQuestionHash: "9e7c7255f20d16b9d0f11e0ae3cdc81b51f56caf05e2df792a08c348012a0689",
+  parentClassificationHash: "e85b4fc5adc2630870311f4830c6cc4270ce29fdb203beb026177f40f6c83509",
+  parentProblemArtifactPath: "problem-manual-revisions/" +
+    "v1-0016-0045-d6eb938bbceffff4a452c500f5bb3e749cebff28d3a02b2dd9c01440f5c8aa31.json",
+  parentProblemArtifactHash: "8ea5e45d2ae2b3a0e7f37b26b8a5fb43319944b600e612e807722fd3c3a1711a",
+  parentClassificationArtifactPath: "classification-manual-revisions/" +
+    "v1-0016-0045-aa10366077d8619c0e7c3e42507a0f86cdf8faca8ff78ffcc62c3a3b49e2d881-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "22adc1c0a0ddb9ab9cd8f696b0ffae318ffa73c5c9f76df0dfdb2678a7600864",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-54b563c6ea850bce015a99000baa61b2b6ff193d11a7fe155649a8e7e4cc0ae8-" +
+    "bde8ae819bb2a2bd18172f2d43ff13be80e3ff9ff434dbdd50249277a7f31bb0.json",
+  failedTerminalArtifactHash: "72d090d9a40cc1afa2f6352c118a68c3c97043d967f3c7f6df4714ffea7b7cc0",
+  failedEffectiveCorpusHash: "54b563c6ea850bce015a99000baa61b2b6ff193d11a7fe155649a8e7e4cc0ae8",
+  failedInputHash: "bde8ae819bb2a2bd18172f2d43ff13be80e3ff9ff434dbdd50249277a7f31bb0",
+  failedTerminalInputHash: "e9e1af8ad59d06f5e29b274995f9ccb87d9938c50f3d9bf2ef6cd20b9745f883",
+  failedItemHash: "047c2f80427da0e73855debf865eff4c36e345e865a1b8f7925923d04785d341",
+  failedEvidenceHash: "f9a96063c566dada3b765c41a0ec95033845a15c4599625818b645bb435b6d01",
+  failedScopeEvidenceHash: "249bb6bdc85b8ccdf473bc30b0ed90f3a1edc45be54d8f8f833b6a88f8b40959",
 }] as const;
 
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(
@@ -18860,6 +19033,13 @@ function problemTerminalFidelityAdjudicationBaseSpec(
   return base;
 }
 
+function problemTerminalFidelityPolicyRevisionBaseSpec(
+  spec: ProblemTerminalFidelityPolicyRevisionSpec
+): Omit<ProblemTerminalFidelityPolicyRevisionSpec, "pinnedArtifact"> {
+  const { pinnedArtifact: _pinnedArtifact, ...base } = spec;
+  return base;
+}
+
 function expectedTerminalFidelityAdjudicationScope(
   spec: ProblemTerminalFidelityAdjudicationSpec
 ): ProblemTerminalFidelityItem["scopeDecision"] {
@@ -19433,6 +19613,31 @@ function assertProblemTerminalFidelityPolicyRevisionInventory(
   }
 }
 
+async function pinnedProblemTerminalFidelityPolicyRevisionPaths(
+  stateDir: string,
+  entryId: string,
+  sourceHash: string,
+  solutionSourceHash: string
+): Promise<Set<string>> {
+  const paths = new Set<string>();
+  for (const spec of PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.filter((candidate) =>
+    candidate.entryId === entryId && candidate.sourceHash === sourceHash &&
+    candidate.solutionSourceHash === solutionSourceHash && candidate.policyRevision?.pinnedArtifact
+  )) {
+    const policy = spec.policyRevision!;
+    const pinned = policy.pinnedArtifact!;
+    const candidatePath = join(stateDir, pinned.path);
+    if (!existsSync(candidatePath)) continue;
+    const path = confinedStateFile(stateDir, pinned.path, "pinned terminal fidelity policy revision");
+    if (await sha256File(path) !== pinned.sha256 ||
+      canonicalEvidenceHash(policy.expectedItem) !== pinned.itemHash) {
+      throw new Error(`${spec.key} pinned terminal fidelity policy revision hash가 다릅니다`);
+    }
+    paths.add(pinned.path);
+  }
+  return paths;
+}
+
 function prepareProblemTerminalFidelityPolicyRevision(
   parentPrepared: PreparedProblemTerminalFidelityAdjudication,
   parent: CompletedProblemTerminalFidelityAdjudication
@@ -19527,7 +19732,7 @@ function prepareProblemTerminalFidelityPolicyRevision(
       solutionContextTo: parentEvidence.solutionContextTo,
       curriculumRulesHash: spec.curriculumRulesHash,
     } : {}),
-    policySpecHash: canonicalEvidenceHash(spec),
+    policySpecHash: canonicalEvidenceHash(problemTerminalFidelityPolicyRevisionBaseSpec(spec)),
     expectedItem,
   };
   const basisDigest = canonicalEvidenceHash(commonBasis);
@@ -19601,7 +19806,7 @@ function problemTerminalFidelityPolicyRevisionEvidence(
       solutionContextTo: parentEvidence.solutionContextTo!,
       curriculumRulesHash: prepared.spec.curriculumRulesHash!,
     } : {}),
-    policySpecHash: canonicalEvidenceHash(prepared.spec),
+    policySpecHash: canonicalEvidenceHash(problemTerminalFidelityPolicyRevisionBaseSpec(prepared.spec)),
     policyArtifact: {
       path: prepared.relativePath,
       sha256,
@@ -19624,9 +19829,12 @@ async function readProblemTerminalFidelityPolicyRevision(
   const checkpoint = object(JSON.parse(readFileSync(path, "utf8")), prepared.relativePath);
   const expectedCheckpoint = problemTerminalFidelityPolicyRevisionCheckpoint(prepared);
   const sha256 = await sha256File(path);
+  const pinned = prepared.spec.pinnedArtifact;
   if (
     canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(expectedCheckpoint) ||
-    sha256 !== canonicalEvidenceHash(expectedCheckpoint)
+    sha256 !== canonicalEvidenceHash(expectedCheckpoint) ||
+    pinned && (pinned.path !== prepared.relativePath || pinned.sha256 !== sha256 ||
+      pinned.itemHash !== canonicalEvidenceHash(prepared.expectedItem))
   ) throw new Error(`${prepared.parentPrepared.spec.key} terminal fidelity policy revision checkpoint가 다릅니다`);
   return {
     item: prepared.expectedItem,
@@ -19644,6 +19852,9 @@ async function completeProblemTerminalFidelityPolicyRevision(
   if (existing) return existing;
   if (existsSync(prepared.absolutePath)) {
     throw new Error(`${prepared.parentPrepared.spec.key} terminal fidelity policy revision이 preflight 후 생겼습니다`);
+  }
+  if (prepared.spec.pinnedArtifact) {
+    throw new Error(`${prepared.parentPrepared.spec.key} pinned terminal fidelity policy revision이 없습니다`);
   }
   const checkpoint = problemTerminalFidelityPolicyRevisionCheckpoint(prepared);
   await writeImmutableEvidence(prepared.absolutePath, checkpoint);
@@ -20451,6 +20662,12 @@ export async function assertProblemTerminalFidelityAdjudicationAuthority(
 ): Promise<void> {
   const repairList = [...repairs];
   const declared = new Map<string, string>();
+  const pinnedPolicyRevisions = await pinnedProblemTerminalFidelityPolicyRevisionPaths(
+    stateDir,
+    entryId,
+    sourceHash,
+    solutionSourceHash
+  );
   for (const repair of repairList) {
     const manual = repair.revision?.recovery?.manualAdjudication;
     const current = classified.find((candidate) => questionKey(candidate.question) === repair.key);
@@ -20488,10 +20705,35 @@ export async function assertProblemTerminalFidelityAdjudicationAuthority(
       declared.set(trigger.artifact.path, trigger.artifact.sha256);
     }
   }
+  for (const spec of PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.filter((candidate) =>
+    candidate.entryId === entryId && candidate.sourceHash === sourceHash &&
+    candidate.solutionSourceHash === solutionSourceHash
+  )) {
+    const pointers = [
+      spec.pinnedAdjudicationArtifact,
+      spec.policyRevision ? {
+        path: spec.policyRevision.parentAdjudicationArtifactPath,
+        sha256: spec.policyRevision.parentAdjudicationArtifactHash,
+      } : undefined,
+    ].filter((pointer): pointer is EvidencePointer => Boolean(pointer));
+    for (const pointer of pointers) {
+      const candidatePath = join(stateDir, pointer.path);
+      if (!existsSync(candidatePath)) continue;
+      const path = confinedStateFile(stateDir, pointer.path, "pinned terminal fidelity adjudication");
+      if (await sha256File(path) !== pointer.sha256) {
+        throw new Error(`${spec.key} pinned terminal fidelity adjudication hash가 다릅니다`);
+      }
+      const currentHash = declared.get(pointer.path);
+      if (currentHash && currentHash !== pointer.sha256) {
+        throw new Error(`terminal fidelity adjudication artifact가 중복 선언됐습니다: ${pointer.path}`);
+      }
+      declared.set(pointer.path, pointer.sha256);
+    }
+  }
   const adjudicatedRepairs = repairList.filter((repair) => repair.terminalAdjudication);
   if (adjudicatedRepairs.length === 0) {
     assertProblemTerminalFidelityAdjudicationInventory(stateDir, new Set(declared.keys()), true);
-    assertProblemTerminalFidelityPolicyRevisionInventory(stateDir, new Set(), true);
+    assertProblemTerminalFidelityPolicyRevisionInventory(stateDir, pinnedPolicyRevisions, true);
     return;
   }
   if (adjudicatedRepairs.some((repair) => repair.terminalAdjudication?.parentKind === "manual")) {
@@ -20518,7 +20760,7 @@ export async function assertProblemTerminalFidelityAdjudicationAuthority(
     path: confinedStateFile(stateDir, "solution.pdf", "terminal fidelity adjudication solution source"),
     sha256: solutionSourceHash,
   };
-  const declaredPolicyRevisions = new Set<string>();
+  const declaredPolicyRevisions = new Set(pinnedPolicyRevisions);
   for (const repair of adjudicatedRepairs) {
     const adjudication = repair.terminalAdjudication;
     if (!adjudication) throw new Error(`${repair.key} terminal fidelity adjudication evidence가 없습니다`);
@@ -24483,6 +24725,12 @@ export async function repairAndAuditOfficialAnswers(
         Boolean(path?.startsWith("problem-terminal-fidelity-adjudications/"))
       );
     }));
+    const historicalPolicyRevisionPaths = await pinnedProblemTerminalFidelityPolicyRevisionPaths(
+      stateDir,
+      entry.id,
+      problem.sha256,
+      solutionEvidence.sha256
+    );
     for (const spec of PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.filter((candidate) =>
       candidate.entryId === entry.id && candidate.sourceHash === problem.sha256 &&
       candidate.solutionSourceHash === solutionEvidence.sha256 && candidate.pinnedAdjudicationArtifact
@@ -24598,7 +24846,10 @@ export async function repairAndAuditOfficialAnswers(
     if (existingPreparedPolicyRevisions.length > 0) {
       assertProblemTerminalFidelityPolicyRevisionInventory(
         stateDir,
-        new Set(existingPreparedPolicyRevisions.map((prepared) => prepared.relativePath)),
+        new Set([
+          ...historicalPolicyRevisionPaths,
+          ...existingPreparedPolicyRevisions.map((prepared) => prepared.relativePath),
+        ]),
         false
       );
     }
@@ -24632,7 +24883,10 @@ export async function repairAndAuditOfficialAnswers(
     if (preparedPolicyRevisions.length > 0) {
       assertProblemTerminalFidelityPolicyRevisionInventory(
         stateDir,
-        new Set(preparedPolicyRevisions.map((prepared) => prepared.relativePath)),
+        new Set([
+          ...historicalPolicyRevisionPaths,
+          ...preparedPolicyRevisions.map((prepared) => prepared.relativePath),
+        ]),
         false
       );
     }
