@@ -10096,9 +10096,6 @@ async function q44Q45ManualAuthorityFixture5578421() {
   cpSync(Q30_MANUAL_STATE, stateDir, { recursive: true });
   stripManualAuthorityFixtureAnswerBoundary(stateDir);
   for (const directory of [
-    "problem-manual-evidence",
-    "problem-manual-adjudications",
-    "classification-manual-adjudications",
     "problem-manual-revisions",
     "classification-manual-revisions",
   ]) rmSync(join(stateDir, directory), { recursive: true, force: true });
@@ -10117,6 +10114,7 @@ async function q44Q45ManualAuthorityFixture5578421() {
     expect(items).toHaveLength(1);
     expect(items[0].question).toContain("※ <보기>를 읽고 44번과 45번 두 물음에 답하시오.");
     expect(items[0].question).toContain("소멸과 생성의 이미지를");
+    expect(items[0].question).toContain("열없이 붙어서서 입김을 흐리우니");
     if (items[0].key === "16:45") {
       expect(items[0].figure_description).toContain("C의 두 판단 근거는 하나의 선택지 ⑤로 묶여 있다.");
     }
@@ -14104,6 +14102,20 @@ describe("exam corpus verifier", () => {
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe("66ff6014e0969fa9a2f13b53c9157eb8a5ca945097cba7ee1d6416cf93e0cc8d");
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 6)))
+      .toBe("33741ecff318e2d58cc2c0614a718d41171a0629f792d062c63df876e23ffa5c");
+    expect(manualRevisionAllowlistFingerprint())
+      .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
+    expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(6).map((spec) => ({
+      key: spec.key,
+      rowHash: canonicalEvidenceHash(spec),
+    }))).toEqual([{
+      key: "16:44",
+      rowHash: "41d2518dfff51233a9604956b19ea7cfe8d53a7257f80958a05565ddadcadaaf",
+    }, {
+      key: "16:45",
+      rowHash: "b3742ae0758ddba275a8131de206fc86e3bea2f0bfdfde9dadb0eb10be8baa00",
+    }]);
     expect(Q44_Q45_5578421_MANUAL_SPECS.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -14137,8 +14149,12 @@ describe("exam corpus verifier", () => {
     try {
       const verified = rows.map(verify);
       expect(verified.map((row) => canonicalEvidenceHash(row.question))).toEqual([
-        "699e118886163261c7dfa82ae3b664c44c4b2b4de73cfb304df740161e645342",
-        "24999c59ff5e789d6193f2635937d9d56c380cda4bc9786fb327a8d1f8536b20",
+        "9c38330638950ef2e46c3748001b36d2c7f8ddd86249f9c859581a6dec54a93c",
+        "9e7c7255f20d16b9d0f11e0ae3cdc81b51f56caf05e2df792a08c348012a0689",
+      ]);
+      expect(verified.map((row) => row.evidence.revision.allowlistId)).toEqual([
+        "ebsi-5578421-q44-manual-revision-v1",
+        "ebsi-5578421-q45-manual-revision-v1",
       ]);
       expect(verified.map((row) => row.classification)).toEqual([
         expect.objectContaining({ key: "16:44", decision: "accept", transcription_status: "exact" }),
@@ -14148,7 +14164,7 @@ describe("exam corpus verifier", () => {
         .toContain("C의 두 판단 근거는 하나의 선택지 ⑤로 묶여 있다.");
       const q45ProblemPath = join(
         rows[1].stateDir,
-        rows[1].adjudicated.evidence.problemArtifact.path,
+        rows[1].adjudicated.evidence.revision!.problemArtifact.path,
       );
       const q45ProblemBytes = readFileSync(q45ProblemPath);
       writeFileSync(q45ProblemPath, Buffer.concat([q45ProblemBytes, Buffer.from("tampered")]));
@@ -15185,9 +15201,11 @@ describe("exam corpus verifier", () => {
       rowHash: "845d4e3b15dad5a08333fb92302cc46cb140a8f3d92a30b61e06d45b4841b502",
       replacementsHash: "8151710a3959e4acb075ade0db51e002e1783302e4df09119ea39db63a124f7f",
     }]);
-    expect(manualRevisionAllowlistFingerprint())
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 6)))
       .toBe("33741ecff318e2d58cc2c0614a718d41171a0629f792d062c63df876e23ffa5c");
-    expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(3).map((spec) => ({
+    expect(manualRevisionAllowlistFingerprint())
+      .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
+    expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(3, 6).map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
       failedStatus: spec.failedStatus,

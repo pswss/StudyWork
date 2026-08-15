@@ -4807,6 +4807,53 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5578421-q44-manual-revision-v1",
+  parentAllowlistId: "ebsi-5578421-q44-manual-v1",
+  entryId: "ebsi:5578421",
+  key: "16:44",
+  sourcePage: 16,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "699e118886163261c7dfa82ae3b664c44c4b2b4de73cfb304df740161e645342",
+  failedClassificationHash: "092153fdc6ba6c49d80144585e93265c9c83e4e03d590fac0a58176fd7027114",
+  failedClassificationEvidenceHash: "6751546e7ea91f938c401619dbf68d865fa704c8e2a31180da410db1cd29bdca",
+  replacement: {
+    field: "question",
+    from: "열없이 붙어서 입김을 흐리우니",
+    to: "열없이 붙어서서 입김을 흐리우니",
+    count: 1,
+  },
+  requiredTokens: [
+    "열없이 붙어서서 입김을 흐리우니", "아아, 너는 산(山)ㅅ새처럼 날러갔구나!",
+    "※ <보기>를 읽고 44번과 45번 두 물음에 답하시오.", "단절과 소통, 소멸과 생성의 이미지를",
+    "<보기>를 바탕으로 (가)의 ㉠과 (나)의 ㉡을 이해한 내용으로 적절하지 않은 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5578421-q45-manual-revision-v1",
+  parentAllowlistId: "ebsi-5578421-q45-manual-v1",
+  entryId: "ebsi:5578421",
+  key: "16:45",
+  sourcePage: 16,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "24999c59ff5e789d6193f2635937d9d56c380cda4bc9786fb327a8d1f8536b20",
+  failedClassificationHash: "ad8f46855df3600d237d2c8c1f1292d8ffac0a0186844c38416bd9c5bb835d2c",
+  failedClassificationEvidenceHash: "2822d905a100f103c3b475c1917fc8a9dd711f3a1c8cdf7aed584413d042d5aa",
+  replacement: {
+    field: "question",
+    from: "열없이 붙어서 입김을 흐리우니",
+    to: "열없이 붙어서서 입김을 흐리우니",
+    count: 1,
+  },
+  requiredTokens: [
+    "열없이 붙어서서 입김을 흐리우니", "아아, 너는 산(山)ㅅ새처럼 날러갔구나!",
+    "※ <보기>를 읽고 44번과 45번 두 물음에 답하시오.", "단절과 소통, 소멸과 생성의 이미지를",
+    "45. <보기>를 바탕으로 아래의 탐구 과제를 수행한 결과에 대한 판단 근거로 적절하지 않은 것은?",
+    "C의 두 판단 근거는 하나의 선택지 ⑤로 묶여 있다.",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
 }] as const;
 
 const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{

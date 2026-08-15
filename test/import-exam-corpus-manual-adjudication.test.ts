@@ -1715,21 +1715,49 @@ describe("exact allowlisted problem manual adjudication", () => {
       "ec7d75199b4d43492926a8de3c07aee17373ad5b5935014c50fd476288b4ca7e",
       "9a350e5e81ac881db7058b1b6b08871229baa52644176ec0da00ad4cd8594d3d",
     ]);
-    const shared44 = corrected[0].question.slice(
-      0,
-      corrected[0].question.indexOf("<보기>를 바탕으로 (가)의 ㉠과 (나)의 ㉡을 이해한")
+    const revisionSpecs = PROBLEM_MANUAL_REVISION_ALLOWLIST.filter((spec) =>
+      spec.entryId === "ebsi:5578421" && ["16:44", "16:45"].includes(spec.key)
     );
-    const shared45 = corrected[1].question.slice(
+    expect(revisionSpecs.map((spec) => ({
+      key: spec.key,
+      rowHash: canonicalEvidenceHash(spec),
+      replacementHash: canonicalEvidenceHash(spec.replacement),
+    }))).toEqual([{
+      key: "16:44",
+      rowHash: "41d2518dfff51233a9604956b19ea7cfe8d53a7257f80958a05565ddadcadaaf",
+      replacementHash: "54b0838141a647c0183807b769bca52bca0c4437186229d9d8904aef96f68886",
+    }, {
+      key: "16:45",
+      rowHash: "b3742ae0758ddba275a8131de206fc86e3bea2f0bfdfde9dadb0eb10be8baa00",
+      replacementHash: "54b0838141a647c0183807b769bca52bca0c4437186229d9d8904aef96f68886",
+    }]);
+    const revised = corrected.map((item, index) => applyAllowlistedProblemManualRevision(
+      "ebsi:5578421", revisionSpecs[index].sourceHash, revisionSpecs[index].parentAllowlistId, item
+    ));
+    expect(revised.map((item) => canonicalEvidenceHash(item))).toEqual([
+      "9c38330638950ef2e46c3748001b36d2c7f8ddd86249f9c859581a6dec54a93c",
+      "9e7c7255f20d16b9d0f11e0ae3cdc81b51f56caf05e2df792a08c348012a0689",
+    ]);
+    expect(revised.map((item) => canonicalEvidenceHash(item.question))).toEqual([
+      "265a789249841b8bda6cdb5e992b23f67928397d57c8604523efacf6b00f14aa",
+      "8438e3ea2f766d535d473002ff045b7724a5b29a0fe81cb249a820f40611ae5f",
+    ]);
+    const shared44 = revised[0].question.slice(
       0,
-      corrected[1].question.indexOf("45. <보기>를 바탕으로 아래의 탐구 과제를 수행한")
+      revised[0].question.indexOf("<보기>를 바탕으로 (가)의 ㉠과 (나)의 ㉡을 이해한")
+    );
+    const shared45 = revised[1].question.slice(
+      0,
+      revised[1].question.indexOf("45. <보기>를 바탕으로 아래의 탐구 과제를 수행한")
     );
     expect(shared44).toBe(shared45);
     expect(shared44).toContain("※ <보기>를 읽고 44번과 45번 두 물음에 답하시오.");
     expect(shared44).toContain("아아, 너는 산(山)ㅅ새처럼 날러갔구나!");
+    expect(shared44).toContain("열없이 붙어서서 입김을 흐리우니");
     expect(shared44).toContain("단절과 소통, 소멸과 생성의 이미지를");
     expect(shared44).not.toContain("파닥거린다");
-    expect(corrected[1].figure).toBe(true);
-    expect(corrected[1].figure_description).toContain("C의 두 판단 근거는 하나의 선택지 ⑤로 묶여 있다.");
+    expect(revised[1].figure).toBe(true);
+    expect(revised[1].figure_description).toContain("C의 두 판단 근거는 하나의 선택지 ⑤로 묶여 있다.");
   });
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
@@ -1737,7 +1765,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-5578421-q44-q45-manual-"));
     cpSync(q31Q32LiveState, root, { recursive: true });
-    removeManualArtifacts(root, ["16:44", "16:45"]);
+    removeManualRevisionArtifacts(root, ["16:44", "16:45"]);
     const input = q27FixtureInputs(root);
     const rows = (["44", "45"] as const).map((number) =>
       q44Q45ExactRecoveryParent5578421(root, number)
@@ -1756,6 +1784,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       expect(item.question).toContain("[43 ~ 45] 다음 글을 읽고 물음에 답하시오.");
       expect(item.question).toContain("※ <보기>를 읽고 44번과 45번 두 물음에 답하시오.");
       expect(item.question).toContain("아아, 너는 산(山)ㅅ새처럼 날러갔구나!");
+      expect(item.question).toContain("열없이 붙어서서 입김을 흐리우니");
       expect(item.question).not.toContain("소멸과 재생의 이미지를");
       if (item.key === "16:45") {
         expect(item.figure_description).toContain("C의 두 판단 근거는 하나의 선택지 ⑤로 묶여 있다.");
@@ -1779,8 +1808,8 @@ describe("exact allowlisted problem manual adjudication", () => {
     for (const row of rows) completed.push(await run(row));
     expect(calls).toEqual(["16:44", "16:45"]);
     expect(completed.map((item) => canonicalEvidenceHash(item.classified.question))).toEqual([
-      "699e118886163261c7dfa82ae3b664c44c4b2b4de73cfb304df740161e645342",
-      "24999c59ff5e789d6193f2635937d9d56c380cda4bc9786fb327a8d1f8536b20",
+      "9c38330638950ef2e46c3748001b36d2c7f8ddd86249f9c859581a6dec54a93c",
+      "9e7c7255f20d16b9d0f11e0ae3cdc81b51f56caf05e2df792a08c348012a0689",
     ]);
     const stable = stateSnapshot(root);
     const beforeReplay = [...calls];
@@ -1788,15 +1817,15 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(calls).toEqual(beforeReplay);
     expect(stateSnapshot(root)).toEqual(stable);
 
-    removeManualArtifacts(root, ["16:44"]);
-    const q45ProblemName = readdirSync(join(root, "problem-manual-adjudications"))
+    removeManualRevisionArtifacts(root, ["16:44"]);
+    const q45ProblemName = readdirSync(join(root, "problem-manual-revisions"))
       .find((name) => name.startsWith("v1-0016-0045-"))!;
-    const q45ProblemPath = join(root, "problem-manual-adjudications", q45ProblemName);
+    const q45ProblemPath = join(root, "problem-manual-revisions", q45ProblemName);
     const q45ProblemBytes = readFileSync(q45ProblemPath);
     writeFileSync(q45ProblemPath, Buffer.concat([q45ProblemBytes, Buffer.from(" ")]));
     const beforeTamper = stateSnapshot(root);
     providerMock.complete.mockClear();
-    await expect(run(rows[0])).rejects.toThrow(/manual adjudication hash가 다릅니다/u);
+    await expect(run(rows[0])).rejects.toThrow(/manual revision hash가 다릅니다/u);
     expect(providerMock.complete).not.toHaveBeenCalled();
     expect(stateSnapshot(root)).toEqual(beforeTamper);
   }, 240_000);
@@ -2583,6 +2612,22 @@ describe("exact allowlisted problem manual adjudication", () => {
       allowlistId: "ebsi-5578421-q21-manual-revision-v1",
       parentAllowlistId: "ebsi-5578421-q21-manual-v1",
       failedStatus: "exact",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5578421-q44-manual-revision-v1",
+      parentAllowlistId: "ebsi-5578421-q44-manual-v1",
+      entryId: "ebsi:5578421",
+      key: "16:44",
+      failedQuestionHash: "699e118886163261c7dfa82ae3b664c44c4b2b4de73cfb304df740161e645342",
+      failedClassificationHash: "092153fdc6ba6c49d80144585e93265c9c83e4e03d590fac0a58176fd7027114",
+      failedClassificationEvidenceHash: "6751546e7ea91f938c401619dbf68d865fa704c8e2a31180da410db1cd29bdca",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5578421-q45-manual-revision-v1",
+      parentAllowlistId: "ebsi-5578421-q45-manual-v1",
+      entryId: "ebsi:5578421",
+      key: "16:45",
+      failedQuestionHash: "24999c59ff5e789d6193f2635937d9d56c380cda4bc9786fb327a8d1f8536b20",
+      failedClassificationHash: "ad8f46855df3600d237d2c8c1f1292d8ffac0a0186844c38416bd9c5bb835d2c",
+      failedClassificationEvidenceHash: "2822d905a100f103c3b475c1917fc8a9dd711f3a1c8cdf7aed584413d042d5aa",
     })]);
     expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.map(canonicalEvidenceHash)).toEqual([
       "479ebd4d7b57bd6ead1a4082b29d8c8c2cba1c7ebdb21634a3eda063986480b4",
@@ -2591,6 +2636,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       "e27383cba8efdb66d85ac3e5c0c2632ec646182c54764039aff3687da458c2cc",
       "647a2d54b19dc3e2b47e46f6b2905c84bd5f36d257b9378a78bedc229c6073c6",
       "bb73db45feca8b695f6865792b5a86567bc0e6dda426bba14276c57867eb9cf4",
+      "41d2518dfff51233a9604956b19ea7cfe8d53a7257f80958a05565ddadcadaaf",
+      "b3742ae0758ddba275a8131de206fc86e3bea2f0bfdfde9dadb0eb10be8baa00",
     ]);
     const parent = JSON.parse(readFileSync(q30ManualProblemPath, "utf8")).item as QuizItemEx;
     expect(canonicalEvidenceHash(parent)).toBe(PROBLEM_MANUAL_REVISION_ALLOWLIST[0].failedQuestionHash);
