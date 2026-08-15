@@ -282,6 +282,8 @@ const Q44_Q45_5578421_MANUAL_SPECS = ["16:44", "16:45"].map((key) =>
   PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
     spec.entryId === "ebsi:5578421" && spec.key === key)!,
 );
+const Q14_5578421_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
+  spec.entryId === "ebsi:5578421" && spec.key === "5:14")!;
 const Q30_MANUAL_REVISION_SPEC = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5578421" && spec.key === "12:30")!;
 const Q18_MANUAL_REVISION_SPEC = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((spec) =>
@@ -10152,6 +10154,62 @@ async function q44Q45ManualAuthorityFixture5578421() {
   }));
 }
 
+async function q14ManualAuthorityFixture5578421() {
+  const stateDir = mkdtempSync(join(tmpdir(), "verify-5578421-q14-manual-authority-"));
+  cpSync(Q30_MANUAL_STATE, stateDir, { recursive: true });
+  stripManualAuthorityFixtureAnswerBoundary(stateDir);
+  const prefix = "v1-0005-0014-";
+  for (const directory of [
+    "problem-manual-evidence",
+    "problem-manual-adjudications",
+    "classification-manual-adjudications",
+  ]) {
+    const path = join(stateDir, directory);
+    if (!existsSync(path)) continue;
+    for (const name of readdirSync(path)) {
+      if (name.startsWith(prefix)) rmSync(join(path, name));
+    }
+  }
+  const row = {
+    spec: Q14_5578421_MANUAL_SPEC,
+    ...pinnedManualRecoveryParent(stateDir, Q14_5578421_MANUAL_SPEC),
+  };
+  providerMock.complete.mockReset();
+  providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+    expect(request.schema?.name).toBe("studywork_exam_corpus_classification");
+    const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
+      key: string;
+      question: string;
+      figure_description: string | null;
+    }>;
+    expect(items).toHaveLength(1);
+    expect(items[0].question).toContain("불·휘기·픈남·ᄀᆞᆫᄇᆞᄅᆞ·매 ⓐ 아·니:뮐·ᄊᆡ");
+    expect(items[0].figure_description).toContain("⑤는 낮음－상승－높음－상승");
+    return { text: JSON.stringify([{
+      key: items[0].key,
+      decision: "reject",
+      canonical_subject: null,
+      curriculum_course: null,
+      domain: null,
+      achievement_codes: [],
+      confidence: 0.99,
+      reason_codes: ["SOURCE_EXACT", "OUT_OF_SCOPE_KOREAN_GRAMMAR", "MIDDLE_KOREAN_PHONOLOGY"],
+      transcription_status: "exact",
+      transcription_evidence: "공식 5쪽 14번의 중세 국어 표기·ⓐ·성조 도식·정답 ②가 모두 일치한다.",
+    }]) };
+  });
+  const adjudicated = await adjudicateProblemManual(
+    row.input.entry,
+    row.input.problem,
+    stateDir,
+    row.failed,
+    row.parent,
+  );
+  expect(providerMock.complete).toHaveBeenCalledTimes(1);
+  providerMock.complete.mockReset();
+  return { ...row, adjudicated, stateDir };
+}
+
 async function q27ManualAuthorityFixture() {
   const stateDir = mkdtempSync(join(tmpdir(), "verify-q27-manual-authority-"));
   cpSync(Q27_MANUAL_STATE, stateDir, { recursive: true });
@@ -14097,11 +14155,11 @@ describe("exam corpus verifier", () => {
     "mirrors and verifies the exact 5578421 Q44-Q45 shared-passage authority",
     async () => {
     expect(problemManualAdjudicationAllowlistForTest()).toEqual(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(48);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(49);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("66ff6014e0969fa9a2f13b53c9157eb8a5ca945097cba7ee1d6416cf93e0cc8d");
+      .toBe("e0ad5b176a2568251ac73625e6e1abcd857a846f2250147f99db28fa5a07d7fe");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 6)))
       .toBe("33741ecff318e2d58cc2c0614a718d41171a0629f792d062c63df876e23ffa5c");
     expect(manualRevisionAllowlistFingerprint())
@@ -14175,6 +14233,61 @@ describe("exam corpus verifier", () => {
       rmSync(rows[0].stateDir, { recursive: true, force: true });
     }
   }, 240_000);
+
+  it.skipIf(!existsSync(join(Q30_MANUAL_STATE, "problem.pdf")))(
+    "mirrors and verifies the exact 5578421 Q14 tone-diagram authority",
+    async () => {
+    expect(problemManualAdjudicationAllowlistForTest()).toEqual(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(49);
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 48)))
+      .toBe("66ff6014e0969fa9a2f13b53c9157eb8a5ca945097cba7ee1d6416cf93e0cc8d");
+    expect(manualAdjudicationAllowlistFingerprint())
+      .toBe("e0ad5b176a2568251ac73625e6e1abcd857a846f2250147f99db28fa5a07d7fe");
+    expect({
+      rowHash: canonicalEvidenceHash(Q14_5578421_MANUAL_SPEC),
+      replacementsHash: canonicalEvidenceHash(Q14_5578421_MANUAL_SPEC.replacements),
+      parentRecoveryEvidenceHash: Q14_5578421_MANUAL_SPEC.parentRecoveryEvidenceHash,
+    }).toEqual({
+      rowHash: "94087546341d55e4056f2b2a0421a4376db3188824972abe9ab6bb2fc11a817c",
+      replacementsHash: "17b4d68ff2c352af8424f360b206e2688260549354c04c6a9e05e39b678c6fd5",
+      parentRecoveryEvidenceHash: "1186ce8d805522044fe8fbfba39c5c2f5529988e2000e09532c8201b30593ca1",
+    });
+    const row = await q14ManualAuthorityFixture5578421();
+    const verify = () => withOnlyManualArtifactsForKey(
+      row.stateDir,
+      row.spec.key,
+      () => verifyProblemManualAdjudicationForTest({
+        stateDir: row.stateDir,
+        entry: row.input.entry,
+        problemEvidence: row.input.problem,
+        parentRecovery: row.parent as unknown as Record<string, unknown>,
+        failedQuestion: row.failed.question,
+        failedClassification: row.failed.classification,
+        manualAdjudication: row.adjudicated.evidence,
+      }),
+    ) as { question: QuizItemEx; classification: ClassificationDecision; evidence: Record<string, any> };
+    try {
+      const verified = verify();
+      expect(canonicalEvidenceHash(verified.question))
+        .toBe("0218c03170cbb7b5e03b5119d99cb1e71a14c9f4b36926893d7e0297517fee62");
+      expect(verified.question.answer).toContain("② ‘아’ 낮음 → ‘니’ 높음");
+      expect(verified.question.figure_description).toContain("⑤는 낮음－상승－높음－상승");
+      expect(verified.classification).toEqual(expect.objectContaining({
+        key: "5:14",
+        decision: "reject",
+        canonical_subject: null,
+        transcription_status: "exact",
+      }));
+      const problemPath = join(row.stateDir, row.adjudicated.evidence.problemArtifact.path);
+      const problemBytes = readFileSync(problemPath);
+      writeFileSync(problemPath, Buffer.concat([problemBytes, Buffer.from("tampered")]));
+      expect(() => verify()).toThrow(/hash mismatch/u);
+      writeFileSync(problemPath, problemBytes);
+    } finally {
+      providerMock.complete.mockReset();
+      rmSync(row.stateDir, { recursive: true, force: true });
+    }
+  }, 180_000);
 
   it.skipIf(
     !existsSync(join(Q27_MANUAL_STATE, "problem.pdf"))
@@ -15080,7 +15193,7 @@ describe("exam corpus verifier", () => {
   it.skipIf(!existsSync(join(Q30_MANUAL_STATE, "problem.pdf")))(
     "verifies the exact 5578421 Q31-Q32 manual pair and rejects tamper, orphan, or symlink",
     async () => {
-      expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(48);
+      expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(49);
       expect(problemManualAdjudicationAllowlistForTest())
         .toEqual(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
       expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 36)))
@@ -15088,7 +15201,7 @@ describe("exam corpus verifier", () => {
       expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
         .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
       expect(manualAdjudicationAllowlistFingerprint())
-        .toBe("66ff6014e0969fa9a2f13b53c9157eb8a5ca945097cba7ee1d6416cf93e0cc8d");
+        .toBe("e0ad5b176a2568251ac73625e6e1abcd857a846f2250147f99db28fa5a07d7fe");
       expect(Q31_Q32_5578421_MANUAL_SPECS.map((spec) => canonicalEvidenceHash(spec))).toEqual([
         "b5c5cfd215a05bb6f55f88aff21fae146465e33056a42a8c7cfff831148a51ca",
         "3aed2606c06fcdd6e45647693d4cb251196aa8b4653b8c6378fd8f9a480e336d",
@@ -15177,13 +15290,13 @@ describe("exam corpus verifier", () => {
     "mirrors and verifies the exact 5578421 Q19-Q21 shared-passage authority",
     async () => {
     expect(problemManualAdjudicationAllowlistForTest()).toEqual(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(48);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(49);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 43)))
       .toBe("e7dfb4cb4e9985bfc3d3077b96baa9f1f7e2ff7f5b8dee6fb26b342d301b04fc");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("66ff6014e0969fa9a2f13b53c9157eb8a5ca945097cba7ee1d6416cf93e0cc8d");
+      .toBe("e0ad5b176a2568251ac73625e6e1abcd857a846f2250147f99db28fa5a07d7fe");
     expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(43, 46).map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -15277,7 +15390,7 @@ describe("exam corpus verifier", () => {
     !existsSync(join(Q27_MANUAL_STATE, "problem.pdf"))
       || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
   )("verifies the terminal-recovery Q6-Q7 and Q21-Q26 manual authority", async () => {
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(48);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(49);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 29)))
       .toBe("0b5d7d19255cd91566a55b289b11f8a9460a3014a06f255f9a266ebd62980cf9");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 36)))
@@ -15285,7 +15398,7 @@ describe("exam corpus verifier", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("66ff6014e0969fa9a2f13b53c9157eb8a5ca945097cba7ee1d6416cf93e0cc8d");
+      .toBe("e0ad5b176a2568251ac73625e6e1abcd857a846f2250147f99db28fa5a07d7fe");
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
     const expected = new Map([

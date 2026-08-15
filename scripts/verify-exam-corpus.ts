@@ -1157,6 +1157,13 @@ const Q32_MANUAL_FIGURE_DESCRIPTION = Q30_MANUAL_FIGURE_DESCRIPTION +
   "④는 M-P/P-S/S-P, ⑤는 M-P/M-S/S-P이며, 각 선택지에서 앞의 두 행은 가로선 위, 마지막 " +
   "S-P는 가로선 아래에 놓인다. ①~③은 위 행에, ④~⑤는 아래 행에 배치되고 가로선은 총 5개이다.";
 
+const Q14_5578421_FIGURE_DESCRIPTION =
+  "공식 5쪽 14번 <보기>에는 ‘:말ᄊᆞ·미’의 성조를 나타내는 꺾은선 도식이 있다. ‘말’은 " +
+  "낮은 위치에서 높은 위치로 올라가고, ‘ᄊᆞ’는 낮은 수평선, ‘미’는 높은 수평선으로 이어진다. " +
+  "선택지 ①~⑤는 ‘아－니－뮐－ᄊᆡ’ 네 음절의 높낮이를 선으로 나타낸다. ①은 " +
+  "높음－낮음－상승－낮음, ②는 낮음－높음－상승－높음, ③은 상승－낮음－높음－낮음, " +
+  "④는 상승－높음－낮음－높음, ⑤는 낮음－상승－높음－상승이다. 별도의 축·눈금·수치는 없다.";
+
 const Q31_5578421_REPLACEMENTS: ProblemManualReplacement[] = [{
   field: "question",
   from: "다음 글을 읽고 물음에 답하시오.",
@@ -4666,6 +4673,62 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     ],
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_literature",
+  },
+  {
+    allowlistId: "ebsi-5578421-q14-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "5:14",
+    sourcePage: 5,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "1186ce8d805522044fe8fbfba39c5c2f5529988e2000e09532c8201b30593ca1",
+    dpi: 600,
+    failedQuestionHash: "6660414227c9aa156f9dae0572aca915657fa56f5cd1b67c4e98e29d46c46a6b",
+    failedClassificationHash: "aec90c2c9917d5429e15ce6e7abee2f36a6fad5ace326e4cb37c755c210ba6c6",
+    failedClassificationEvidenceHash: "29b33ed880e2805b7a58e2e80420b3147fb02da80c07352f6bbc73c7400249c6",
+    views: [
+      { sourcePage: 5, label: "p5 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 5, label: "p5 left Q14", rect: [0.07, 0.60, 0.50, 0.98] },
+      { sourcePage: 5, label: "p5 Q14 tone diagrams", rect: [0.13, 0.72, 0.49, 0.97] },
+    ],
+    requiredTokens: [
+      "<보기>에 제시된 ‘선생님’의 질문에 대한 답으로 적절한 것은?", ":말ᄊᆞ·미",
+      "불·휘기·픈남·ᄀᆞᆫᄇᆞᄅᆞ·매 ⓐ 아·니:뮐·ᄊᆡ", "용비어천가(龍飛御天歌)",
+      "② ‘아’ 낮음 → ‘니’ 높음 → ‘뮐’ 낮게 시작하여 높아짐 → ‘ᄊᆡ’ 높음",
+      "⑤ ‘아’ 낮음 → ‘니’ 낮게 시작하여 높아짐 → ‘뮐’ 높음 → ‘ᄊᆡ’ 낮게 시작하여 높아짐",
+      "②는 낮음－높음－상승－높음", "⑤는 낮음－상승－높음－상승",
+    ],
+    replacements: [
+      {
+        field: "question",
+        from: "자, 그럼 다음의 밑줄 친 ㉠은 소리의 높낮이를 어떻게 표시할 수 있을까요?\n\n" +
+          "불·휘:기·픈·남ᄀᆞᆫ ·ᄇᆞ·ᄅᆞ·매 ㉠아·니:뮐·ᄊᆡ",
+        to: "자, 그럼 다음의 밑줄 친 ⓐ는 소리의 높낮이를 어떻게 표시할 수 있을까요?\n\n" +
+          "불·휘기·픈남·ᄀᆞᆫᄇᆞᄅᆞ·매 ⓐ 아·니:뮐·ᄊᆡ",
+        count: 1,
+      },
+      {
+        field: "choices",
+        from: "② ‘아’ 높음 → ‘니’ 낮게 시작하여 높아짐 → ‘뮐’ 높음 → ‘ᄊᆡ’ 낮음",
+        to: "② ‘아’ 낮음 → ‘니’ 높음 → ‘뮐’ 낮게 시작하여 높아짐 → ‘ᄊᆡ’ 높음",
+        count: 1,
+      },
+      {
+        field: "choices",
+        from: "⑤ ‘아’ 낮음 → ‘니’ 높음 → ‘뮐’ 낮게 시작하여 높아짐 → ‘ᄊᆡ’ 높음",
+        to: "⑤ ‘아’ 낮음 → ‘니’ 낮게 시작하여 높아짐 → ‘뮐’ 높음 → ‘ᄊᆡ’ 낮게 시작하여 높아짐",
+        count: 1,
+      },
+      {
+        field: "answer",
+        from: "⑤ ‘아’ 낮음 → ‘니’ 높음 → ‘뮐’ 낮게 시작하여 높아짐 → ‘ᄊᆡ’ 높음",
+        to: "② ‘아’ 낮음 → ‘니’ 높음 → ‘뮐’ 낮게 시작하여 높아짐 → ‘ᄊᆡ’ 높음",
+        count: 1,
+      },
+    ],
+    figure: true,
+    figureDescription: Q14_5578421_FIGURE_DESCRIPTION,
+    expectedDecision: "reject",
   },
 ] as const;
 
