@@ -7708,6 +7708,67 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
     sha256: "14aed3774e7df30832fc75bae72cd2070215e8c22a093a435672a41b78edb478",
     itemHash: "50d7844453708c1499cdb1fc8f09e0012f9f51c1200312b64a916c3c5a39c07b",
   },
+}, {
+  allowlistId: "ebsi-5578421-q29-terminal-fidelity-v2",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5578421-q29-manual-v1",
+  entryId: "ebsi:5578421",
+  key: "11:29",
+  sourcePage: 11,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  solutionSourceHash: "95e7552f9264cec9649f648fe607bd12f9fe9f77bc9d06edb896971fcee34bf2",
+  parentQuestionHash: "abb687aa942feb2b5435afdaf2ccb6a2d7a4cae5a360c01bbc7f472130fe2011",
+  parentClassificationHash: "a9f60090c307a4967db00c6dbfd90b2b8196633dfe05d1d1f478b49471ea0005",
+  parentProblemArtifactPath: "problem-manual-adjudications/" +
+    "v1-0011-0029-db542857ba6b9d9e7574698759abb7ae1cc0baa4014c36c8b839b69b8f7f0a6f.json",
+  parentProblemArtifactHash: "10b80c2d80ff9cbddddcc30f003fff2a6fb4f9a1d743be3805471727d996ac20",
+  parentClassificationArtifactPath: "classification-manual-adjudications/" +
+    "v1-0011-0029-88dfc11a07672fe8fbe9500fb1c846d88cf8b0b0fc96d09dd617fa41e0df278c-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "bbdf322f639d72014a845717b23ffabf442de7341aa0772ad77d9305db4c6519",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-272dbc34871780d5cd01399234857b08635b9545a1ca3751dca142218af72793-" +
+    "99ff1d694796f405493706d63c0f1e754e41788f9815366760e08ccbe6614e54.json",
+  failedTerminalArtifactHash: "aab784858ff1a37a632bb163d547e1a260252c3aef47d3e4d5829aa0451ddba1",
+  failedEffectiveCorpusHash: "272dbc34871780d5cd01399234857b08635b9545a1ca3751dca142218af72793",
+  failedInputHash: "99ff1d694796f405493706d63c0f1e754e41788f9815366760e08ccbe6614e54",
+  failedTerminalInputHash: "e564a60e1ee3cf4a5521c3212916df3cc21489fa2d02f7d16d695ace913acce8",
+  failedItemHash: "776a72d2ea77efc8d0610fd3b4887dfd1bad4e60e6b954077ce150817ed94a0e",
+  failedEvidenceHash: "5ba3f9ce0a6edd88fdff25cc93ca15a28610aca34f59d25142fd31c9ebe9b9c5",
+  failedScopeEvidenceHash: "c60ff914d2540c3db408afd23c39ecbf31b4b0f3563bffa27060653012585c34",
+  pinnedAdjudicationArtifact: {
+    path: "problem-terminal-fidelity-adjudications/" +
+      "v1-0011-0029-471a32458fb8d0a2725ac8e9d6830815e7eeebba3c5759df6a17b17f1ddd1973.json",
+    sha256: "70b8ceff8d6ead8152fcc0435bb2f4485c8e73ec0e67aba1e7cac6307652ac60",
+    itemHash: "aa326687b1ca686c6e4e7ed0f5984f8ed5bc88e8e304fccfb87ef8dbb53cdeab",
+  },
+  policyRevision: {
+    allowlistId: "ebsi-5578421-q29-terminal-source-policy-v2",
+    kind: "source",
+    parentAdjudicationArtifactPath: "problem-terminal-fidelity-adjudications/" +
+      "v1-0011-0029-471a32458fb8d0a2725ac8e9d6830815e7eeebba3c5759df6a17b17f1ddd1973.json",
+    parentAdjudicationArtifactHash: "70b8ceff8d6ead8152fcc0435bb2f4485c8e73ec0e67aba1e7cac6307652ac60",
+    parentAdjudicationBasisDigest: "471a32458fb8d0a2725ac8e9d6830815e7eeebba3c5759df6a17b17f1ddd1973",
+    parentAdjudicationItemHash: "aa326687b1ca686c6e4e7ed0f5984f8ed5bc88e8e304fccfb87ef8dbb53cdeab",
+    parentAdjudicationEvidenceHash: "4cb5e091c157f9de7f64d787d6e03428009418f294ed0146aa032194fec0c805",
+    parentAdjudicationScopeEvidenceHash: "90ab57e5aa0470a655ab70e63cf81e683bb56866baeaa55cde24258c3bb3ce96",
+    expectedItem: {
+      key: "11:29",
+      status: "exact",
+      evidence: "공식 문제 PDF 11쪽 전체 페이지가 [29~34] 공통 지문, (4)·(4′) 추론 도식, 29번 " +
+        "발문과 ①~⑤를 모두 포함한다. box:null은 이 원본 페이지를 자르지 않고 전체 표시한다는 뜻이므로 " +
+        "도식이 누락되지 않으며, 전사와 figure_description도 공식 픽셀과 일치한다.",
+      scopeDecision: "accept",
+      scopeConfidence: 1,
+      scopeEvidence: "논리학 설명문의 전개와 내용을 파악하는 국어 독서 문항이다.",
+    },
+    pinnedArtifact: {
+      path: "problem-terminal-fidelity-policy-revisions/" +
+        "v1-0011-0029-5cd21ac0ebc9e3b730997ccd261594978e171e4f79447ac650488e720db7052d.json",
+      sha256: "e2c07cba3f712281ea8953746044102023ff518986e39c4ca3ef21d59c9d3ed6",
+      itemHash: "9b9d95bfce7ba155c58a826904bcfbd4333ce3e88ef226f118f4e321d4ca9623",
+    },
+  },
 }] as const;
 
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(

@@ -1917,7 +1917,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 6)))
       .toBe("ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048");
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST))
-      .toBe("6f121139b845c74c1de93f68d8fe906c7200481f187ba3810a811450683917e0");
+      .toBe("4a5965fb8a86b59cc2dfb8c2a887af8e1e39fca40fc60e056b4b8a9606a68cb8");
     expect(terminalSpecs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -2337,7 +2337,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         rowHash: canonicalEvidenceHash(candidate),
       })),
     }).toEqual({
-      allowlistHash: "6f121139b845c74c1de93f68d8fe906c7200481f187ba3810a811450683917e0",
+      allowlistHash: "4a5965fb8a86b59cc2dfb8c2a887af8e1e39fca40fc60e056b4b8a9606a68cb8",
       prefixHash: "e4601a183669f046f4cc1f52cd30a860fe6347f96ffa41b30bdc8db2123630b3",
       rows: [{
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",
@@ -3214,6 +3214,30 @@ describe("exact allowlisted problem manual adjudication", () => {
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
     "repairs the source-grounded 5578421 Q29 diagram after its failed terminal adjudication",
     async () => {
+    const terminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === "ebsi-5578421-q29-terminal-fidelity-v2"
+    )!;
+    expect({
+      prefixHash: canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 14)),
+      rowHash: canonicalEvidenceHash(terminalSpec),
+      pinnedAdjudicationArtifact: terminalSpec.pinnedAdjudicationArtifact,
+      pinnedPolicyArtifact: terminalSpec.policyRevision?.pinnedArtifact,
+    }).toEqual({
+      prefixHash: "6f121139b845c74c1de93f68d8fe906c7200481f187ba3810a811450683917e0",
+      rowHash: "337196b42c2b29fbade3173681db9ced4cd23a0831782356fcfcb58ff4b77279",
+      pinnedAdjudicationArtifact: {
+        path: "problem-terminal-fidelity-adjudications/" +
+          "v1-0011-0029-471a32458fb8d0a2725ac8e9d6830815e7eeebba3c5759df6a17b17f1ddd1973.json",
+        sha256: "70b8ceff8d6ead8152fcc0435bb2f4485c8e73ec0e67aba1e7cac6307652ac60",
+        itemHash: "aa326687b1ca686c6e4e7ed0f5984f8ed5bc88e8e304fccfb87ef8dbb53cdeab",
+      },
+      pinnedPolicyArtifact: {
+        path: "problem-terminal-fidelity-policy-revisions/" +
+          "v1-0011-0029-5cd21ac0ebc9e3b730997ccd261594978e171e4f79447ac650488e720db7052d.json",
+        sha256: "e2c07cba3f712281ea8953746044102023ff518986e39c4ca3ef21d59c9d3ed6",
+        itemHash: "9b9d95bfce7ba155c58a826904bcfbd4333ce3e88ef226f118f4e321d4ca9623",
+      },
+    });
     root = mkdtempSync(join(tmpdir(), "studywork-5578421-q29-terminal-manual-"));
     cpSync(q31Q32LiveState, root, { recursive: true });
     removeManualArtifacts(root, ["11:29"]);
