@@ -7865,6 +7865,67 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
       itemHash: "8fb889dc383a7593c543d354ef7287cb3a7583b73cc55d3ead5a4d60b468ad97",
     },
   },
+}, {
+  allowlistId: "ebsi-5578421-q44-terminal-fidelity-v3",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5578421-q44-manual-v1",
+  parentManualRevisionAllowlistId: "ebsi-5578421-q44-manual-revision-v1",
+  entryId: "ebsi:5578421",
+  key: "16:44",
+  sourcePage: 16,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  solutionSourceHash: "95e7552f9264cec9649f648fe607bd12f9fe9f77bc9d06edb896971fcee34bf2",
+  parentQuestionHash: "9c38330638950ef2e46c3748001b36d2c7f8ddd86249f9c859581a6dec54a93c",
+  parentClassificationHash: "3075f22fd755d634d5fb2ce4778e3f599f501fd91fe9e58a1bb0a622d067fb88",
+  parentProblemArtifactPath: "problem-manual-revisions/" +
+    "v1-0016-0044-e68805c72fa61c0d254bfa5c2528d65de19ba427ac1ec0eac4af5e67a15d6a29.json",
+  parentProblemArtifactHash: "0eb4583ce36552387cec5118ed6b73d0c45bc670d1f3dbc219297deef76ad75d",
+  parentClassificationArtifactPath: "classification-manual-revisions/" +
+    "v1-0016-0044-e0ac235923f65bfe6bd802aa7342d090762617a970475ca2727ace56b092a801-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "d0f5f6b6cb39c094e7f1df6223515831876b49118d60e58beb43fa70dd18388b",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-272dbc34871780d5cd01399234857b08635b9545a1ca3751dca142218af72793-" +
+    "99ff1d694796f405493706d63c0f1e754e41788f9815366760e08ccbe6614e54.json",
+  failedTerminalArtifactHash: "aab784858ff1a37a632bb163d547e1a260252c3aef47d3e4d5829aa0451ddba1",
+  failedEffectiveCorpusHash: "272dbc34871780d5cd01399234857b08635b9545a1ca3751dca142218af72793",
+  failedInputHash: "99ff1d694796f405493706d63c0f1e754e41788f9815366760e08ccbe6614e54",
+  failedTerminalInputHash: "81643bd560e7b3938d2a4f1ef659e77e32146919e368c127ed4ae24e53810758",
+  failedItemHash: "3f4d6e39b51eaa7437705f4f2b454223aeee5a9f2624ea69ce1abab624f070b6",
+  failedEvidenceHash: "b220ab8a38f8f02f42f2e821bed7864b176d96d66db0b8e63f250c96ce073d5d",
+  failedScopeEvidenceHash: "46af12cff11977058b57172c1ea86a514a208ae4b3ec3c4791ed072389feae69",
+  pinnedAdjudicationArtifact: {
+    path: "problem-terminal-fidelity-adjudications/" +
+      "v1-0016-0044-e48ae3999e6011fc751249ab4bfeef2963c2b014bf845cce032f5090d4c9bbd8.json",
+    sha256: "899e93364508db172980a509f19627f370c437860d774f79ceebbfe02ff638d2",
+    itemHash: "46464c0d338ff540942aa03e336cc159195c67d52acf74d207633d4852621ba5",
+  },
+  policyRevision: {
+    allowlistId: "ebsi-5578421-q44-terminal-source-policy-v3",
+    kind: "source",
+    parentAdjudicationArtifactPath: "problem-terminal-fidelity-adjudications/" +
+      "v1-0016-0044-e48ae3999e6011fc751249ab4bfeef2963c2b014bf845cce032f5090d4c9bbd8.json",
+    parentAdjudicationArtifactHash: "899e93364508db172980a509f19627f370c437860d774f79ceebbfe02ff638d2",
+    parentAdjudicationBasisDigest: "e48ae3999e6011fc751249ab4bfeef2963c2b014bf845cce032f5090d4c9bbd8",
+    parentAdjudicationItemHash: "46464c0d338ff540942aa03e336cc159195c67d52acf74d207633d4852621ba5",
+    parentAdjudicationEvidenceHash: "6b07c7aa0ac6658a16773313b6cd761612035ec0bc6cbc0d2dae6c3b9029f528",
+    parentAdjudicationScopeEvidenceHash: "7744bc60aa47355ea07193d0c2b35583d801f47815b2a34c05a3dcc78348c866",
+    expectedItem: {
+      key: "16:44",
+      status: "exact",
+      evidence: "공식 문제 PDF 15쪽의 [43~45] 안내와 시 (가)의 시작, 16쪽의 나머지 시·<보기>·44번 " +
+        "발문·①~⑤가 공급 전사와 모두 일치한다. 공식 표기는 ‘부딪히고’, ‘백힌다’이다.",
+      scopeDecision: "accept",
+      scopeConfidence: 1,
+      scopeEvidence: "현대시의 소재 속성과 이미지, 주제 형상화를 비교·해석하는 국어 문학 문항이다.",
+    },
+    pinnedArtifact: {
+      path: "problem-terminal-fidelity-policy-revisions/" +
+        "v1-0016-0044-4199f08da096b923d32f74966deccc09bfcca92e241144bb593ba258db31ee76.json",
+      sha256: "c69bd99fa8050ff8cf34ab7169c9c5c5e0a3364e8e95e880d6341fa3a50c360c",
+      itemHash: "ae0a53375a681c904f74383c0503b86a6c1dd2e7bbf5cdf6c5b4afba32585ec6",
+    },
+  },
 }] as const;
 
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(
