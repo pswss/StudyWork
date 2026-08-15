@@ -2339,7 +2339,7 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 240_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
-    "hydrates pinned Q30 and Q44-Q45 ahead of superseding recovery generations",
+    "hydrates pinned Q19-Q21, Q30, and Q44-Q45 ahead of superseding recoveries",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-5578421-pinned-superseded-"));
     cpSync(q31Q32LiveState, root, { recursive: true });
@@ -2361,6 +2361,13 @@ describe("exact allowlisted problem manual adjudication", () => {
         const q44 = items.find((item) => item.key === "16:44");
         const q45 = items.find((item) => item.key === "16:45");
         const q30 = items.find((item) => item.key === "12:30");
+        const q19 = items.find((item) => item.key === "8:19");
+        const q20 = items.find((item) => item.key === "8:20");
+        const q21 = items.find((item) => item.key === "8:21");
+        expect(q19?.question).toContain("곱새담*의 짚날을 뽑아 오고….");
+        expect(q20?.question).toContain("곱새담*의 짚날을 뽑아 오고….");
+        expect(q21?.question).toContain("곱새담*의 짚날을 뽑아 오고….");
+        expect(q19?.choices?.[1]).toContain("주체와 객체를 전도시켜");
         expect(q30?.question).toContain("‘걷는다’와 같이 동사인 경우");
         expect(q30?.question).toContain("단순 명제라 하여 ‘$p$, $q$, $r$’");
         expect(q30?.question).toContain("논증의 타당성을 평가했다.");
@@ -2386,6 +2393,9 @@ describe("exact allowlisted problem manual adjudication", () => {
     )).rejects.toThrow(/seeded (?:terminal after pinned Q44-Q45 hydration|later)/u);
     expect(classificationKeys).not.toContain("16:44");
     expect(classificationKeys).not.toContain("16:45");
+    expect(classificationKeys).not.toContain("8:19");
+    expect(classificationKeys).not.toContain("8:20");
+    expect(classificationKeys).not.toContain("8:21");
     expect(terminalCalls).toBeLessThanOrEqual(1);
   }, 180_000);
 
