@@ -7226,6 +7226,64 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
     sha256: "75ef0affae2d3d4673b7daa85ac3dcf7fcac61decac6406b0c285e5cd5d9853d",
     itemHash: "603d5f6bebb158c51dbefdf0181c220b62b02b72ad9aabb47d605ea2cd409ded",
   },
+}, {
+  allowlistId: "ebsi-5578421-q44-terminal-fidelity-v1",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5578421-q44-manual-v1",
+  parentManualRevisionAllowlistId: "ebsi-5578421-q44-manual-revision-v1",
+  entryId: "ebsi:5578421",
+  key: "16:44",
+  sourcePage: 16,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  solutionSourceHash: "95e7552f9264cec9649f648fe607bd12f9fe9f77bc9d06edb896971fcee34bf2",
+  parentQuestionHash: "9c38330638950ef2e46c3748001b36d2c7f8ddd86249f9c859581a6dec54a93c",
+  parentClassificationHash: "3075f22fd755d634d5fb2ce4778e3f599f501fd91fe9e58a1bb0a622d067fb88",
+  parentProblemArtifactPath: "problem-manual-revisions/" +
+    "v1-0016-0044-e68805c72fa61c0d254bfa5c2528d65de19ba427ac1ec0eac4af5e67a15d6a29.json",
+  parentProblemArtifactHash: "0eb4583ce36552387cec5118ed6b73d0c45bc670d1f3dbc219297deef76ad75d",
+  parentClassificationArtifactPath: "classification-manual-revisions/" +
+    "v1-0016-0044-e0ac235923f65bfe6bd802aa7342d090762617a970475ca2727ace56b092a801-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "d0f5f6b6cb39c094e7f1df6223515831876b49118d60e58beb43fa70dd18388b",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-b2298907d2516b7512ba9ef95d482177e44d5002fea798fbedc69769be2dfefa-" +
+    "204097c01e9dac4b59dfc0a0d6775df24dcfbb942b29542abad13592dc04f668.json",
+  failedTerminalArtifactHash: "49a8bb4666a0e03746f79625fa2292311256f6a099925f044e598690844f9811",
+  failedEffectiveCorpusHash: "b2298907d2516b7512ba9ef95d482177e44d5002fea798fbedc69769be2dfefa",
+  failedInputHash: "204097c01e9dac4b59dfc0a0d6775df24dcfbb942b29542abad13592dc04f668",
+  failedTerminalInputHash: "81643bd560e7b3938d2a4f1ef659e77e32146919e368c127ed4ae24e53810758",
+  failedItemHash: "a18c117c38f96083dc886373293ea629f095e342c625e013f47f4a2eab4d5375",
+  failedEvidenceHash: "43873293c212cad8d01e77e4d5dd5a2b42c033b775b69c927e0decb71eb83af6",
+  failedScopeEvidenceHash: "61f921b107c4c4d8185eadb81e84cb30cc5f6b5d6c8a9fb1b25e4cff40630156",
+}, {
+  allowlistId: "ebsi-5578421-q45-terminal-fidelity-v1",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5578421-q45-manual-v1",
+  parentManualRevisionAllowlistId: "ebsi-5578421-q45-manual-revision-v1",
+  entryId: "ebsi:5578421",
+  key: "16:45",
+  sourcePage: 16,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  solutionSourceHash: "95e7552f9264cec9649f648fe607bd12f9fe9f77bc9d06edb896971fcee34bf2",
+  parentQuestionHash: "9e7c7255f20d16b9d0f11e0ae3cdc81b51f56caf05e2df792a08c348012a0689",
+  parentClassificationHash: "e85b4fc5adc2630870311f4830c6cc4270ce29fdb203beb026177f40f6c83509",
+  parentProblemArtifactPath: "problem-manual-revisions/" +
+    "v1-0016-0045-d6eb938bbceffff4a452c500f5bb3e749cebff28d3a02b2dd9c01440f5c8aa31.json",
+  parentProblemArtifactHash: "8ea5e45d2ae2b3a0e7f37b26b8a5fb43319944b600e612e807722fd3c3a1711a",
+  parentClassificationArtifactPath: "classification-manual-revisions/" +
+    "v1-0016-0045-aa10366077d8619c0e7c3e42507a0f86cdf8faca8ff78ffcc62c3a3b49e2d881-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "22adc1c0a0ddb9ab9cd8f696b0ffae318ffa73c5c9f76df0dfdb2678a7600864",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-b2298907d2516b7512ba9ef95d482177e44d5002fea798fbedc69769be2dfefa-" +
+    "204097c01e9dac4b59dfc0a0d6775df24dcfbb942b29542abad13592dc04f668.json",
+  failedTerminalArtifactHash: "49a8bb4666a0e03746f79625fa2292311256f6a099925f044e598690844f9811",
+  failedEffectiveCorpusHash: "b2298907d2516b7512ba9ef95d482177e44d5002fea798fbedc69769be2dfefa",
+  failedInputHash: "204097c01e9dac4b59dfc0a0d6775df24dcfbb942b29542abad13592dc04f668",
+  failedTerminalInputHash: "e9e1af8ad59d06f5e29b274995f9ccb87d9938c50f3d9bf2ef6cd20b9745f883",
+  failedItemHash: "37573001f51bfc1b0ce117fe754972b880cbd7c08d99dee865296c6159faf460",
+  failedEvidenceHash: "3eafefb8a957759c174dd7590e6c31bb585e1630822757aba47f06c0ac925b89",
+  failedScopeEvidenceHash: "af6ee8ae1696b0b5c1ec44b73cbb89495ede432d5450f780b1d09fc8b7468a21",
 }] as const;
 
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(

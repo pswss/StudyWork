@@ -1787,10 +1787,34 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(shared44).toContain("※ <보기>를 읽고 44번과 45번 두 물음에 답하시오.");
     expect(shared44).toContain("아아, 너는 산(山)ㅅ새처럼 날러갔구나!");
     expect(shared44).toContain("열없이 붙어서서 입김을 흐리우니");
+    expect(shared44).toContain("밀려와 부딪히고,");
+    expect(shared44).toContain("보석(寶石)처럼 백힌다.");
+    expect(shared44).not.toContain("부딪치고");
+    expect(shared44).not.toContain("박힌다");
     expect(shared44).toContain("단절과 소통, 소멸과 생성의 이미지를");
     expect(shared44).not.toContain("파닥거린다");
     expect(revised[1].figure).toBe(true);
     expect(revised[1].figure_description).toContain("C의 두 판단 근거는 하나의 선택지 ⑤로 묶여 있다.");
+    const terminalSpecs = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.filter((spec) =>
+      spec.entryId === "ebsi:5578421" && ["16:44", "16:45"].includes(spec.key)
+    );
+    expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 6)))
+      .toBe("ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048");
+    expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST))
+      .toBe("4326bcd0d93a13673c2a7607cdc1e1b0e97798093a71d473117c0d5bd4239668");
+    expect(terminalSpecs.map((spec) => ({
+      key: spec.key,
+      rowHash: canonicalEvidenceHash(spec),
+      failedItemHash: spec.failedItemHash,
+    }))).toEqual([{
+      key: "16:44",
+      rowHash: "1793ae9ace0139865d5b071019058b54149778aa19dbcf0d59eb44272fefa534",
+      failedItemHash: "a18c117c38f96083dc886373293ea629f095e342c625e013f47f4a2eab4d5375",
+    }, {
+      key: "16:45",
+      rowHash: "1750340a7d8739f26968ef8953ea5c8e54dbf7cb853fa0b916485c82e6098376",
+      failedItemHash: "37573001f51bfc1b0ce117fe754972b880cbd7c08d99dee865296c6159faf460",
+    }]);
   });
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
@@ -2027,7 +2051,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         rowHash: canonicalEvidenceHash(candidate),
       })),
     }).toEqual({
-      allowlistHash: "ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048",
+      allowlistHash: "4326bcd0d93a13673c2a7607cdc1e1b0e97798093a71d473117c0d5bd4239668",
       prefixHash: "e4601a183669f046f4cc1f52cd30a860fe6347f96ffa41b30bdc8db2123630b3",
       rows: [{
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",
