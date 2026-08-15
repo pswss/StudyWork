@@ -2339,6 +2339,52 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 240_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "hydrates the pinned Q44-Q45 pair ahead of a superseding recovery generation",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-5578421-q44-q45-superseded-"));
+    cpSync(q31Q32LiveState, root, { recursive: true });
+    const classificationKeys: string[] = [];
+    let terminalCalls = 0;
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      if (request.schema?.name === "studywork_exam_corpus_classification") {
+        const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{ key: string }>;
+        classificationKeys.push(...items.map((item) => item.key));
+        throw new Error(`seeded later classification boundary: ${items.map((item) => item.key).join(",")}`);
+      }
+      if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity") {
+        terminalCalls++;
+        const items = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{
+          key: string;
+          question: string;
+          choices: string[] | null;
+        }>;
+        const q44 = items.find((item) => item.key === "16:44");
+        const q45 = items.find((item) => item.key === "16:45");
+        expect(q44?.question).toContain("열없이 붙어서서 입김을 흐리우니");
+        expect(q44?.question).toContain("길들은 양 언 날개를 파다거린다.");
+        expect(q45?.choices?.[2]).toContain("B-(가):");
+        expect(q45?.choices?.[2]).toContain("B-(나):");
+        expect(q45?.choices?.[3]).toContain("④ C-(가):");
+        expect(q45?.choices?.[4]).toContain("⑤ C-(나):");
+        throw new Error("seeded terminal after pinned Q44-Q45 hydration");
+      }
+      throw new Error(`seeded later boundary: ${request.schema?.name ?? "unknown"}`);
+    });
+    const input = q27FixtureInputs(root);
+    await expect(repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions,
+    )).rejects.toThrow(/seeded (?:terminal after pinned Q44-Q45 hydration|later)/u);
+    expect(classificationKeys).not.toContain("16:44");
+    expect(classificationKeys).not.toContain("16:45");
+    expect(terminalCalls).toBeLessThanOrEqual(1);
+  }, 180_000);
+
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
     "pins and applies the source-exact 5578421 Q14 tone diagram",
     () => {
     expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(55);

@@ -18695,6 +18695,10 @@ function is5578421PersistedSingletonManualSpec(spec: ProblemManualAdjudicationSp
   return spec.entryId === "ebsi:5578421" && ["4:12", "16:43"].includes(spec.key);
 }
 
+function is5578421PersistedManualHydrationSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return is5578421PersistedSingletonManualSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec);
+}
+
 function isQ37ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5525982" && spec.key === "14:37";
 }
@@ -25111,10 +25115,10 @@ export async function repairAndAuditOfficialAnswers(
     effective[index] = repaired.classified;
     repairs.set(key, repaired.evidence);
   }
-  const persistedSingletonManualSpecs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
-    is5578421PersistedSingletonManualSpec(spec) && strictArtifactNames(
+  const persistedManualSpecs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
+    is5578421PersistedManualHydrationSpec(spec) && strictArtifactNames(
       join(stateDir, "problem-recoveries"),
-      `${spec.key} persisted singleton manual recovery`,
+      `${spec.key} persisted manual recovery`,
       (name) => /^v\d+-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
     ).some((name) => name.startsWith(
       `v${PROBLEM_RECOVERY_VERSION}-${String(spec.sourcePage).padStart(4, "0")}-` +
@@ -25124,14 +25128,14 @@ export async function repairAndAuditOfficialAnswers(
       `${spec.key.split(":")[1]!.padStart(4, "0")}-`
     ))
   ).sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
-  for (const spec of persistedSingletonManualSpecs) {
+  for (const spec of persistedManualSpecs) {
     const index = effective.findIndex((item) => questionKey(item.question) === spec.key);
     const restored = await restoredPinnedManualRecovery(entry, stateDir, spec);
     const number = Number(spec.key.split(":")[1]);
     const original = baseByKey.get(spec.key);
     const solution = baseSolutionsByNumber.get(number);
     if (index < 0 || !original || !solution) {
-      throw new Error(`${spec.key} persisted singleton manual base input이 없습니다`);
+      throw new Error(`${spec.key} persisted manual base input이 없습니다`);
     }
     const pinnedBase = await restoredPersistedManualBaseRepair(
       entry,
@@ -25143,11 +25147,12 @@ export async function repairAndAuditOfficialAnswers(
       restored.parent
     );
     const currentRepair = repairs.get(spec.key);
-    if (currentRepair && (
+    const allowSupersededBase = is5578421Q44Q45ManualBatchSpec(spec);
+    if (currentRepair && !allowSupersededBase && (
       currentRepair.revision ||
       canonicalEvidenceHash(currentRepair) !== canonicalEvidenceHash(pinnedBase.evidence)
-    )) throw new Error(`${spec.key} persisted singleton manual base hydration authority가 다릅니다`);
-    const repair = currentRepair ?? pinnedBase.evidence;
+    )) throw new Error(`${spec.key} persisted manual base hydration authority가 다릅니다`);
+    const repair = allowSupersededBase ? pinnedBase.evidence : currentRepair ?? pinnedBase.evidence;
     effective[index] = pinnedBase.classified;
     repairs.set(spec.key, repair);
     const revision = await restoredPersistedManualRevision(
@@ -25165,7 +25170,7 @@ export async function repairAndAuditOfficialAnswers(
       restored.parent,
       false
     );
-    if (!manual) throw new Error(`${spec.key} persisted singleton manual child가 없습니다`);
+    if (!manual) throw new Error(`${spec.key} persisted manual child가 없습니다`);
     const hydratedRecovery = { ...restored.parent, manualAdjudication: manual.evidence };
     const hydrationChecks = {
       key: questionKey(manual.classified.question) === spec.key,
@@ -25175,7 +25180,7 @@ export async function repairAndAuditOfficialAnswers(
       ) === spec.parentRecoveryEvidenceHash,
     };
     if (!Object.values(hydrationChecks).every(Boolean)) throw new Error(
-      `${spec.key} persisted singleton manual hydration이 다릅니다: ${JSON.stringify(hydrationChecks)}`
+      `${spec.key} persisted manual hydration이 다릅니다: ${JSON.stringify(hydrationChecks)}`
     );
     effective[index] = manual.classified;
     repairs.set(spec.key, {
@@ -25236,7 +25241,11 @@ export async function repairAndAuditOfficialAnswers(
     const uniqueKeys = [...new Set(keys)];
     const forced5578421ManualGroups = revisionKind === "terminal" && entry.id === "ebsi:5578421" &&
       problem.sha256 === "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e"
-      ? [is5578421Q6Q7ManualBatchSpec, is5578421Q31Q32ManualBatchSpec].flatMap((predicate) => {
+      ? [
+          is5578421Q6Q7ManualBatchSpec,
+          is5578421Q31Q32ManualBatchSpec,
+          is5578421Q44Q45ManualBatchSpec,
+        ].flatMap((predicate) => {
           const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(predicate)
             .sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
           return specs.some((spec) => uniqueKeys.includes(spec.key)) &&
@@ -25535,7 +25544,8 @@ export async function repairAndAuditOfficialAnswers(
         ? (({ manualAdjudication: _manual, ...parent }) => parent)(recovery)
         : restored.parent;
       if (
-        canonicalEvidenceHash(activeParent) !== spec.parentRecoveryEvidenceHash ||
+        (recovery?.manualAdjudication &&
+          canonicalEvidenceHash(activeParent) !== spec.parentRecoveryEvidenceHash) ||
         canonicalEvidenceHash(restored.parent) !== spec.parentRecoveryEvidenceHash ||
         canonicalEvidenceHash(restored.parent.baseProblemRepairArtifact) !==
           canonicalEvidenceHash(revision.baseProblemRepairArtifact) ||
