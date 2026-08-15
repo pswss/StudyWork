@@ -996,6 +996,7 @@ type ProblemTerminalFidelityAdjudicationSpec = {
   allowlistId: string;
   parentKind: "manual" | "repair" | "crop" | "scope-box";
   parentManualAllowlistId?: string;
+  parentManualRevisionAllowlistId?: string;
   parentCropAllowlistId?: string;
   parentScopeBoxAllowlistId?: string;
   parentScopeAdjudicationHash?: string;
@@ -1032,6 +1033,7 @@ type ProblemTerminalFidelityAdjudicationSpec = {
   failedEvidenceHash: string;
   failedScopeEvidenceHash: string;
   failedStatus?: ProblemTerminalFidelityItem["status"];
+  failedScopeDecision?: ProblemTerminalFidelityItem["scopeDecision"];
   expectedScopeDecision?: ProblemTerminalFidelityItem["scopeDecision"];
   policyRevision?: ProblemTerminalFidelityPolicyRevisionSpec;
 };
@@ -5554,6 +5556,37 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedItemHash: "cf90936abe0ae9341269766b14e0dc01e00323f56cf8934ea1ab1f71b7a22a2a",
   failedEvidenceHash: "3067f9a6976e3fc924d5f84ef88d2b3f4496e03cc02d79fd007165656156834a",
   failedScopeEvidenceHash: "fbc421e9b58a971ae42c4d6c6ec214450f3f2cf71afa803715c79dc74095758f",
+}, {
+  allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5578421-q2-manual-v1",
+  parentManualRevisionAllowlistId: "ebsi-5578421-q2-manual-revision-v1",
+  entryId: "ebsi:5578421",
+  key: "1:2",
+  sourcePage: 1,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  solutionSourceHash: "95e7552f9264cec9649f648fe607bd12f9fe9f77bc9d06edb896971fcee34bf2",
+  parentQuestionHash: "85fffcf17b1e2ca69ab3ef773c17dcd16883e04ba7e1225761634a8ac05eaccf",
+  parentClassificationHash: "6e1665b167670d149a0a20b2340fc914dfdd3fe1e4d2fb7ac9e84ea735e5916a",
+  parentProblemArtifactPath: "problem-manual-revisions/" +
+    "v1-0001-0002-0181ad2d5d01f19c5b4d97b138fdf053a7cace10b5509c256e10c3b4b68c78c1.json",
+  parentProblemArtifactHash: "5436b4d16fb4329c0bb78bd4875f56fde50d6e71fe559ae1b42123efa943c572",
+  parentClassificationArtifactPath: "classification-manual-revisions/" +
+    "v1-0001-0002-c8dc2340f28cfb242cdd03bacb5f3524bf9a0e4666ce087ff73f2dc9b7871026-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "3f779e77ea88499ca0b0e6ca67cfc9c833c7469c42989c7f8a9ab8f68f418645",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-98e42386fc739dc7764f13da3ef3bccfcd1bfe908cd2e1d5da8f8af0443ab51f-" +
+    "4bd01701c88d46ab8e6b2ca8169d7d042059dd654f716b2d774b013290ce8431.json",
+  failedTerminalArtifactHash: "a77338c2419a42cce84ca9ac6e7f41f9b92806bcb892acfeac2f54fd972693f9",
+  failedEffectiveCorpusHash: "98e42386fc739dc7764f13da3ef3bccfcd1bfe908cd2e1d5da8f8af0443ab51f",
+  failedInputHash: "4bd01701c88d46ab8e6b2ca8169d7d042059dd654f716b2d774b013290ce8431",
+  failedTerminalInputHash: "4e9e1cdf449a4406ff0d67079d79aaf62f5cbd1054ff941c04daf3eee89d107b",
+  failedItemHash: "516a8fe73995e51b68c6a9dfbd7e69c8c2d830e042664ba08941bccf0888712e",
+  failedEvidenceHash: "3aac1cd1461ef683c5e629adec18bc207bf12dbd9c9f2c31d65efadc7dc342f8",
+  failedScopeEvidenceHash: "d43fc1a8dfa512be9b2a04c9ef03dda209a8dc03afcd539ecfd0a238e5ac587d",
+  failedScopeDecision: "reject",
+  expectedScopeDecision: "reject",
 }] as const;
 
 export function manualAdjudicationAllowlistFingerprint(): string {
@@ -7101,7 +7134,7 @@ function verifyProblemTerminalFidelityAdjudications(
     const key = exactString(repair.key, `answer audit repairs[${index}].key`);
     const current = effective.records.get(key);
     const spec = specs.find((candidate) => candidate.key === key);
-    const expectedParentDecision = spec?.parentKind === "scope-box" ? "reject" : "accept";
+    const expectedParentDecision = spec ? expectedScopeDecision(spec) : "accept";
     if (!current || !spec || current.question.page !== spec.sourcePage
       || canonicalEvidenceHash(current.question.evidence) !== spec.parentQuestionHash
       || canonicalEvidenceHash(current.classification) !== spec.parentClassificationHash
@@ -7128,6 +7161,18 @@ function verifyProblemTerminalFidelityAdjudications(
     const parentManual = recovery?.manualAdjudication === undefined
       ? undefined
       : object(recovery.manualAdjudication, `${key}.revision.recovery.manualAdjudication`);
+    const parentManualFirstRevision = parentManual?.revision === undefined
+      ? undefined
+      : object(parentManual.revision, `${key}.revision.recovery.manualAdjudication.revision`);
+    const parentManualRevision = parentManualFirstRevision?.sourceRevision === undefined
+      ? parentManualFirstRevision
+      : object(
+          parentManualFirstRevision.sourceRevision,
+          `${key}.revision.recovery.manualAdjudication.revision.sourceRevision`,
+        );
+    const parentManualAuthority = spec.parentManualRevisionAllowlistId
+      ? parentManualRevision
+      : parentManual;
     const parentCrop = recovery?.adjudication === undefined
       ? undefined
       : object(recovery.adjudication, `${key}.revision.recovery.adjudication`);
@@ -7143,14 +7188,14 @@ function verifyProblemTerminalFidelityAdjudications(
     };
     const parentProblemArtifact = pointerFromEnvelope(
       spec.parentKind === "manual"
-        ? parentManual?.problemArtifact
+        ? parentManualAuthority?.problemArtifact
         : spec.parentKind === "crop" ? parentCrop?.problemArtifact
           : spec.parentKind === "scope-box" ? parentScopeBox?.problemArtifact : parentRepair.problemArtifact,
       `${key}.terminalAdjudication.parentProblemArtifact`,
     );
     const parentClassificationArtifact = pointerFromEnvelope(
       spec.parentKind === "manual"
-        ? parentManual?.classificationArtifact
+        ? parentManualAuthority?.classificationArtifact
         : spec.parentKind === "crop" ? parentCrop?.classificationArtifact
           : spec.parentKind === "scope-box"
           ? parentScopeBox?.classificationArtifact
@@ -7171,10 +7216,13 @@ function verifyProblemTerminalFidelityAdjudications(
       `${key} terminal adjudication parent classification`,
     );
     if (spec.parentKind === "manual") {
-      if (!parentManual || parentManual.allowlistId !== spec.parentManualAllowlistId
-        || parentManual.revision !== undefined || parentManual.sourceHash !== spec.sourceHash
-        || parentManual.effectiveQuestionHash !== spec.parentQuestionHash
-        || parentManual.effectiveClassificationHash !== spec.parentClassificationHash) {
+      if (!parentManual || !parentManualAuthority
+        || parentManual.allowlistId !== spec.parentManualAllowlistId
+        || Boolean(parentManualRevision) !== Boolean(spec.parentManualRevisionAllowlistId)
+        || parentManualRevision?.allowlistId !== spec.parentManualRevisionAllowlistId
+        || parentManual.sourceHash !== spec.sourceHash
+        || parentManualAuthority.effectiveQuestionHash !== spec.parentQuestionHash
+        || parentManualAuthority.effectiveClassificationHash !== spec.parentClassificationHash) {
         throw new Error(`${key}: terminal fidelity adjudication manual parent is stale`);
       }
     } else if (spec.parentKind === "crop") {
@@ -7283,7 +7331,7 @@ function verifyProblemTerminalFidelityAdjudications(
       || failedTerminalItem.scopeEvidence === undefined
       || sha256(failedTerminalItem.scopeEvidence) !== spec.failedScopeEvidenceHash
       || failedTerminalItem.status !== (spec.failedStatus ?? "mismatch")
-      || failedTerminalItem.scopeDecision !== "accept"
+      || failedTerminalItem.scopeDecision !== (spec.failedScopeDecision ?? "accept")
       || failedTerminalItem.scopeConfidence < 0.9) {
       throw new Error(`${key}: terminal fidelity adjudication failed item/input is stale`);
     }

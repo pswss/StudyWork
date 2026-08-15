@@ -153,6 +153,19 @@ describe.skipIf(!available)("Q8/Q20 terminal fidelity adjudication", () => {
         failedTerminalArtifactHash: "57669957b787de6422653161d5aff1cf0fdb543ba3e021e864e81402fffba579",
         failedItemHash: "cf90936abe0ae9341269766b14e0dc01e00323f56cf8934ea1ab1f71b7a22a2a",
       }),
+      expect.objectContaining({
+        entryId: "ebsi:5578421",
+        key: "1:2",
+        parentKind: "manual",
+        parentManualAllowlistId: "ebsi-5578421-q2-manual-v1",
+        parentManualRevisionAllowlistId: "ebsi-5578421-q2-manual-revision-v1",
+        parentQuestionHash: "85fffcf17b1e2ca69ab3ef773c17dcd16883e04ba7e1225761634a8ac05eaccf",
+        parentClassificationHash: "6e1665b167670d149a0a20b2340fc914dfdd3fe1e4d2fb7ac9e84ea735e5916a",
+        failedTerminalArtifactHash: "a77338c2419a42cce84ca9ac6e7f41f9b92806bcb892acfeac2f54fd972693f9",
+        failedItemHash: "516a8fe73995e51b68c6a9dfbd7e69c8c2d830e042664ba08941bccf0888712e",
+        failedScopeDecision: "reject",
+        expectedScopeDecision: "reject",
+      }),
     ]);
   });
 
@@ -438,4 +451,79 @@ describe.skipIf(!existsSync(join(q29LiveState, "problem.pdf")))("Q29 crop termin
     expect(q29Calls).toBe(0);
     expect(snapshot(root)).toEqual(stable);
   }, 120_000);
+});
+
+describe.skipIf(!existsSync(join(q29LiveState, "problem.pdf")))(
+  "Q2 manual-revision terminal fidelity adjudication",
+  () => {
+  it("preserves the official plural wording and resumes past the false terminal mismatch", async () => {
+    const root = mkdtempSync(join(tmpdir(), "studywork-q2-terminal-adjudication-"));
+    roots.push(root);
+    cpSync(q29LiveState, root, { recursive: true });
+    const childDirectory = join(root, "problem-terminal-fidelity-adjudications");
+    if (existsSync(childDirectory)) {
+      for (const name of readdirSync(childDirectory)) {
+        if (name.startsWith("v1-0001-0002-")) rmSync(join(childDirectory, name));
+      }
+    }
+    const input = fixtureInputs(root);
+    let q2Calls = 0;
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      if (
+        request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity" &&
+        request.prompt.includes("Final question:\n")
+      ) {
+        const [item] = JSON.parse(request.prompt.split("Final question:\n")[1]) as Array<{
+          key: string;
+          question: string;
+        }>;
+        expect(item.key).toBe("1:2");
+        expect(item.question).toContain("실현한 나라들도 있습니다.");
+        q2Calls++;
+        return { text: JSON.stringify([{
+          key: item.key,
+          status: "exact",
+          evidence: "공식 1쪽 픽셀에는 ‘동전 없는 사회를 실현한 나라들도 있습니다.’라고 적혀 있다.",
+          scopeDecision: "reject",
+          scopeConfidence: 0.99,
+          scopeEvidence: "라디오 대담의 진행과 발화 기능을 묻는 듣기·말하기 문항이다.",
+        }]) };
+      }
+      throw new Error(`seeded after Q2 adjudication: ${request.schema?.name ?? "unknown"}`);
+    });
+
+    const run = () => repairAndAuditOfficialAnswers(
+      input.entry,
+      input.problem,
+      input.solution,
+      root,
+      input.classified,
+      input.solutions,
+    );
+    const error = await run().then(() => null, (caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect(q2Calls, (error as Error).message).toBe(1);
+    expect((error as Error).message).not.toContain("1:2 problem recovery는 한 번만 허용됩니다");
+    const childNames = readdirSync(childDirectory)
+      .filter((name) => name.startsWith("v1-0001-0002-"));
+    expect(childNames).toHaveLength(1);
+    const child = JSON.parse(readFileSync(
+      join(childDirectory, childNames[0]),
+      "utf8",
+    ));
+    expect(child.items).toEqual([expect.objectContaining({
+      key: "1:2",
+      status: "exact",
+      scopeDecision: "reject",
+    })]);
+    expect(child.basis.parentManual.revision.allowlistId)
+      .toBe("ebsi-5578421-q2-manual-revision-v1");
+
+    const stable = snapshot(root);
+    q2Calls = 0;
+    providerMock.complete.mockRejectedValue(new Error("seeded after persisted Q2 adjudication"));
+    await expect(run()).rejects.not.toThrow("1:2 problem recovery는 한 번만 허용됩니다");
+    expect(q2Calls).toBe(0);
+    expect(snapshot(root)).toEqual(stable);
+  }, 180_000);
 });
