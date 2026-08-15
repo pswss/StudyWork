@@ -2339,7 +2339,7 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 240_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
-    "hydrates pinned Q19-Q21, Q30-Q32, and Q44-Q45 ahead of superseding recoveries",
+    "hydrates pinned Q19-Q21, Q30-Q34, and Q44-Q45 ahead of superseding recoveries",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-5578421-pinned-superseded-"));
     cpSync(q31Q32LiveState, root, { recursive: true });
@@ -2363,6 +2363,8 @@ describe("exact allowlisted problem manual adjudication", () => {
         const q30 = items.find((item) => item.key === "12:30");
         const q31 = items.find((item) => item.key === "12:31");
         const q32 = items.find((item) => item.key === "12:32");
+        const q33 = items.find((item) => item.key === "12:33");
+        const q34 = items.find((item) => item.key === "12:34");
         const q19 = items.find((item) => item.key === "8:19");
         const q20 = items.find((item) => item.key === "8:20");
         const q21 = items.find((item) => item.key === "8:21");
@@ -2379,6 +2381,10 @@ describe("exact allowlisted problem manual adjudication", () => {
         expect(q31?.question).not.toContain("입장에서 다음 <보기>");
         expect(q32?.question).toContain("전제들을 엮을 수 있도록");
         expect(q32?.question).toContain("㉢ 명제 논리학");
+        expect(q33?.question).toContain("㉡의 사례로 가장 적절한 것은?");
+        expect(q33?.question).toContain("<결론>인 $q$");
+        expect(q34?.question).toContain("34. <보기>는 ㉢을 심화 학습");
+        expect(q34?.question).toContain("컴퓨터로 프로그래밍할 수 있는 길");
         expect(q44?.question).toContain("열없이 붙어서서 입김을 흐리우니");
         expect(q44?.question).toContain("길들은 양 언 날개를 파다거린다.");
         expect(q45?.choices?.[2]).toContain("B-(가):");
@@ -2405,6 +2411,8 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(classificationKeys).not.toContain("8:21");
     expect(classificationKeys).not.toContain("12:31");
     expect(classificationKeys).not.toContain("12:32");
+    expect(classificationKeys).not.toContain("12:33");
+    expect(classificationKeys).not.toContain("12:34");
     expect(terminalCalls).toBeLessThanOrEqual(1);
   }, 180_000);
 
