@@ -4357,6 +4357,48 @@ const Q3_5578421_FIGURE_DESCRIPTION =
   "함께 위에서부터 [경제1등], [이게머니], [거스름돈], [동전좋아], [부자되자]라는 작성자 이름 및 " +
   "각 추가 질문이 세로로 배열되어 있고, 각 게시물 오른쪽에는 ①부터 ⑤까지의 번호가 표시되어 있다.";
 
+const Q42_5577054_REPLACEMENTS: ProblemManualReplacement[] = [
+  { field: "question", from: "[37~42] 다음을 읽고 물음에 답하시오.", to: "[37 ~ 42] 다음을 읽고 물음에 답하시오.", count: 1 },
+  { field: "question", from: "「", to: "｢ ", count: 5 },
+  { field: "question", from: "」", to: " ｣", count: 5 },
+  { field: "question", from: "금령(金鈴)*", to: "금령(金鈴)*", count: 1 },
+  { field: "question", from: "암석이 바라보이며", to: "암석이 바라보이매", count: 1 },
+  { field: "question", from: "ⓐ 모든 바람막 같은 소리", to: "ⓐ 문득 벽력같은 소리", count: 1 },
+  { field: "question", from: "금빛 돋친", to: "금털 돋친", count: 1 },
+  { field: "question", from: "크게 불러 말하기를,\n“그대는", to: "크게 불러 말하기를,\n[A]\n“그대는", count: 1 },
+  { field: "question", from: "금령이 아니었다면", to: "금령이 아니었더라면", count: 1 },
+  { field: "question", from: "죽을힘을 다하여 거의 들어가니", to: "죽을힘을 다하여 기어 들어가니", count: 1 },
+  { field: "question", from: "돌 버섯에", to: "돌 비석에", count: 1 },
+  { field: "question", from: "동중에 주궁패궐과", to: "동중에 주궁패궐*과", count: 1 },
+  { field: "question", from: "상 위에 누워 앉다가", to: "상 위에 누워 앓다가", count: 1 },
+  { field: "question", from: "사람을 죽임이", to: "사람을 속임이", count: 1 },
+  { field: "question", from: "살았삽니다", to: "살았었습니다", count: 1 },
+  { field: "question", from: "친행으로", to: "천행으로", count: 1 },
+  { field: "question", from: "말씀을 전하시기를,\n“심 소저", to: "말씀을 전하시기를,\n[B]\n“심 소저", count: 1 },
+  { field: "question", from: "인당수로 불러보내어", to: "인당수로 돌려보내어", count: 1 },
+  { field: "question", from: "인당수로 보냈었다", to: "인당수로 보내었다", count: 1 },
+  { field: "question", from: "보내실제,", to: "보내실 제,", count: 1 },
+  { field: "question", from: "각궁 시녀와 어떤 선녀", to: "각궁 시녀와 여덟 선녀", count: 1 },
+  { field: "question", from: "부귀와 영광으로", to: "부귀와 영화로", count: 1 },
+  { field: "question", from: "죽을 몸이 다시 살아나 세상에", to: "죽을 몸이 다시 살아 세상에", count: 1 },
+  { field: "question", from: "이별하고 가기는 하지만는", to: "이별하고 가기는 하지마는", count: 1 },
+  { field: "question", from: "하시고 돌아서니", to: "하직하고 돌아서니", count: 1 },
+  { field: "question", from: "무덩실 떠 있을 적에", to: "둥덩실 떠 있을 적에", count: 1 },
+  { field: "question", from: "열 십만 금 이문", to: "억 십만 금 이문", count: 1 },
+  { field: "question", from: "당나라의 혜임을", to: "당나라의 옛일을", count: 1 },
+  { field: "question", from: "얼굴을 반만 물에 꽃봉 밖으로 반만 내다보더니", to: "얼굴을 반만 들어 꽃봉 밖으로 반만 내다보더니", count: 1 },
+  { field: "question", from: "혼인날이 당하여 명하시기를", to: "혼인날이 당하매 명하시기를", count: 1 },
+  { field: "question", from: "ⓔ 위험이", to: "ⓔ 위엄이", count: 1 },
+  { field: "question", from: "\n\nⓐ~ⓔ에 대한", to: "\n\n42. ⓐ ~ ⓔ에 대한", count: 1 },
+];
+
+const Q42_5577054_FIGURE_DESCRIPTION =
+  "공식 13쪽 오른쪽 (나)에는 왼쪽으로 열린 세로 묶음 괄호 [A]가 ‘그대는 어찌 금령을 " +
+  "구하지 아니하고 저다지 방황하느냐?’ 인용문만 감싼다. 공식 14쪽 왼쪽 (다)에는 같은 " +
+  "모양의 괄호 [B]가 ‘심 소저 혼약할 기한이 가까우니’부터 ‘좋은 때를 잃지 말게 하라.’까지의 " +
+  "인용문만 감싼다. 두 괄호는 각각 오른쪽 세로선 하나와 왼쪽으로 뻗은 위·아래 가로 캡으로 " +
+  "이루어지며 서로 겹치지 않는다.";
+
 const Q38_5578421_REPLACEMENTS: ProblemManualReplacement[] = [
   { field: "question", from: "(가)\n", to: "[37 ~ 42] 다음 글을 읽고 물음에 답하시오.\n\n(가)\n", count: 1 },
   { field: "question", from: "이러한 대립 구조는", to: "이러한 대립 구도는", count: 1 },
@@ -6596,6 +6638,40 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_literature",
   },
+  {
+    allowlistId: "ebsi-5577054-q42-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "15:42",
+    sourcePage: 15,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "d3e9ad5ad035efdf5b3baed0762297735275a0c7287d7b5a6d4d5e3a6bf8afda",
+    dpi: 600,
+    failedQuestionHash: "043d2ba017708fd0e0426989018ec49067ba7e3061263b75f0d676ca48539f3f",
+    failedClassificationHash: "bd7196740060575dc4250e7ecc831273ff30a0ff302912a18719530f972bb2a0",
+    failedClassificationEvidenceHash: "3c3e5a2674f1ee6f7da8e7dded9a9177bba84f2f01e98364e6e8b593cc346320",
+    views: [
+      { sourcePage: 13, label: "p13 full Q37-Q42 passage start and A bracket", rect: [0, 0, 1, 1] },
+      { sourcePage: 14, label: "p14 full Q37-Q42 passage and B bracket", rect: [0, 0, 1, 1] },
+      { sourcePage: 15, label: "p15 right Q42 stem and choices", rect: [0.50, 0.65, 0.95, 0.98] },
+    ],
+    requiredTokens: [
+      "[37 ~ 42] 다음을 읽고 물음에 답하시오.", "금령(金鈴)*", "바라보이매",
+      "ⓐ 문득 벽력같은 소리", "금털 돋친", "[A]", "금령이 아니었더라면",
+      "기어 들어가니", "돌 비석", "주궁패궐*", "누워 앓다가", "사람을 속임이",
+      "살았었습니다", "천행으로", "[B]", "인당수로 돌려보내어", "보내실 제",
+      "여덟 선녀", "부귀와 영화로", "죽을 몸이 다시 살아", "하지마는",
+      "하직하고", "둥덩실", "억 십만 금", "당나라의 옛일", "얼굴을 반만 들어",
+      "혼인날이 당하매", "ⓔ 위엄이", "42. ⓐ ~ ⓔ에 대한 설명으로",
+      "왼쪽으로 열린 세로 묶음 괄호 [A]", "같은 모양의 괄호 [B]",
+    ],
+    replacements: Q42_5577054_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q42_5577054_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  },
+
 ] as const;
 
 export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
