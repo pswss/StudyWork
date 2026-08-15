@@ -1758,7 +1758,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                           </button>
                         </div>
                         <div id={panelId} className="quiz-passage-set-body" hidden={!passageOpen}>
-                          {passageOpen && (<>
+                          {passageOpen && (<div className="quiz-korean-exam-sheet">
                             <section className="quiz-korean-passage-document" aria-label={t("problems.mock.passage")}>
                               <div className="quiz-korean-passage-heading">
                                 <span>{block.section ?? block.passageGroup}</span>
@@ -1851,7 +1851,7 @@ export default function Quiz({ subject, materials, active = true, kickWrongQuiz 
                                 </section>
                               ))}
                             </div>
-                          </>)}
+                          </div>)}
                         </div>
                       </article>
                     );

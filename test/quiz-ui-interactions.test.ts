@@ -87,8 +87,12 @@ describe("quiz interaction polish", () => {
     expect(blocks[1]).toMatchObject({ kind: "question", item: { id: 14 } });
 
     const source = readFileSync("web/src/pages/Quiz.tsx", "utf8");
+    const styles = readFileSync("web/src/styles.css", "utf8");
     expect(source).toContain('className="quiz-korean-passage-document"');
     expect(source).toContain('className="quiz-passage-question-list"');
+    expect(source).toContain('className="quiz-korean-exam-sheet"');
+    expect(styles).toContain("grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr)");
+    expect(styles).toContain('.quiz-passage-set-toggle[aria-expanded="true"]');
   });
 
   it("업로드한 국어 기출도 공식 번호 범위의 지문을 한 번만 표시", () => {
