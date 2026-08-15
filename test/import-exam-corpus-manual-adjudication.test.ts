@@ -1884,7 +1884,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 6)))
       .toBe("ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048");
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST))
-      .toBe("9190c8f834bdc936a3fb03ed13ef62d27f61bad436bf8f1b414bfc8330ed3ab4");
+      .toBe("c67447276d0a1abcdea7be41320ee70cbe9050874b155079ed0333a3d7acffa6");
     expect(terminalSpecs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -2272,7 +2272,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         rowHash: canonicalEvidenceHash(candidate),
       })),
     }).toEqual({
-      allowlistHash: "9190c8f834bdc936a3fb03ed13ef62d27f61bad436bf8f1b414bfc8330ed3ab4",
+      allowlistHash: "c67447276d0a1abcdea7be41320ee70cbe9050874b155079ed0333a3d7acffa6",
       prefixHash: "e4601a183669f046f4cc1f52cd30a860fe6347f96ffa41b30bdc8db2123630b3",
       rows: [{
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",
@@ -2337,10 +2337,16 @@ describe("exact allowlisted problem manual adjudication", () => {
       parentClassificationHash: terminalSpec.parentClassificationHash,
       failedEffectiveCorpusHash: terminalSpec.failedEffectiveCorpusHash,
     }).toEqual({
-      rowHash: "a719017e37dd37a6b372be5534d53d5127254efcaa8a86c23454dbbde799858d",
+      rowHash: "9fd89f45d0e8b1793acddf8bc1f364b4715eafba79c9d118fc86597dfb2c523e",
       parentQuestionHash: "79b440a0c4d927fdc530c2e37e5ed4f6095db27a97396a97cd9d925f078d1c34",
       parentClassificationHash: "abec36f81d33161810a02d25628c67006098de65dc90542361f6ab8b2b23b938",
       failedEffectiveCorpusHash: "54b563c6ea850bce015a99000baa61b2b6ff193d11a7fe155649a8e7e4cc0ae8",
+    });
+    expect(terminalSpec.pinnedAdjudicationArtifact).toEqual({
+      path: "problem-terminal-fidelity-adjudications/" +
+        "v1-0001-0003-6b1e07bfc35464812fef18a72617a6c9f833ad2d17c590b4c7547340558a48b1.json",
+      sha256: "35c9820556d3fe993cd2d38ac9054a41a9828f15ed2cfbb9b758a37a1f222211",
+      itemHash: "9ed0e60500801fff8c5b339b8421e5459a0056b44f65c83434f228ed8f486556",
     });
     const row = q3ExactRecoveryParent5578421(q31Q32LiveState);
     const corrected = applyAllowlistedProblemManualCorrection(
@@ -2661,6 +2667,10 @@ describe("exact allowlisted problem manual adjudication", () => {
     root = mkdtempSync(join(tmpdir(), "studywork-5578421-q3-manual-"));
     cpSync(q31Q32LiveState, root, { recursive: true });
     removeManualArtifacts(root, ["1:3"]);
+    const terminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === "ebsi-5578421-q3-terminal-fidelity-v1"
+    )!;
+    rmSync(join(root, terminalSpec.pinnedAdjudicationArtifact!.path));
     for (const directory of ["answer-audit", "answer-attestation", "semantic-choice-checks"]) {
       rmSync(join(root, directory), { recursive: true, force: true });
     }
@@ -2730,6 +2740,47 @@ describe("exact allowlisted problem manual adjudication", () => {
     calls.terminal = 0;
     await expect(run()).rejects.toThrow("seeded 5578421 post-Q3 terminal boundary");
     expect(calls).toEqual({ classification: 0, terminal: 1 });
+  }, 240_000);
+
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "replays the pinned 5578421 Q3 terminal child and rejects tamper",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-5578421-q3-terminal-"));
+    cpSync(q31Q32LiveState, root, { recursive: true });
+    for (const directory of ["answer-audit", "answer-attestation", "semantic-choice-checks"]) {
+      rmSync(join(root, directory), { recursive: true, force: true });
+    }
+    const spec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === "ebsi-5578421-q3-terminal-fidelity-v1"
+    )!;
+    const childPath = join(root, spec.pinnedAdjudicationArtifact!.path);
+    const childBytes = readFileSync(childPath);
+    const run = (stateRoot: string) => {
+      const input = q27FixtureInputs(stateRoot);
+      return repairAndAuditOfficialAnswers(
+        input.entry,
+        input.problem,
+        input.solution,
+        stateRoot,
+        input.classified,
+        input.solutions,
+      );
+    };
+    providerMock.complete.mockRejectedValue(new Error("unexpected Q3 terminal replay provider call"));
+    await expect(run(root)).rejects.toThrow(/16:44 problem recovery는 한 번만 허용됩니다/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(readFileSync(childPath)).toEqual(childBytes);
+
+    const tampered = mkdtempSync(join(tmpdir(), "studywork-5578421-q3-terminal-tampered-"));
+    cpSync(q31Q32LiveState, tampered, { recursive: true });
+    const tamperedPath = join(tampered, spec.pinnedAdjudicationArtifact!.path);
+    writeFileSync(tamperedPath, Buffer.concat([readFileSync(tamperedPath), Buffer.from(" ")]));
+    const beforeTamper = stateSnapshot(tampered);
+    providerMock.complete.mockClear();
+    await expect(run(tampered)).rejects.toThrow(/pinned terminal fidelity adjudication hash가 다릅니다/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(tampered)).toEqual(beforeTamper);
+    rmSync(tampered, { recursive: true, force: true });
   }, 240_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
