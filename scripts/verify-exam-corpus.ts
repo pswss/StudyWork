@@ -5097,7 +5097,7 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     views: [
       { sourcePage: 13, label: "p13 right Q37-Q42 shared passage start", rect: [0.50, 0.08, 0.95, 0.99] },
       { sourcePage: 14, label: "p14 full Q37-Q42 shared passage", rect: [0, 0, 1, 1] },
-      { sourcePage: 15, label: "p15 left Q38", rect: [0.07, 0.08, 0.50, 0.35] },
+      { sourcePage: 15, label: "p15 left Q38", rect: [0.07, 0.32, 0.50, 0.55] },
     ],
     requiredTokens: [
       "[37 ~ 42] 다음 글을 읽고 물음에 답하시오.", "이러한 대립 구도는",
