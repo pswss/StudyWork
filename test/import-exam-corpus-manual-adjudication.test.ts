@@ -2492,9 +2492,37 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(corrected.choices).toEqual(pinned.failed.question.choices);
     expect(corrected.answer).toBe(pinned.failed.question.answer);
 
+    const revisionSpec = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === "ebsi-5577054-q42-manual-revision-v1"
+    )!;
+    expect({
+      length: PROBLEM_MANUAL_REVISION_ALLOWLIST.length,
+      allowlistHash: canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST),
+      rowHash: canonicalEvidenceHash(revisionSpec),
+      replacementHash: canonicalEvidenceHash(revisionSpec.replacement),
+    }).toEqual({
+      length: 11,
+      allowlistHash: "2f967aaa87d6665887e0505f64b5fe976955c8f6a10b28b78bbeeaef49fb95a2",
+      rowHash: "16ca1e7fb9f94fd2da81648e0f408706ccc67966c14d812ae12f80848a6c639c",
+      replacementHash: "81be7218cb0c77f6c65dd51f00008cef6e1bf19a09da243ef74daca44c61c777",
+    });
+    const revised = applyAllowlistedProblemManualRevision(
+      "ebsi:5577054",
+      spec.sourceHash,
+      spec.allowlistId,
+      corrected,
+    );
+    expect(canonicalEvidenceHash(revised))
+      .toBe("a21ea3c7b9e3e6f7b58fd5d019ab15a13d6cad8c3660f3e6c3143c02313b560a");
+    expect(canonicalEvidenceHash(revised.question))
+      .toBe("8fb2fabd02d28eac7484d6bff51d6cf59ff72a472a02d776e2fbd9ea5ca529d5");
+    expect(revised.figure_description).toContain("괄호 [A]가 ‘크게 불러 말하기를,’부터");
+    expect(revised.figure_description).toContain("방황하느냐?’까지를 감싼다");
+    expect(revised.figure_description).not.toContain("인용문만 감싼다. 공식 14쪽");
+
     root = mkdtempSync(join(tmpdir(), "studywork-5577054-q42-manual-"));
     cpSync(q43LiveState5577054, root, { recursive: true });
-    removeManualGenerationArtifacts(root, spec.allowlistId);
+    removeManualRevisionArtifacts(root, ["15:42"]);
     const input = q27FixtureInputs(root);
     const row = q42ExactRecoveryParent5577054(root);
     const calls: string[] = [];
@@ -2509,7 +2537,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       calls.push(items[0].key);
       expect(canonicalEvidenceHash(items[0].question))
         .toBe("8fb2fabd02d28eac7484d6bff51d6cf59ff72a472a02d776e2fbd9ea5ca529d5");
-      expect(items[0].figure_description).toContain("묶음 괄호 [A]");
+      expect(items[0].figure_description).toContain("괄호 [A]가 ‘크게 불러 말하기를,’부터");
       return { text: JSON.stringify([{
         key: "15:42",
         decision: "accept",
@@ -2533,7 +2561,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     const completed = await run();
     expect(calls).toEqual(["15:42"]);
     expect(canonicalEvidenceHash(completed.classified.question))
-      .toBe("867740b94e5c3412b090da86e21bc01005fd0ef0c5ef271a3eb933427f4f034e");
+      .toBe("a21ea3c7b9e3e6f7b58fd5d019ab15a13d6cad8c3660f3e6c3143c02313b560a");
     expect(completed.classified.classification).toEqual(expect.objectContaining({
       key: "15:42",
       decision: "accept",
@@ -2545,7 +2573,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(calls).toEqual(["15:42"]);
     expect(stateSnapshot(root)).toEqual(stable);
 
-    const problemPath = join(root, completed.evidence.problemArtifact.path);
+    const problemPath = join(root, completed.evidence.revision!.problemArtifact.path);
     const problemBytes = readFileSync(problemPath);
     writeFileSync(problemPath, Buffer.concat([problemBytes, Buffer.from(" ")]));
     const beforeTamper = stateSnapshot(root);
@@ -2601,7 +2629,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 8)))
       .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST))
-      .toBe("af19db3b28709290cf936f0b5e18c29bc31e8facce105283f1cbcba117c6d437");
+      .toBe("2f967aaa87d6665887e0505f64b5fe976955c8f6a10b28b78bbeeaef49fb95a2");
     const revisionSpec = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((candidate) =>
       candidate.allowlistId === "ebsi-5578421-q14-manual-revision-v1"
     )!;
@@ -2673,7 +2701,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       rowHash: canonicalEvidenceHash(revisionSpec),
       replacementHash: canonicalEvidenceHash(revisionSpec.replacement),
     }).toEqual({
-      allowlistHash: "af19db3b28709290cf936f0b5e18c29bc31e8facce105283f1cbcba117c6d437",
+      allowlistHash: "2f967aaa87d6665887e0505f64b5fe976955c8f6a10b28b78bbeeaef49fb95a2",
       rowHash: "7fec9a6782faf9cc6e59837c3528335963319fabc58ea1b7adfaeb25651028e5",
       replacementHash: "da53d25545e236eadc2e0c064463a171d4678f640160ee3acb6be0928c805770",
     });

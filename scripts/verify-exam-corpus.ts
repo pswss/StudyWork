@@ -2917,6 +2917,13 @@ const Q42_5577054_FIGURE_DESCRIPTION =
   "인용문만 감싼다. 두 괄호는 각각 오른쪽 세로선 하나와 왼쪽으로 뻗은 위·아래 가로 캡으로 " +
   "이루어지며 서로 겹치지 않는다.";
 
+const Q42_5577054_FIGURE_DESCRIPTION_REVISION =
+  "공식 13쪽 오른쪽 (나)에는 왼쪽으로 열린 세로 묶음 괄호 [A]가 ‘크게 불러 말하기를,’부터 " +
+  "‘그대는 어찌 금령을 구하지 아니하고 저다지 방황하느냐?’까지를 감싼다. 공식 14쪽 왼쪽 " +
+  "(다)에는 같은 모양의 괄호 [B]가 ‘심 소저 혼약할 기한이 가까우니’부터 ‘좋은 때를 잃지 " +
+  "말게 하라.’까지의 인용문만 감싼다. 두 괄호는 각각 오른쪽 세로선 하나와 왼쪽으로 뻗은 " +
+  "위·아래 가로 캡으로 이루어지며 서로 겹치지 않는다.";
+
 const Q38_5578421_REPLACEMENTS: readonly ProblemManualReplacement[] = [
   { field: "question", from: "(가)\n", to: "[37 ~ 42] 다음 글을 읽고 물음에 답하시오.\n\n(가)\n", count: 1 },
   { field: "question", from: "이러한 대립 구조는", to: "이러한 대립 구도는", count: 1 },
@@ -5418,6 +5425,29 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
     "대담의 진행 과정을 고려하여 두 대담자의 발화를 이해한 것으로 적절하지 않은 것은?",
   ],
   expectedDecision: "reject",
+}, {
+  allowlistId: "ebsi-5577054-q42-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q42-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "15:42",
+  sourcePage: 15,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "867740b94e5c3412b090da86e21bc01005fd0ef0c5ef271a3eb933427f4f034e",
+  failedClassificationHash: "f72aaf90ffa879fe7b643863623b797dcfcda35579862fd366eeca123995cf3e",
+  failedClassificationEvidenceHash: "1914cadacba2252bd0ae43e7a9865f2be65e514569593f8f385f65045fc88aa0",
+  replacement: {
+    field: "figure_description",
+    from: Q42_5577054_FIGURE_DESCRIPTION,
+    to: Q42_5577054_FIGURE_DESCRIPTION_REVISION,
+    count: 1,
+  },
+  requiredTokens: [
+    "[37 ~ 42] 다음을 읽고 물음에 답하시오.", "42. ⓐ ~ ⓔ에 대한 설명으로",
+    "괄호 [A]가 ‘크게 불러 말하기를,’부터", "방황하느냐?’까지를 감싼다",
+    "괄호 [B]가 ‘심 소저 혼약할 기한이 가까우니’부터", "좋은 때를 잃지 말게 하라.’까지",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
 }] as const;
 
 const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
