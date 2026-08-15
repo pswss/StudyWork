@@ -1635,6 +1635,41 @@ describe("exact allowlisted problem manual adjudication", () => {
   });
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "selects and replays the pinned 5578421 Q6-Q7 generation among superseded recoveries",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-5578421-q6-q7-generations-"));
+    cpSync(q31Q32LiveState, root, { recursive: true });
+    const input = q27FixtureInputs(root);
+    const q6 = q6Q7ExactRecoveryParent5578421(root, "6");
+    const q7 = q6Q7ExactRecoveryParent5578421(root, "7");
+    providerMock.complete.mockRejectedValue(new Error("unexpected Q6-Q7 replay provider"));
+    const run = (row: ReturnType<typeof q6Q7ExactRecoveryParent5578421>) =>
+      adjudicateProblemManual(input.entry, input.problem, root, row.failed, row.parent);
+
+    const q6Result = await run(q6);
+    const q7Result = await run(q7);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(canonicalEvidenceHash(q6Result.classified.question))
+      .toBe("7dca0fed5deedcf7178492f9206f994c596021551c0e9df67f968b87e6fb2307");
+    expect(canonicalEvidenceHash(q7Result.classified.question))
+      .toBe("1a3a885c810552a759f72ae2c1dc94210749bb3a8c3ca9cd72c6f7cc110273aa");
+    const stable = stateSnapshot(root);
+    await run(q6);
+    await run(q7);
+    expect(stateSnapshot(root)).toEqual(stable);
+
+    const selectedProblemPath = join(root, q6.parent.problemArtifact.path);
+    writeFileSync(selectedProblemPath, Buffer.concat([
+      readFileSync(selectedProblemPath),
+      Buffer.from(" "),
+    ]));
+    const beforeTamper = stateSnapshot(root);
+    await expect(run(q6)).rejects.toThrow(/hash|canonical|envelope/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(root)).toEqual(beforeTamper);
+  }, 120_000);
+
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
     "pins and applies the source-exact 5578421 Q19-Q21 shared passage",
     () => {
     const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>

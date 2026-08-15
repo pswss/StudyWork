@@ -18685,11 +18685,40 @@ async function restoredPinnedManualRecovery(
     "manual batch classification recovery",
     (name) => /^v\d+-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
   ).filter((name) => keyPattern.test(name));
-  if (problemNames.length !== 1 || classificationNames.length !== 1) {
+  const allowSupersededGenerations = is5578421Q6Q7ManualBatchSpec(spec);
+  const matchingProblemNames = allowSupersededGenerations
+    ? problemNames.filter((name) => {
+      const checkpoint = object(JSON.parse(readFileSync(confinedStateFile(
+        stateDir,
+        `problem-recoveries/${name}`,
+        `${spec.key} manual batch problem recovery generation`
+      ), "utf8")), name);
+      return canonicalEvidenceHash(restoredQuizItems([checkpoint.item])[0]) === spec.failedQuestionHash;
+    })
+    : problemNames;
+  const matchingClassificationNames = allowSupersededGenerations
+    ? classificationNames.filter((name) => {
+      const checkpoint = object(JSON.parse(readFileSync(confinedStateFile(
+        stateDir,
+        `classification-recoveries/${name}`,
+        `${spec.key} manual batch classification recovery generation`
+      ), "utf8")), name);
+      const basis = object(checkpoint.basis, `${spec.key} manual batch classification generation basis`);
+      const items = Array.isArray(checkpoint.items) ? checkpoint.items : [];
+      const classification = items.length === 1
+        ? parseHistoricalDecision(items[0], spec.key, "manual batch classification recovery generation")
+        : null;
+      return basis.problemArtifactItemHash === spec.failedQuestionHash &&
+        basis.effectiveQuestionHash === spec.failedQuestionHash && classification !== null &&
+        canonicalEvidenceHash(classification) === spec.failedClassificationHash &&
+        sha256Text(classification.transcription_evidence) === spec.failedClassificationEvidenceHash;
+    })
+    : classificationNames;
+  if (matchingProblemNames.length !== 1 || matchingClassificationNames.length !== 1) {
     throw new Error(`${spec.key} manual batch recovery exact-set가 다릅니다`);
   }
-  const problemRelativePath = `problem-recoveries/${problemNames[0]}`;
-  const classificationRelativePath = `classification-recoveries/${classificationNames[0]}`;
+  const problemRelativePath = `problem-recoveries/${matchingProblemNames[0]}`;
+  const classificationRelativePath = `classification-recoveries/${matchingClassificationNames[0]}`;
   const problemPath = confinedStateFile(stateDir, problemRelativePath, "manual batch problem recovery");
   const classificationPath = confinedStateFile(
     stateDir,
