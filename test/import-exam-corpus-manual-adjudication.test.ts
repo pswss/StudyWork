@@ -64,6 +64,7 @@ import {
   type ProblemRepairEvidence,
   type ProblemRecoveryEvidence,
 } from "../scripts/import-exam-corpus";
+import { verifyProblemManualAdjudicationForTest } from "../scripts/verify-exam-corpus";
 
 const q27LiveState = join(process.cwd(), "data/import-exam-corpus/bb876a67170089dfb2022f47");
 const q31Q32LiveState = join(process.cwd(), "data/import-exam-corpus/f914a5cf8d2237d6c9319e23");
@@ -254,6 +255,51 @@ function removeManualRevisionArtifacts(stateDir: string, keys: string[]): void {
     for (const name of readdirSync(path)) {
       if (prefixes.some((prefix) => name.startsWith(prefix))) rmSync(join(path, name));
     }
+  }
+}
+
+function removeManualSourceRevisionArtifacts(stateDir: string, keys: string[]): void {
+  const prefixes = keys.map((key) => {
+    const [page, number] = key.split(":");
+    return `v1-${page.padStart(4, "0")}-${number.padStart(4, "0")}-`;
+  });
+  for (const directory of ["problem-manual-second-revisions", "classification-manual-second-revisions"]) {
+    const path = join(stateDir, directory);
+    if (!existsSync(path)) continue;
+    for (const name of readdirSync(path)) {
+      if (prefixes.some((prefix) => name.startsWith(prefix))) rmSync(join(path, name));
+    }
+  }
+}
+
+function withOnlyManualArtifactsForKey<T>(stateDir: string, key: string, run: () => T): T {
+  const number = key.split(":")[1]!.padStart(4, "0");
+  const keyPrefix = new RegExp(`^v\\d+-\\d{4}-${number}-`, "u");
+  const renamed: Array<{ from: string; to: string }> = [];
+  for (const directory of [
+    "problem-manual-evidence",
+    "problem-manual-adjudications",
+    "classification-manual-adjudications",
+    "problem-manual-revisions",
+    "classification-manual-revisions",
+    "problem-manual-second-revisions",
+    "classification-manual-second-revisions",
+    "classification-manual-policy-revisions",
+  ]) {
+    const path = join(stateDir, directory);
+    if (!existsSync(path)) continue;
+    for (const name of readdirSync(path)) {
+      if (keyPrefix.test(name) || name.endsWith(".tmp")) continue;
+      const from = join(path, name);
+      const to = `${from}.tmp`;
+      renameSync(from, to);
+      renamed.push({ from, to });
+    }
+  }
+  try {
+    return run();
+  } finally {
+    for (const { from, to } of renamed.reverse()) renameSync(to, from);
   }
 }
 
@@ -1889,7 +1935,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     }).toEqual({
       length: 5,
       prefixHash: "05d392d62117f4864b0a5964466970815e167655b12c69817909cdd43e006e1f",
-      allowlistHash: "d23619465e340050bcf9598e78efc72332f143ff9cb50576f2dd87181296dc29",
+      allowlistHash: "b35139baa1dbd6f3ba2dcb0ce79f790c02e8366e5c6e4ad3cda3244a87551c79",
       rowHash: "4c70814866ee7bcff53e2bb652f35158d4eada24cc14699fbcac2af4dc38a4a1",
       replacementHash: "b7c5384c744504673b8c9b0d28b3f4df5d88485c69d8e2ef192873da8773639b",
       triggerHash: "ccf2ee80611b4c2fd857538c26681d010982a8c421248b81337fc5312690b878",
@@ -2031,7 +2077,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     }).toEqual({
       length: 5,
       prefixHash: "ffc789e8918c8a5603c82d08faa7e2adefedba8aa15c5304f24a6ef8dd520922",
-      allowlistHash: "d23619465e340050bcf9598e78efc72332f143ff9cb50576f2dd87181296dc29",
+      allowlistHash: "b35139baa1dbd6f3ba2dcb0ce79f790c02e8366e5c6e4ad3cda3244a87551c79",
       rowHash: "d1838baa7e6f533817722fca9207e3ca354e28c72b0474691cd17d950dbeeaa3",
       replacementsHash: "c7d8df99440c1308c253b783a315c35360b97413e00913ef6658bdd74cec11ca",
     });
@@ -2520,9 +2566,40 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(revised.figure_description).toContain("방황하느냐?’까지를 감싼다");
     expect(revised.figure_description).not.toContain("인용문만 감싼다. 공식 14쪽");
 
+    const sourceRevisionSpec = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === "ebsi-5577054-q42-manual-source-revision-v1"
+    )!;
+    expect({
+      length: PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.length,
+      allowlistHash: canonicalEvidenceHash(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST),
+      rowHash: canonicalEvidenceHash(sourceRevisionSpec),
+      replacementHash: canonicalEvidenceHash(sourceRevisionSpec.replacement),
+      parentRevisionEvidenceHash: sourceRevisionSpec.parentRevisionEvidenceHash,
+    }).toEqual({
+      length: 6,
+      allowlistHash: "b35139baa1dbd6f3ba2dcb0ce79f790c02e8366e5c6e4ad3cda3244a87551c79",
+      rowHash: "e34815c9d14643ee14f5bc34771ceb9f97894ad319a3878b1fd198db15acd999",
+      replacementHash: "88ac126111a80b5b6f4fbfc135f927c2c6cd39d24392dfd6188b1dc3b5c79821",
+      parentRevisionEvidenceHash: "9b6286fc828c0ea5e816ca236be868868c97e8b59a3e3235ba6c0afd02c2a802",
+    });
+    const sourceCorrected = applyAllowlistedProblemManualSourceRevision(
+      "ebsi:5577054",
+      spec.sourceHash,
+      revisionSpec.allowlistId,
+      revised,
+    );
+    expect(canonicalEvidenceHash(sourceCorrected))
+      .toBe("7b413957c243f4c4d7328649e77877dfb644b14257de20ab8eafd10019e06cb2");
+    expect(canonicalEvidenceHash(sourceCorrected.question))
+      .toBe("f0d6eb14980af2f6d5da0f402dbbd2afbd2e53bb015a641118bf7735f9948939");
+    expect(sourceCorrected.question).toContain("부귀와 영광으로 만만세를 즐기소서.");
+    expect(sourceCorrected.question).not.toContain("부귀와 영화로 만만세를 즐기소서.");
+    expect(sourceCorrected.choices).toEqual(pinned.failed.question.choices);
+    expect(sourceCorrected.answer).toBe(pinned.failed.question.answer);
+
     root = mkdtempSync(join(tmpdir(), "studywork-5577054-q42-manual-"));
     cpSync(q43LiveState5577054, root, { recursive: true });
-    removeManualRevisionArtifacts(root, ["15:42"]);
+    removeManualSourceRevisionArtifacts(root, ["15:42"]);
     const input = q27FixtureInputs(root);
     const row = q42ExactRecoveryParent5577054(root);
     const calls: string[] = [];
@@ -2536,7 +2613,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       expect(items).toHaveLength(1);
       calls.push(items[0].key);
       expect(canonicalEvidenceHash(items[0].question))
-        .toBe("8fb2fabd02d28eac7484d6bff51d6cf59ff72a472a02d776e2fbd9ea5ca529d5");
+        .toBe("f0d6eb14980af2f6d5da0f402dbbd2afbd2e53bb015a641118bf7735f9948939");
+      expect(items[0].question).toContain("부귀와 영광으로 만만세를 즐기소서.");
       expect(items[0].figure_description).toContain("괄호 [A]가 ‘크게 불러 말하기를,’부터");
       return { text: JSON.stringify([{
         key: "15:42",
@@ -2561,19 +2639,32 @@ describe("exact allowlisted problem manual adjudication", () => {
     const completed = await run();
     expect(calls).toEqual(["15:42"]);
     expect(canonicalEvidenceHash(completed.classified.question))
-      .toBe("a21ea3c7b9e3e6f7b58fd5d019ab15a13d6cad8c3660f3e6c3143c02313b560a");
+      .toBe("7b413957c243f4c4d7328649e77877dfb644b14257de20ab8eafd10019e06cb2");
     expect(completed.classified.classification).toEqual(expect.objectContaining({
       key: "15:42",
       decision: "accept",
       canonical_subject: "korean_literature",
       transcription_status: "exact",
     }));
+    const verified = withOnlyManualArtifactsForKey(root, "15:42", () =>
+      verifyProblemManualAdjudicationForTest({
+        stateDir: root,
+        entry: input.entry,
+        problemEvidence: input.problem,
+        parentRecovery: row.parent as unknown as Record<string, unknown>,
+        failedQuestion: row.failed.question,
+        failedClassification: row.failed.classification,
+        manualAdjudication: completed.evidence,
+      })) as { question: QuizItemEx; classification: ClassificationDecision };
+    expect(canonicalEvidenceHash(verified.question))
+      .toBe("7b413957c243f4c4d7328649e77877dfb644b14257de20ab8eafd10019e06cb2");
+    expect(verified.classification.transcription_status).toBe("exact");
     const stable = stateSnapshot(root);
     await run();
     expect(calls).toEqual(["15:42"]);
     expect(stateSnapshot(root)).toEqual(stable);
 
-    const problemPath = join(root, completed.evidence.revision!.problemArtifact.path);
+    const problemPath = join(root, completed.evidence.revision!.sourceRevision!.problemArtifact.path);
     const problemBytes = readFileSync(problemPath);
     writeFileSync(problemPath, Buffer.concat([problemBytes, Buffer.from(" ")]));
     const beforeTamper = stateSnapshot(root);
@@ -2722,7 +2813,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       replacementHash: canonicalEvidenceHash(sourceRevisionSpec.replacement),
       triggerHash: canonicalEvidenceHash(sourceRevisionSpec.terminalTrigger),
     }).toEqual({
-      allowlistHash: "d23619465e340050bcf9598e78efc72332f143ff9cb50576f2dd87181296dc29",
+      allowlistHash: "b35139baa1dbd6f3ba2dcb0ce79f790c02e8366e5c6e4ad3cda3244a87551c79",
       rowHash: "99ec8e696ea73ba0c61d31df0df9f657bcb29e62fa6ff43e8db1389542e821aa",
       replacementHash: "b0751915ae3df15620b51fcbccf08d95e0b29abb6edc28c8ae68333a4bbbe90a",
       triggerHash: "240e0e1d3617c2d0de839ea55687ed7efb658037c62d4608f934c3426cfd4704",

@@ -865,6 +865,7 @@ type ProblemManualSourceRevisionSpec = {
   failedQuestionHash: string;
   failedClassificationHash: string;
   failedClassificationEvidenceHash: string;
+  failedStatus?: "mismatch";
   terminalTrigger?: ProblemManualTerminalTriggerSpec;
   replacement: ProblemManualReplacement;
   additionalReplacements?: readonly ProblemManualReplacement[];
@@ -5659,6 +5660,31 @@ const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevi
     count: 1,
   }],
   requiredTokens: ["③ B-(가):", "B-(나):", "④ C-(가):", "⑤ C-(나):", "선택지 ③ 하나로 묶여 있다"],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q42-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5577054-q42-manual-revision-v1",
+  parentRevisionEvidenceHash: "9b6286fc828c0ea5e816ca236be868868c97e8b59a3e3235ba6c0afd02c2a802",
+  entryId: "ebsi:5577054",
+  key: "15:42",
+  sourcePage: 15,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "a21ea3c7b9e3e6f7b58fd5d019ab15a13d6cad8c3660f3e6c3143c02313b560a",
+  failedClassificationHash: "c1fa8b7ae077e4f8ce11be3ad7cd2df8ef45fa48142dbd5bbe63d63cb185f82c",
+  failedClassificationEvidenceHash: "40b042863fecbba39c3f9362227e911d9ede42954c7815f837aef6a23de22046",
+  failedStatus: "mismatch",
+  replacement: {
+    field: "question",
+    from: "부귀와 영화로 만만세를 즐기소서.",
+    to: "부귀와 영광으로 만만세를 즐기소서.",
+    count: 1,
+  },
+  requiredTokens: [
+    "부귀와 영광으로 만만세를 즐기소서.", "괄호 [A]가 ‘크게 불러 말하기를,’부터",
+    "괄호 [B]가 ‘심 소저 혼약할 기한이 가까우니’부터",
+    "42. ⓐ ~ ⓔ에 대한 설명으로 적절하지 않은 것은?",
+  ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
 }] as const;
@@ -11416,6 +11442,7 @@ function problemManualSourceRevisionCorrectionSpecHash(spec: ProblemManualSource
     allowlistId: spec.allowlistId,
     parentRevisionAllowlistId: spec.parentRevisionAllowlistId,
     parentRevisionEvidenceHash: spec.parentRevisionEvidenceHash,
+    ...(spec.failedStatus ? { failedStatus: spec.failedStatus } : {}),
     ...(spec.terminalTrigger ? { terminalTrigger: spec.terminalTrigger } : {}),
     replacement: spec.replacement,
     ...(spec.additionalReplacements ? { additionalReplacements: spec.additionalReplacements } : {}),
@@ -11900,7 +11927,8 @@ function verifyProblemManualSourceRevision(
     problemEvidence.sha256,
     exactString(parentRevision.allowlistId, `${key}.manualRevision.allowlistId`),
   );
-  if (!spec || contract.auditVersion !== 5 || failedClassification.transcription_status !== "exact") {
+  if (!spec || contract.auditVersion !== 5 ||
+      failedClassification.transcription_status !== (spec.failedStatus ?? "exact")) {
     throw new Error(`${key}: manual source revision requires its exact allowlisted parent revision`);
   }
   const parentRevisionEvidenceHash = canonicalEvidenceHash(parentRevision);
@@ -12419,9 +12447,7 @@ function verifyProblemManualRevision(
     reasoningEffort: "high",
     items: [classification],
   };
-  if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)
-    || classification.transcription_status !== "exact"
-    || !matchesProblemManualExpectedDecision(spec, classification)) {
+  if (!isDeepStrictEqual(classificationCheckpoint, expectedClassificationCheckpoint)) {
     throw new Error(`${key}: classification manual revision is stale or non-exact`);
   }
   const evidence = {
@@ -12472,6 +12498,10 @@ function verifyProblemManualRevision(
   if (sourceRevision === undefined) {
     if (sourceSpec?.parentRevisionEvidenceHash === canonicalEvidenceHash(evidence)) {
       throw new Error(`${key}: manual source revision evidence is missing`);
+    }
+    if (classification.transcription_status !== "exact" ||
+        !matchesProblemManualExpectedDecision(spec, classification)) {
+      throw new Error(`${key}: classification manual revision is stale or non-exact`);
     }
     return { question, classification, evidence };
   }

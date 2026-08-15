@@ -2451,6 +2451,7 @@ type ProblemManualSourceRevisionSpec = {
   failedQuestionHash: string;
   failedClassificationHash: string;
   failedClassificationEvidenceHash: string;
+  failedStatus?: "mismatch";
   terminalTrigger?: ProblemManualTerminalTriggerSpec;
   replacement: ProblemManualReplacement;
   additionalReplacements?: ProblemManualReplacement[];
@@ -7144,6 +7145,31 @@ export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSou
     count: 1,
   }],
   requiredTokens: ["③ B-(가):", "B-(나):", "④ C-(가):", "⑤ C-(나):", "선택지 ③ 하나로 묶여 있다"],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q42-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5577054-q42-manual-revision-v1",
+  parentRevisionEvidenceHash: "9b6286fc828c0ea5e816ca236be868868c97e8b59a3e3235ba6c0afd02c2a802",
+  entryId: "ebsi:5577054",
+  key: "15:42",
+  sourcePage: 15,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "a21ea3c7b9e3e6f7b58fd5d019ab15a13d6cad8c3660f3e6c3143c02313b560a",
+  failedClassificationHash: "c1fa8b7ae077e4f8ce11be3ad7cd2df8ef45fa48142dbd5bbe63d63cb185f82c",
+  failedClassificationEvidenceHash: "40b042863fecbba39c3f9362227e911d9ede42954c7815f837aef6a23de22046",
+  failedStatus: "mismatch",
+  replacement: {
+    field: "question",
+    from: "부귀와 영화로 만만세를 즐기소서.",
+    to: "부귀와 영광으로 만만세를 즐기소서.",
+    count: 1,
+  },
+  requiredTokens: [
+    "부귀와 영광으로 만만세를 즐기소서.", "괄호 [A]가 ‘크게 불러 말하기를,’부터",
+    "괄호 [B]가 ‘심 소저 혼약할 기한이 가까우니’부터",
+    "42. ⓐ ~ ⓔ에 대한 설명으로 적절하지 않은 것은?",
+  ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
 }] as const;
@@ -17325,7 +17351,8 @@ function problemManualSourceRevisionSpec(
     canonicalEvidenceHash(parentRevision) !== match.parentRevisionEvidenceHash ||
     canonicalEvidenceHash(failed.question) !== match.failedQuestionHash ||
     canonicalEvidenceHash(failed.classification) !== match.failedClassificationHash ||
-    sha256Text(failed.classification.transcription_evidence) !== match.failedClassificationEvidenceHash
+    sha256Text(failed.classification.transcription_evidence) !== match.failedClassificationEvidenceHash ||
+    failed.classification.transcription_status !== (match.failedStatus ?? "exact")
   ) throw new Error(`${entryId} ${key} manual source revision parent/allowlist가 다릅니다`);
   return match;
 }
@@ -17867,6 +17894,7 @@ function problemManualSourceRevisionCorrectionSpecHash(spec: ProblemManualSource
     allowlistId: spec.allowlistId,
     parentRevisionAllowlistId: spec.parentRevisionAllowlistId,
     parentRevisionEvidenceHash: spec.parentRevisionEvidenceHash,
+    ...(spec.failedStatus ? { failedStatus: spec.failedStatus } : {}),
     ...(spec.terminalTrigger ? { terminalTrigger: spec.terminalTrigger } : {}),
     replacement: spec.replacement,
     ...(spec.additionalReplacements ? { additionalReplacements: spec.additionalReplacements } : {}),
@@ -18478,8 +18506,7 @@ async function reviseProblemManualAdjudication(
   };
   if (
     canonicalEvidenceHash(classificationCheckpoint) !== canonicalEvidenceHash(expectedClassificationCheckpoint) ||
-    classification.transcription_status !== "exact" ||
-    !matchesProblemManualExpectedDecision(spec, classification)
+    classification.key !== key
   ) throw new Error(`${key} manual revision classification이 exact/allowlisted decision이 아닙니다`);
   const classificationSha = await sha256File(classificationPath);
   if (classificationSha !== canonicalEvidenceHash(expectedClassificationCheckpoint)) {
@@ -20083,6 +20110,10 @@ async function adjudicateProblemManualOne(
     revised.classified
   );
   if (!sourceRevisionSpec) {
+    if (
+      revised.classified.classification.transcription_status !== "exact" ||
+      !matchesProblemManualExpectedDecision(revisionSpec, revised.classified.classification)
+    ) throw new Error(`${key} manual revision classification이 exact/allowlisted decision이 아닙니다`);
     return { classified: revised.classified, evidence: { ...evidence, revision: revised.evidence } };
   }
   const sourceRevised = await reviseProblemManualSourceRevision(
@@ -21489,10 +21520,11 @@ export async function assertProblemManualAdjudicationAuthority(
         manualRevisionBase.classificationArtifact.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
         manualRevisionBase.classificationArtifact.revisionVersion !== PROBLEM_MANUAL_REVISION_VERSION ||
         manualRevisionBase.classificationArtifact.revisionPromptDigest !== PROBLEM_MANUAL_REVISION_PROMPT_DIGEST ||
-        !revisionClassification || !expectedManualRevision ||
-        revisionClassification.key !== manual.key || revisionClassification.transcription_status !== "exact" ||
-        !matchesProblemManualExpectedDecision(revisionSpec, revisionClassification) ||
-        revisionSpec.expectedDecision === "accept" && (
+        !revisionClassification || !expectedManualRevision || revisionClassification.key !== manual.key ||
+        (!sourceRevision && (
+          revisionClassification.transcription_status !== "exact" ||
+          !matchesProblemManualExpectedDecision(revisionSpec, revisionClassification)
+        )) || revisionSpec.expectedDecision === "accept" && !sourceRevision && (
           revisionClassification.canonical_subject === null ||
           revisionClassification.achievement_codes.some((code) =>
             !isAllowedAchievementCode(revisionClassification.canonical_subject!, code)
@@ -21549,6 +21581,7 @@ export async function assertProblemManualAdjudicationAuthority(
           sourceRevision.failedClassificationEvidenceHash !== sourceSpec.failedClassificationEvidenceHash ||
           sha256Text(revisionClassification.transcription_evidence) !==
             sourceRevision.failedClassificationEvidenceHash ||
+          revisionClassification.transcription_status !== (sourceSpec.failedStatus ?? "exact") ||
           Boolean(sourceRevision.terminalTrigger) !== Boolean(expectedSourceTerminalTrigger) ||
           (sourceRevision.terminalTrigger && canonicalEvidenceHash(sourceRevision.terminalTrigger) !==
             canonicalEvidenceHash(expectedSourceTerminalTrigger)) ||
