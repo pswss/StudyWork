@@ -6132,6 +6132,79 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedItemHash: "047c2f80427da0e73855debf865eff4c36e345e865a1b8f7925923d04785d341",
   failedEvidenceHash: "f9a96063c566dada3b765c41a0ec95033845a15c4599625818b645bb435b6d01",
   failedScopeEvidenceHash: "249bb6bdc85b8ccdf473bc30b0ed90f3a1edc45be54d8f8f833b6a88f8b40959",
+}, {
+  allowlistId: "ebsi-5578421-q2-terminal-fidelity-v4",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5578421-q2-manual-v1",
+  parentManualRevisionAllowlistId: "ebsi-5578421-q2-manual-source-revision-v1",
+  entryId: "ebsi:5578421",
+  key: "1:2",
+  sourcePage: 1,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  solutionSourceHash: "95e7552f9264cec9649f648fe607bd12f9fe9f77bc9d06edb896971fcee34bf2",
+  parentQuestionHash: "b3d4ca3602e31cff626c4f461c2f4929adf8be4ee5ad0b31f9a73c789780cd30",
+  parentClassificationHash: "574ffd49fa7269acd9905b9c46a598eb35e54b6a627399a813f34c13b858d72a",
+  parentProblemArtifactPath: "problem-manual-second-revisions/" +
+    "v1-0001-0002-7d3f800b787723b7285a9db27c8db844c6eca6adc1800ffc53077778f858f79a.json",
+  parentProblemArtifactHash: "62c99b2fb3a42e93272f02384bdb8d70a6024b750585eaeb705b82f991beb5e6",
+  parentClassificationArtifactPath: "classification-manual-second-revisions/" +
+    "v1-0001-0002-e940744e8ffeeff61f780b2430a57678bbf7a300abbf016b6bc60cd8e12bdc33-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "70afb8308b45a4a3657d9f31fc2e415374cc6420a25ee73eeefb05b3cfe3bada",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-272dbc34871780d5cd01399234857b08635b9545a1ca3751dca142218af72793-" +
+    "99ff1d694796f405493706d63c0f1e754e41788f9815366760e08ccbe6614e54.json",
+  failedTerminalArtifactHash: "aab784858ff1a37a632bb163d547e1a260252c3aef47d3e4d5829aa0451ddba1",
+  failedEffectiveCorpusHash: "272dbc34871780d5cd01399234857b08635b9545a1ca3751dca142218af72793",
+  failedInputHash: "99ff1d694796f405493706d63c0f1e754e41788f9815366760e08ccbe6614e54",
+  failedTerminalInputHash: "040c1ce5a5a22fc74f89c756c4580be3182f071e1582f544661fd0c3c2bba997",
+  failedItemHash: "99dc55b6166f952aa5057599e98160f2e513965a7ca4bbbc75cbdb6da7e7a1ab",
+  failedEvidenceHash: "0fe393a94204aff31df8a8d7913963ff6f538ece04eb9b9ac896d9002a9320f0",
+  failedScopeEvidenceHash: "902319f82d124e467937078546e30a2a333de89a5b7a836e254244db83d35970",
+  failedScopeDecision: "reject",
+  expectedScopeDecision: "reject",
+  pinnedAdjudicationArtifact: {
+    path: "problem-terminal-fidelity-adjudications/" +
+      "v1-0001-0002-ec73f987990bfcb3dbddb90aba012379e3cbedd44cfb79755a3c4b5a8032e9ca.json",
+    sha256: "2074a808f4c1d90ace8b9d8fce4f529a73c0e9a5fb6eadd22e327be335bc8365",
+    itemHash: "a6dbd6b38ebb3cff581d75c4ddb452aa1f4cbec6199dce7b2cb055536895213e",
+  },
+}, {
+  allowlistId: "ebsi-5578421-q3-terminal-fidelity-v2",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5578421-q3-manual-v1",
+  entryId: "ebsi:5578421",
+  key: "1:3",
+  sourcePage: 1,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  solutionSourceHash: "95e7552f9264cec9649f648fe607bd12f9fe9f77bc9d06edb896971fcee34bf2",
+  parentQuestionHash: "79b440a0c4d927fdc530c2e37e5ed4f6095db27a97396a97cd9d925f078d1c34",
+  parentClassificationHash: "abec36f81d33161810a02d25628c67006098de65dc90542361f6ab8b2b23b938",
+  parentProblemArtifactPath: "problem-manual-adjudications/" +
+    "v1-0001-0003-55698c429ab87b164d0869305a3737bc205ecd077ac8d144dd49ed9401637579.json",
+  parentProblemArtifactHash: "e406f7d1990010170eefd60cd73f41ec6df47bf5ae5b870da863ca3d24c31149",
+  parentClassificationArtifactPath: "classification-manual-adjudications/" +
+    "v1-0001-0003-7836b80e2c1eba092938b9ddc8c4bf7768207573047d225511041efd7c9618f2-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "5de6e7f608b765363d698f78751b26037d0318b4996f5f3c7d488ba391c13610",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-272dbc34871780d5cd01399234857b08635b9545a1ca3751dca142218af72793-" +
+    "99ff1d694796f405493706d63c0f1e754e41788f9815366760e08ccbe6614e54.json",
+  failedTerminalArtifactHash: "aab784858ff1a37a632bb163d547e1a260252c3aef47d3e4d5829aa0451ddba1",
+  failedEffectiveCorpusHash: "272dbc34871780d5cd01399234857b08635b9545a1ca3751dca142218af72793",
+  failedInputHash: "99ff1d694796f405493706d63c0f1e754e41788f9815366760e08ccbe6614e54",
+  failedTerminalInputHash: "4f7a9254242fa61d1388f0682236b0f3767a0106b4d466eeb081a30e3a7cd57c",
+  failedItemHash: "e2d2643f79a1cf4c68fa9000a92a1653529afbea56fdbf04cb541f0525cf6a6d",
+  failedEvidenceHash: "c766e8f45fbc74a716b5036923dfffc89a5851826ca8383bc11b77589f487e0b",
+  failedScopeEvidenceHash: "c365368dfe6f5c91d306fa41875a9e214bd690b5dc34371f2fb53f592fb9cdfa",
+  failedScopeDecision: "reject",
+  expectedScopeDecision: "reject",
+  pinnedAdjudicationArtifact: {
+    path: "problem-terminal-fidelity-adjudications/" +
+      "v1-0001-0003-c52f4b937e0aa9c30d004b2e41449d3b74ab30b3f4815ce6c0e6c1dd8681b914.json",
+    sha256: "14aed3774e7df30832fc75bae72cd2070215e8c22a093a435672a41b78edb478",
+    itemHash: "50d7844453708c1499cdb1fc8f09e0012f9f51c1200312b64a916c3c5a39c07b",
+  },
 }] as const;
 
 export function manualAdjudicationAllowlistFingerprint(): string {
