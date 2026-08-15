@@ -1043,14 +1043,15 @@ type ProblemTerminalFidelityAdjudicationSpec = {
 
 type ProblemTerminalFidelityPolicyRevisionSpec = {
   allowlistId: string;
+  kind?: "source";
   parentAdjudicationArtifactPath: string;
   parentAdjudicationArtifactHash: string;
   parentAdjudicationBasisDigest: string;
   parentAdjudicationItemHash: string;
   parentAdjudicationEvidenceHash: string;
   parentAdjudicationScopeEvidenceHash: string;
-  parentAdjudicationPromptHash: string;
-  curriculumRulesHash: string;
+  parentAdjudicationPromptHash?: string;
+  curriculumRulesHash?: string;
   expectedItem: ProblemTerminalFidelityItem;
 };
 
@@ -5755,6 +5756,26 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedItemHash: "a18c117c38f96083dc886373293ea629f095e342c625e013f47f4a2eab4d5375",
   failedEvidenceHash: "43873293c212cad8d01e77e4d5dd5a2b42c033b775b69c927e0decb71eb83af6",
   failedScopeEvidenceHash: "61f921b107c4c4d8185eadb81e84cb30cc5f6b5d6c8a9fb1b25e4cff40630156",
+  policyRevision: {
+    allowlistId: "ebsi-5578421-q44-terminal-source-policy-v1",
+    kind: "source",
+    parentAdjudicationArtifactPath: "problem-terminal-fidelity-adjudications/" +
+      "v1-0016-0044-d59cd7bc2b70546894ca04ed00af4940480e56ebcd25ecdc6645fe14362230df.json",
+    parentAdjudicationArtifactHash: "3b253ab305674f0da4f208ed8abc1af9eb836e6ea1af223f2d594c076683bed5",
+    parentAdjudicationBasisDigest: "d59cd7bc2b70546894ca04ed00af4940480e56ebcd25ecdc6645fe14362230df",
+    parentAdjudicationItemHash: "4d24dbf18f37b9d6bb01cad7b6bb0a72c0d1e08cc78300b2181dce1cf0e80c40",
+    parentAdjudicationEvidenceHash: "e6a71bc2fbaf3d521983bfbff5b88c000fc921381b7a2837b1b3cdae233b77bf",
+    parentAdjudicationScopeEvidenceHash: "529c41ea9d4f7f1d4c20c9a522556542e76375bec65d609470e9254cbd65687d",
+    expectedItem: {
+      key: "16:44",
+      status: "exact",
+      evidence: "공식 문제 PDF 15쪽의 [43~45] 안내와 시 (가)의 시작, 16쪽의 나머지 시·<보기>·44번 " +
+        "발문·①~⑤가 공급 전사와 모두 일치한다. 공식 표기는 ‘부딪히고’, ‘백힌다’이다.",
+      scopeDecision: "accept",
+      scopeConfidence: 1,
+      scopeEvidence: "현대시의 소재 속성과 이미지, 주제 형상화를 비교·해석하는 국어 문학 문항이다.",
+    },
+  },
 }, {
   allowlistId: "ebsi-5578421-q45-terminal-fidelity-v1",
   parentKind: "manual",
@@ -7712,7 +7733,7 @@ function verifyProblemTerminalFidelityAdjudications(
       && sha256(item.evidence) === policy.parentAdjudicationEvidenceHash
       && item.scopeEvidence !== undefined
       && sha256(item.scopeEvidence) === policy.parentAdjudicationScopeEvidenceHash
-      && item.status === "exact" && item.scopeDecision === "accept" && item.scopeConfidence >= 0.9;
+      && !isExpectedItem(spec, item);
     if (!isDeepStrictEqual(checkpoint, expectedCheckpoint)
       || !isDeepStrictEqual(adjudication, expectedEvidence)
       || item.key !== key || (!isExpectedItem(spec, item) && !validPolicyParent)) {
@@ -7725,25 +7746,41 @@ function verifyProblemTerminalFidelityAdjudications(
       overlays.set(key, item);
       continue;
     }
+    const sourcePolicy = policy.kind === "source";
     if (!validPolicyParent || rawPolicyRevision === undefined
-      || policy.curriculumRulesHash !== CURRICULUM_RULES_SHA256
-      || canonicalEvidenceHash(policy.expectedItem) !==
-        "de7aeb740bdd1028513cccee841db5363464896d49a7ac98ad06cb6b17460e44"
+      || (!sourcePolicy && policy.curriculumRulesHash !== CURRICULUM_RULES_SHA256)
+      || (!sourcePolicy && canonicalEvidenceHash(policy.expectedItem) !==
+        "de7aeb740bdd1028513cccee841db5363464896d49a7ac98ad06cb6b17460e44")
       || !isExpectedItem(spec, policy.expectedItem)) {
       throw new Error(`${key}: terminal fidelity policy revision parent/spec is stale`);
     }
-    const solutionSourceEvidence = { path: "solution.pdf", sha256: solutionSourceHash };
-    const solutionPath = confinedEvidencePath(
+    const problemSourceEvidence = sourcePolicy
+      ? { path: "problem.pdf", sha256: problemEvidence.sha256 }
+      : sourceEvidence;
+    const policySourcePath = confinedEvidencePath(
       stateDir,
-      solutionSourceEvidence,
-      `${key} terminal fidelity policy solution source`,
+      problemSourceEvidence,
+      `${key} terminal fidelity policy problem source`,
     );
-    if (hashFile(solutionPath) !== solutionSourceHash || !parentScopeAdjudication || !parentScopeBox) {
+    if (hashFile(policySourcePath) !== problemSourceEvidence.sha256 ||
+      (!sourcePolicy && (!parentScopeAdjudication || !parentScopeBox))) {
       throw new Error(`${key}: terminal fidelity policy source authority is stale`);
+    }
+    const solutionSourceEvidence = { path: "solution.pdf", sha256: solutionSourceHash };
+    if (!sourcePolicy) {
+      const solutionPath = confinedEvidencePath(
+        stateDir,
+        solutionSourceEvidence,
+        `${key} terminal fidelity policy solution source`,
+      );
+      if (hashFile(solutionPath) !== solutionSourceHash) {
+        throw new Error(`${key}: terminal fidelity policy solution source authority is stale`);
+      }
     }
     const parentAdjudicationAuthorityHash = canonicalEvidenceHash(expectedEvidence);
     const policyBasis = {
       allowlistId: policy.allowlistId,
+      ...(sourcePolicy ? { policyKind: "source" as const } : {}),
       entryId: entry.id,
       key,
       sourcePage: spec.sourcePage,
@@ -7757,16 +7794,22 @@ function verifyProblemTerminalFidelityAdjudications(
       parentAdjudicationItemHash: policy.parentAdjudicationItemHash,
       parentAdjudicationEvidenceHash: policy.parentAdjudicationEvidenceHash,
       parentAdjudicationScopeEvidenceHash: policy.parentAdjudicationScopeEvidenceHash,
-      parentAdjudicationPromptHash: policy.parentAdjudicationPromptHash,
-      parentScopeBoxEvidenceHash: spec.parentScopeBoxEvidenceHash,
+      ...(policy.parentAdjudicationPromptHash
+        ? { parentAdjudicationPromptHash: policy.parentAdjudicationPromptHash }
+        : {}),
+      ...(sourcePolicy
+        ? { parentManualEvidenceHash }
+        : { parentScopeBoxEvidenceHash: spec.parentScopeBoxEvidenceHash }),
       parentClassificationHash: spec.parentClassificationHash,
-      problemSourceEvidence: sourceEvidence,
-      solutionSourceEvidence,
-      baseSolutionCheckpoint: parentScopeAdjudication.baseSolutionCheckpoint,
-      baseSolutionItemHash: parentScopeAdjudication.baseSolutionItemHash,
-      solutionContextFrom: parentScopeAdjudication.solutionContextFrom,
-      solutionContextTo: parentScopeAdjudication.solutionContextTo,
-      curriculumRulesHash: policy.curriculumRulesHash,
+      problemSourceEvidence,
+      ...(!sourcePolicy ? {
+        solutionSourceEvidence,
+        baseSolutionCheckpoint: parentScopeAdjudication!.baseSolutionCheckpoint,
+        baseSolutionItemHash: parentScopeAdjudication!.baseSolutionItemHash,
+        solutionContextFrom: parentScopeAdjudication!.solutionContextFrom,
+        solutionContextTo: parentScopeAdjudication!.solutionContextTo,
+        curriculumRulesHash: policy.curriculumRulesHash,
+      } : {}),
       policySpecHash: canonicalEvidenceHash(policy),
       expectedItem: policy.expectedItem,
     };
@@ -7810,6 +7853,7 @@ function verifyProblemTerminalFidelityAdjudications(
     };
     const expectedPolicyEvidence = {
       allowlistId: policy.allowlistId,
+      ...(sourcePolicy ? { policyKind: "source" as const } : {}),
       key,
       sourcePage: spec.sourcePage,
       sourceHash: problemEvidence.sha256,
@@ -7820,16 +7864,22 @@ function verifyProblemTerminalFidelityAdjudications(
       parentAdjudicationAuthorityHash,
       parentAdjudicationEvidenceHash: policy.parentAdjudicationEvidenceHash,
       parentAdjudicationScopeEvidenceHash: policy.parentAdjudicationScopeEvidenceHash,
-      parentAdjudicationPromptHash: policy.parentAdjudicationPromptHash,
-      parentScopeBoxEvidenceHash: spec.parentScopeBoxEvidenceHash,
+      ...(policy.parentAdjudicationPromptHash
+        ? { parentAdjudicationPromptHash: policy.parentAdjudicationPromptHash }
+        : {}),
+      ...(sourcePolicy
+        ? { parentManualEvidenceHash }
+        : { parentScopeBoxEvidenceHash: spec.parentScopeBoxEvidenceHash }),
       parentClassificationHash: spec.parentClassificationHash,
-      problemSourceEvidence: sourceEvidence,
-      solutionSourceEvidence,
-      baseSolutionCheckpoint: parentScopeAdjudication.baseSolutionCheckpoint,
-      baseSolutionItemHash: parentScopeAdjudication.baseSolutionItemHash,
-      solutionContextFrom: parentScopeAdjudication.solutionContextFrom,
-      solutionContextTo: parentScopeAdjudication.solutionContextTo,
-      curriculumRulesHash: policy.curriculumRulesHash,
+      problemSourceEvidence,
+      ...(!sourcePolicy ? {
+        solutionSourceEvidence,
+        baseSolutionCheckpoint: parentScopeAdjudication!.baseSolutionCheckpoint,
+        baseSolutionItemHash: parentScopeAdjudication!.baseSolutionItemHash,
+        solutionContextFrom: parentScopeAdjudication!.solutionContextFrom,
+        solutionContextTo: parentScopeAdjudication!.solutionContextTo,
+        curriculumRulesHash: policy.curriculumRulesHash,
+      } : {}),
       policySpecHash: canonicalEvidenceHash(policy),
       policyArtifact: {
         ...policyArtifact,

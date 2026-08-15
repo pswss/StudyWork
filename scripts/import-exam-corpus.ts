@@ -1382,6 +1382,7 @@ export type ProblemManualClassificationPolicyRevisionEvidence = {
 
 export type ProblemTerminalFidelityPolicyRevisionEvidence = {
   allowlistId: string;
+  policyKind?: "source";
   key: string;
   sourcePage: number;
   sourceHash: string;
@@ -1395,16 +1396,17 @@ export type ProblemTerminalFidelityPolicyRevisionEvidence = {
   parentAdjudicationAuthorityHash: string;
   parentAdjudicationEvidenceHash: string;
   parentAdjudicationScopeEvidenceHash: string;
-  parentAdjudicationPromptHash: string;
-  parentScopeBoxEvidenceHash: string;
+  parentAdjudicationPromptHash?: string;
+  parentScopeBoxEvidenceHash?: string;
+  parentManualEvidenceHash?: string;
   parentClassificationHash: string;
   problemSourceEvidence: EvidencePointer;
-  solutionSourceEvidence: EvidencePointer;
-  baseSolutionCheckpoint: EvidencePointer;
-  baseSolutionItemHash: string;
-  solutionContextFrom: number;
-  solutionContextTo: number;
-  curriculumRulesHash: string;
+  solutionSourceEvidence?: EvidencePointer;
+  baseSolutionCheckpoint?: EvidencePointer;
+  baseSolutionItemHash?: string;
+  solutionContextFrom?: number;
+  solutionContextTo?: number;
+  curriculumRulesHash?: string;
   policySpecHash: string;
   policyArtifact: EvidencePointer & {
     version: number;
@@ -2621,14 +2623,15 @@ type ProblemTerminalFidelityAdjudicationSpec = {
 
 type ProblemTerminalFidelityPolicyRevisionSpec = {
   allowlistId: string;
+  kind?: "source";
   parentAdjudicationArtifactPath: string;
   parentAdjudicationArtifactHash: string;
   parentAdjudicationBasisDigest: string;
   parentAdjudicationItemHash: string;
   parentAdjudicationEvidenceHash: string;
   parentAdjudicationScopeEvidenceHash: string;
-  parentAdjudicationPromptHash: string;
-  curriculumRulesHash: string;
+  parentAdjudicationPromptHash?: string;
+  curriculumRulesHash?: string;
   expectedItem: ProblemTerminalFidelityItem;
 };
 
@@ -7255,6 +7258,26 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedItemHash: "a18c117c38f96083dc886373293ea629f095e342c625e013f47f4a2eab4d5375",
   failedEvidenceHash: "43873293c212cad8d01e77e4d5dd5a2b42c033b775b69c927e0decb71eb83af6",
   failedScopeEvidenceHash: "61f921b107c4c4d8185eadb81e84cb30cc5f6b5d6c8a9fb1b25e4cff40630156",
+  policyRevision: {
+    allowlistId: "ebsi-5578421-q44-terminal-source-policy-v1",
+    kind: "source",
+    parentAdjudicationArtifactPath: "problem-terminal-fidelity-adjudications/" +
+      "v1-0016-0044-d59cd7bc2b70546894ca04ed00af4940480e56ebcd25ecdc6645fe14362230df.json",
+    parentAdjudicationArtifactHash: "3b253ab305674f0da4f208ed8abc1af9eb836e6ea1af223f2d594c076683bed5",
+    parentAdjudicationBasisDigest: "d59cd7bc2b70546894ca04ed00af4940480e56ebcd25ecdc6645fe14362230df",
+    parentAdjudicationItemHash: "4d24dbf18f37b9d6bb01cad7b6bb0a72c0d1e08cc78300b2181dce1cf0e80c40",
+    parentAdjudicationEvidenceHash: "e6a71bc2fbaf3d521983bfbff5b88c000fc921381b7a2837b1b3cdae233b77bf",
+    parentAdjudicationScopeEvidenceHash: "529c41ea9d4f7f1d4c20c9a522556542e76375bec65d609470e9254cbd65687d",
+    expectedItem: {
+      key: "16:44",
+      status: "exact",
+      evidence: "공식 문제 PDF 15쪽의 [43~45] 안내와 시 (가)의 시작, 16쪽의 나머지 시·<보기>·44번 " +
+        "발문·①~⑤가 공급 전사와 모두 일치한다. 공식 표기는 ‘부딪히고’, ‘백힌다’이다.",
+      scopeDecision: "accept",
+      scopeConfidence: 1,
+      scopeEvidence: "현대시의 소재 속성과 이미지, 주제 형상화를 비교·해석하는 국어 문학 문항이다.",
+    },
+  },
 }, {
   allowlistId: "ebsi-5578421-q45-terminal-fidelity-v1",
   parentKind: "manual",
@@ -19122,9 +19145,9 @@ async function readProblemTerminalFidelityAdjudication(
     item: canonicalEvidenceHash(item) === policy.parentAdjudicationItemHash,
     evidence: sha256Text(item.evidence) === policy.parentAdjudicationEvidenceHash,
     scopeEvidence: sha256Text(item.scopeEvidence) === policy.parentAdjudicationScopeEvidenceHash,
-    prompt: sha256Text(problemTerminalFidelityAdjudicationPrompt(prepared)) === policy.parentAdjudicationPromptHash,
-    status: item.status === "exact",
-    scope: item.scopeDecision === "accept" && item.scopeConfidence >= 0.9,
+    prompt: policy.parentAdjudicationPromptHash === undefined ||
+      sha256Text(problemTerminalFidelityAdjudicationPrompt(prepared)) === policy.parentAdjudicationPromptHash,
+    superseded: !isExpectedTerminalFidelityAdjudicationItem(prepared.spec, item),
   } : null;
   const validPolicyParent = policyParentChecks && Object.values(policyParentChecks).every(Boolean);
   if (
@@ -19262,8 +19285,9 @@ function prepareProblemTerminalFidelityPolicyRevision(
   const parentAuthorityHash = canonicalEvidenceHash(parentEvidence);
   const baseSolutionCheckpoint = parentEvidence.baseSolutionCheckpoint;
   const expectedItem = spec.expectedItem;
-  if (
-    parentEvidence.policyRevision ||
+  const sourcePolicy = spec.kind === "source";
+  const commonInvalid = (
+    Boolean(parentEvidence.policyRevision) ||
     parentPrepared.relativePath !== spec.parentAdjudicationArtifactPath ||
     parentArtifact.path !== spec.parentAdjudicationArtifactPath ||
     parentArtifact.sha256 !== spec.parentAdjudicationArtifactHash ||
@@ -19272,7 +19296,19 @@ function prepareProblemTerminalFidelityPolicyRevision(
     parentEvidence.adjudicationItemHash !== spec.parentAdjudicationItemHash ||
     sha256Text(parent.item.evidence) !== spec.parentAdjudicationEvidenceHash ||
     sha256Text(parent.item.scopeEvidence) !== spec.parentAdjudicationScopeEvidenceHash ||
-    sha256Text(problemTerminalFidelityAdjudicationPrompt(parentPrepared)) !== spec.parentAdjudicationPromptHash ||
+    (spec.parentAdjudicationPromptHash !== undefined &&
+      sha256Text(problemTerminalFidelityAdjudicationPrompt(parentPrepared)) !== spec.parentAdjudicationPromptHash) ||
+    isExpectedTerminalFidelityAdjudicationItem(parentPrepared.spec, parent.item) ||
+    expectedItem.key !== parentPrepared.spec.key ||
+    !isExpectedTerminalFidelityAdjudicationItem(parentPrepared.spec, expectedItem)
+  );
+  const sourceInvalid = sourcePolicy && (
+    parentPrepared.spec.parentKind !== "manual" || !parentPrepared.parentManualEvidenceHash ||
+    canonicalEvidenceHash(parentPrepared.current.classification) !== parentPrepared.spec.parentClassificationHash ||
+    parentPrepared.current.classification.transcription_status !== "exact" ||
+    parentPrepared.current.classification.decision !== "accept"
+  );
+  const scopeInvalid = !sourcePolicy && (
     parent.item.status !== "exact" || parent.item.scopeDecision !== "accept" || parent.item.scopeConfidence < 0.9 ||
     !parentPrepared.parentScopeBox || !parentPrepared.parentScopeAdjudication || !baseSolutionCheckpoint ||
     parentEvidence.parentScopeBoxEvidenceHash !== parentPrepared.spec.parentScopeBoxEvidenceHash ||
@@ -19289,12 +19325,20 @@ function prepareProblemTerminalFidelityPolicyRevision(
     parentEvidence.baseSolutionItemHash !== parentPrepared.spec.baseSolutionItemHash ||
     parentEvidence.solutionContextFrom !== parentPrepared.spec.solutionContextFrom ||
     parentEvidence.solutionContextTo !== parentPrepared.spec.solutionContextTo ||
-    spec.curriculumRulesHash !== CURRICULUM_RULES_SHA256 ||
-    expectedItem.key !== parentPrepared.spec.key || expectedItem.status !== "exact" ||
-    expectedItem.scopeDecision !== "reject" || expectedItem.scopeConfidence < 0.9
-  ) throw new Error(`${parentPrepared.spec.key} terminal fidelity policy revision parent/spec이 다릅니다`);
+    spec.curriculumRulesHash !== CURRICULUM_RULES_SHA256
+  );
+  if (commonInvalid || sourceInvalid || scopeInvalid) {
+    throw new Error(
+      `${parentPrepared.spec.key} terminal fidelity policy revision parent/spec이 다릅니다: ` +
+      `common=${commonInvalid},source=${sourceInvalid},scope=${scopeInvalid}`
+    );
+  }
+  const problemSourceEvidence = sourcePolicy
+    ? { path: "problem.pdf", sha256: parentPrepared.spec.sourceHash }
+    : parentPrepared.sourceEvidence;
   const commonBasis = {
     allowlistId: spec.allowlistId,
+    ...(sourcePolicy ? { policyKind: "source" as const } : {}),
     entryId: parentPrepared.spec.entryId,
     key: parentPrepared.spec.key,
     sourcePage: parentPrepared.spec.sourcePage,
@@ -19308,16 +19352,22 @@ function prepareProblemTerminalFidelityPolicyRevision(
     parentAdjudicationItemHash: spec.parentAdjudicationItemHash,
     parentAdjudicationEvidenceHash: spec.parentAdjudicationEvidenceHash,
     parentAdjudicationScopeEvidenceHash: spec.parentAdjudicationScopeEvidenceHash,
-    parentAdjudicationPromptHash: spec.parentAdjudicationPromptHash,
-    parentScopeBoxEvidenceHash: parentPrepared.spec.parentScopeBoxEvidenceHash,
+    ...(spec.parentAdjudicationPromptHash
+      ? { parentAdjudicationPromptHash: spec.parentAdjudicationPromptHash }
+      : {}),
+    ...(sourcePolicy
+      ? { parentManualEvidenceHash: parentPrepared.parentManualEvidenceHash }
+      : { parentScopeBoxEvidenceHash: parentPrepared.spec.parentScopeBoxEvidenceHash }),
     parentClassificationHash: parentPrepared.spec.parentClassificationHash,
-    problemSourceEvidence: parentPrepared.sourceEvidence,
-    solutionSourceEvidence: { path: "solution.pdf", sha256: parentPrepared.spec.solutionSourceHash },
-    baseSolutionCheckpoint,
-    baseSolutionItemHash: parentEvidence.baseSolutionItemHash,
-    solutionContextFrom: parentEvidence.solutionContextFrom,
-    solutionContextTo: parentEvidence.solutionContextTo,
-    curriculumRulesHash: spec.curriculumRulesHash,
+    problemSourceEvidence,
+    ...(!sourcePolicy ? {
+      solutionSourceEvidence: { path: "solution.pdf", sha256: parentPrepared.spec.solutionSourceHash },
+      baseSolutionCheckpoint,
+      baseSolutionItemHash: parentEvidence.baseSolutionItemHash,
+      solutionContextFrom: parentEvidence.solutionContextFrom,
+      solutionContextTo: parentEvidence.solutionContextTo,
+      curriculumRulesHash: spec.curriculumRulesHash,
+    } : {}),
     policySpecHash: canonicalEvidenceHash(spec),
     expectedItem,
   };
@@ -19363,6 +19413,7 @@ function problemTerminalFidelityPolicyRevisionEvidence(
   const spec = prepared.parentPrepared.spec;
   return {
     allowlistId: prepared.spec.allowlistId,
+    ...(prepared.spec.kind === "source" ? { policyKind: "source" as const } : {}),
     key: spec.key,
     sourcePage: spec.sourcePage,
     sourceHash: spec.sourceHash,
@@ -19373,16 +19424,24 @@ function problemTerminalFidelityPolicyRevisionEvidence(
     parentAdjudicationAuthorityHash: canonicalEvidenceHash(parentEvidence),
     parentAdjudicationEvidenceHash: prepared.spec.parentAdjudicationEvidenceHash,
     parentAdjudicationScopeEvidenceHash: prepared.spec.parentAdjudicationScopeEvidenceHash,
-    parentAdjudicationPromptHash: prepared.spec.parentAdjudicationPromptHash,
-    parentScopeBoxEvidenceHash: spec.parentScopeBoxEvidenceHash!,
+    ...(prepared.spec.parentAdjudicationPromptHash
+      ? { parentAdjudicationPromptHash: prepared.spec.parentAdjudicationPromptHash }
+      : {}),
+    ...(prepared.spec.kind === "source"
+      ? { parentManualEvidenceHash: prepared.parentPrepared.parentManualEvidenceHash }
+      : { parentScopeBoxEvidenceHash: spec.parentScopeBoxEvidenceHash! }),
     parentClassificationHash: spec.parentClassificationHash,
-    problemSourceEvidence: prepared.parentPrepared.sourceEvidence,
-    solutionSourceEvidence: { path: "solution.pdf", sha256: spec.solutionSourceHash },
-    baseSolutionCheckpoint: parentEvidence.baseSolutionCheckpoint!,
-    baseSolutionItemHash: parentEvidence.baseSolutionItemHash!,
-    solutionContextFrom: parentEvidence.solutionContextFrom!,
-    solutionContextTo: parentEvidence.solutionContextTo!,
-    curriculumRulesHash: prepared.spec.curriculumRulesHash,
+    problemSourceEvidence: prepared.spec.kind === "source"
+      ? { path: "problem.pdf", sha256: spec.sourceHash }
+      : prepared.parentPrepared.sourceEvidence,
+    ...(prepared.spec.kind !== "source" ? {
+      solutionSourceEvidence: { path: "solution.pdf", sha256: spec.solutionSourceHash },
+      baseSolutionCheckpoint: parentEvidence.baseSolutionCheckpoint!,
+      baseSolutionItemHash: parentEvidence.baseSolutionItemHash!,
+      solutionContextFrom: parentEvidence.solutionContextFrom!,
+      solutionContextTo: parentEvidence.solutionContextTo!,
+      curriculumRulesHash: prepared.spec.curriculumRulesHash!,
+    } : {}),
     policySpecHash: canonicalEvidenceHash(prepared.spec),
     policyArtifact: {
       path: prepared.relativePath,
@@ -24277,6 +24336,23 @@ export async function repairAndAuditOfficialAnswers(
       }
       historicalManualTriggerPaths.add(pinned.path);
     }
+    for (const spec of PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.filter((candidate) =>
+      candidate.entryId === entry.id && candidate.sourceHash === problem.sha256 &&
+      candidate.solutionSourceHash === solutionEvidence.sha256 && candidate.policyRevision
+    )) {
+      const parent = spec.policyRevision!;
+      const candidatePath = join(stateDir, parent.parentAdjudicationArtifactPath);
+      if (!existsSync(candidatePath)) continue;
+      const path = confinedStateFile(
+        stateDir,
+        parent.parentAdjudicationArtifactPath,
+        "terminal fidelity policy parent"
+      );
+      if (await sha256File(path) !== parent.parentAdjudicationArtifactHash) {
+        throw new Error(`${spec.key} terminal fidelity policy parent hash가 다릅니다`);
+      }
+      historicalManualTriggerPaths.add(parent.parentAdjudicationArtifactPath);
+    }
     for (const sourceSpec of PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.filter((candidate) =>
       candidate.entryId === entry.id && candidate.sourceHash === problem.sha256 && candidate.terminalTrigger
     )) {
@@ -24350,7 +24426,31 @@ export async function repairAndAuditOfficialAnswers(
       );
     }
     const completedAdjudications = new Map<string, CompletedProblemTerminalFidelityAdjudication>();
+    const existingPreparedPolicyRevisions = preparedAdjudications.flatMap((prepared) => {
+      const existing = existingAdjudications.get(prepared.relativePath);
+      if (!existing) return [];
+      const policy = prepareProblemTerminalFidelityPolicyRevision(prepared, existing);
+      return policy ? [policy] : [];
+    });
+    const completedPolicyParentPaths = new Set(
+      existingPreparedPolicyRevisions.map((prepared) => prepared.parentPrepared.relativePath)
+    );
+    if (existingPreparedPolicyRevisions.length > 0) {
+      assertProblemTerminalFidelityPolicyRevisionInventory(
+        stateDir,
+        new Set(existingPreparedPolicyRevisions.map((prepared) => prepared.relativePath)),
+        false
+      );
+    }
+    for (const prepared of existingPreparedPolicyRevisions) {
+      const existing = await readProblemTerminalFidelityPolicyRevision(prepared);
+      completedAdjudications.set(
+        prepared.parentPrepared.relativePath,
+        await completeProblemTerminalFidelityPolicyRevision(prepared, existing)
+      );
+    }
     for (const prepared of preparedAdjudications) {
+      if (completedAdjudications.has(prepared.relativePath)) continue;
       const existing = existingAdjudications.get(prepared.relativePath) ?? null;
       if (prepared.spec.policyRevision && !existing) {
         throw new Error(`${prepared.spec.key} pinned terminal fidelity adjudication parent가 없습니다`);
@@ -24362,6 +24462,7 @@ export async function repairAndAuditOfficialAnswers(
       completedAdjudications.set(prepared.relativePath, adjudicated);
     }
     const preparedPolicyRevisions = preparedAdjudications.flatMap((prepared) => {
+      if (completedPolicyParentPaths.has(prepared.relativePath)) return [];
       const policy = prepareProblemTerminalFidelityPolicyRevision(
         prepared,
         completedAdjudications.get(prepared.relativePath)!
