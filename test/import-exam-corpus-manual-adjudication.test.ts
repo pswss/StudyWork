@@ -1917,7 +1917,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 6)))
       .toBe("ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048");
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST))
-      .toBe("4a5965fb8a86b59cc2dfb8c2a887af8e1e39fca40fc60e056b4b8a9606a68cb8");
+      .toBe("d5df5628172a56547553d83e667cd89b82f6d0ef36689610846026e40b36f45f");
     expect(terminalSpecs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -2337,7 +2337,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         rowHash: canonicalEvidenceHash(candidate),
       })),
     }).toEqual({
-      allowlistHash: "4a5965fb8a86b59cc2dfb8c2a887af8e1e39fca40fc60e056b4b8a9606a68cb8",
+      allowlistHash: "d5df5628172a56547553d83e667cd89b82f6d0ef36689610846026e40b36f45f",
       prefixHash: "e4601a183669f046f4cc1f52cd30a860fe6347f96ffa41b30bdc8db2123630b3",
       rows: [{
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",
@@ -3217,6 +3217,9 @@ describe("exact allowlisted problem manual adjudication", () => {
     const terminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
       candidate.allowlistId === "ebsi-5578421-q29-terminal-fidelity-v2"
     )!;
+    const q30TerminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === "ebsi-5578421-q30-terminal-fidelity-v2"
+    )!;
     expect({
       prefixHash: canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 14)),
       rowHash: canonicalEvidenceHash(terminalSpec),
@@ -3236,6 +3239,20 @@ describe("exact allowlisted problem manual adjudication", () => {
           "v1-0011-0029-5cd21ac0ebc9e3b730997ccd261594978e171e4f79447ac650488e720db7052d.json",
         sha256: "e2c07cba3f712281ea8953746044102023ff518986e39c4ca3ef21d59c9d3ed6",
         itemHash: "9b9d95bfce7ba155c58a826904bcfbd4333ce3e88ef226f118f4e321d4ca9623",
+      },
+    });
+    expect({
+      prefixHash: canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 15)),
+      rowHash: canonicalEvidenceHash(q30TerminalSpec),
+      pinnedAdjudicationArtifact: q30TerminalSpec.pinnedAdjudicationArtifact,
+    }).toEqual({
+      prefixHash: "4a5965fb8a86b59cc2dfb8c2a887af8e1e39fca40fc60e056b4b8a9606a68cb8",
+      rowHash: "f2af862494df6ce1cdf3fe11e3e148979ad3cfd22d4528409829d4ae77a7676f",
+      pinnedAdjudicationArtifact: {
+        path: "problem-terminal-fidelity-adjudications/" +
+          "v1-0012-0030-f9fb0b66f2dcf467685a275aa1d156ae79881cdd64a63f3035f6825716928ca3.json",
+        sha256: "29d6faf5f3f60019d25f827d2c26d4348b1ec448ad460bfdcedbb80199b8f186",
+        itemHash: "05795808473e0670d376c32e841be9ae41a376c1b6832362839e3e0c1e34a22b",
       },
     });
     root = mkdtempSync(join(tmpdir(), "studywork-5578421-q29-terminal-manual-"));
