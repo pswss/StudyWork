@@ -7322,6 +7322,12 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedScopeEvidenceHash: "c5fec472cfa764b97fbe2255c5834762e1f497dc8f85c71b6b88372d6d8f560d",
   failedScopeDecision: "reject",
   expectedScopeDecision: "reject",
+  pinnedAdjudicationArtifact: {
+    path: "problem-terminal-fidelity-adjudications/" +
+      "v1-0001-0002-da24540497a5265e01c00e114ca03663bcfec7c4a5a2a974add0e65d190de50b.json",
+    sha256: "33a4e122c6e9194706f1aedaba7cb092f5b15df3dbe5dec02a3031e8ecf0e5bc",
+    itemHash: "bf99e5d27f9226bcb06e448633241d5f84e798b0f93c00f4265da5285f5d1210",
+  },
 }, {
   allowlistId: "ebsi-5578421-q44-terminal-fidelity-v1",
   parentKind: "manual",

@@ -1884,7 +1884,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 6)))
       .toBe("ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048");
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST))
-      .toBe("290143282e466becdc9d78e686e1d44a7ea028faca78a0d688c23ba23f501ddf");
+      .toBe("e21e0996e9a9633f4d0faabcdd316364c6e1683d0bee0d2c592eca8504925693");
     expect(terminalSpecs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -2272,7 +2272,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         rowHash: canonicalEvidenceHash(candidate),
       })),
     }).toEqual({
-      allowlistHash: "290143282e466becdc9d78e686e1d44a7ea028faca78a0d688c23ba23f501ddf",
+      allowlistHash: "e21e0996e9a9633f4d0faabcdd316364c6e1683d0bee0d2c592eca8504925693",
       prefixHash: "e4601a183669f046f4cc1f52cd30a860fe6347f96ffa41b30bdc8db2123630b3",
       rows: [{
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",
@@ -2288,7 +2288,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v3",
         parentManualRevisionAllowlistId: "ebsi-5578421-q2-manual-source-revision-v1",
         failedEffectiveCorpusHash: "54b563c6ea850bce015a99000baa61b2b6ff193d11a7fe155649a8e7e4cc0ae8",
-        rowHash: "1aaee45d457ebe0df76d7ab3b50e00eef93074ac13a586763de4276a449028fb",
+        rowHash: "f9d145d7a551ee1ff200ee9b109f8b539493f7cea129b0d702afa3fe3ecc035e",
       }],
     });
     expect(terminalSpecs[1].pinnedAdjudicationArtifact).toEqual({
@@ -2296,6 +2296,12 @@ describe("exact allowlisted problem manual adjudication", () => {
         "v1-0001-0002-5a601aa2ef79f13797e092f25479d5432df7d7cd984f6e346e9c8536866ed648.json",
       sha256: "75ef0affae2d3d4673b7daa85ac3dcf7fcac61decac6406b0c285e5cd5d9853d",
       itemHash: "603d5f6bebb158c51dbefdf0181c220b62b02b72ad9aabb47d605ea2cd409ded",
+    });
+    expect(terminalSpecs[2].pinnedAdjudicationArtifact).toEqual({
+      path: "problem-terminal-fidelity-adjudications/" +
+        "v1-0001-0002-da24540497a5265e01c00e114ca03663bcfec7c4a5a2a974add0e65d190de50b.json",
+      sha256: "33a4e122c6e9194706f1aedaba7cb092f5b15df3dbe5dec02a3031e8ecf0e5bc",
+      itemHash: "bf99e5d27f9226bcb06e448633241d5f84e798b0f93c00f4265da5285f5d1210",
     });
   });
 
@@ -2556,26 +2562,24 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 240_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
-    "adjudicates the source-revised 5578421 Q2 terminal generation by pinned bytes",
+    "adjudicates the source-revised 5578421 Q2 terminal generations by pinned bytes",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-5578421-q2-terminal-v2-"));
     cpSync(q31Q32LiveState, root, { recursive: true });
     for (const directory of ["answer-audit", "answer-attestation", "semantic-choice-checks"]) {
       rmSync(join(root, directory), { recursive: true, force: true });
     }
-    const spec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
-      candidate.allowlistId === "ebsi-5578421-q2-terminal-fidelity-v2"
-    )!;
-    const currentSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
-      candidate.allowlistId === "ebsi-5578421-q2-terminal-fidelity-v3"
-    )!;
-    rmSync(join(root, currentSpec.failedTerminalPath));
-    const matchingChildren = (stateRoot: string) => {
+    const specs = ["v2", "v3"].map((version) =>
+      PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
+        candidate.allowlistId === `ebsi-5578421-q2-terminal-fidelity-${version}`
+      )!
+    );
+    const matchingChildren = (stateRoot: string, allowlistId: string) => {
       const directory = join(stateRoot, "problem-terminal-fidelity-adjudications");
       return existsSync(directory)
         ? readdirSync(directory).filter((name) => {
           const checkpoint = JSON.parse(readFileSync(join(directory, name), "utf8"));
-          return checkpoint.basis?.allowlistId === spec.allowlistId;
+          return checkpoint.basis?.allowlistId === allowlistId;
         })
         : [];
     };
@@ -2597,39 +2601,43 @@ describe("exact allowlisted problem manual adjudication", () => {
       );
     };
 
-    expect(matchingChildren(root)).toEqual([
-      spec.pinnedAdjudicationArtifact!.path.split("/").at(-1),
-    ]);
-    const childPath = join(adjudicationDirectory, matchingChildren(root)[0]);
-    const childBytes = readFileSync(childPath);
+    const children = specs.map((spec) => {
+      expect(matchingChildren(root, spec.allowlistId)).toEqual([
+        spec.pinnedAdjudicationArtifact!.path.split("/").at(-1),
+      ]);
+      const path = join(adjudicationDirectory, matchingChildren(root, spec.allowlistId)[0]);
+      return { path, bytes: readFileSync(path), spec };
+    });
     await expect(run(root)).rejects.toThrow(
       /seeded 5578421 post-adjudication boundary|1:3 problem recovery는 한 번만 허용됩니다/u,
     );
     expect(adjudicationCalls).toBe(0);
-    expect(readFileSync(childPath)).toEqual(childBytes);
-    const child = JSON.parse(readFileSync(childPath, "utf8"));
-    expect(child).toMatchObject({
-      basis: {
-        allowlistId: spec.allowlistId,
-        failedTerminalCheckpoint: {
-          path: spec.failedTerminalPath,
-          sha256: spec.failedTerminalArtifactHash,
+    for (const child of children) {
+      expect(readFileSync(child.path)).toEqual(child.bytes);
+      expect(JSON.parse(readFileSync(child.path, "utf8"))).toMatchObject({
+        basis: {
+          allowlistId: child.spec.allowlistId,
+          failedTerminalCheckpoint: {
+            path: child.spec.failedTerminalPath,
+            sha256: child.spec.failedTerminalArtifactHash,
+          },
         },
-      },
-      items: [{ key: "1:2", status: "exact", scopeDecision: "reject" }],
-    });
+        items: [{ key: "1:2", status: "exact", scopeDecision: "reject" }],
+      });
+    }
 
-    const tampered = mkdtempSync(join(tmpdir(), "studywork-5578421-q2-terminal-v2-tampered-"));
-    cpSync(q31Q32LiveState, tampered, { recursive: true });
-    rmSync(join(tampered, currentSpec.failedTerminalPath));
-    const tamperedPath = join(tampered, spec.pinnedAdjudicationArtifact!.path);
-    writeFileSync(tamperedPath, Buffer.concat([readFileSync(tamperedPath), Buffer.from(" ")]));
-    const beforeTamper = stateSnapshot(tampered);
-    providerMock.complete.mockClear();
-    await expect(run(tampered)).rejects.toThrow(/pinned terminal fidelity adjudication hash가 다릅니다/u);
-    expect(providerMock.complete).not.toHaveBeenCalled();
-    expect(stateSnapshot(tampered)).toEqual(beforeTamper);
-    rmSync(tampered, { recursive: true, force: true });
+    for (const spec of specs) {
+      const tampered = mkdtempSync(join(tmpdir(), "studywork-5578421-q2-terminal-tampered-"));
+      cpSync(q31Q32LiveState, tampered, { recursive: true });
+      const tamperedPath = join(tampered, spec.pinnedAdjudicationArtifact!.path);
+      writeFileSync(tamperedPath, Buffer.concat([readFileSync(tamperedPath), Buffer.from(" ")]));
+      const beforeTamper = stateSnapshot(tampered);
+      providerMock.complete.mockClear();
+      await expect(run(tampered)).rejects.toThrow(/pinned terminal fidelity adjudication hash가 다릅니다/u);
+      expect(providerMock.complete).not.toHaveBeenCalled();
+      expect(stateSnapshot(tampered)).toEqual(beforeTamper);
+      rmSync(tampered, { recursive: true, force: true });
+    }
 
   }, 240_000);
 
