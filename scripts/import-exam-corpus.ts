@@ -4357,6 +4357,30 @@ const Q3_5578421_FIGURE_DESCRIPTION =
   "함께 위에서부터 [경제1등], [이게머니], [거스름돈], [동전좋아], [부자되자]라는 작성자 이름 및 " +
   "각 추가 질문이 세로로 배열되어 있고, 각 게시물 오른쪽에는 ①부터 ⑤까지의 번호가 표시되어 있다.";
 
+const Q38_5578421_REPLACEMENTS: ProblemManualReplacement[] = [
+  { field: "question", from: "(가)\n", to: "[37 ~ 42] 다음 글을 읽고 물음에 답하시오.\n\n(가)\n", count: 1 },
+  { field: "question", from: "이러한 대립 구조는", to: "이러한 대립 구도는", count: 1 },
+  { field: "question", from: "「", to: "｢ ", count: 4 },
+  { field: "question", from: "」", to: " ｣", count: 4 },
+  { field: "question", from: "대추, 밤 등속의 것을 구어", to: "대추, 밤 등속의 것을 주어", count: 1 },
+  { field: "question", from: "조그마한 것이 간악하기도", to: "조그마한 것이 잔악하기도", count: 1 },
+  { field: "question", from: "[A] “저는", to: "[A] (중략)\n“저는", count: 1 },
+  { field: "question", from: "소토산 원편의", to: "소토산 왼편의", count: 1 },
+  { field: "question", from: "향려(若閭)", to: "항려(巷閭)", count: 1 },
+  { field: "question", from: "도적질로 생활을 하며,", to: "도적질로 생활을 하매,", count: 1 },
+  { field: "question", from: "누구를 한하리요.", to: "누구를 한하리오.", count: 1 },
+  { field: "question", from: "어찌하리요.’", to: "어찌하리오.’", count: 1 },
+  { field: "question", from: "헤아리지 아니하리요.’", to: "헤아리지 아니하리오.’", count: 1 },
+  { field: "question", from: "기화요초(琪花瑤草)를 뜯어 먹으며", to: "기화요초(琪花瑤草)를 뜯어 먹으매", count: 1 },
+  { field: "question", from: "간을 달라하여 보챔이", to: "간을 달라하와 보챔이", count: 1 },
+  { field: "question", from: "어찌 가져오지 아니 하였으리요.", to: "어찌 가져오지 아니 하였으리오.", count: 1 },
+  { field: "question", from: "네 같은 꾀로", to: "네 얕은 꾀로", count: 1 },
+  { field: "question", from: "정신이 산란하여 간장이", to: "정신이 산란하며 간장이", count: 1 },
+  { field: "question", from: "살아날 도리 꽤히", to: "살아날 도리 쾌히", count: 1 },
+  { field: "question", from: "간을 출입하는 곳이옵니다.", to: "간을 출입하는 곳이오니다.", count: 1 },
+  { field: "question", from: "\n\n(가)를 바탕으로", to: "\n\n38. (가)를 바탕으로", count: 1 },
+];
+
 export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationSpec[] = [
   {
     allowlistId: "ebsi-5594499-q34-manual-v1",
@@ -6542,6 +6566,35 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     figure: true,
     figureDescription: Q3_5578421_FIGURE_DESCRIPTION,
     expectedDecision: "reject",
+  },
+  {
+    allowlistId: "ebsi-5578421-q38-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "15:38",
+    sourcePage: 15,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "fcedb565f4bb9c107733c378cef32039e458be2f33ee8ce3071eaff8297593b2",
+    dpi: 600,
+    failedQuestionHash: "c5a9e92929e169e39183d482b4961e6e072a221800d4393afbeba4d3aaf55a65",
+    failedClassificationHash: "780cc2bf2d4c669375788673808370d6ae4430853adfd079978cb12c46d05f0b",
+    failedClassificationEvidenceHash: "67502ed9ce2bef317f55e449238b93e1610b8dc204ee49d0c3456e12d061a538",
+    views: [
+      { sourcePage: 13, label: "p13 right Q37-Q42 shared passage start", rect: [0.50, 0.08, 0.95, 0.99] },
+      { sourcePage: 14, label: "p14 full Q37-Q42 shared passage", rect: [0, 0, 1, 1] },
+      { sourcePage: 15, label: "p15 left Q38", rect: [0.07, 0.08, 0.50, 0.35] },
+    ],
+    requiredTokens: [
+      "[37 ~ 42] 다음 글을 읽고 물음에 답하시오.", "이러한 대립 구도는",
+      "대추, 밤 등속의 것을 주어", "조그마한 것이 잔악하기도", "(중략)",
+      "소토산 왼편의", "항려(巷閭)", "도적질로 생활을 하매",
+      "기화요초(琪花瑤草)를 뜯어 먹으매", "간을 달라하와", "네 얕은 꾀로",
+      "정신이 산란하며", "살아날 도리 쾌히", "간을 출입하는 곳이오니다",
+      "38. (가)를 바탕으로 (나), (다)를 감상한 내용으로 적절하지 않은 것은? [3점]",
+    ],
+    replacements: Q38_5578421_REPLACEMENTS,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
   },
 ] as const;
 
