@@ -6412,6 +6412,73 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     }],
     expectedDecision: "reject",
   },
+  {
+    allowlistId: "ebsi-5578421-q43-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "16:43",
+    sourcePage: 16,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "a2fd297236204de0e51cae9b8a40192b01eafd98aea39e7e2ff83d46e5ea2ffc",
+    dpi: 600,
+    failedQuestionHash: "4dd3e839b4fc8104ef7347f97ed893661533e853f27258a15f17ee47d0fe7327",
+    failedClassificationHash: "a5688f99cb8d1b41e160c5898dab8bbe49ea5943f3a038922c1337ac415e218c",
+    failedClassificationEvidenceHash: "aaa42b5de7d28e99c26ec2be3b5c06c15e47f45ae6354786d36ff388d75236bb",
+    views: [
+      { sourcePage: 15, label: "p15 right Q43-Q45 shared poems start", rect: [0.50, 0.62, 0.95, 0.99] },
+      { sourcePage: 16, label: "p16 left shared poems and Q43", rect: [0.07, 0.05, 0.53, 0.62] },
+    ],
+    requiredTokens: [
+      "[43 ~ 45] 다음 글을 읽고 물음에 답하시오.", "㉠ 유리(琉璃)에 차고 슬픈 것이 어린거린다.",
+      "열없이 붙어서서 입김을 흐리우니", "길들은 양 언 날개를 파다거린다.",
+      "아아, 너는 산(山)ㅅ새처럼 날러갔구나!", "｢ 유리창(琉璃窓)1 ｣",
+      "구름 몇 점 별 몇 개 뛰어들기도 하는,", "푸른 날개를 마악 펴들고 있다",
+      "｢ 성(聖) 느티나무 ｣", "(가), (나)에 대한 설명으로 가장 적절한 것은?",
+    ],
+    replacements: [
+      {
+        field: "question",
+        from: "다음 글을 읽고 물음에 답하시오.",
+        to: "[43 ~ 45] 다음 글을 읽고 물음에 답하시오.",
+        count: 1,
+      },
+      { field: "question", from: "유리(琉璃)에 차고", to: "유리(琉璃)에 차고", count: 1 },
+      { field: "question", from: "어른거린다.", to: "어린거린다.", count: 1 },
+      { field: "question", from: "열없이 붙어서 입김을", to: "열없이 붙어서서 입김을", count: 1 },
+      {
+        field: "question",
+        from: "길들은 양 언 날개를 파닥거린다.",
+        to: "길들은 양 언 날개를 파다거린다.",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "아아, 너는 산(山)ㅅ새처럼 날려갔구나!",
+        to: "아아, 너는 산(山)ㅅ새처럼 날러갔구나!",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "- 정지용, 「유리창(琉璃窓)1」 -",
+        to: "- 정지용, ｢ 유리창(琉璃窓)1 ｣ -",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "푸른 날개를 마악 퍼들고 있다",
+        to: "푸른 날개를 마악 펴들고 있다",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "- 나희덕, 「성(聖) 느티나무」 -",
+        to: "- 나희덕, ｢ 성(聖) 느티나무 ｣ -",
+        count: 1,
+      },
+    ],
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  },
 ] as const;
 
 export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
