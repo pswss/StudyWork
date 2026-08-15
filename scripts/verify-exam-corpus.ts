@@ -797,18 +797,31 @@ type ProblemManualReplacement = {
   count: number;
 };
 
+type ProblemManualTerminalTriggerSpec = {
+  kind?: "adjudication";
+  artifactPath: string;
+  artifactHash: string;
+  basisDigest: string;
+  itemHash: string;
+  evidenceHash: string;
+  scopeEvidenceHash: string;
+} | {
+  kind: "checkpoint";
+  artifactPath: string;
+  artifactHash: string;
+  effectiveCorpusHash: string;
+  inputHash: string;
+  targetInputHash: string;
+  itemHash: string;
+  evidenceHash: string;
+  scopeEvidenceHash: string;
+};
+
 type ProblemManualAdjudicationSpec = ProblemCropAdjudicationSpec & {
   parentKind: "recovery" | "crop";
   parentRecoveryEvidenceHash?: string;
   failedStatus?: "exact";
-  terminalTrigger?: {
-    artifactPath: string;
-    artifactHash: string;
-    basisDigest: string;
-    itemHash: string;
-    evidenceHash: string;
-    scopeEvidenceHash: string;
-  };
+  terminalTrigger?: ProblemManualTerminalTriggerSpec;
   dpi?: number;
   failedQuestionHash: string;
   failedClassificationHash: string;
@@ -4728,6 +4741,60 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     ],
     figure: true,
     figureDescription: Q14_5578421_FIGURE_DESCRIPTION,
+    expectedDecision: "reject",
+  },
+  {
+    allowlistId: "ebsi-5578421-q2-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "1:2",
+    sourcePage: 1,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "c09674a75c0e93955440fe4094943cdddedaff96fc355e76620bf1b5ed86043c",
+    failedStatus: "exact",
+    terminalTrigger: {
+      kind: "checkpoint",
+      artifactPath: "problem-terminal-fidelity/" +
+        "v2-0000-7e42d5f6f6ffd51641a1acaf9675eb5eac413e35320fee52b6d8e1d5959db3a3-" +
+        "067332e077f0988339601b958bbd264c835962cbf8b898a27c367d9d7e02ebd4.json",
+      artifactHash: "7bad249f5d07136d69c405b7e43083bca1dbdae429cde488281300f3f4fa7d61",
+      effectiveCorpusHash: "7e42d5f6f6ffd51641a1acaf9675eb5eac413e35320fee52b6d8e1d5959db3a3",
+      inputHash: "067332e077f0988339601b958bbd264c835962cbf8b898a27c367d9d7e02ebd4",
+      targetInputHash: "bd00ae7732f85d9cb6e4e6789b44cdb4713cd4b6399af6ce8af74750e1f73024",
+      itemHash: "e28beaa95015e36f666cee9c7e6449fb044d6f2f6ed2b31a9b81615b7287856d",
+      evidenceHash: "a994591a84db80ca8754b075f52d3fac550727cb182a31e68d194428a57e29e1",
+      scopeEvidenceHash: "89dd784c541732452babe14d8140ebdb407a706101bacdc7faef79c23aa79f72",
+    },
+    dpi: 600,
+    failedQuestionHash: "e26f4c2cee39e65616228c98e5ef78889bd37c74765e767d883a755388d2861e",
+    failedClassificationHash: "988f2fd55aa5d32ee215f64eb6a24e4aece72e3cbfaf2c09d56e4c593430fa01",
+    failedClassificationEvidenceHash: "258f607b2f1f2f80a1c156014376e9bb2bb501deb9cb53d0aa2e4063e07968dd",
+    views: [
+      { sourcePage: 1, label: "p1 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 1, label: "p1 left radio discussion", rect: [0.07, 0.10, 0.53, 0.97] },
+      { sourcePage: 1, label: "p1 right Q2", rect: [0.54, 0.30, 0.95, 0.58] },
+    ],
+    requiredTokens: [
+      "비용을 줄일 수는 있습니다", "최 교수께서 제기하신 문제에 대해서는",
+      "동전을 교환해 주고 관리하는 데 들어가는 비용을 줄일 수 있어서",
+      "대담의 진행 과정을 고려하여 두 대담자의 발화를 이해한 것으로 적절하지 않은 것은?",
+      "④ 최 교수: 자신이 알고 있는 정보를 바탕으로 진행자가 언급한 내용이 새로운 문제를 " +
+        "야기할 수 있음을 지적하고 있다.",
+    ],
+    replacements: [
+      {
+        field: "question",
+        from: "최 교수님께서 제기하신 문제에 대해서는",
+        to: "최 교수께서 제기하신 문제에 대해서는",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "동전을 교환해 주고 관리하는 데 들어가는 비용을 절감할 수 있어서",
+        to: "동전을 교환해 주고 관리하는 데 들어가는 비용을 줄일 수 있어서",
+        count: 1,
+      },
+    ],
     expectedDecision: "reject",
   },
 ] as const;
@@ -11234,16 +11301,32 @@ function verifyProblemManualAdjudication(
     : object(parentRecovery.adjudication, `${key}.manual parent crop adjudication`);
   const parentRecoveryEvidenceHash = canonicalEvidenceHash(parentRecovery);
   const parentCropAdjudicationHash = parentCrop === null ? undefined : canonicalEvidenceHash(parentCrop);
-  const terminalTrigger = spec.terminalTrigger ? {
-    artifact: {
-      path: spec.terminalTrigger.artifactPath,
-      sha256: spec.terminalTrigger.artifactHash,
-    },
-    basisDigest: spec.terminalTrigger.basisDigest,
-    itemHash: spec.terminalTrigger.itemHash,
-    evidenceHash: spec.terminalTrigger.evidenceHash,
-    scopeEvidenceHash: spec.terminalTrigger.scopeEvidenceHash,
-  } : undefined;
+  const terminalTrigger = spec.terminalTrigger
+    ? spec.terminalTrigger.kind === "checkpoint"
+      ? {
+        kind: "checkpoint" as const,
+        artifact: {
+          path: spec.terminalTrigger.artifactPath,
+          sha256: spec.terminalTrigger.artifactHash,
+        },
+        effectiveCorpusHash: spec.terminalTrigger.effectiveCorpusHash,
+        inputHash: spec.terminalTrigger.inputHash,
+        targetInputHash: spec.terminalTrigger.targetInputHash,
+        itemHash: spec.terminalTrigger.itemHash,
+        evidenceHash: spec.terminalTrigger.evidenceHash,
+        scopeEvidenceHash: spec.terminalTrigger.scopeEvidenceHash,
+      }
+      : {
+        artifact: {
+          path: spec.terminalTrigger.artifactPath,
+          sha256: spec.terminalTrigger.artifactHash,
+        },
+        basisDigest: spec.terminalTrigger.basisDigest,
+        itemHash: spec.terminalTrigger.itemHash,
+        evidenceHash: spec.terminalTrigger.evidenceHash,
+        scopeEvidenceHash: spec.terminalTrigger.scopeEvidenceHash,
+      }
+    : undefined;
   const manualDpi = spec.dpi ?? PROBLEM_CROP_DPI;
   const sourcePages = [...new Set(spec.views.map((view) => view.sourcePage))].sort((left, right) => left - right);
   if (sourcePages.some((page) => page < 1 || page > problemEvidence.pageCount)
@@ -11278,22 +11361,77 @@ function verifyProblemManualAdjudication(
       terminalTrigger.artifact,
       `${key} manual terminal trigger`,
     );
-    if (!Array.isArray(checkpoint.items) || checkpoint.items.length !== 1) {
-      throw new Error(`${key}: manual terminal trigger item coverage is stale`);
-    }
-    const item = parseProblemTerminalFidelityItem(
-      checkpoint.items[0],
-      `${key}.manualTerminalTrigger.items[0]`,
-      contract,
-    );
-    if (checkpoint.version !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION
-      || checkpoint.entryId !== entry.id || checkpoint.basisDigest !== terminalTrigger.basisDigest
-      || checkpoint.promptDigest !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST
-      || item.key !== key || item.status === "exact" || item.scopeDecision !== "accept"
-      || item.scopeConfidence < 0.9 || canonicalEvidenceHash(item) !== terminalTrigger.itemHash
-      || sha256(item.evidence) !== terminalTrigger.evidenceHash
-      || item.scopeEvidence === undefined || sha256(item.scopeEvidence) !== terminalTrigger.scopeEvidenceHash) {
-      throw new Error(`${key}: manual terminal trigger authority is stale`);
+    if (terminalTrigger.kind === "checkpoint") {
+      if (!Array.isArray(checkpoint.inputs) || !Array.isArray(checkpoint.items)) {
+        throw new Error(`${key}: manual terminal checkpoint coverage is stale`);
+      }
+      const inputs = checkpoint.inputs.map((value, index) => object(
+        value,
+        `${key}.manualTerminalTrigger.inputs[${index}]`,
+      ));
+      const items = checkpoint.items.map((value, index) => parseProblemTerminalFidelityItem(
+        value,
+        `${key}.manualTerminalTrigger.items[${index}]`,
+        contract,
+      ));
+      const inputKeys = inputs.map((input, index) => exactString(
+        input.key,
+        `${key}.manualTerminalTrigger.inputs[${index}].key`,
+      ));
+      const itemKeys = items.map((item) => item.key);
+      const targetInputs = inputs.filter((input) => input.key === key);
+      const targetItems = items.filter((item) => item.key === key);
+      const item = targetItems[0];
+      const expectedPath = `problem-terminal-fidelity/v${PROBLEM_TERMINAL_FIDELITY_VERSION}-0000-` +
+        `${terminalTrigger.effectiveCorpusHash}-${terminalTrigger.inputHash}.json`;
+      if (contract.problemTerminalFidelityVersion !== PROBLEM_TERMINAL_FIDELITY_VERSION
+        || terminalTrigger.artifact.path !== expectedPath
+        || checkpoint.version !== PROBLEM_TERMINAL_FIDELITY_VERSION || checkpoint.entryId !== entry.id
+        || checkpoint.sourceHash !== problemEvidence.sha256
+        || checkpoint.effectiveCorpusHash !== terminalTrigger.effectiveCorpusHash
+        || checkpoint.inputHash !== terminalTrigger.inputHash
+        || canonicalEvidenceHash(checkpoint.inputs) !== terminalTrigger.inputHash
+        || checkpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION
+        || checkpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST
+        || checkpoint.rulesDigest !== rulesDigest
+        || checkpoint.scopePromptDigest !== PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST
+        || checkpoint.model !== "gpt-5.6-sol" || checkpoint.reasoningEffort !== "high"
+        || inputKeys.length !== itemKeys.length || new Set(inputKeys).size !== inputKeys.length
+        || new Set(itemKeys).size !== itemKeys.length || inputKeys.some((inputKey) => !itemKeys.includes(inputKey))
+        || targetInputs.length !== 1 || targetItems.length !== 1
+        || canonicalEvidenceHash(targetInputs[0]) !== terminalTrigger.targetInputHash
+        || !isDeepStrictEqual(targetInputs[0], problemTerminalInput({
+          question: failedQuestion,
+          classification: failedClassification,
+          problemCheckpoint: { path: "", sha256: "" },
+          classificationCheckpoint: { path: "", sha256: "" },
+          contextFrom: 1,
+          contextTo: 1,
+        }))
+        || !item || item.status !== "mismatch" || item.scopeDecision !== "reject"
+        || item.scopeConfidence < 0.9 || canonicalEvidenceHash(item) !== terminalTrigger.itemHash
+        || sha256(item.evidence) !== terminalTrigger.evidenceHash
+        || item.scopeEvidence === undefined || sha256(item.scopeEvidence) !== terminalTrigger.scopeEvidenceHash) {
+        throw new Error(`${key}: manual terminal checkpoint trigger authority is stale`);
+      }
+    } else {
+      if (!Array.isArray(checkpoint.items) || checkpoint.items.length !== 1) {
+        throw new Error(`${key}: manual terminal trigger item coverage is stale`);
+      }
+      const item = parseProblemTerminalFidelityItem(
+        checkpoint.items[0],
+        `${key}.manualTerminalTrigger.items[0]`,
+        contract,
+      );
+      if (checkpoint.version !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION
+        || checkpoint.entryId !== entry.id || checkpoint.basisDigest !== terminalTrigger.basisDigest
+        || checkpoint.promptDigest !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST
+        || item.key !== key || item.status === "exact" || item.scopeDecision !== "accept"
+        || item.scopeConfidence < 0.9 || canonicalEvidenceHash(item) !== terminalTrigger.itemHash
+        || sha256(item.evidence) !== terminalTrigger.evidenceHash
+        || item.scopeEvidence === undefined || sha256(item.scopeEvidence) !== terminalTrigger.scopeEvidenceHash) {
+        throw new Error(`${key}: manual terminal trigger authority is stale`);
+      }
     }
   }
 

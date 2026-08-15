@@ -1296,8 +1296,18 @@ export type ProblemManualAdjudicationEvidence = {
   parentRecoveryEvidenceHash: string;
   parentCropAdjudicationHash?: string;
   terminalTrigger?: {
+    kind?: "adjudication";
     artifact: EvidencePointer;
     basisDigest: string;
+    itemHash: string;
+    evidenceHash: string;
+    scopeEvidenceHash: string;
+  } | {
+    kind: "checkpoint";
+    artifact: EvidencePointer;
+    effectiveCorpusHash: string;
+    inputHash: string;
+    targetInputHash: string;
     itemHash: string;
     evidenceHash: string;
     scopeEvidenceHash: string;
@@ -2369,18 +2379,31 @@ type ProblemManualReplacement = {
   count: number;
 };
 
+type ProblemManualTerminalTriggerSpec = {
+  kind?: "adjudication";
+  artifactPath: string;
+  artifactHash: string;
+  basisDigest: string;
+  itemHash: string;
+  evidenceHash: string;
+  scopeEvidenceHash: string;
+} | {
+  kind: "checkpoint";
+  artifactPath: string;
+  artifactHash: string;
+  effectiveCorpusHash: string;
+  inputHash: string;
+  targetInputHash: string;
+  itemHash: string;
+  evidenceHash: string;
+  scopeEvidenceHash: string;
+};
+
 type ProblemManualAdjudicationSpec = ProblemCropAdjudicationSpec & {
   parentKind: "recovery" | "crop";
   parentRecoveryEvidenceHash?: string;
   failedStatus?: "exact";
-  terminalTrigger?: {
-    artifactPath: string;
-    artifactHash: string;
-    basisDigest: string;
-    itemHash: string;
-    evidenceHash: string;
-    scopeEvidenceHash: string;
-  };
+  terminalTrigger?: ProblemManualTerminalTriggerSpec;
   dpi?: number;
   failedQuestionHash: string;
   failedClassificationHash: string;
@@ -6199,6 +6222,60 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     ],
     figure: true,
     figureDescription: Q14_5578421_FIGURE_DESCRIPTION,
+    expectedDecision: "reject",
+  },
+  {
+    allowlistId: "ebsi-5578421-q2-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "1:2",
+    sourcePage: 1,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "c09674a75c0e93955440fe4094943cdddedaff96fc355e76620bf1b5ed86043c",
+    failedStatus: "exact",
+    terminalTrigger: {
+      kind: "checkpoint",
+      artifactPath: "problem-terminal-fidelity/" +
+        "v2-0000-7e42d5f6f6ffd51641a1acaf9675eb5eac413e35320fee52b6d8e1d5959db3a3-" +
+        "067332e077f0988339601b958bbd264c835962cbf8b898a27c367d9d7e02ebd4.json",
+      artifactHash: "7bad249f5d07136d69c405b7e43083bca1dbdae429cde488281300f3f4fa7d61",
+      effectiveCorpusHash: "7e42d5f6f6ffd51641a1acaf9675eb5eac413e35320fee52b6d8e1d5959db3a3",
+      inputHash: "067332e077f0988339601b958bbd264c835962cbf8b898a27c367d9d7e02ebd4",
+      targetInputHash: "bd00ae7732f85d9cb6e4e6789b44cdb4713cd4b6399af6ce8af74750e1f73024",
+      itemHash: "e28beaa95015e36f666cee9c7e6449fb044d6f2f6ed2b31a9b81615b7287856d",
+      evidenceHash: "a994591a84db80ca8754b075f52d3fac550727cb182a31e68d194428a57e29e1",
+      scopeEvidenceHash: "89dd784c541732452babe14d8140ebdb407a706101bacdc7faef79c23aa79f72",
+    },
+    dpi: 600,
+    failedQuestionHash: "e26f4c2cee39e65616228c98e5ef78889bd37c74765e767d883a755388d2861e",
+    failedClassificationHash: "988f2fd55aa5d32ee215f64eb6a24e4aece72e3cbfaf2c09d56e4c593430fa01",
+    failedClassificationEvidenceHash: "258f607b2f1f2f80a1c156014376e9bb2bb501deb9cb53d0aa2e4063e07968dd",
+    views: [
+      { sourcePage: 1, label: "p1 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 1, label: "p1 left radio discussion", rect: [0.07, 0.10, 0.53, 0.97] },
+      { sourcePage: 1, label: "p1 right Q2", rect: [0.54, 0.30, 0.95, 0.58] },
+    ],
+    requiredTokens: [
+      "비용을 줄일 수는 있습니다", "최 교수께서 제기하신 문제에 대해서는",
+      "동전을 교환해 주고 관리하는 데 들어가는 비용을 줄일 수 있어서",
+      "대담의 진행 과정을 고려하여 두 대담자의 발화를 이해한 것으로 적절하지 않은 것은?",
+      "④ 최 교수: 자신이 알고 있는 정보를 바탕으로 진행자가 언급한 내용이 새로운 문제를 " +
+        "야기할 수 있음을 지적하고 있다.",
+    ],
+    replacements: [
+      {
+        field: "question",
+        from: "최 교수님께서 제기하신 문제에 대해서는",
+        to: "최 교수께서 제기하신 문제에 대해서는",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "동전을 교환해 주고 관리하는 데 들어가는 비용을 절감할 수 있어서",
+        to: "동전을 교환해 주고 관리하는 데 들어가는 비용을 줄일 수 있어서",
+        count: 1,
+      },
+    ],
     expectedDecision: "reject",
   },
 ] as const;
@@ -16377,7 +16454,21 @@ function problemManualCorrectionSpecHash(spec: ProblemManualAdjudicationSpec): s
 function problemManualTerminalTriggerEvidence(
   spec: ProblemManualAdjudicationSpec
 ): ProblemManualAdjudicationEvidence["terminalTrigger"] {
-  return spec.terminalTrigger ? {
+  if (!spec.terminalTrigger) return undefined;
+  if (spec.terminalTrigger.kind === "checkpoint") return {
+    kind: "checkpoint",
+    artifact: {
+      path: spec.terminalTrigger.artifactPath,
+      sha256: spec.terminalTrigger.artifactHash,
+    },
+    effectiveCorpusHash: spec.terminalTrigger.effectiveCorpusHash,
+    inputHash: spec.terminalTrigger.inputHash,
+    targetInputHash: spec.terminalTrigger.targetInputHash,
+    itemHash: spec.terminalTrigger.itemHash,
+    evidenceHash: spec.terminalTrigger.evidenceHash,
+    scopeEvidenceHash: spec.terminalTrigger.scopeEvidenceHash,
+  };
+  return {
     artifact: {
       path: spec.terminalTrigger.artifactPath,
       sha256: spec.terminalTrigger.artifactHash,
@@ -16386,7 +16477,7 @@ function problemManualTerminalTriggerEvidence(
     itemHash: spec.terminalTrigger.itemHash,
     evidenceHash: spec.terminalTrigger.evidenceHash,
     scopeEvidenceHash: spec.terminalTrigger.scopeEvidenceHash,
-  } : undefined;
+  };
 }
 
 async function validatedProblemManualTerminalTrigger(
@@ -16401,6 +16492,51 @@ async function validatedProblemManualTerminalTrigger(
     JSON.parse(readFileSync(path, "utf8")),
     `${spec.key} manual terminal trigger`
   );
+  if (expected.kind === "checkpoint") {
+    const rawInputs = Array.isArray(checkpoint.inputs) ? checkpoint.inputs : [];
+    const rawItems = Array.isArray(checkpoint.items) ? checkpoint.items : [];
+    const inputs = rawInputs.map((value, index) => object(
+      value,
+      `${spec.key} manual terminal checkpoint input ${index + 1}`
+    ));
+    const items = rawItems.map((value, index) => {
+      const row = object(value, `${spec.key} manual terminal checkpoint item ${index + 1}`);
+      const key = exactString(row.key, `${spec.key} manual terminal checkpoint item ${index + 1}.key`, 100);
+      return pinnedTerminalRecoveryItem(row, key, `${spec.key} manual terminal checkpoint item ${index + 1}`);
+    });
+    const inputKeys = inputs.map((input, index) => exactString(
+      input.key,
+      `${spec.key} manual terminal checkpoint input ${index + 1}.key`,
+      100
+    ));
+    const itemKeys = items.map((item) => item.key);
+    const targetInputs = inputs.filter((input) => input.key === spec.key);
+    const targetItems = items.filter((item) => item.key === spec.key);
+    const expectedPath = `problem-terminal-fidelity/v${PROBLEM_TERMINAL_FIDELITY_VERSION}-0000-` +
+      `${expected.effectiveCorpusHash}-${expected.inputHash}.json`;
+    const item = targetItems[0];
+    if (
+      expected.artifact.path !== expectedPath || await sha256File(path) !== expected.artifact.sha256 ||
+      canonicalEvidenceHash(checkpoint) !== expected.artifact.sha256 ||
+      checkpoint.version !== PROBLEM_TERMINAL_FIDELITY_VERSION || checkpoint.entryId !== spec.entryId ||
+      checkpoint.sourceHash !== spec.sourceHash || checkpoint.effectiveCorpusHash !== expected.effectiveCorpusHash ||
+      checkpoint.inputHash !== expected.inputHash || canonicalEvidenceHash(rawInputs) !== expected.inputHash ||
+      checkpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION ||
+      checkpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST ||
+      checkpoint.rulesDigest !== CLASSIFIER_DIGEST ||
+      checkpoint.scopePromptDigest !== PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST ||
+      checkpoint.model !== IMPORT_MODEL || checkpoint.reasoningEffort !== IMPORT_REASONING_EFFORT ||
+      !hasExactTerminalInputItemKeyCoverage(inputKeys, itemKeys) ||
+      targetInputs.length !== 1 || targetItems.length !== 1 ||
+      canonicalEvidenceHash(targetInputs[0]) !== expected.targetInputHash ||
+      canonicalEvidenceHash(targetInputs[0]) !== canonicalEvidenceHash(problemTerminalInput(failed.question)) ||
+      !item || item.status !== "mismatch" || item.scopeDecision !== "reject" || item.scopeConfidence < 0.9 ||
+      canonicalEvidenceHash(item) !== expected.itemHash ||
+      sha256Text(item.evidence) !== expected.evidenceHash ||
+      sha256Text(item.scopeEvidence) !== expected.scopeEvidenceHash
+    ) throw new Error(`${spec.key} manual terminal checkpoint trigger authority가 다릅니다`);
+    return expected;
+  }
   const items = parseProblemTerminalFidelity(checkpoint.items, [failed]);
   const item = items[0];
   if (
