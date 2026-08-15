@@ -4917,6 +4917,28 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5578421-q14-manual-revision-v1",
+  parentAllowlistId: "ebsi-5578421-q14-manual-v1",
+  entryId: "ebsi:5578421",
+  key: "5:14",
+  sourcePage: 5,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "0218c03170cbb7b5e03b5119d99cb1e71a14c9f4b36926893d7e0297517fee62",
+  failedClassificationHash: "c14153a1d075664b123e836da971481f093dc88bcb2f4d275464833309287739",
+  failedClassificationEvidenceHash: "870b857359eea9ecdff9f2182b6c6d27d437cfad88dbcfbd92141ab8ea8c1f20",
+  replacement: {
+    field: "question",
+    from: "- 「용비어천가(龍飛御天歌)」 제2장 중에서",
+    to: "- 『 용비어천가(龍飛御天歌) 』 제2장 중에서",
+    count: 1,
+  },
+  requiredTokens: [
+    "불·휘기·픈남·ᄀᆞᆫᄇᆞᄅᆞ·매 ⓐ 아·니:뮐·ᄊᆡ", "『 용비어천가(龍飛御天歌) 』",
+    "② ‘아’ 낮음 → ‘니’ 높음 → ‘뮐’ 낮게 시작하여 높아짐 → ‘ᄊᆡ’ 높음",
+    "②는 낮음－높음－상승－높음", "⑤는 낮음－상승－높음－상승",
+  ],
+  expectedDecision: "reject",
 }] as const;
 
 const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{

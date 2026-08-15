@@ -10160,9 +10160,8 @@ async function q14ManualAuthorityFixture5578421() {
   stripManualAuthorityFixtureAnswerBoundary(stateDir);
   const prefix = "v1-0005-0014-";
   for (const directory of [
-    "problem-manual-evidence",
-    "problem-manual-adjudications",
-    "classification-manual-adjudications",
+    "problem-manual-revisions",
+    "classification-manual-revisions",
   ]) {
     const path = join(stateDir, directory);
     if (!existsSync(path)) continue;
@@ -10184,6 +10183,7 @@ async function q14ManualAuthorityFixture5578421() {
     }>;
     expect(items).toHaveLength(1);
     expect(items[0].question).toContain("불·휘기·픈남·ᄀᆞᆫᄇᆞᄅᆞ·매 ⓐ 아·니:뮐·ᄊᆡ");
+    expect(items[0].question).toContain("- 『 용비어천가(龍飛御天歌) 』 제2장 중에서");
     expect(items[0].figure_description).toContain("⑤는 낮음－상승－높음－상승");
     return { text: JSON.stringify([{
       key: items[0].key,
@@ -14162,9 +14162,11 @@ describe("exam corpus verifier", () => {
       .toBe("e0ad5b176a2568251ac73625e6e1abcd857a846f2250147f99db28fa5a07d7fe");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 6)))
       .toBe("33741ecff318e2d58cc2c0614a718d41171a0629f792d062c63df876e23ffa5c");
-    expect(manualRevisionAllowlistFingerprint())
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 8)))
       .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
-    expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(6).map((spec) => ({
+    expect(manualRevisionAllowlistFingerprint())
+      .toBe("683b2d6851b12683bc582893fd72087c0662b5be55a05b2b7091233792ef522b");
+    expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(6, 8).map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
     }))).toEqual([{
@@ -14243,6 +14245,17 @@ describe("exam corpus verifier", () => {
       .toBe("66ff6014e0969fa9a2f13b53c9157eb8a5ca945097cba7ee1d6416cf93e0cc8d");
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe("e0ad5b176a2568251ac73625e6e1abcd857a846f2250147f99db28fa5a07d7fe");
+    expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 8)))
+      .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
+    expect(manualRevisionAllowlistFingerprint())
+      .toBe("683b2d6851b12683bc582893fd72087c0662b5be55a05b2b7091233792ef522b");
+    expect({
+      rowHash: canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.at(-1)),
+      replacementHash: canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.at(-1)?.replacement),
+    }).toEqual({
+      rowHash: "30bdb578aac86abb60471c18d06a6f5231101a46d7c3ab753a266789e2613d25",
+      replacementHash: "e0266a2e3c9f7f4129877618f4d1674dea689b064fba64115527cb7ea3b5b8ed",
+    });
     expect({
       rowHash: canonicalEvidenceHash(Q14_5578421_MANUAL_SPEC),
       replacementsHash: canonicalEvidenceHash(Q14_5578421_MANUAL_SPEC.replacements),
@@ -14269,16 +14282,19 @@ describe("exam corpus verifier", () => {
     try {
       const verified = verify();
       expect(canonicalEvidenceHash(verified.question))
-        .toBe("0218c03170cbb7b5e03b5119d99cb1e71a14c9f4b36926893d7e0297517fee62");
+        .toBe("b06ec23b682071105a7103f5987efaf1e9f1ff2a0161133c774ab6004c30873b");
       expect(verified.question.answer).toContain("② ‘아’ 낮음 → ‘니’ 높음");
+      expect(verified.question.question).toContain("- 『 용비어천가(龍飛御天歌) 』 제2장 중에서");
       expect(verified.question.figure_description).toContain("⑤는 낮음－상승－높음－상승");
+      expect(verified.evidence.revision.allowlistId)
+        .toBe("ebsi-5578421-q14-manual-revision-v1");
       expect(verified.classification).toEqual(expect.objectContaining({
         key: "5:14",
         decision: "reject",
         canonical_subject: null,
         transcription_status: "exact",
       }));
-      const problemPath = join(row.stateDir, row.adjudicated.evidence.problemArtifact.path);
+      const problemPath = join(row.stateDir, row.adjudicated.evidence.revision!.problemArtifact.path);
       const problemBytes = readFileSync(problemPath);
       writeFileSync(problemPath, Buffer.concat([problemBytes, Buffer.from("tampered")]));
       expect(() => verify()).toThrow(/hash mismatch/u);
@@ -15317,7 +15333,7 @@ describe("exam corpus verifier", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 6)))
       .toBe("33741ecff318e2d58cc2c0614a718d41171a0629f792d062c63df876e23ffa5c");
     expect(manualRevisionAllowlistFingerprint())
-      .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
+      .toBe("683b2d6851b12683bc582893fd72087c0662b5be55a05b2b7091233792ef522b");
     expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(3, 6).map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
