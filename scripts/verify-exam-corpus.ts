@@ -2867,6 +2867,14 @@ const Q43_FIGURE_DESCRIPTION =
   "오른쪽 세로선 하나와 왼쪽으로 뻗은 위·아래 가로 캡으로 이루어지며, 세 구획은 45번에서 시의 " +
   "부분별 내용을 가리키는 역할을 한다.";
 
+const Q3_5578421_FIGURE_DESCRIPTION =
+  "회색 테두리의 인터넷 게시판 창이다. 위쪽에는 뒤로·앞으로 이동하는 원형 화살표, 긴 주소 " +
+  "입력란, ‘×’가 표시된 입력란과 창 최소화·최대화·닫기 단추가 있다. 내부 상단의 공지 상자에는 " +
+  "‘<공지 사항>’, ‘※ 출연자가 언급한 내용에 대해 추가 질문을 올려 주세요. 대담에서 언급된 " +
+  "내용과 관련이 없는 질문은 선정되지 않습니다.’가 적혀 있다. 그 아래에는 화살표 모양 글머리표와 " +
+  "함께 위에서부터 [경제1등], [이게머니], [거스름돈], [동전좋아], [부자되자]라는 작성자 이름 및 " +
+  "각 추가 질문이 세로로 배열되어 있고, 각 게시물 오른쪽에는 ①부터 ⑤까지의 번호가 표시되어 있다.";
+
 const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationSpec[] = [
   {
     allowlistId: "ebsi-5594499-q34-manual-v1",
@@ -4993,6 +5001,62 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     ],
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_literature",
+  },
+  {
+    allowlistId: "ebsi-5578421-q3-manual-v2",
+    entryId: "ebsi:5578421",
+    key: "1:3",
+    sourcePage: 1,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "b2a2d24967a85e0dca3a6042d2fec44a4950e00c4c9b05beb6d07bd6b009f7a8",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "f4f0d0f5e9bad6f787e7413a2fa1b27f07cb71134e76d545db3d2d8f35d572cd",
+    failedClassificationHash: "69d72e942205181833b244a13bfc2d6bb2ab60920d94cf7902b95b951ed18c57",
+    failedClassificationEvidenceHash: "0a34e782a2b6ac219d3c142b0cac014d15adb433f589ee6f61595f84a86a46a9",
+    views: [
+      { sourcePage: 1, label: "p1 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 1, label: "p1 left radio discussion", rect: [0.07, 0.10, 0.53, 0.97] },
+      { sourcePage: 1, label: "p1 right Q3 board", rect: [0.54, 0.52, 0.95, 0.98] },
+    ],
+    requiredTokens: [
+      "[1~3] 다음은 라디오 대담의 일부이다. 물음에 답하시오.",
+      "최 교수님께서 제기하신 문제에 대해서는", "비용을 줄일 수 있어서",
+      "3. 대담의 진행자가 선정할 추가 질문으로 가장 적절한 것은?", "<공지 사항>",
+      "② [이게머니] 동전이 없으면 거스름돈은 어떻게 받나요?",
+      "[경제1등], [이게머니], [거스름돈], [동전좋아], [부자되자]",
+    ],
+    replacements: [
+      { field: "question", from: "\n\n", to: "\n", count: 14 },
+      {
+        field: "question",
+        from: "다음은 라디오 대담의 일부이다. 물음에 답하시오.\n",
+        to: "[1~3] 다음은 라디오 대담의 일부이다. 물음에 답하시오.\n\n",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "최 교수께서 제기하신 문제에 대해서는",
+        to: "최 교수님께서 제기하신 문제에 대해서는",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "동전을 교환해 주고 관리하는 데 들어가는 비용을 절감할 수 있어서",
+        to: "동전을 교환해 주고 관리하는 데 들어가는 비용을 줄일 수 있어서",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "주시기 바랍니다.\n대담의 진행자가 선정할 추가 질문으로 가장 적절한 것은?\n<공지 사항>",
+        to: "주시기 바랍니다.\n\n3. 대담의 진행자가 선정할 추가 질문으로 가장 적절한 것은?\n\n<공지 사항>",
+        count: 1,
+      },
+    ],
+    figure: true,
+    figureDescription: Q3_5578421_FIGURE_DESCRIPTION,
+    expectedDecision: "reject",
   },
 ] as const;
 
@@ -11074,9 +11138,11 @@ function optionalProblemManualAdjudicationSpec(
   key: string,
   sourcePage: number,
   sourceHash: string,
+  failedQuestionHash?: string,
 ): ProblemManualAdjudicationSpec | null {
   const matches = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
-    spec.entryId === entry.id && spec.key === key && spec.sourcePage === sourcePage);
+    spec.entryId === entry.id && spec.key === key && spec.sourcePage === sourcePage
+      && (failedQuestionHash === undefined || spec.failedQuestionHash === failedQuestionHash));
   if (matches.length > 1) {
     throw new Error(`${entry.id} ${key}: manual adjudication allowlist is duplicated`);
   }
@@ -11092,8 +11158,11 @@ function problemManualAdjudicationSpec(
   key: string,
   sourcePage: number,
   sourceHash: string,
+  failedQuestionHash?: string,
 ): ProblemManualAdjudicationSpec {
-  const match = optionalProblemManualAdjudicationSpec(entry, key, sourcePage, sourceHash);
+  const match = optionalProblemManualAdjudicationSpec(
+    entry, key, sourcePage, sourceHash, failedQuestionHash,
+  );
   if (!match) throw new Error(`${entry.id} ${key}: manual adjudication is not uniquely allowlisted`);
   return match;
 }
@@ -12574,7 +12643,9 @@ function verifyProblemManualAdjudication(
   contract: VerificationContract,
 ): { question: ProblemQuestion; classification: ClassificationEvidence; evidence: Record<string, unknown> } {
   const key = failedQuestion.key;
-  const spec = problemManualAdjudicationSpec(entry, key, failedQuestion.page, problemEvidence.sha256);
+  const spec = problemManualAdjudicationSpec(
+    entry, key, failedQuestion.page, problemEvidence.sha256, canonicalEvidenceHash(failedQuestion.evidence),
+  );
   if (contract.auditVersion !== 5 || (spec.failedStatus === "exact"
     ? failedClassification.transcription_status !== "exact"
     : failedClassification.transcription_status === "exact")) {
@@ -14728,6 +14799,7 @@ function verifyProblemRecovery(
     key,
     recoveredQuestion.page,
     problemEvidence.sha256,
+    canonicalEvidenceHash(recoveredQuestion.evidence),
   );
   if (recoveredClassification.transcription_status === "exact" && exactManualSpec?.failedStatus === "exact") {
     if (recovery.manualAdjudication === undefined) {
