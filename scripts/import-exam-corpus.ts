@@ -23903,7 +23903,7 @@ export async function repairAndAuditOfficialAnswers(
           );
           const expectedManualFailedStatus = exactManualSpec?.failedStatus ?? "mismatch";
           if (
-            trigger.kind === "terminal" && recovery && !recovery.manualAdjudication &&
+            recovery && !recovery.manualAdjudication &&
             exactManualSpec &&
             canonicalEvidenceHash(current.question) === exactManualSpec.failedQuestionHash &&
             canonicalEvidenceHash(current.classification) === exactManualSpec.failedClassificationHash &&
