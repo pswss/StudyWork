@@ -2339,9 +2339,9 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 240_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
-    "hydrates the pinned Q44-Q45 pair ahead of a superseding recovery generation",
+    "hydrates pinned Q30 and Q44-Q45 ahead of superseding recovery generations",
     async () => {
-    root = mkdtempSync(join(tmpdir(), "studywork-5578421-q44-q45-superseded-"));
+    root = mkdtempSync(join(tmpdir(), "studywork-5578421-pinned-superseded-"));
     cpSync(q31Q32LiveState, root, { recursive: true });
     const classificationKeys: string[] = [];
     let terminalCalls = 0;
@@ -2360,6 +2360,11 @@ describe("exact allowlisted problem manual adjudication", () => {
         }>;
         const q44 = items.find((item) => item.key === "16:44");
         const q45 = items.find((item) => item.key === "16:45");
+        const q30 = items.find((item) => item.key === "12:30");
+        expect(q30?.question).toContain("‘걷는다’와 같이 동사인 경우");
+        expect(q30?.question).toContain("단순 명제라 하여 ‘$p$, $q$, $r$’");
+        expect(q30?.question).toContain("논증의 타당성을 평가했다.");
+        expect(q30?.question).toContain("<결론>인 $q$가");
         expect(q44?.question).toContain("열없이 붙어서서 입김을 흐리우니");
         expect(q44?.question).toContain("길들은 양 언 날개를 파다거린다.");
         expect(q45?.choices?.[2]).toContain("B-(가):");

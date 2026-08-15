@@ -18692,7 +18692,7 @@ function is5578421Q3ManualGenerationSpec(spec: ProblemManualAdjudicationSpec): b
 }
 
 function is5578421PersistedSingletonManualSpec(spec: ProblemManualAdjudicationSpec): boolean {
-  return spec.entryId === "ebsi:5578421" && ["4:12", "16:43"].includes(spec.key);
+  return spec.entryId === "ebsi:5578421" && ["4:12", "12:30", "16:43"].includes(spec.key);
 }
 
 function is5578421PersistedManualHydrationSpec(spec: ProblemManualAdjudicationSpec): boolean {
@@ -19032,7 +19032,10 @@ async function restoredPinnedManualRecovery(
     ),
     effectiveClassificationHash: canonicalEvidenceHash(classification),
   };
-  if (canonicalEvidenceHash(parent) !== spec.parentRecoveryEvidenceHash) {
+  if (
+    spec.parentRecoveryEvidenceHash !== undefined &&
+    canonicalEvidenceHash(parent) !== spec.parentRecoveryEvidenceHash
+  ) {
     throw new Error(`${spec.key} manual batch parent recovery hash가 다릅니다`);
   }
   return { failed: { question, classification }, parent };
@@ -25084,6 +25087,12 @@ export async function repairAndAuditOfficialAnswers(
       expectedCount: 1,
     }, {
       predicate: (spec: ProblemManualAdjudicationSpec) =>
+        is5578421PersistedSingletonManualSpec(spec) && spec.key === "12:30",
+      signal: /^v\d+-0012-0030(?:-|\.)/u,
+      label: "Q30",
+      expectedCount: 1,
+    }, {
+      predicate: (spec: ProblemManualAdjudicationSpec) =>
         is5578421PersistedSingletonManualSpec(spec) && spec.key === "16:43",
       signal: /^v\d+-0016-0043(?:-|\.)/u,
       label: "Q43",
@@ -25147,7 +25156,7 @@ export async function repairAndAuditOfficialAnswers(
       restored.parent
     );
     const currentRepair = repairs.get(spec.key);
-    const allowSupersededBase = is5578421Q44Q45ManualBatchSpec(spec);
+    const allowSupersededBase = spec.key === "12:30" || is5578421Q44Q45ManualBatchSpec(spec);
     if (currentRepair && !allowSupersededBase && (
       currentRepair.revision ||
       canonicalEvidenceHash(currentRepair) !== canonicalEvidenceHash(pinnedBase.evidence)
@@ -25175,7 +25184,7 @@ export async function repairAndAuditOfficialAnswers(
     const hydrationChecks = {
       key: questionKey(manual.classified.question) === spec.key,
       manual: Boolean(hydratedRecovery.manualAdjudication),
-      parent: canonicalEvidenceHash(
+      parent: spec.parentRecoveryEvidenceHash === undefined || canonicalEvidenceHash(
         (({ manualAdjudication: _manual, ...parent }) => parent)(hydratedRecovery)
       ) === spec.parentRecoveryEvidenceHash,
     };
