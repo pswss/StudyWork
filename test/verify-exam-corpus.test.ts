@@ -11385,7 +11385,7 @@ describe("exam corpus verifier", () => {
     expect(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST)
       .toBe("e92ed29fdd979e63d56635b2f7c99284ad01f14893384e680acd150cb2a29728");
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("e21e0996e9a9633f4d0faabcdd316364c6e1683d0bee0d2c592eca8504925693");
+      .toBe("7cb25e50651d9c72a14d786e5f5da52878b4f8fd9b27abad0d006dc32b142643");
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST));
 
@@ -16240,7 +16240,7 @@ describe("exam corpus verifier", () => {
     expect(scopeBoxRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST));
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("e21e0996e9a9633f4d0faabcdd316364c6e1683d0bee0d2c592eca8504925693");
+      .toBe("7cb25e50651d9c72a14d786e5f5da52878b4f8fd9b27abad0d006dc32b142643");
     const terminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((spec) =>
       spec.entryId === "ebsi:5577055" && spec.key === "4:11")!;
     const policySpec = terminalSpec.policyRevision!;

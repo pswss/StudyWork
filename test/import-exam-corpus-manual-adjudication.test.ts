@@ -1884,7 +1884,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 6)))
       .toBe("ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048");
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST))
-      .toBe("e21e0996e9a9633f4d0faabcdd316364c6e1683d0bee0d2c592eca8504925693");
+      .toBe("7cb25e50651d9c72a14d786e5f5da52878b4f8fd9b27abad0d006dc32b142643");
     expect(terminalSpecs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -2272,7 +2272,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         rowHash: canonicalEvidenceHash(candidate),
       })),
     }).toEqual({
-      allowlistHash: "e21e0996e9a9633f4d0faabcdd316364c6e1683d0bee0d2c592eca8504925693",
+      allowlistHash: "7cb25e50651d9c72a14d786e5f5da52878b4f8fd9b27abad0d006dc32b142643",
       prefixHash: "e4601a183669f046f4cc1f52cd30a860fe6347f96ffa41b30bdc8db2123630b3",
       rows: [{
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",
@@ -2327,6 +2327,20 @@ describe("exact allowlisted problem manual adjudication", () => {
       replacementsHash: "3331c3f24153b9909c99169ccbfa72d8a3a4cf9771d8eb4b4d64eff059bfde49",
       triggerHash: "b26a8f937c864fd8f20ea7aee6fa38c55d03e1cd2f87051c87942fc9d3edc0cd",
       parentRecoveryEvidenceHash: "fd585d64392d492db3840b3a75bd480748fe0ae6b7b22cf99982f59303edc4a0",
+    });
+    const terminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === "ebsi-5578421-q3-terminal-fidelity-v1"
+    )!;
+    expect({
+      rowHash: canonicalEvidenceHash(terminalSpec),
+      parentQuestionHash: terminalSpec.parentQuestionHash,
+      parentClassificationHash: terminalSpec.parentClassificationHash,
+      failedEffectiveCorpusHash: terminalSpec.failedEffectiveCorpusHash,
+    }).toEqual({
+      rowHash: "1baf3a6c9f9c3c8ac80e305e8e2de884b764a7ca3f6fe77524f04e88e61b0f42",
+      parentQuestionHash: "79b440a0c4d927fdc530c2e37e5ed4f6095db27a97396a97cd9d925f078d1c34",
+      parentClassificationHash: "abec36f81d33161810a02d25628c67006098de65dc90542361f6ab8b2b23b938",
+      failedEffectiveCorpusHash: "54b563c6ea850bce015a99000baa61b2b6ff193d11a7fe155649a8e7e4cc0ae8",
     });
     const row = q3ExactRecoveryParent5578421(q31Q32LiveState);
     const corrected = applyAllowlistedProblemManualCorrection(
