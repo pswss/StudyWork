@@ -288,6 +288,8 @@ const Q2_5578421_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec)
   spec.entryId === "ebsi:5578421" && spec.key === "1:2")!;
 const Q2_5578421_MANUAL_REVISION_SPEC = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5578421" && spec.key === "1:2")!;
+const Q2_5578421_MANUAL_SOURCE_REVISION_SPEC = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.find((spec) =>
+  spec.entryId === "ebsi:5578421" && spec.key === "1:2")!;
 const Q30_MANUAL_REVISION_SPEC = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5578421" && spec.key === "12:30")!;
 const Q18_MANUAL_REVISION_SPEC = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((spec) =>
@@ -10245,6 +10247,7 @@ async function q2ManualAuthorityFixture5578421() {
     }>;
     expect(items).toHaveLength(1);
     const hasOfficialHeader = items[0].question.startsWith("[1~3] ");
+    const hasOfficialHonorific = items[0].question.includes("최 교수님께서 제기하신 문제에 대해서는");
     return { text: JSON.stringify([{
       key: "1:2",
       decision: "reject",
@@ -10254,7 +10257,9 @@ async function q2ManualAuthorityFixture5578421() {
       achievement_codes: [],
       confidence: 0.99,
       reason_codes: hasOfficialHeader
-        ? ["SOURCE_EXACT", "OUT_OF_SCOPE_SPEAKING_LISTENING"]
+        ? hasOfficialHonorific
+          ? ["SOURCE_EXACT", "OUT_OF_SCOPE_SPEAKING_LISTENING"]
+          : ["OUT_OF_SCOPE_SPEAKING_LISTENING", "RADIO_DIALOGUE_ANALYSIS"]
         : [
             "OUT_OF_SCOPE_LISTENING_SPEAKING",
             "ASSESSED_CONSTRUCT_RADIO_INTERVIEW_ANALYSIS",
@@ -10262,7 +10267,12 @@ async function q2ManualAuthorityFixture5578421() {
           ],
       transcription_status: hasOfficialHeader ? "exact" : "mismatch",
       transcription_evidence: hasOfficialHeader
-        ? "공식 1쪽의 [1~3] 머리·대담·발문·선택지와 문자 그대로 일치한다."
+        ? hasOfficialHonorific
+          ? "공식 1쪽의 [1~3] 머리·대담·발문·선택지와 문자 그대로 일치한다."
+          : "원본 1쪽의 [1~3] 공통 라디오 대담 전체와 2번 문항의 발문 및 ①~⑤ 선지를 대조한 " +
+            "결과, 문장·수치(46.9%, 500억 원, 1,000억 원, 990원/1,000원, 94%, 85%)·기호(○○, " +
+            "□□, △△)·구두점과 선택지 내용이 모두 일치한다. 문항은 대담의 진행 과정과 두 " +
+            "대담자의 발화 기능을 파악하는 화법·듣기 평가이므로 국어 독서 범위에서는 제외된다."
         : "원문 1·2뷰의 공통 대담과 ‘비용을 줄일 수는 있습니다’, ‘최 교수께서 제기하신 " +
           "문제에 대해서는’, ‘동전을 교환해 주고 관리하는 데 들어가는 비용을 줄일 수 있어서’가 " +
           "일치하고, 1·3뷰의 문항 2 발문과 ①~⑤도 일치한다. 다만 원문 머리의 문항군 표지 ‘[1～3]’이 " +
@@ -10277,7 +10287,7 @@ async function q2ManualAuthorityFixture5578421() {
     row.failed,
     row.parent,
   );
-  expect(providerMock.complete).toHaveBeenCalledTimes(2);
+  expect(providerMock.complete).toHaveBeenCalledTimes(3);
   providerMock.complete.mockReset();
   return { ...row, adjudicated, stateDir };
 }
@@ -14335,6 +14345,17 @@ describe("exam corpus verifier", () => {
       rowHash: "7fec9a6782faf9cc6e59837c3528335963319fabc58ea1b7adfaeb25651028e5",
       replacementHash: "da53d25545e236eadc2e0c064463a171d4678f640160ee3acb6be0928c805770",
     });
+    expect({
+      allowlistHash: manualSourceRevisionAllowlistFingerprint(),
+      rowHash: canonicalEvidenceHash(Q2_5578421_MANUAL_SOURCE_REVISION_SPEC),
+      replacementHash: canonicalEvidenceHash(Q2_5578421_MANUAL_SOURCE_REVISION_SPEC.replacement),
+      triggerHash: canonicalEvidenceHash(Q2_5578421_MANUAL_SOURCE_REVISION_SPEC.terminalTrigger),
+    }).toEqual({
+      allowlistHash: "05d392d62117f4864b0a5964466970815e167655b12c69817909cdd43e006e1f",
+      rowHash: "99ec8e696ea73ba0c61d31df0df9f657bcb29e62fa6ff43e8db1389542e821aa",
+      replacementHash: "b0751915ae3df15620b51fcbccf08d95e0b29abb6edc28c8ae68333a4bbbe90a",
+      triggerHash: "240e0e1d3617c2d0de839ea55687ed7efb658037c62d4608f934c3426cfd4704",
+    });
     const row = await q2ManualAuthorityFixture5578421();
     const verify = () => withOnlyManualArtifactsForKey(
       row.stateDir,
@@ -14352,9 +14373,9 @@ describe("exam corpus verifier", () => {
     try {
       const verified = verify();
       expect(canonicalEvidenceHash(verified.question))
-        .toBe("85fffcf17b1e2ca69ab3ef773c17dcd16883e04ba7e1225761634a8ac05eaccf");
+        .toBe("b3d4ca3602e31cff626c4f461c2f4929adf8be4ee5ad0b31f9a73c789780cd30");
       expect(verified.question.question.startsWith("[1~3] 다음은 라디오 대담의 일부이다.")).toBe(true);
-      expect(verified.question.question).toContain("최 교수께서 제기하신 문제에 대해서는");
+      expect(verified.question.question).toContain("최 교수님께서 제기하신 문제에 대해서는");
       expect(verified.question.question).toContain("비용을 줄일 수 있어서");
       expect(verified.classification).toEqual(expect.objectContaining({
         key: "1:2",
@@ -14365,6 +14386,8 @@ describe("exam corpus verifier", () => {
       expect(verified.evidence.terminalTrigger.kind).toBe("checkpoint");
       expect(verified.evidence.revision.allowlistId)
         .toBe("ebsi-5578421-q2-manual-revision-v1");
+      expect(verified.evidence.revision.sourceRevision.allowlistId)
+        .toBe("ebsi-5578421-q2-manual-source-revision-v1");
       const triggerPath = join(row.stateDir, row.adjudicated.evidence.terminalTrigger!.artifact.path);
       const triggerBytes = readFileSync(triggerPath);
       writeFileSync(triggerPath, Buffer.concat([triggerBytes, Buffer.from("tampered")]));
@@ -15001,7 +15024,7 @@ describe("exam corpus verifier", () => {
     expect(manualRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST));
     expect(manualSourceRevisionAllowlistFingerprint())
-      .toBe("a6b314a092d204a88fa25ce3588064ccc13916ff62f7639dc66609077c91a4be");
+      .toBe("05d392d62117f4864b0a5964466970815e167655b12c69817909cdd43e006e1f");
     expect(manualSourceRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST));
     expect(canonicalEvidenceHash(Q32_MANUAL_SOURCE_REVISION_SPEC))

@@ -1502,6 +1502,7 @@ export type ProblemManualSourceRevisionEvidence = {
   failedQuestionHash: string;
   failedClassificationHash: string;
   failedClassificationEvidenceHash: string;
+  terminalTrigger?: NonNullable<ProblemManualAdjudicationEvidence["terminalTrigger"]>;
   correctionSpecHash: string;
   problemArtifact: EvidencePointer & {
     correctionVersion: number;
@@ -2387,6 +2388,7 @@ type ProblemManualTerminalTriggerSpec = {
   itemHash: string;
   evidenceHash: string;
   scopeEvidenceHash: string;
+  expectedScopeDecision?: ProblemTerminalFidelityItem["scopeDecision"];
 } | {
   kind: "checkpoint";
   artifactPath: string;
@@ -2445,6 +2447,7 @@ type ProblemManualSourceRevisionSpec = {
   failedQuestionHash: string;
   failedClassificationHash: string;
   failedClassificationEvidenceHash: string;
+  terminalTrigger?: ProblemManualTerminalTriggerSpec;
   replacement: ProblemManualReplacement;
   additionalReplacements?: ProblemManualReplacement[];
   requiredTokens: string[];
@@ -6582,6 +6585,39 @@ export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSou
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_reading",
+}, {
+  allowlistId: "ebsi-5578421-q2-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5578421-q2-manual-revision-v1",
+  parentRevisionEvidenceHash: "516da09ad14275a750665c68523db316b526e2982233036ec0332819b56c08cb",
+  entryId: "ebsi:5578421",
+  key: "1:2",
+  sourcePage: 1,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "85fffcf17b1e2ca69ab3ef773c17dcd16883e04ba7e1225761634a8ac05eaccf",
+  failedClassificationHash: "6e1665b167670d149a0a20b2340fc914dfdd3fe1e4d2fb7ac9e84ea735e5916a",
+  failedClassificationEvidenceHash: "4449a966af3c4ef9752fa2c4ade31c51212fc1e97239560455b5c4a9a6a29fe4",
+  terminalTrigger: {
+    artifactPath: "problem-terminal-fidelity-adjudications/" +
+      "v1-0001-0002-a08d13bd1e75aeacbabb0d887d074acfe5867cbcaa537310f393743551ac692f.json",
+    artifactHash: "d4c86553efdc6ab6b0ffc65f3b592a096fccb1e7223b43345b1f3b8f214f7126",
+    basisDigest: "a08d13bd1e75aeacbabb0d887d074acfe5867cbcaa537310f393743551ac692f",
+    itemHash: "28d0258c8c2df54659235b663bf9fd5bb86090a46977739528c5240ecec7b475",
+    evidenceHash: "b627340e6edf71ce743847243fde1b52225262135f3e61dd2dcba1dddd196c80",
+    scopeEvidenceHash: "52eadf5a0fac2c70d2bf1155384f69d38015c8021445d6c4956b969d484b5e1b",
+    expectedScopeDecision: "reject",
+  },
+  replacement: {
+    field: "question",
+    from: "최 교수께서 제기하신 문제에 대해서는",
+    to: "최 교수님께서 제기하신 문제에 대해서는",
+    count: 1,
+  },
+  requiredTokens: [
+    "[1~3] 다음은 라디오 대담의 일부이다. 물음에 답하시오.",
+    "최 교수님께서 제기하신 문제에 대해서는", "비용을 줄일 수 있어서",
+    "동전 없는 사회를 실현한 나라들도 있습니다.",
+  ],
+  expectedDecision: "reject",
 }] as const;
 
 export const PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST:
@@ -16507,7 +16543,7 @@ function problemManualCorrectionSpecHash(spec: ProblemManualAdjudicationSpec): s
 }
 
 function problemManualTerminalTriggerEvidence(
-  spec: ProblemManualAdjudicationSpec
+  spec: { terminalTrigger?: ProblemManualTerminalTriggerSpec }
 ): ProblemManualAdjudicationEvidence["terminalTrigger"] {
   if (!spec.terminalTrigger) return undefined;
   if (spec.terminalTrigger.kind === "checkpoint") return {
@@ -16537,7 +16573,12 @@ function problemManualTerminalTriggerEvidence(
 
 async function validatedProblemManualTerminalTrigger(
   stateDir: string,
-  spec: ProblemManualAdjudicationSpec,
+  spec: {
+    entryId: string;
+    key: string;
+    sourceHash: string;
+    terminalTrigger?: ProblemManualTerminalTriggerSpec;
+  },
   failed: ClassifiedQuestion
 ): Promise<ProblemManualAdjudicationEvidence["terminalTrigger"]> {
   const expected = problemManualTerminalTriggerEvidence(spec);
@@ -16602,7 +16643,10 @@ async function validatedProblemManualTerminalTrigger(
     checkpoint.promptDigest !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST ||
     canonicalEvidenceHash(checkpoint.input) !== canonicalEvidenceHash(problemTerminalInput(failed.question)) ||
     items.length !== 1 || !item || item.key !== spec.key || item.status === "exact" ||
-    item.scopeDecision !== "accept" || item.scopeConfidence < 0.9 ||
+    item.scopeDecision !== (spec.terminalTrigger && "expectedScopeDecision" in spec.terminalTrigger
+      ? spec.terminalTrigger.expectedScopeDecision ?? "accept"
+      : "accept") ||
+    item.scopeConfidence < 0.9 ||
     canonicalEvidenceHash(item) !== expected.itemHash ||
     sha256Text(item.evidence) !== expected.evidenceHash ||
     sha256Text(item.scopeEvidence) !== expected.scopeEvidenceHash
@@ -16626,6 +16670,7 @@ function problemManualSourceRevisionCorrectionSpecHash(spec: ProblemManualSource
     allowlistId: spec.allowlistId,
     parentRevisionAllowlistId: spec.parentRevisionAllowlistId,
     parentRevisionEvidenceHash: spec.parentRevisionEvidenceHash,
+    ...(spec.terminalTrigger ? { terminalTrigger: spec.terminalTrigger } : {}),
     replacement: spec.replacement,
     ...(spec.additionalReplacements ? { additionalReplacements: spec.additionalReplacements } : {}),
     requiredTokens: spec.requiredTokens,
@@ -17295,6 +17340,7 @@ async function reviseProblemManualSourceRevision(
   const key = questionKey(failed.question);
   const parentRevisionEvidenceHash = canonicalEvidenceHash(parentRevision);
   const correctionSpecHash = problemManualSourceRevisionCorrectionSpecHash(spec);
+  const terminalTrigger = await validatedProblemManualTerminalTrigger(stateDir, spec, failed);
   const commonBasis = {
     allowlistId: spec.allowlistId,
     parentRevisionAllowlistId: spec.parentRevisionAllowlistId,
@@ -17318,6 +17364,7 @@ async function reviseProblemManualSourceRevision(
     failedQuestionHash: spec.failedQuestionHash,
     failedClassificationHash: spec.failedClassificationHash,
     failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
+    ...(terminalTrigger ? { terminalTrigger } : {}),
     correctionSpecHash,
     cropEvidenceArtifact: prepared.artifact,
     cropEvidencePdf: { path: prepared.pdf.path, sha256: prepared.pdf.sha256 },
@@ -17472,6 +17519,7 @@ async function reviseProblemManualSourceRevision(
       failedQuestionHash: spec.failedQuestionHash,
       failedClassificationHash: spec.failedClassificationHash,
       failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
+      ...(terminalTrigger ? { terminalTrigger } : {}),
       correctionSpecHash,
       problemArtifact: {
         path: problemRelativePath,
@@ -19754,6 +19802,11 @@ export async function assertProblemManualAdjudicationAuthority(
           throw new Error(`${repair.key} manual source revision allowlist authority가 없습니다`);
         }
         const sourceSpec = sourceRevisionMatches[0];
+        const expectedSourceTerminalTrigger = await validatedProblemManualTerminalTrigger(
+          stateDir,
+          sourceSpec,
+          { question: expectedRevisionItem, classification: revisionClassification },
+        );
         if (
           sourceRevision.allowlistId !== sourceSpec.allowlistId ||
           sourceRevision.parentRevisionAllowlistId !== revisionSpec.allowlistId ||
@@ -19779,6 +19832,9 @@ export async function assertProblemManualAdjudicationAuthority(
           sourceRevision.failedClassificationEvidenceHash !== sourceSpec.failedClassificationEvidenceHash ||
           sha256Text(revisionClassification.transcription_evidence) !==
             sourceRevision.failedClassificationEvidenceHash ||
+          Boolean(sourceRevision.terminalTrigger) !== Boolean(expectedSourceTerminalTrigger) ||
+          (sourceRevision.terminalTrigger && canonicalEvidenceHash(sourceRevision.terminalTrigger) !==
+            canonicalEvidenceHash(expectedSourceTerminalTrigger)) ||
           sourceRevision.correctionSpecHash !== problemManualSourceRevisionCorrectionSpecHash(sourceSpec) ||
           sourceRevision.baseQuestionHash !== sourceSpec.failedQuestionHash ||
           sourceRevision.baseClassificationHash !== sourceSpec.failedClassificationHash ||
@@ -19788,6 +19844,9 @@ export async function assertProblemManualAdjudicationAuthority(
 
         await declare("problem manual second revision", sourceRevision.problemArtifact);
         await declare("classification manual second revision", sourceRevision.classificationArtifact);
+        if (expectedSourceTerminalTrigger) {
+          await declare("manual source revision terminal trigger", expectedSourceTerminalTrigger.artifact, false);
+        }
         const sourceCommonBasis = {
           allowlistId: sourceSpec.allowlistId,
           parentRevisionAllowlistId: sourceSpec.parentRevisionAllowlistId,
@@ -19805,6 +19864,7 @@ export async function assertProblemManualAdjudicationAuthority(
           failedQuestionHash: sourceRevision.failedQuestionHash,
           failedClassificationHash: sourceRevision.failedClassificationHash,
           failedClassificationEvidenceHash: sourceRevision.failedClassificationEvidenceHash,
+          ...(expectedSourceTerminalTrigger ? { terminalTrigger: expectedSourceTerminalTrigger } : {}),
           correctionSpecHash: sourceRevision.correctionSpecHash,
           cropEvidenceArtifact: manual.cropEvidenceArtifact,
           cropEvidencePdf: manual.cropEvidencePdf,
@@ -19907,6 +19967,7 @@ export async function assertProblemManualAdjudicationAuthority(
           failedQuestionHash: sourceSpec.failedQuestionHash,
           failedClassificationHash: sourceSpec.failedClassificationHash,
           failedClassificationEvidenceHash: sourceSpec.failedClassificationEvidenceHash,
+          ...(expectedSourceTerminalTrigger ? { terminalTrigger: expectedSourceTerminalTrigger } : {}),
           correctionSpecHash: problemManualSourceRevisionCorrectionSpecHash(sourceSpec),
           problemArtifact: {
             path: expectedSourceProblemPath,
@@ -19990,16 +20051,41 @@ export async function assertProblemTerminalFidelityAdjudicationAuthority(
   const repairList = [...repairs];
   const declared = new Map<string, string>();
   for (const repair of repairList) {
-    const trigger = repair.revision?.recovery?.manualAdjudication?.terminalTrigger;
-    if (!trigger) continue;
-    if (declared.has(trigger.artifact.path)) {
-      throw new Error(`manual terminal trigger artifact가 중복 선언됐습니다: ${trigger.artifact.path}`);
+    const manual = repair.revision?.recovery?.manualAdjudication;
+    const current = classified.find((candidate) => questionKey(candidate.question) === repair.key);
+    const pendingSourceSpecs = manual?.revision && !manual.revision.sourceRevision && current
+      ? PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.filter((spec) =>
+          spec.entryId === entryId && spec.key === repair.key && spec.sourceHash === sourceHash &&
+          spec.terminalTrigger && spec.parentRevisionAllowlistId === manual.revision!.allowlistId &&
+          spec.parentRevisionEvidenceHash === canonicalEvidenceHash(manual.revision) &&
+          spec.failedQuestionHash === canonicalEvidenceHash(current.question) &&
+          spec.failedClassificationHash === canonicalEvidenceHash(current.classification) &&
+          spec.failedClassificationEvidenceHash === sha256Text(current.classification.transcription_evidence)
+        )
+      : [];
+    if (pendingSourceSpecs.length > 1) {
+      throw new Error(`${repair.key} pending manual source terminal trigger가 중복입니다`);
     }
-    const path = confinedStateFile(stateDir, trigger.artifact.path, "manual terminal trigger");
-    if (await sha256File(path) !== trigger.artifact.sha256) {
-      throw new Error(`manual terminal trigger hash가 다릅니다: ${trigger.artifact.path}`);
+    const pendingTrigger = pendingSourceSpecs[0]
+      ? await validatedProblemManualTerminalTrigger(stateDir, pendingSourceSpecs[0], current!)
+      : undefined;
+    for (const trigger of [
+      manual?.terminalTrigger,
+      manual?.revision?.sourceRevision?.terminalTrigger,
+      pendingTrigger,
+    ].filter((value): value is NonNullable<ProblemManualAdjudicationEvidence["terminalTrigger"]> =>
+      Boolean(value)
+    )) {
+      if (declared.has(trigger.artifact.path)) {
+        if (declared.get(trigger.artifact.path) === trigger.artifact.sha256) continue;
+        throw new Error(`manual terminal trigger artifact가 중복 선언됐습니다: ${trigger.artifact.path}`);
+      }
+      const path = confinedStateFile(stateDir, trigger.artifact.path, "manual terminal trigger");
+      if (await sha256File(path) !== trigger.artifact.sha256) {
+        throw new Error(`manual terminal trigger hash가 다릅니다: ${trigger.artifact.path}`);
+      }
+      declared.set(trigger.artifact.path, trigger.artifact.sha256);
     }
-    declared.set(trigger.artifact.path, trigger.artifact.sha256);
   }
   const adjudicatedRepairs = repairList.filter((repair) => repair.terminalAdjudication);
   if (adjudicatedRepairs.length === 0) {
@@ -23875,9 +23961,89 @@ export async function repairAndAuditOfficialAnswers(
     return true;
   };
 
+  const applyTriggeredManualSourceRevisionIfReady = async (): Promise<boolean> => {
+    const candidates = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.flatMap((spec) => {
+      if (spec.entryId !== entry.id || spec.sourceHash !== problem.sha256 || !spec.terminalTrigger) return [];
+      const index = effective.findIndex((item) => questionKey(item.question) === spec.key);
+      const current = effective[index];
+      const repair = repairs.get(spec.key);
+      const recovery = repair?.revision?.recovery;
+      const manual = recovery?.manualAdjudication;
+      const revision = manual?.revision;
+      return index >= 0 && current && repair?.revision && recovery && manual && revision && !revision.sourceRevision &&
+          canonicalEvidenceHash(current.question) === spec.failedQuestionHash &&
+          canonicalEvidenceHash(current.classification) === spec.failedClassificationHash
+        ? [{ spec, index, current, repair, recovery, manual, revision }]
+        : [];
+    });
+    if (candidates.length === 0) return false;
+    if (candidates.length !== 1) throw new Error(`${entry.id} triggered manual source revision이 중복입니다`);
+    const item = candidates[0];
+    const matched = problemManualSourceRevisionSpec(
+      entry.id,
+      item.spec.key,
+      item.spec.sourcePage,
+      problem.sha256,
+      item.revision,
+      item.current,
+    );
+    if (!matched || matched.allowlistId !== item.spec.allowlistId) {
+      throw new Error(`${item.spec.key} triggered manual source revision authority가 없습니다`);
+    }
+    const manualSpec = problemManualAdjudicationSpec(
+      entry.id,
+      item.spec.key,
+      item.spec.sourcePage,
+      problem.sha256,
+    );
+    if (!manualSpec) throw new Error(`${item.spec.key} triggered manual parent allowlist가 없습니다`);
+    await preflightProblemManualBatch(entry, problem, stateDir, manualSpec);
+    const revised = await reviseProblemManualSourceRevision(
+      entry,
+      stateDir,
+      item.current,
+      {
+        artifact: item.manual.cropEvidenceArtifact,
+        pdf: {
+          ...item.manual.cropEvidencePdf,
+          absolutePath: confinedStateFile(
+            stateDir,
+            item.manual.cropEvidencePdf.path,
+            "triggered manual source revision crop evidence PDF",
+          ),
+        },
+        views: item.manual.cropViews,
+      },
+      item.revision,
+      item.spec,
+      false,
+    );
+    if (!revised) throw new Error(`${item.spec.key} triggered manual source revision child가 없습니다`);
+    effective[item.index] = revised.classified;
+    repairs.set(item.spec.key, {
+      ...item.repair,
+      revision: {
+        ...item.repair.revision!,
+        recovery: {
+          ...item.recovery,
+          manualAdjudication: {
+            ...item.manual,
+            revision: { ...item.revision, sourceRevision: revised.evidence },
+          },
+        },
+      },
+    });
+    invalidateSemanticSolutionRevisionTriggers(solutionRevisionTriggers, true);
+    finalSemantic = null;
+    finalSolutionAudit = null;
+    finalProblemFidelity = null;
+    return true;
+  };
+
   for (;;) {
     officialSolutionsByNumber(entry, effective, solutions);
     if (await applyScopeBoxRevisionIfReady()) continue;
+    if (await applyTriggeredManualSourceRevisionIfReady()) continue;
     finalProblemFidelity = await auditProblemTerminalFidelity(entry, problem, stateDir, effective);
     const terminalAdjudicatedItems = new Map<string, ProblemTerminalFidelityItem>();
     const effectiveCorpusHash = canonicalEvidenceHash(effective);
@@ -23906,9 +24072,36 @@ export async function repairAndAuditOfficialAnswers(
     }
     const preparedAdjudications: PreparedProblemTerminalFidelityAdjudication[] = [];
     const historicalManualTriggerPaths = new Set([...repairs.values()].flatMap((repair) => {
-      const path = repair.revision?.recovery?.manualAdjudication?.terminalTrigger?.artifact.path;
-      return path?.startsWith("problem-terminal-fidelity-adjudications/") ? [path] : [];
+      const manual = repair.revision?.recovery?.manualAdjudication;
+      return [
+        manual?.terminalTrigger?.artifact.path,
+        manual?.revision?.sourceRevision?.terminalTrigger?.artifact.path,
+      ].filter((path): path is string =>
+        Boolean(path?.startsWith("problem-terminal-fidelity-adjudications/"))
+      );
     }));
+    for (const sourceSpec of PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.filter((candidate) =>
+      candidate.entryId === entry.id && candidate.sourceHash === problem.sha256 && candidate.terminalTrigger
+    )) {
+      const trigger = problemManualTerminalTriggerEvidence(sourceSpec);
+      if (!trigger || !trigger.artifact.path.startsWith("problem-terminal-fidelity-adjudications/")) continue;
+      const path = confinedStateFile(stateDir, trigger.artifact.path, "pending manual source revision trigger");
+      if (await sha256File(path) !== trigger.artifact.sha256) {
+        throw new Error(`${sourceSpec.key} pending manual source revision trigger hash가 다릅니다`);
+      }
+      historicalManualTriggerPaths.add(trigger.artifact.path);
+    }
+    for (const manualSpec of PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((candidate) =>
+      candidate.entryId === entry.id && candidate.sourceHash === problem.sha256 && candidate.terminalTrigger
+    )) {
+      const trigger = problemManualTerminalTriggerEvidence(manualSpec);
+      if (!trigger || !trigger.artifact.path.startsWith("problem-terminal-fidelity-adjudications/")) continue;
+      const path = confinedStateFile(stateDir, trigger.artifact.path, "pending manual terminal trigger");
+      if (await sha256File(path) !== trigger.artifact.sha256) {
+        throw new Error(`${manualSpec.key} pending manual terminal trigger hash가 다릅니다`);
+      }
+      historicalManualTriggerPaths.add(trigger.artifact.path);
+    }
     for (const spec of terminalAdjudicationSpecs) {
       const item = finalProblemFidelity.items.find((candidate) => candidate.key === spec.key);
       const current = effective.find((candidate) => questionKey(candidate.question) === spec.key);

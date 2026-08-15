@@ -805,6 +805,7 @@ type ProblemManualTerminalTriggerSpec = {
   itemHash: string;
   evidenceHash: string;
   scopeEvidenceHash: string;
+  expectedScopeDecision?: ProblemTerminalFidelityItem["scopeDecision"];
 } | {
   kind: "checkpoint";
   artifactPath: string;
@@ -863,6 +864,7 @@ type ProblemManualSourceRevisionSpec = {
   failedQuestionHash: string;
   failedClassificationHash: string;
   failedClassificationEvidenceHash: string;
+  terminalTrigger?: ProblemManualTerminalTriggerSpec;
   replacement: ProblemManualReplacement;
   additionalReplacements?: readonly ProblemManualReplacement[];
   requiredTokens: readonly string[];
@@ -5101,6 +5103,39 @@ const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevi
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_reading",
+}, {
+  allowlistId: "ebsi-5578421-q2-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5578421-q2-manual-revision-v1",
+  parentRevisionEvidenceHash: "516da09ad14275a750665c68523db316b526e2982233036ec0332819b56c08cb",
+  entryId: "ebsi:5578421",
+  key: "1:2",
+  sourcePage: 1,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "85fffcf17b1e2ca69ab3ef773c17dcd16883e04ba7e1225761634a8ac05eaccf",
+  failedClassificationHash: "6e1665b167670d149a0a20b2340fc914dfdd3fe1e4d2fb7ac9e84ea735e5916a",
+  failedClassificationEvidenceHash: "4449a966af3c4ef9752fa2c4ade31c51212fc1e97239560455b5c4a9a6a29fe4",
+  terminalTrigger: {
+    artifactPath: "problem-terminal-fidelity-adjudications/" +
+      "v1-0001-0002-a08d13bd1e75aeacbabb0d887d074acfe5867cbcaa537310f393743551ac692f.json",
+    artifactHash: "d4c86553efdc6ab6b0ffc65f3b592a096fccb1e7223b43345b1f3b8f214f7126",
+    basisDigest: "a08d13bd1e75aeacbabb0d887d074acfe5867cbcaa537310f393743551ac692f",
+    itemHash: "28d0258c8c2df54659235b663bf9fd5bb86090a46977739528c5240ecec7b475",
+    evidenceHash: "b627340e6edf71ce743847243fde1b52225262135f3e61dd2dcba1dddd196c80",
+    scopeEvidenceHash: "52eadf5a0fac2c70d2bf1155384f69d38015c8021445d6c4956b969d484b5e1b",
+    expectedScopeDecision: "reject",
+  },
+  replacement: {
+    field: "question",
+    from: "최 교수께서 제기하신 문제에 대해서는",
+    to: "최 교수님께서 제기하신 문제에 대해서는",
+    count: 1,
+  },
+  requiredTokens: [
+    "[1~3] 다음은 라디오 대담의 일부이다. 물음에 답하시오.",
+    "최 교수님께서 제기하신 문제에 대해서는", "비용을 줄일 수 있어서",
+    "동전 없는 사회를 실현한 나라들도 있습니다.",
+  ],
+  expectedDecision: "reject",
 }] as const;
 
 const PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST:
@@ -9481,11 +9516,25 @@ function verifyProblemRecoveryCoverage(
           ["problem manual revision", manualRevision.problemArtifact, true],
           ["classification manual revision", manualRevision.classificationArtifact, true],
         );
-      if (manualRevision.sourceRevision !== undefined) {
+        if (manualRevision.sourceRevision !== undefined) {
           const sourceRevision = object(
             manualRevision.sourceRevision,
             `answer audit repairs[${index}].revision.recovery.manualAdjudication.revision.sourceRevision`,
           );
+          if (sourceRevision.terminalTrigger !== undefined) {
+            const trigger = object(
+              sourceRevision.terminalTrigger,
+              `answer audit repairs[${index}] manual source revision terminalTrigger`,
+            );
+            const pointer = evidencePointer(
+              trigger.artifact,
+              `answer audit repairs[${index}] manual source revision terminalTrigger.artifact`,
+            );
+            if (declaredTerminalAdjudication.has(pointer.path)) {
+              throw new Error(`${pointer.path}: duplicate manual source revision terminal trigger authority`);
+            }
+            declaredTerminalAdjudication.add(pointer.path);
+          }
           manualPointers.push(
             ["problem manual source revision", sourceRevision.problemArtifact, true],
             ["classification manual source revision", sourceRevision.classificationArtifact, true],
@@ -10095,6 +10144,7 @@ function problemManualSourceRevisionCorrectionSpecHash(spec: ProblemManualSource
     allowlistId: spec.allowlistId,
     parentRevisionAllowlistId: spec.parentRevisionAllowlistId,
     parentRevisionEvidenceHash: spec.parentRevisionEvidenceHash,
+    ...(spec.terminalTrigger ? { terminalTrigger: spec.terminalTrigger } : {}),
     replacement: spec.replacement,
     ...(spec.additionalReplacements ? { additionalReplacements: spec.additionalReplacements } : {}),
     requiredTokens: spec.requiredTokens,
@@ -10598,11 +10648,75 @@ function verifyProblemManualSourceRevision(
   const parentProblemArtifactItemHash = canonicalEvidenceHash(failedQuestion.evidence);
   const parentClassificationArtifactItemHash = canonicalEvidenceHash(failedClassification);
   const correctionSpecHash = problemManualSourceRevisionCorrectionSpecHash(spec);
+  const terminalTrigger = spec.terminalTrigger
+    ? spec.terminalTrigger.kind === "checkpoint"
+      ? {
+        kind: "checkpoint" as const,
+        artifact: { path: spec.terminalTrigger.artifactPath, sha256: spec.terminalTrigger.artifactHash },
+        effectiveCorpusHash: spec.terminalTrigger.effectiveCorpusHash,
+        inputHash: spec.terminalTrigger.inputHash,
+        targetInputHash: spec.terminalTrigger.targetInputHash,
+        itemHash: spec.terminalTrigger.itemHash,
+        evidenceHash: spec.terminalTrigger.evidenceHash,
+        scopeEvidenceHash: spec.terminalTrigger.scopeEvidenceHash,
+      }
+      : {
+        artifact: { path: spec.terminalTrigger.artifactPath, sha256: spec.terminalTrigger.artifactHash },
+        basisDigest: spec.terminalTrigger.basisDigest,
+        itemHash: spec.terminalTrigger.itemHash,
+        evidenceHash: spec.terminalTrigger.evidenceHash,
+        scopeEvidenceHash: spec.terminalTrigger.scopeEvidenceHash,
+      }
+    : undefined;
   if (parentRevisionEvidenceHash !== spec.parentRevisionEvidenceHash
     || spec.failedQuestionHash !== parentProblemArtifactItemHash
     || spec.failedClassificationHash !== parentClassificationArtifactItemHash
     || spec.failedClassificationEvidenceHash !== sha256(failedClassification.transcription_evidence)) {
     throw new Error(`${key}: manual source revision parent hashes are stale`);
+  }
+  if (Boolean(revision.terminalTrigger) !== Boolean(terminalTrigger)
+    || terminalTrigger && !isDeepStrictEqual(revision.terminalTrigger, terminalTrigger)) {
+    throw new Error(`${key}: manual source revision terminal trigger is stale`);
+  }
+  if (terminalTrigger) {
+    const checkpoint = readBoundEvidenceCached(
+      cache,
+      stateDir,
+      terminalTrigger.artifact,
+      `${key} manual source revision terminal trigger`,
+    );
+    if (terminalTrigger.kind === "checkpoint") {
+      throw new Error(`${key}: checkpoint-triggered manual source revision is not supported`);
+    }
+    if (!Array.isArray(checkpoint.items) || checkpoint.items.length !== 1) {
+      throw new Error(`${key}: manual source revision terminal trigger coverage is stale`);
+    }
+    const item = parseProblemTerminalFidelityItem(
+      checkpoint.items[0],
+      `${key}.manualSourceRevision.terminalTrigger.items[0]`,
+      contract,
+    );
+    const expectedInput = problemTerminalInput({
+      question: failedQuestion,
+      classification: failedClassification,
+      problemCheckpoint: { path: "", sha256: "" },
+      classificationCheckpoint: { path: "", sha256: "" },
+      contextFrom: 1,
+      contextTo: 1,
+    });
+    if (checkpoint.version !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION
+      || checkpoint.entryId !== entry.id || checkpoint.basisDigest !== terminalTrigger.basisDigest
+      || checkpoint.promptDigest !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST
+      || !isDeepStrictEqual(checkpoint.input, expectedInput)
+      || item.key !== key || item.status === "exact"
+      || item.scopeDecision !== (spec.terminalTrigger && "expectedScopeDecision" in spec.terminalTrigger
+        ? spec.terminalTrigger.expectedScopeDecision ?? "accept"
+        : "accept")
+      || (item.scopeConfidence ?? 0) < 0.9 || canonicalEvidenceHash(item) !== terminalTrigger.itemHash
+      || sha256(item.evidence) !== terminalTrigger.evidenceHash
+      || item.scopeEvidence === undefined || sha256(item.scopeEvidence) !== terminalTrigger.scopeEvidenceHash) {
+      throw new Error(`${key}: manual source revision terminal trigger authority is stale`);
+    }
   }
   const cropEvidenceArtifact = evidencePointer(
     parentManual.cropEvidenceArtifact,
@@ -10634,6 +10748,7 @@ function verifyProblemManualSourceRevision(
     failedQuestionHash: spec.failedQuestionHash,
     failedClassificationHash: spec.failedClassificationHash,
     failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
+    ...(terminalTrigger ? { terminalTrigger } : {}),
     correctionSpecHash,
     cropEvidenceArtifact,
     cropEvidencePdf,
@@ -10760,6 +10875,7 @@ function verifyProblemManualSourceRevision(
     failedQuestionHash: spec.failedQuestionHash,
     failedClassificationHash: spec.failedClassificationHash,
     failedClassificationEvidenceHash: spec.failedClassificationEvidenceHash,
+    ...(terminalTrigger ? { terminalTrigger } : {}),
     correctionSpecHash,
     problemArtifact: {
       ...problemArtifact,

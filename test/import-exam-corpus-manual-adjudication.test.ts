@@ -1930,6 +1930,9 @@ describe("exact allowlisted problem manual adjudication", () => {
     const revisionSpec = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((candidate) =>
       candidate.allowlistId === "ebsi-5578421-q2-manual-revision-v1"
     )!;
+    const sourceRevisionSpec = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === "ebsi-5578421-q2-manual-source-revision-v1"
+    )!;
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 49)))
       .toBe("e0ad5b176a2568251ac73625e6e1abcd857a846f2250147f99db28fa5a07d7fe");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
@@ -1979,6 +1982,26 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(revised.question))
       .toBe("ed9dbe1c783272251a4c45220bfa983cb705fa40d1eff4ebd6aef7ddcd860c46");
     expect(revised.question.startsWith("[1~3] 다음은 라디오 대담의 일부이다.")).toBe(true);
+    expect({
+      allowlistHash: canonicalEvidenceHash(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST),
+      rowHash: canonicalEvidenceHash(sourceRevisionSpec),
+      replacementHash: canonicalEvidenceHash(sourceRevisionSpec.replacement),
+      triggerHash: canonicalEvidenceHash(sourceRevisionSpec.terminalTrigger),
+    }).toEqual({
+      allowlistHash: "05d392d62117f4864b0a5964466970815e167655b12c69817909cdd43e006e1f",
+      rowHash: "99ec8e696ea73ba0c61d31df0df9f657bcb29e62fa6ff43e8db1389542e821aa",
+      replacementHash: "b0751915ae3df15620b51fcbccf08d95e0b29abb6edc28c8ae68333a4bbbe90a",
+      triggerHash: "240e0e1d3617c2d0de839ea55687ed7efb658037c62d4608f934c3426cfd4704",
+    });
+    const sourceRevised = applyAllowlistedProblemManualSourceRevision(
+      "ebsi:5578421",
+      spec.sourceHash,
+      revisionSpec.allowlistId,
+      revised,
+    );
+    expect(canonicalEvidenceHash(sourceRevised))
+      .toBe("b3d4ca3602e31cff626c4f461c2f4929adf8be4ee5ad0b31f9a73c789780cd30");
+    expect(sourceRevised.question).toContain("최 교수님께서 제기하신 문제에 대해서는");
   });
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
@@ -2070,9 +2093,13 @@ describe("exact allowlisted problem manual adjudication", () => {
         }>;
         expect(items).toHaveLength(1);
         expect(items[0].key).toBe("1:2");
-        expect(items[0].question).toContain("최 교수께서 제기하신 문제에 대해서는");
+        expect(
+          items[0].question.includes("최 교수께서 제기하신 문제에 대해서는") ||
+          items[0].question.includes("최 교수님께서 제기하신 문제에 대해서는"),
+        ).toBe(true);
         expect(items[0].question).toContain("비용을 줄일 수 있어서");
         const hasOfficialHeader = items[0].question.startsWith("[1~3] ");
+        const hasOfficialHonorific = items[0].question.includes("최 교수님께서 제기하신 문제에 대해서는");
         calls.classification++;
         return { text: JSON.stringify([{
           key: "1:2",
@@ -2083,7 +2110,9 @@ describe("exact allowlisted problem manual adjudication", () => {
           achievement_codes: [],
           confidence: 0.99,
           reason_codes: hasOfficialHeader
-            ? ["SOURCE_EXACT", "OUT_OF_SCOPE_SPEAKING_LISTENING"]
+            ? hasOfficialHonorific
+              ? ["SOURCE_EXACT", "OUT_OF_SCOPE_SPEAKING_LISTENING"]
+              : ["OUT_OF_SCOPE_SPEAKING_LISTENING", "RADIO_DIALOGUE_ANALYSIS"]
             : [
                 "OUT_OF_SCOPE_LISTENING_SPEAKING",
                 "ASSESSED_CONSTRUCT_RADIO_INTERVIEW_ANALYSIS",
@@ -2091,7 +2120,12 @@ describe("exact allowlisted problem manual adjudication", () => {
               ],
           transcription_status: hasOfficialHeader ? "exact" : "mismatch",
           transcription_evidence: hasOfficialHeader
-            ? "공식 1쪽의 [1~3] 머리·대담·발문·선택지와 문자 그대로 일치한다."
+            ? hasOfficialHonorific
+              ? "공식 1쪽의 [1~3] 머리·대담·발문·선택지와 문자 그대로 일치한다."
+              : "원본 1쪽의 [1~3] 공통 라디오 대담 전체와 2번 문항의 발문 및 ①~⑤ 선지를 대조한 " +
+                "결과, 문장·수치(46.9%, 500억 원, 1,000억 원, 990원/1,000원, 94%, 85%)·기호(○○, " +
+                "□□, △△)·구두점과 선택지 내용이 모두 일치한다. 문항은 대담의 진행 과정과 두 " +
+                "대담자의 발화 기능을 파악하는 화법·듣기 평가이므로 국어 독서 범위에서는 제외된다."
             : "원문 1·2뷰의 공통 대담과 ‘비용을 줄일 수는 있습니다’, ‘최 교수께서 제기하신 " +
               "문제에 대해서는’, ‘동전을 교환해 주고 관리하는 데 들어가는 비용을 줄일 수 있어서’가 " +
               "일치하고, 1·3뷰의 문항 2 발문과 ①~⑤도 일치한다. 다만 원문 머리의 문항군 표지 ‘[1～3]’이 " +
@@ -2105,9 +2139,9 @@ describe("exact allowlisted problem manual adjudication", () => {
           question: string;
         }>;
         expect(items.find((item) => item.key === "1:2")?.question)
-          .toContain("최 교수께서 제기하신 문제에 대해서는");
-        expect(items.find((item) => item.key === "1:2")?.question)
           .toContain("비용을 줄일 수 있어서");
+        expect(items.find((item) => item.key === "1:2")?.question)
+          .toContain("최 교수님께서 제기하신 문제에 대해서는");
         calls.terminal++;
         throw new Error("seeded 5578421 post-Q2 terminal boundary");
       }
@@ -2126,7 +2160,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     };
 
     await expect(run()).rejects.toThrow("seeded 5578421 post-Q2 terminal boundary");
-    expect(calls).toEqual({ classification: 2, terminal: 1 });
+    expect(calls).toEqual({ classification: 3, terminal: 1 });
     const problemName = readdirSync(join(root, "problem-manual-adjudications"))
       .find((name) => name.startsWith("v1-0001-0002-"))!;
     const problemCheckpoint = JSON.parse(readFileSync(
@@ -2143,6 +2177,14 @@ describe("exact allowlisted problem manual adjudication", () => {
     ));
     expect(canonicalEvidenceHash(revisionCheckpoint.item))
       .toBe("85fffcf17b1e2ca69ab3ef773c17dcd16883e04ba7e1225761634a8ac05eaccf");
+    const sourceRevisionName = readdirSync(join(root, "problem-manual-second-revisions"))
+      .find((name) => name.startsWith("v1-0001-0002-"))!;
+    const sourceRevisionCheckpoint = JSON.parse(readFileSync(
+      join(root, "problem-manual-second-revisions", sourceRevisionName),
+      "utf8",
+    ));
+    expect(canonicalEvidenceHash(sourceRevisionCheckpoint.item))
+      .toBe("b3d4ca3602e31cff626c4f461c2f4929adf8be4ee5ad0b31f9a73c789780cd30");
     calls.classification = 0;
     calls.terminal = 0;
     await expect(run()).rejects.toThrow("seeded 5578421 post-Q2 terminal boundary");

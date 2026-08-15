@@ -454,42 +454,48 @@ describe.skipIf(!existsSync(join(q29LiveState, "problem.pdf")))("Q29 crop termin
 });
 
 describe.skipIf(!existsSync(join(q29LiveState, "problem.pdf")))(
-  "Q2 manual-revision terminal fidelity adjudication",
+  "Q2 terminal-triggered manual source revision",
   () => {
-  it("preserves the official plural wording and resumes past the false terminal mismatch", async () => {
-    const root = mkdtempSync(join(tmpdir(), "studywork-q2-terminal-adjudication-"));
+  it("restores the official honorific while preserving the failed terminal child", async () => {
+    const root = mkdtempSync(join(tmpdir(), "studywork-q2-terminal-source-revision-"));
     roots.push(root);
     cpSync(q29LiveState, root, { recursive: true });
-    const childDirectory = join(root, "problem-terminal-fidelity-adjudications");
-    if (existsSync(childDirectory)) {
-      for (const name of readdirSync(childDirectory)) {
-        if (name.startsWith("v1-0001-0002-")) rmSync(join(childDirectory, name));
+    for (const directory of [
+      "problem-manual-second-revisions",
+      "classification-manual-second-revisions",
+    ]) {
+      const path = join(root, directory);
+      if (!existsSync(path)) continue;
+      for (const name of readdirSync(path)) {
+        if (name.startsWith("v1-0001-0002-")) rmSync(join(path, name));
       }
     }
     const input = fixtureInputs(root);
-    let q2Calls = 0;
+    let sourceRevisionCalls = 0;
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
-      if (
-        request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity" &&
-        request.prompt.includes("Final question:\n")
-      ) {
-        const [item] = JSON.parse(request.prompt.split("Final question:\n")[1]) as Array<{
+      if (request.schema?.name === "studywork_exam_corpus_classification") {
+        const [item] = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
           key: string;
           question: string;
         }>;
         expect(item.key).toBe("1:2");
+        expect(item.question).toContain("최 교수님께서 제기하신 문제에 대해서는");
         expect(item.question).toContain("실현한 나라들도 있습니다.");
-        q2Calls++;
+        sourceRevisionCalls++;
         return { text: JSON.stringify([{
           key: item.key,
-          status: "exact",
-          evidence: "공식 1쪽 픽셀에는 ‘동전 없는 사회를 실현한 나라들도 있습니다.’라고 적혀 있다.",
-          scopeDecision: "reject",
-          scopeConfidence: 0.99,
-          scopeEvidence: "라디오 대담의 진행과 발화 기능을 묻는 듣기·말하기 문항이다.",
+          decision: "reject",
+          canonical_subject: null,
+          curriculum_course: null,
+          domain: null,
+          achievement_codes: [],
+          confidence: 0.99,
+          reason_codes: ["SOURCE_EXACT", "OUT_OF_SCOPE_SPEAKING_LISTENING"],
+          transcription_status: "exact",
+          transcription_evidence: "공식 1쪽의 [1~3] 머리·대담·발문·선택지와 문자 그대로 일치한다.",
         }]) };
       }
-      throw new Error(`seeded after Q2 adjudication: ${request.schema?.name ?? "unknown"}`);
+      throw new Error(`seeded after Q2 source revision: ${request.schema?.name ?? "unknown"}`);
     });
 
     const run = () => repairAndAuditOfficialAnswers(
@@ -502,28 +508,34 @@ describe.skipIf(!existsSync(join(q29LiveState, "problem.pdf")))(
     );
     const error = await run().then(() => null, (caught: unknown) => caught);
     expect(error).toBeInstanceOf(Error);
-    expect(q2Calls, (error as Error).message).toBe(1);
+    expect(sourceRevisionCalls, (error as Error).stack).toBe(1);
     expect((error as Error).message).not.toContain("1:2 problem recovery는 한 번만 허용됩니다");
-    const childNames = readdirSync(childDirectory)
+    const sourceRevisionNames = readdirSync(join(root, "problem-manual-second-revisions"))
       .filter((name) => name.startsWith("v1-0001-0002-"));
-    expect(childNames).toHaveLength(1);
-    const child = JSON.parse(readFileSync(
-      join(childDirectory, childNames[0]),
+    expect(sourceRevisionNames).toHaveLength(1);
+    const sourceRevision = JSON.parse(readFileSync(
+      join(root, "problem-manual-second-revisions", sourceRevisionNames[0]),
       "utf8",
     ));
-    expect(child.items).toEqual([expect.objectContaining({
-      key: "1:2",
-      status: "exact",
-      scopeDecision: "reject",
-    })]);
-    expect(child.basis.parentManual.revision.allowlistId)
-      .toBe("ebsi-5578421-q2-manual-revision-v1");
+    expect(canonicalEvidenceHash(sourceRevision.item))
+      .toBe("b3d4ca3602e31cff626c4f461c2f4929adf8be4ee5ad0b31f9a73c789780cd30");
+    expect(sourceRevision.basis.terminalTrigger.artifact.path)
+      .toContain("problem-terminal-fidelity-adjudications/v1-0001-0002-a08d13bd");
 
     const stable = snapshot(root);
-    q2Calls = 0;
-    providerMock.complete.mockRejectedValue(new Error("seeded after persisted Q2 adjudication"));
+    sourceRevisionCalls = 0;
+    providerMock.complete.mockRejectedValue(new Error("seeded after persisted Q2 source revision"));
     await expect(run()).rejects.not.toThrow("1:2 problem recovery는 한 번만 허용됩니다");
-    expect(q2Calls).toBe(0);
+    expect(sourceRevisionCalls).toBe(0);
     expect(snapshot(root)).toEqual(stable);
+
+    const triggerPath = join(root, sourceRevision.basis.terminalTrigger.artifact.path);
+    const triggerBytes = readFileSync(triggerPath);
+    writeFileSync(triggerPath, Buffer.concat([triggerBytes, Buffer.from("tampered")]));
+    providerMock.complete.mockClear();
+    const beforeTamper = snapshot(root);
+    await expect(run()).rejects.toThrow(/manual source revision.*trigger.*(?:hash|authority)/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(snapshot(root)).toEqual(beforeTamper);
   }, 180_000);
 });
