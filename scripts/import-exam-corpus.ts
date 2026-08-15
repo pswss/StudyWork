@@ -18685,7 +18685,7 @@ async function restoredPinnedManualRecovery(
     "manual batch classification recovery",
     (name) => /^v\d+-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
   ).filter((name) => keyPattern.test(name));
-  const allowSupersededGenerations = is5578421Q6Q7ManualBatchSpec(spec);
+  const allowSupersededGenerations = spec.entryId === "ebsi:5578421";
   const matchingProblemNames = allowSupersededGenerations
     ? problemNames.filter((name) => {
       const checkpoint = object(JSON.parse(readFileSync(confinedStateFile(

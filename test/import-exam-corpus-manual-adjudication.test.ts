@@ -1635,19 +1635,23 @@ describe("exact allowlisted problem manual adjudication", () => {
   });
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
-    "selects and replays the pinned 5578421 Q6-Q7 generation among superseded recoveries",
+    "selects and replays pinned 5578421 manual generations among superseded recoveries",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-5578421-q6-q7-generations-"));
     cpSync(q31Q32LiveState, root, { recursive: true });
     const input = q27FixtureInputs(root);
     const q6 = q6Q7ExactRecoveryParent5578421(root, "6");
     const q7 = q6Q7ExactRecoveryParent5578421(root, "7");
-    providerMock.complete.mockRejectedValue(new Error("unexpected Q6-Q7 replay provider"));
+    const shared = (["19", "20", "21"] as const).map((number) =>
+      q19Q21ExactRecoveryParent5578421(root, number)
+    );
+    providerMock.complete.mockRejectedValue(new Error("unexpected manual generation replay provider"));
     const run = (row: ReturnType<typeof q6Q7ExactRecoveryParent5578421>) =>
       adjudicateProblemManual(input.entry, input.problem, root, row.failed, row.parent);
 
     const q6Result = await run(q6);
     const q7Result = await run(q7);
+    for (const row of shared) await run(row);
     expect(providerMock.complete).not.toHaveBeenCalled();
     expect(canonicalEvidenceHash(q6Result.classified.question))
       .toBe("7dca0fed5deedcf7178492f9206f994c596021551c0e9df67f968b87e6fb2307");
@@ -1656,6 +1660,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     const stable = stateSnapshot(root);
     await run(q6);
     await run(q7);
+    for (const row of shared) await run(row);
     expect(stateSnapshot(root)).toEqual(stable);
 
     const selectedProblemPath = join(root, q6.parent.problemArtifact.path);
