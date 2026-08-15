@@ -2016,7 +2016,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         rowHash: canonicalEvidenceHash(candidate),
       })),
     }).toEqual({
-      allowlistHash: "06ccb3ee0073ba41ca1612aa293db8a550c2c9473eae7653a675073a7edcb70c",
+      allowlistHash: "ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048",
       prefixHash: "e4601a183669f046f4cc1f52cd30a860fe6347f96ffa41b30bdc8db2123630b3",
       rows: [{
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",
@@ -2027,8 +2027,14 @@ describe("exact allowlisted problem manual adjudication", () => {
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v2",
         parentManualRevisionAllowlistId: "ebsi-5578421-q2-manual-source-revision-v1",
         failedEffectiveCorpusHash: "89315957b0a571851f1fe43ed52d9751e050c7009307b1ec8d90ba87047dea99",
-        rowHash: "51ffcd693c8ad1321e6841d1bd1e14240b49f1b2985e64e14403789d7999ff52",
+        rowHash: "de557e5cba2fcef89f669b19d22433ddc661664e029c38bd9641e72d4f4fd131",
       }],
+    });
+    expect(terminalSpecs[1].pinnedAdjudicationArtifact).toEqual({
+      path: "problem-terminal-fidelity-adjudications/" +
+        "v1-0001-0002-5a601aa2ef79f13797e092f25479d5432df7d7cd984f6e346e9c8536866ed648.json",
+      sha256: "75ef0affae2d3d4673b7daa85ac3dcf7fcac61decac6406b0c285e5cd5d9853d",
+      itemHash: "603d5f6bebb158c51dbefdf0181c220b62b02b72ad9aabb47d605ea2cd409ded",
     });
   });
 
@@ -2269,53 +2275,33 @@ describe("exact allowlisted problem manual adjudication", () => {
         : [];
     };
     const adjudicationDirectory = join(root, "problem-terminal-fidelity-adjudications");
-    for (const name of matchingChildren(root)) rmSync(join(adjudicationDirectory, name));
-
     let adjudicationCalls = 0;
-    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
-      if (
-        request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity" &&
-        request.prompt.includes("Final question:\n")
-      ) {
-        const items = JSON.parse(request.prompt.split("Final question:\n")[1]) as Array<{
-          key: string;
-          question: string;
-        }>;
-        expect(items).toHaveLength(1);
-        expect(items[0].key).toBe("1:2");
-        expect(items[0].question).toContain("나라들도 있습니다.");
-        expect(items[0].question).toContain("최 교수님께서 제기하신 문제에 대해서는");
-        adjudicationCalls++;
-        return { text: JSON.stringify([{
-          key: "1:2",
-          status: "exact",
-          evidence: "공식 1쪽 픽셀은 ‘나라들도 있습니다’와 ‘최 교수님께서’를 명시하며 현재 전사와 일치한다.",
-          scopeDecision: "reject",
-          scopeConfidence: 1,
-          scopeEvidence: "대담 진행 과정과 발화 기능을 묻는 듣기·말하기 문항이므로 제외된다.",
-        }]) };
-      }
+    providerMock.complete.mockImplementation(async (request: { prompt: string }) => {
+      if (request.prompt.includes("Final question:\n")) adjudicationCalls++;
       throw new Error("seeded 5578421 post-adjudication boundary");
     });
-    const run = () => {
-      const input = q27FixtureInputs(root);
+    const run = (stateRoot: string) => {
+      const input = q27FixtureInputs(stateRoot);
       return repairAndAuditOfficialAnswers(
         input.entry,
         input.problem,
         input.solution,
-        root,
+        stateRoot,
         input.classified,
         input.solutions,
       );
     };
 
-    await expect(run()).rejects.toThrow(
-      /seeded 5578421 post-adjudication boundary|problem recovery는 한 번만 허용됩니다/u,
+    expect(matchingChildren(root)).toEqual([
+      spec.pinnedAdjudicationArtifact!.path.split("/").at(-1),
+    ]);
+    const childPath = join(adjudicationDirectory, matchingChildren(root)[0]);
+    const childBytes = readFileSync(childPath);
+    await expect(run(root)).rejects.toThrow(
+      /seeded 5578421 post-adjudication boundary|1:3 problem recovery는 한 번만 허용됩니다/u,
     );
-    expect(adjudicationCalls).toBe(1);
-    expect(matchingChildren(root)).toHaveLength(1);
-    const childName = matchingChildren(root)[0];
-    const childPath = join(adjudicationDirectory, childName);
+    expect(adjudicationCalls).toBe(0);
+    expect(readFileSync(childPath)).toEqual(childBytes);
     const child = JSON.parse(readFileSync(childPath, "utf8"));
     expect(child).toMatchObject({
       basis: {
@@ -2327,6 +2313,27 @@ describe("exact allowlisted problem manual adjudication", () => {
       },
       items: [{ key: "1:2", status: "exact", scopeDecision: "reject" }],
     });
+
+    const tampered = mkdtempSync(join(tmpdir(), "studywork-5578421-q2-terminal-v2-tampered-"));
+    cpSync(q31Q32LiveState, tampered, { recursive: true });
+    const tamperedPath = join(tampered, spec.pinnedAdjudicationArtifact!.path);
+    writeFileSync(tamperedPath, Buffer.concat([readFileSync(tamperedPath), Buffer.from(" ")]));
+    const beforeTamper = stateSnapshot(tampered);
+    providerMock.complete.mockClear();
+    await expect(run(tampered)).rejects.toThrow(/pinned terminal fidelity adjudication hash가 다릅니다/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(tampered)).toEqual(beforeTamper);
+    rmSync(tampered, { recursive: true, force: true });
+
+    const missing = mkdtempSync(join(tmpdir(), "studywork-5578421-q2-terminal-v2-missing-"));
+    cpSync(q31Q32LiveState, missing, { recursive: true });
+    rmSync(join(missing, spec.pinnedAdjudicationArtifact!.path));
+    const beforeMissing = stateSnapshot(missing);
+    providerMock.complete.mockClear();
+    await expect(run(missing)).rejects.toThrow(/pinned terminal fidelity adjudication artifact가 없습니다/u);
+    expect(providerMock.complete).not.toHaveBeenCalled();
+    expect(stateSnapshot(missing)).toEqual(beforeMissing);
+    rmSync(missing, { recursive: true, force: true });
   }, 240_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(

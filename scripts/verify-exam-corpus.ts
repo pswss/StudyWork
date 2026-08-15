@@ -1037,6 +1037,7 @@ type ProblemTerminalFidelityAdjudicationSpec = {
   failedStatus?: ProblemTerminalFidelityItem["status"];
   failedScopeDecision?: ProblemTerminalFidelityItem["scopeDecision"];
   expectedScopeDecision?: ProblemTerminalFidelityItem["scopeDecision"];
+  pinnedAdjudicationArtifact?: EvidencePointer & { itemHash: string };
   policyRevision?: ProblemTerminalFidelityPolicyRevisionSpec;
 };
 
@@ -5653,6 +5654,12 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedScopeEvidenceHash: "68e28a5565107480c9bc284f61c8db1154a124d1d21e73cdb4387bf97abed483",
   failedScopeDecision: "reject",
   expectedScopeDecision: "reject",
+  pinnedAdjudicationArtifact: {
+    path: "problem-terminal-fidelity-adjudications/" +
+      "v1-0001-0002-5a601aa2ef79f13797e092f25479d5432df7d7cd984f6e346e9c8536866ed648.json",
+    sha256: "75ef0affae2d3d4673b7daa85ac3dcf7fcac61decac6406b0c285e5cd5d9853d",
+    itemHash: "603d5f6bebb158c51dbefdf0181c220b62b02b72ad9aabb47d605ea2cd409ded",
+  },
 }] as const;
 
 export function manualAdjudicationAllowlistFingerprint(): string {
@@ -7150,8 +7157,12 @@ function verifyProblemTerminalFidelityCheckpoint(
 
 function problemTerminalFidelityAdjudicationBaseSpec(
   spec: ProblemTerminalFidelityAdjudicationSpec,
-): Omit<ProblemTerminalFidelityAdjudicationSpec, "policyRevision"> {
-  const { policyRevision: _policyRevision, ...base } = spec;
+): Omit<ProblemTerminalFidelityAdjudicationSpec, "pinnedAdjudicationArtifact" | "policyRevision"> {
+  const {
+    pinnedAdjudicationArtifact: _pinnedAdjudicationArtifact,
+    policyRevision: _policyRevision,
+    ...base
+  } = spec;
   return base;
 }
 
@@ -7505,6 +7516,11 @@ function verifyProblemTerminalFidelityAdjudications(
       `${key}.terminalAdjudication.items[0]`,
       contract,
     );
+    const pinned = spec.pinnedAdjudicationArtifact;
+    if (pinned && (pinned.path !== adjudicationArtifact.path || pinned.sha256 !== adjudicationArtifact.sha256 ||
+      pinned.itemHash !== canonicalEvidenceHash(item))) {
+      throw new Error(`${key}: pinned terminal fidelity adjudication is stale`);
+    }
     const expectedCheckpoint = {
       version: PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION,
       entryId: entry.id,

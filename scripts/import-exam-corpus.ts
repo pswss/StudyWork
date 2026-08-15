@@ -2615,6 +2615,7 @@ type ProblemTerminalFidelityAdjudicationSpec = {
   failedStatus?: ProblemTerminalFidelityItem["status"];
   failedScopeDecision?: ProblemTerminalFidelityItem["scopeDecision"];
   expectedScopeDecision?: ProblemTerminalFidelityItem["scopeDecision"];
+  pinnedAdjudicationArtifact?: EvidencePointer & { itemHash: string };
   policyRevision?: ProblemTerminalFidelityPolicyRevisionSpec;
 };
 
@@ -7153,6 +7154,12 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedScopeEvidenceHash: "68e28a5565107480c9bc284f61c8db1154a124d1d21e73cdb4387bf97abed483",
   failedScopeDecision: "reject",
   expectedScopeDecision: "reject",
+  pinnedAdjudicationArtifact: {
+    path: "problem-terminal-fidelity-adjudications/" +
+      "v1-0001-0002-5a601aa2ef79f13797e092f25479d5432df7d7cd984f6e346e9c8536866ed648.json",
+    sha256: "75ef0affae2d3d4673b7daa85ac3dcf7fcac61decac6406b0c285e5cd5d9853d",
+    itemHash: "603d5f6bebb158c51dbefdf0181c220b62b02b72ad9aabb47d605ea2cd409ded",
+  },
 }] as const;
 
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(
@@ -18538,8 +18545,12 @@ function problemTerminalFidelityAdjudicationSpec(
 
 function problemTerminalFidelityAdjudicationBaseSpec(
   spec: ProblemTerminalFidelityAdjudicationSpec
-): Omit<ProblemTerminalFidelityAdjudicationSpec, "policyRevision"> {
-  const { policyRevision: _policyRevision, ...base } = spec;
+): Omit<ProblemTerminalFidelityAdjudicationSpec, "pinnedAdjudicationArtifact" | "policyRevision"> {
+  const {
+    pinnedAdjudicationArtifact: _pinnedAdjudicationArtifact,
+    policyRevision: _policyRevision,
+    ...base
+  } = spec;
   return base;
 }
 
@@ -18818,6 +18829,9 @@ async function prepareProblemTerminalFidelityAdjudication(
   const relativePath = `problem-terminal-fidelity-adjudications/` +
     `v${PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION}-${String(sourcePage).padStart(4, "0")}-` +
     `${String(numericPrintedLocator(current.question.number)).padStart(4, "0")}-${basisDigest}.json`;
+  if (spec.pinnedAdjudicationArtifact && spec.pinnedAdjudicationArtifact.path !== relativePath) {
+    throw new Error(`${key} pinned terminal fidelity adjudication path가 다릅니다`);
+  }
   const sourceEvidencePath = confinedStateFile(
     stateDir,
     sourceEvidence.path,
@@ -18975,6 +18989,7 @@ async function readProblemTerminalFidelityAdjudication(
   const item = parseProblemTerminalFidelity(checkpoint.items, [prepared.current])[0];
   const expectedCheckpoint = problemTerminalFidelityAdjudicationCheckpoint(prepared, item);
   const sha256 = await sha256File(path);
+  const pinned = prepared.spec.pinnedAdjudicationArtifact;
   const policy = prepared.spec.policyRevision;
   const policyParentChecks = policy ? {
     path: prepared.relativePath === policy.parentAdjudicationArtifactPath,
@@ -18990,7 +19005,9 @@ async function readProblemTerminalFidelityAdjudication(
   const validPolicyParent = policyParentChecks && Object.values(policyParentChecks).every(Boolean);
   if (
     canonicalEvidenceHash(checkpoint) !== canonicalEvidenceHash(expectedCheckpoint) ||
-    sha256 !== canonicalEvidenceHash(expectedCheckpoint)
+    sha256 !== canonicalEvidenceHash(expectedCheckpoint) ||
+    pinned && (pinned.path !== prepared.relativePath || pinned.sha256 !== sha256 ||
+      pinned.itemHash !== canonicalEvidenceHash(item))
   ) throw new Error(`${prepared.spec.key} terminal fidelity adjudication checkpoint/evidence가 다릅니다`);
   if (!isExpectedTerminalFidelityAdjudicationItem(prepared.spec, item) && !validPolicyParent) {
     const failed = policyParentChecks
@@ -19023,6 +19040,9 @@ async function completeProblemTerminalFidelityAdjudication(
   }
   if (spec.policyRevision) {
     throw new Error(`${spec.key} pinned terminal fidelity adjudication parent가 없습니다`);
+  }
+  if (spec.pinnedAdjudicationArtifact) {
+    throw new Error(`${spec.key} pinned terminal fidelity adjudication artifact가 없습니다`);
   }
   const prompt = problemTerminalFidelityAdjudicationPrompt(prepared);
   const complete = (evidencePath: string) => withFullContextAi(() => getCodexProvider({
@@ -24120,6 +24140,19 @@ export async function repairAndAuditOfficialAnswers(
         Boolean(path?.startsWith("problem-terminal-fidelity-adjudications/"))
       );
     }));
+    for (const spec of PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.filter((candidate) =>
+      candidate.entryId === entry.id && candidate.sourceHash === problem.sha256 &&
+      candidate.solutionSourceHash === solutionEvidence.sha256 && candidate.pinnedAdjudicationArtifact
+    )) {
+      const pinned = spec.pinnedAdjudicationArtifact!;
+      const candidatePath = join(stateDir, pinned.path);
+      if (!existsSync(candidatePath)) continue;
+      const path = confinedStateFile(stateDir, pinned.path, "pinned terminal fidelity adjudication");
+      if (await sha256File(path) !== pinned.sha256) {
+        throw new Error(`${spec.key} pinned terminal fidelity adjudication hash가 다릅니다`);
+      }
+      historicalManualTriggerPaths.add(pinned.path);
+    }
     for (const sourceSpec of PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.filter((candidate) =>
       candidate.entryId === entry.id && candidate.sourceHash === problem.sha256 && candidate.terminalTrigger
     )) {
