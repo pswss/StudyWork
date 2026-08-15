@@ -708,6 +708,17 @@ function q2ExactRecoveryParent5578421(stateDir: string) {
   );
 }
 
+function q3ExactRecoveryParent5578421(stateDir: string) {
+  return exactRecoveryParent(
+    stateDir,
+    "problem-recoveries/v2-0001-0003-f939dbf72a7739058ba053e89d46322e7b846bee92dc9f81bce7464f9e570e0f.json",
+    "classification-recoveries/" +
+      "v2-0001-0003-8700b8c4d883c8d1a0b1bcefa2e189baf36429ea0a56870503896eb7424684d5-" +
+      "7bb7cb863c8c4855.json",
+    "fd585d64392d492db3840b3a75bd480748fe0ae6b7b22cf99982f59303edc4a0",
+  );
+}
+
 const Q43_CORRECTED_SOLUTION =
   "(가)에서는 ‘여기 하나의 상심한 사람이 있다.’와 ‘여기 하나의 굳세게 살아온 인생이 있다.’와 " +
   "같이 변주함으로써 주제 의식을 강조하고 있고, (나)에서는 ‘더 추워야겠다’와 ‘한껏 " +
@@ -1400,13 +1411,13 @@ describe("exact allowlisted problem manual adjudication", () => {
     const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
       spec.entryId === "ebsi:5578421" && ["12:31", "12:32"].includes(spec.key)
     );
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(50);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(51);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 36)))
       .toBe("e260bb5cd9c24507cb1c434e19b03a63961ef07a29392b28fc49f6897040dd64");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("36c3b798d248e5fe13a0790cd1d6ae1bcac55a83f1b90856d1d93645648e4de7");
+      .toBe("8377e380ffebc05e5e74bcf04896ff495c93630378b30f2051cc5c2e896c9e23");
     expect(specs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -1699,11 +1710,11 @@ describe("exact allowlisted problem manual adjudication", () => {
     const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
       spec.entryId === "ebsi:5578421" && ["16:44", "16:45"].includes(spec.key)
     );
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(50);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(51);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("36c3b798d248e5fe13a0790cd1d6ae1bcac55a83f1b90856d1d93645648e4de7");
+      .toBe("8377e380ffebc05e5e74bcf04896ff495c93630378b30f2051cc5c2e896c9e23");
     expect(specs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -1855,11 +1866,11 @@ describe("exact allowlisted problem manual adjudication", () => {
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
     "pins and applies the source-exact 5578421 Q14 tone diagram",
     () => {
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(50);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(51);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 48)))
       .toBe("66ff6014e0969fa9a2f13b53c9157eb8a5ca945097cba7ee1d6416cf93e0cc8d");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("36c3b798d248e5fe13a0790cd1d6ae1bcac55a83f1b90856d1d93645648e4de7");
+      .toBe("8377e380ffebc05e5e74bcf04896ff495c93630378b30f2051cc5c2e896c9e23");
     const spec = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((candidate) =>
       candidate.allowlistId === "ebsi-5578421-q14-manual-v1"
     )!;
@@ -1940,7 +1951,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 49)))
       .toBe("e0ad5b176a2568251ac73625e6e1abcd857a846f2250147f99db28fa5a07d7fe");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("36c3b798d248e5fe13a0790cd1d6ae1bcac55a83f1b90856d1d93645648e4de7");
+      .toBe("8377e380ffebc05e5e74bcf04896ff495c93630378b30f2051cc5c2e896c9e23");
     expect({
       rowHash: canonicalEvidenceHash(spec),
       replacementsHash: canonicalEvidenceHash(spec.replacements),
@@ -2036,6 +2047,46 @@ describe("exact allowlisted problem manual adjudication", () => {
       sha256: "75ef0affae2d3d4673b7daa85ac3dcf7fcac61decac6406b0c285e5cd5d9853d",
       itemHash: "603d5f6bebb158c51dbefdf0181c220b62b02b72ad9aabb47d605ea2cd409ded",
     });
+  });
+
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "pins and applies the source-exact 5578421 Q3 board wording",
+    () => {
+    const spec = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === "ebsi-5578421-q3-manual-v1"
+    )!;
+    expect({
+      length: PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.length,
+      prefixHash: canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 50)),
+      allowlistHash: canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST),
+      rowHash: canonicalEvidenceHash(spec),
+      replacementsHash: canonicalEvidenceHash(spec.replacements),
+      triggerHash: canonicalEvidenceHash(spec.terminalTrigger),
+      parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash,
+    }).toEqual({
+      length: 51,
+      prefixHash: "36c3b798d248e5fe13a0790cd1d6ae1bcac55a83f1b90856d1d93645648e4de7",
+      allowlistHash: "8377e380ffebc05e5e74bcf04896ff495c93630378b30f2051cc5c2e896c9e23",
+      rowHash: "84b4d3f2c2606efea15cfbbca0f6d15d2da56b1c78112283403472f996c6bc5d",
+      replacementsHash: "3331c3f24153b9909c99169ccbfa72d8a3a4cf9771d8eb4b4d64eff059bfde49",
+      triggerHash: "b26a8f937c864fd8f20ea7aee6fa38c55d03e1cd2f87051c87942fc9d3edc0cd",
+      parentRecoveryEvidenceHash: "fd585d64392d492db3840b3a75bd480748fe0ae6b7b22cf99982f59303edc4a0",
+    });
+    const row = q3ExactRecoveryParent5578421(q31Q32LiveState);
+    const corrected = applyAllowlistedProblemManualCorrection(
+      "ebsi:5578421",
+      spec.sourceHash,
+      row.failed.question,
+    );
+    expect(canonicalEvidenceHash(corrected))
+      .toBe("79b440a0c4d927fdc530c2e37e5ed4f6095db27a97396a97cd9d925f078d1c34");
+    expect(corrected.question).toContain("동전 없는 사회를 실현한 나라들도 있습니다.");
+    expect(corrected.question).toContain("그러면 김 과장님, 최 교수님께서 제기하신 문제에 대해서는");
+    expect(corrected.question).not.toContain("실현한 나라도 있습니다.");
+    expect(corrected.question).not.toContain("그런데 김 과장님");
+    expect(corrected.choices?.[1]).toBe("② [이게머니] 동전이 없으면 거스름돈은 어떻게 받나요?");
+    expect(corrected.figure_description).toContain("[경제1등], [이게머니], [거스름돈]");
+    expect(corrected.answer).toBe(row.failed.question.answer);
   });
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
@@ -2325,15 +2376,83 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(stateSnapshot(tampered)).toEqual(beforeTamper);
     rmSync(tampered, { recursive: true, force: true });
 
-    const missing = mkdtempSync(join(tmpdir(), "studywork-5578421-q2-terminal-v2-missing-"));
-    cpSync(q31Q32LiveState, missing, { recursive: true });
-    rmSync(join(missing, spec.pinnedAdjudicationArtifact!.path));
-    const beforeMissing = stateSnapshot(missing);
-    providerMock.complete.mockClear();
-    await expect(run(missing)).rejects.toThrow(/pinned terminal fidelity adjudication artifact가 없습니다/u);
-    expect(providerMock.complete).not.toHaveBeenCalled();
-    expect(stateSnapshot(missing)).toEqual(beforeMissing);
-    rmSync(missing, { recursive: true, force: true });
+  }, 240_000);
+
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "repairs and replays the 5578421 Q3 board before a fresh terminal",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-5578421-q3-manual-"));
+    cpSync(q31Q32LiveState, root, { recursive: true });
+    removeManualArtifacts(root, ["1:3"]);
+    for (const directory of ["answer-audit", "answer-attestation", "semantic-choice-checks"]) {
+      rmSync(join(root, directory), { recursive: true, force: true });
+    }
+    const calls = { classification: 0, terminal: 0 };
+    providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
+      if (request.schema?.name === "studywork_exam_corpus_classification") {
+        const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
+          key: string;
+          question: string;
+          choices: string[];
+          figure_description: string;
+        }>;
+        expect(items).toHaveLength(1);
+        expect(items[0]).toMatchObject({ key: "1:3" });
+        expect(items[0].question).toContain("동전 없는 사회를 실현한 나라들도 있습니다.");
+        expect(items[0].question).toContain("그러면 김 과장님, 최 교수님께서 제기하신 문제에 대해서는");
+        expect(items[0].choices[1]).toContain("[이게머니]");
+        expect(items[0].figure_description).toContain("[경제1등], [이게머니], [거스름돈]");
+        calls.classification++;
+        return { text: JSON.stringify([{
+          key: "1:3",
+          decision: "reject",
+          canonical_subject: null,
+          curriculum_course: null,
+          domain: null,
+          achievement_codes: [],
+          confidence: 0.99,
+          reason_codes: ["SOURCE_EXACT", "OUT_OF_SCOPE_SPEAKING_LISTENING"],
+          transcription_status: "exact",
+          transcription_evidence: "공식 1쪽의 [1~3] 대담, Q3 발문·공지·게시자명·질문 ①~⑤와 일치한다.",
+        }]) };
+      }
+      if (
+        request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity" &&
+        request.prompt.includes("Final questions:\n")
+      ) {
+        calls.terminal++;
+        throw new Error("seeded 5578421 post-Q3 terminal boundary");
+      }
+      throw new Error(`unexpected 5578421 Q3 AI call: ${request.schema?.name ?? "unknown"}`);
+    });
+    const run = () => {
+      const input = q27FixtureInputs(root);
+      return repairAndAuditOfficialAnswers(
+        input.entry,
+        input.problem,
+        input.solution,
+        root,
+        input.classified,
+        input.solutions,
+      );
+    };
+
+    await expect(run()).rejects.toThrow("seeded 5578421 post-Q3 terminal boundary");
+    expect(calls).toEqual({ classification: 1, terminal: 1 });
+    const problemName = readdirSync(join(root, "problem-manual-adjudications"))
+      .find((name) => name.startsWith("v1-0001-0003-"))!;
+    const problemCheckpoint = JSON.parse(readFileSync(
+      join(root, "problem-manual-adjudications", problemName),
+      "utf8",
+    ));
+    expect(canonicalEvidenceHash(problemCheckpoint.item))
+      .toBe("79b440a0c4d927fdc530c2e37e5ed4f6095db27a97396a97cd9d925f078d1c34");
+    expect(problemCheckpoint.item.choices[1]).toContain("[이게머니]");
+
+    calls.classification = 0;
+    calls.terminal = 0;
+    await expect(run()).rejects.toThrow("seeded 5578421 post-Q3 terminal boundary");
+    expect(calls).toEqual({ classification: 0, terminal: 1 });
   }, 240_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
@@ -3021,7 +3140,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("36c3b798d248e5fe13a0790cd1d6ae1bcac55a83f1b90856d1d93645648e4de7");
+      .toBe("8377e380ffebc05e5e74bcf04896ff495c93630378b30f2051cc5c2e896c9e23");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 18)))
       .toBe("463fceef246487e1ec791ffb0489048f874cd5944d946f9c6d819f3fd3c76eda");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST[11]))

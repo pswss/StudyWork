@@ -6284,6 +6284,72 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     ],
     expectedDecision: "reject",
   },
+  {
+    allowlistId: "ebsi-5578421-q3-manual-v1",
+    entryId: "ebsi:5578421",
+    key: "1:3",
+    sourcePage: 1,
+    sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "fd585d64392d492db3840b3a75bd480748fe0ae6b7b22cf99982f59303edc4a0",
+    failedStatus: "exact",
+    terminalTrigger: {
+      kind: "checkpoint",
+      artifactPath: "problem-terminal-fidelity/" +
+        "v2-0000-89315957b0a571851f1fe43ed52d9751e050c7009307b1ec8d90ba87047dea99-" +
+        "ca5f5d1e4638ca1aa8328dbda4852c165d93305a9f6b693e2700b117d341af3e.json",
+      artifactHash: "7f4071eb662cd84f7d701076c106261e6f893d11501c5b1132c2c957faea460d",
+      effectiveCorpusHash: "89315957b0a571851f1fe43ed52d9751e050c7009307b1ec8d90ba87047dea99",
+      inputHash: "ca5f5d1e4638ca1aa8328dbda4852c165d93305a9f6b693e2700b117d341af3e",
+      targetInputHash: "804194d44eef87f72b06610ca4d873abfa91a8e11f477761d9e831cc1088faff",
+      itemHash: "186b24fa84177f93e11b4025d6b18476bdb93eab3078ea338524f7ed6fe6e5c4",
+      evidenceHash: "f2994277e5f6ea8717b09aedb2fe6eb34f3be828dc885b85f2aaac1c9eb0a909",
+      scopeEvidenceHash: "6c900ac7f16d6c7a3c2ce442e88bfb90321c20e8dd31a3e3aecd1a5f0cba2cbc",
+    },
+    dpi: 600,
+    failedQuestionHash: "a61dac9bec79dcbab2ec1848c8a62d90b216e2e21020f3639f1a9d574447ab33",
+    failedClassificationHash: "92d07017147db5450fa486a78777fd65213d485bffb8828fe5ecb468d10d5663",
+    failedClassificationEvidenceHash: "5f1bf3e4c4f7a8aaa4401962d03c059a3549e43097ffaea9167a3b042a334a83",
+    views: [
+      { sourcePage: 1, label: "p1 full", rect: [0, 0, 1, 1] },
+      { sourcePage: 1, label: "p1 left radio discussion", rect: [0.07, 0.10, 0.53, 0.97] },
+      { sourcePage: 1, label: "p1 right Q3 board", rect: [0.54, 0.52, 0.95, 0.98] },
+    ],
+    requiredTokens: [
+      "동전 없는 사회를 실현한 나라들도 있습니다.",
+      "그러면 김 과장님, 최 교수님께서 제기하신 문제에 대해서는",
+      "② [이게머니] 동전이 없으면 거스름돈은 어떻게 받나요?",
+      "[이게머니], [거스름돈], [동전좋아], [부자되자]",
+      "3. 대담의 진행자가 선정할 추가 질문으로 가장 적절한 것은?",
+    ],
+    replacements: [
+      {
+        field: "question",
+        from: "동전 없는 사회를 실현한 나라도 있습니다.",
+        to: "동전 없는 사회를 실현한 나라들도 있습니다.",
+        count: 1,
+      },
+      {
+        field: "question",
+        from: "그런데 김 과장님, 최 교수님께서 제기하신 문제에 대해서는",
+        to: "그러면 김 과장님, 최 교수님께서 제기하신 문제에 대해서는",
+        count: 1,
+      },
+      {
+        field: "choices",
+        from: "② [히게머니] 동전이 없으면 거스름돈은 어떻게 받나요?",
+        to: "② [이게머니] 동전이 없으면 거스름돈은 어떻게 받나요?",
+        count: 1,
+      },
+      {
+        field: "figure_description",
+        from: "[경제1등], [히게머니], [거스름돈], [동전좋아], [부자되자]",
+        to: "[경제1등], [이게머니], [거스름돈], [동전좋아], [부자되자]",
+        count: 1,
+      },
+    ],
+    expectedDecision: "reject",
+  },
 ] as const;
 
 export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
