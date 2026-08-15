@@ -91,7 +91,9 @@ describe("quiz interaction polish", () => {
     expect(source).toContain('className="quiz-korean-passage-document"');
     expect(source).toContain('className="quiz-passage-question-list"');
     expect(source).toContain('className="quiz-korean-exam-sheet"');
-    expect(styles).toContain("grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr)");
+    expect(styles).toContain("width: min(100%, 72ch); margin: 0 auto");
+    expect(styles).toContain("margin-top: 48px; padding-top: 32px");
+    expect(styles).not.toContain("grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr)");
     expect(styles).toContain('.quiz-passage-set-toggle[aria-expanded="true"]');
   });
 

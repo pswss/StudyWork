@@ -1346,14 +1346,13 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
   margin-left: auto; flex-shrink: 0; color: var(--ink-3);
   font-family: var(--disp); font-size: 11px; font-variant-numeric: tabular-nums;
 }
-.quiz-passage-set-body { padding: clamp(18px, 4vw, 42px); background: var(--panel); }
+.quiz-passage-set-body { padding: clamp(24px, 5vw, 64px); background: var(--panel); }
 .quiz-passage-set-body[hidden] { display: none; }
 .quiz-korean-exam-sheet {
-  display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, .92fr);
-  width: 100%; align-items: start;
+  width: min(100%, 72ch); margin: 0 auto;
 }
 .quiz-korean-passage-document {
-  min-width: 0; padding-right: clamp(24px, 4vw, 48px); color: var(--ink);
+  min-width: 0; color: var(--ink);
   font-family: var(--serif); font-size: 17px; line-height: 1.95;
   text-wrap: pretty;
 }
@@ -1366,8 +1365,8 @@ textarea.text-input { resize: vertical; min-height: 80px; line-height: 1.6; }
 }
 .quiz-korean-passage-heading strong { color: var(--ink); font-variant-numeric: tabular-nums; }
 .quiz-passage-question-list {
-  min-width: 0; padding-left: clamp(24px, 4vw, 48px);
-  border-left: 2px solid var(--ink-3);
+  min-width: 0; margin-top: 48px; padding-top: 32px;
+  border-top: 2px solid var(--ink-3);
 }
 .quiz-passage-question { padding: 26px 0 28px; border-bottom: 1px solid var(--line); }
 .quiz-passage-question.pending { opacity: .78; }
@@ -1994,14 +1993,7 @@ button.choice-btn:active:not(:disabled) { transform: scale(.985); transition-dur
   .main-panel { order: 1; }
   .detail-grid[data-mobile-priority="learning"] .main-panel { order: 0; }
   .detail-grid[data-mobile-priority="learning"] .sidebar { order: 1; }
-  .quiz-korean-exam-sheet { grid-template-columns: minmax(0, 1fr); }
-  .quiz-korean-passage-document {
-    width: min(100%, 72ch); margin: 0 auto; padding-right: 0;
-  }
-  .quiz-passage-question-list {
-    width: min(100%, 72ch); margin: 32px auto 0; padding-left: 0;
-    border-top: 2px solid var(--ink-3); border-left: 0;
-  }
+  .quiz-passage-question-list { margin-top: 32px; padding-top: 0; }
 }
 @media (max-width: 720px) {
   .page { padding: 26px 20px 80px; }
