@@ -18634,6 +18634,10 @@ function is5578421Q44Q45ManualBatchSpec(spec: ProblemManualAdjudicationSpec): bo
   return spec.entryId === "ebsi:5578421" && ["16:44", "16:45"].includes(spec.key);
 }
 
+function is5578421Q3ManualGenerationSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5578421" && spec.key === "1:3";
+}
+
 function is5578421PersistedSingletonManualSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5578421" && ["4:12", "16:43"].includes(spec.key);
 }
@@ -18999,6 +19003,19 @@ async function preflightProblemManualBatch(
       if (policyNames.length > 0 && row.parent.key === "3:7" && !existing?.evidence.policyRevision) {
         throw new Error("3:7 manual classification policy revision parent coverage가 다릅니다");
       }
+    }
+    return;
+  }
+  if (is5578421Q3ManualGenerationSpec(requestedSpec)) {
+    const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(is5578421Q3ManualGenerationSpec);
+    if (
+      specs.length !== 2 || problem.sha256 !== requestedSpec.sourceHash ||
+      await sha256File(problem.path) !== problem.sha256
+    ) throw new Error("1:3 manual generation preflight source/allowlist가 다릅니다");
+    const restored = [] as Array<{ failed: ClassifiedQuestion; parent: ProblemRecoveryEvidence }>;
+    for (const spec of specs) restored.push(await restoredPinnedManualRecovery(entry, stateDir, spec));
+    for (const row of restored) {
+      await adjudicateProblemManualOne(entry, problem, stateDir, row.failed, row.parent, true);
     }
     return;
   }
@@ -19484,21 +19501,46 @@ async function adjudicateProblemManualOne(
   if (spec.parentRecoveryEvidenceHash) {
     const prefix = `v${PROBLEM_MANUAL_ADJUDICATION_VERSION}-` +
       `${String(sourcePage).padStart(4, "0")}-${parentRecovery.printedNumber.padStart(4, "0")}-`;
+    const manualGenerationSpecs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((candidate) =>
+      candidate.entryId === entry.id && candidate.key === key && candidate.sourcePage === sourcePage &&
+      candidate.sourceHash === problem.sha256
+    );
+    const hasMultipleManualGenerations = manualGenerationSpecs.length > 1;
     const evidenceNames = strictArtifactNames(
       join(stateDir, "problem-manual-evidence"),
       "manual adjudication evidence",
       (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}(?:\.json|\.pdf|-view-\d{2}\.png)$/u.test(name)
     ).filter((name) => name.startsWith(prefix));
-    pinnedProblemNames = strictArtifactNames(
+    const allPinnedProblemNames = strictArtifactNames(
       join(stateDir, "problem-manual-adjudications"),
       "problem manual adjudication",
       (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
     ).filter((name) => name.startsWith(prefix));
-    pinnedClassificationNames = strictArtifactNames(
+    const allPinnedClassificationNames = strictArtifactNames(
       join(stateDir, "classification-manual-adjudications"),
       "classification manual adjudication",
       (name) => /^v1-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
     ).filter((name) => name.startsWith(prefix));
+    pinnedProblemNames = hasMultipleManualGenerations
+      ? allPinnedProblemNames.filter((name) => {
+        const checkpoint = object(JSON.parse(readFileSync(confinedStateFile(
+          stateDir,
+          `problem-manual-adjudications/${name}`,
+          `${key} manual problem generation`
+        ), "utf8")), name);
+        return object(checkpoint.basis, `${key} manual problem generation basis`).allowlistId === spec.allowlistId;
+      })
+      : allPinnedProblemNames;
+    pinnedClassificationNames = hasMultipleManualGenerations
+      ? allPinnedClassificationNames.filter((name) => {
+        const checkpoint = object(JSON.parse(readFileSync(confinedStateFile(
+          stateDir,
+          `classification-manual-adjudications/${name}`,
+          `${key} manual classification generation`
+        ), "utf8")), name);
+        return object(checkpoint.basis, `${key} manual classification generation basis`).allowlistId === spec.allowlistId;
+      })
+      : allPinnedClassificationNames;
     const revisionProblemNames = strictArtifactNames(
       join(stateDir, "problem-manual-revisions"),
       "problem manual revision",
@@ -19548,8 +19590,11 @@ async function adjudicateProblemManualOne(
       `${evidenceStem}.pdf`,
       ...spec.views.map((_, index) => `${evidenceStem}-view-${String(index).padStart(2, "0")}.png`),
     ]);
-    const evidenceExtras = evidenceNames.filter((name) => !expectedEvidenceNames.has(name));
-    const hasEvidenceCheckpoint = evidenceNames.includes(`${evidenceStem}.json`);
+    const generationEvidenceNames = hasMultipleManualGenerations
+      ? evidenceNames.filter((name) => name.startsWith(evidenceStem))
+      : evidenceNames;
+    const evidenceExtras = generationEvidenceNames.filter((name) => !expectedEvidenceNames.has(name));
+    const hasEvidenceCheckpoint = generationEvidenceNames.includes(`${evidenceStem}.json`);
     const requiresManualEvidence = spec.parentKind === "recovery";
     if (
       evidenceExtras.length > 0 || pinnedProblemNames.length > 1 || pinnedClassificationNames.length > 1 ||

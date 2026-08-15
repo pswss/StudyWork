@@ -216,6 +216,27 @@ function removeManualArtifacts(stateDir: string, keys: string[]): void {
   }
 }
 
+function removeManualGenerationArtifacts(stateDir: string, allowlistId: string): void {
+  for (const directory of ["problem-manual-adjudications", "classification-manual-adjudications"]) {
+    const path = join(stateDir, directory);
+    if (!existsSync(path)) continue;
+    for (const name of readdirSync(path)) {
+      const artifactPath = join(path, name);
+      const checkpoint = JSON.parse(readFileSync(artifactPath, "utf8"));
+      if (checkpoint.basis?.allowlistId !== allowlistId) continue;
+      if (directory === "problem-manual-adjudications") {
+        const pointers = [
+          checkpoint.basis.cropEvidenceArtifact,
+          checkpoint.basis.cropEvidencePdf,
+          ...(checkpoint.basis.cropViews ?? []).map((view: { artifact: { path: string } }) => view.artifact),
+        ];
+        for (const pointer of pointers) rmSync(join(stateDir, pointer.path), { force: true });
+      }
+      rmSync(artifactPath);
+    }
+  }
+}
+
 function removeManualRevisionArtifacts(stateDir: string, keys: string[]): void {
   const prefixes = keys.map((key) => {
     const [page, number] = key.split(":");
@@ -2628,7 +2649,9 @@ describe("exact allowlisted problem manual adjudication", () => {
 
     root = mkdtempSync(join(tmpdir(), "studywork-5578421-q3-manual-v2-"));
     cpSync(q31Q32LiveState, root, { recursive: true });
-    removeManualArtifacts(root, ["1:3"]);
+    removeManualGenerationArtifacts(root, "ebsi-5578421-q3-manual-v2");
+    expect(readdirSync(join(root, "problem-manual-adjudications"))
+      .filter((name) => name.startsWith("v1-0001-0003-"))).toHaveLength(1);
     const input = q27FixtureInputs(root);
     const row = q3ExactRecoveryParentV2_5578421(root);
     const calls: string[] = [];
