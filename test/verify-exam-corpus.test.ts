@@ -286,6 +286,8 @@ const Q14_5578421_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec
   spec.entryId === "ebsi:5578421" && spec.key === "5:14")!;
 const Q2_5578421_MANUAL_SPEC = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5578421" && spec.key === "1:2")!;
+const Q2_5578421_MANUAL_REVISION_SPEC = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((spec) =>
+  spec.entryId === "ebsi:5578421" && spec.key === "1:2")!;
 const Q30_MANUAL_REVISION_SPEC = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((spec) =>
   spec.entryId === "ebsi:5578421" && spec.key === "12:30")!;
 const Q18_MANUAL_REVISION_SPEC = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((spec) =>
@@ -10216,23 +10218,58 @@ async function q2ManualAuthorityFixture5578421() {
   const stateDir = mkdtempSync(join(tmpdir(), "verify-5578421-q2-manual-authority-"));
   cpSync(Q30_MANUAL_STATE, stateDir, { recursive: true });
   stripManualAuthorityFixtureAnswerBoundary(stateDir);
+  for (const directory of [
+    "problem-manual-evidence",
+    "problem-manual-adjudications",
+    "classification-manual-adjudications",
+    "problem-manual-revisions",
+    "classification-manual-revisions",
+    "problem-manual-second-revisions",
+    "classification-manual-second-revisions",
+  ]) {
+    const path = join(stateDir, directory);
+    if (!existsSync(path)) continue;
+    for (const name of readdirSync(path)) {
+      if (name.startsWith("v1-0001-0002-")) rmSync(join(path, name));
+    }
+  }
   const row = {
     spec: Q2_5578421_MANUAL_SPEC,
     ...pinnedManualRecoveryParent(stateDir, Q2_5578421_MANUAL_SPEC),
   };
   providerMock.complete.mockReset();
-  providerMock.complete.mockResolvedValue({ text: JSON.stringify([{
-    key: "1:2",
-    decision: "reject",
-    canonical_subject: null,
-    curriculum_course: null,
-    domain: null,
-    achievement_codes: [],
-    confidence: 0.99,
-    reason_codes: ["SOURCE_EXACT", "OUT_OF_SCOPE_SPEAKING_LISTENING"],
-    transcription_status: "exact",
-    transcription_evidence: "공식 1쪽 대담·발문·선택지와 문자 그대로 일치한다.",
-  }]) });
+  providerMock.complete.mockImplementation(async (request: { prompt: string }) => {
+    const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
+      key: string;
+      question: string;
+    }>;
+    expect(items).toHaveLength(1);
+    const hasOfficialHeader = items[0].question.startsWith("[1~3] ");
+    return { text: JSON.stringify([{
+      key: "1:2",
+      decision: "reject",
+      canonical_subject: null,
+      curriculum_course: null,
+      domain: null,
+      achievement_codes: [],
+      confidence: 0.99,
+      reason_codes: hasOfficialHeader
+        ? ["SOURCE_EXACT", "OUT_OF_SCOPE_SPEAKING_LISTENING"]
+        : [
+            "OUT_OF_SCOPE_LISTENING_SPEAKING",
+            "ASSESSED_CONSTRUCT_RADIO_INTERVIEW_ANALYSIS",
+            "TRANSCRIPTION_OMITS_VISIBLE_SET_LABEL",
+          ],
+      transcription_status: hasOfficialHeader ? "exact" : "mismatch",
+      transcription_evidence: hasOfficialHeader
+        ? "공식 1쪽의 [1~3] 머리·대담·발문·선택지와 문자 그대로 일치한다."
+        : "원문 1·2뷰의 공통 대담과 ‘비용을 줄일 수는 있습니다’, ‘최 교수께서 제기하신 " +
+          "문제에 대해서는’, ‘동전을 교환해 주고 관리하는 데 들어가는 비용을 줄일 수 있어서’가 " +
+          "일치하고, 1·3뷰의 문항 2 발문과 ①~⑤도 일치한다. 다만 원문 머리의 문항군 표지 ‘[1～3]’이 " +
+          "전사에서 누락되어 완전한 문자 그대로의 전사가 아니다. 문항은 라디오 대담의 진행 및 " +
+          "대담자 발화를 이해하는 듣기·말하기 평가이므로 독서·문학 범위에서 제외된다.",
+    }]) };
+  });
   const adjudicated = await adjudicateProblemManual(
     row.input.entry,
     row.input.problem,
@@ -10240,7 +10277,7 @@ async function q2ManualAuthorityFixture5578421() {
     row.failed,
     row.parent,
   );
-  expect(providerMock.complete).toHaveBeenCalledTimes(1);
+  expect(providerMock.complete).toHaveBeenCalledTimes(2);
   providerMock.complete.mockReset();
   return { ...row, adjudicated, stateDir };
 }
@@ -14195,12 +14232,14 @@ describe("exam corpus verifier", () => {
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe("36c3b798d248e5fe13a0790cd1d6ae1bcac55a83f1b90856d1d93645648e4de7");
+    expect(manualRevisionAllowlistFingerprint())
+      .toBe("af19db3b28709290cf936f0b5e18c29bc31e8facce105283f1cbcba117c6d437");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 6)))
       .toBe("33741ecff318e2d58cc2c0614a718d41171a0629f792d062c63df876e23ffa5c");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 8)))
       .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
     expect(manualRevisionAllowlistFingerprint())
-      .toBe("683b2d6851b12683bc582893fd72087c0662b5be55a05b2b7091233792ef522b");
+      .toBe("af19db3b28709290cf936f0b5e18c29bc31e8facce105283f1cbcba117c6d437");
     expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(6, 8).map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -14289,6 +14328,13 @@ describe("exam corpus verifier", () => {
       terminalTriggerHash: "e24c26d81a7d288ef6a44abe4e1ed3cdecb61e22fdc8a40aabf34b9b58377b6b",
       parentRecoveryEvidenceHash: "c09674a75c0e93955440fe4094943cdddedaff96fc355e76620bf1b5ed86043c",
     });
+    expect({
+      rowHash: canonicalEvidenceHash(Q2_5578421_MANUAL_REVISION_SPEC),
+      replacementHash: canonicalEvidenceHash(Q2_5578421_MANUAL_REVISION_SPEC.replacement),
+    }).toEqual({
+      rowHash: "7fec9a6782faf9cc6e59837c3528335963319fabc58ea1b7adfaeb25651028e5",
+      replacementHash: "da53d25545e236eadc2e0c064463a171d4678f640160ee3acb6be0928c805770",
+    });
     const row = await q2ManualAuthorityFixture5578421();
     const verify = () => withOnlyManualArtifactsForKey(
       row.stateDir,
@@ -14306,7 +14352,8 @@ describe("exam corpus verifier", () => {
     try {
       const verified = verify();
       expect(canonicalEvidenceHash(verified.question))
-        .toBe("c42349f636fc8e2637b53451fe5c0073a22f4b266bff44fd3fe7e3d742bdd77c");
+        .toBe("85fffcf17b1e2ca69ab3ef773c17dcd16883e04ba7e1225761634a8ac05eaccf");
+      expect(verified.question.question.startsWith("[1~3] 다음은 라디오 대담의 일부이다.")).toBe(true);
       expect(verified.question.question).toContain("최 교수께서 제기하신 문제에 대해서는");
       expect(verified.question.question).toContain("비용을 줄일 수 있어서");
       expect(verified.classification).toEqual(expect.objectContaining({
@@ -14316,6 +14363,8 @@ describe("exam corpus verifier", () => {
         transcription_status: "exact",
       }));
       expect(verified.evidence.terminalTrigger.kind).toBe("checkpoint");
+      expect(verified.evidence.revision.allowlistId)
+        .toBe("ebsi-5578421-q2-manual-revision-v1");
       const triggerPath = join(row.stateDir, row.adjudicated.evidence.terminalTrigger!.artifact.path);
       const triggerBytes = readFileSync(triggerPath);
       writeFileSync(triggerPath, Buffer.concat([triggerBytes, Buffer.from("tampered")]));
@@ -14339,10 +14388,14 @@ describe("exam corpus verifier", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 8)))
       .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
     expect(manualRevisionAllowlistFingerprint())
-      .toBe("683b2d6851b12683bc582893fd72087c0662b5be55a05b2b7091233792ef522b");
+      .toBe("af19db3b28709290cf936f0b5e18c29bc31e8facce105283f1cbcba117c6d437");
     expect({
-      rowHash: canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.at(-1)),
-      replacementHash: canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.at(-1)?.replacement),
+      rowHash: canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.find((candidate) =>
+        candidate.allowlistId === "ebsi-5578421-q14-manual-revision-v1"
+      )),
+      replacementHash: canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.find((candidate) =>
+        candidate.allowlistId === "ebsi-5578421-q14-manual-revision-v1"
+      )?.replacement),
     }).toEqual({
       rowHash: "30bdb578aac86abb60471c18d06a6f5231101a46d7c3ab753a266789e2613d25",
       replacementHash: "e0266a2e3c9f7f4129877618f4d1674dea689b064fba64115527cb7ea3b5b8ed",
@@ -15424,7 +15477,7 @@ describe("exam corpus verifier", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 6)))
       .toBe("33741ecff318e2d58cc2c0614a718d41171a0629f792d062c63df876e23ffa5c");
     expect(manualRevisionAllowlistFingerprint())
-      .toBe("683b2d6851b12683bc582893fd72087c0662b5be55a05b2b7091233792ef522b");
+      .toBe("af19db3b28709290cf936f0b5e18c29bc31e8facce105283f1cbcba117c6d437");
     expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(3, 6).map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),

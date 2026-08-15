@@ -5006,6 +5006,28 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
     "②는 낮음－높음－상승－높음", "⑤는 낮음－상승－높음－상승",
   ],
   expectedDecision: "reject",
+}, {
+  allowlistId: "ebsi-5578421-q2-manual-revision-v1",
+  parentAllowlistId: "ebsi-5578421-q2-manual-v1",
+  entryId: "ebsi:5578421",
+  key: "1:2",
+  sourcePage: 1,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "c42349f636fc8e2637b53451fe5c0073a22f4b266bff44fd3fe7e3d742bdd77c",
+  failedClassificationHash: "5200dccc1aa1a7701901b447159837031e780d7ed34ccabbfe0de4bd396eb826",
+  failedClassificationEvidenceHash: "aa41f16171f83cc2ed817f7289e7ac026dc73613f656347351d32df95365e771",
+  replacement: {
+    field: "question",
+    from: "다음은 라디오 대담의 일부이다. 물음에 답하시오.",
+    to: "[1~3] 다음은 라디오 대담의 일부이다. 물음에 답하시오.",
+    count: 1,
+  },
+  requiredTokens: [
+    "[1~3] 다음은 라디오 대담의 일부이다. 물음에 답하시오.",
+    "최 교수께서 제기하신 문제에 대해서는", "비용을 줄일 수 있어서",
+    "대담의 진행 과정을 고려하여 두 대담자의 발화를 이해한 것으로 적절하지 않은 것은?",
+  ],
+  expectedDecision: "reject",
 }] as const;
 
 const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
