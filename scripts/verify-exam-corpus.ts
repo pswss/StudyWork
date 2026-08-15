@@ -5851,8 +5851,8 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedInputHash: "bde8ae819bb2a2bd18172f2d43ff13be80e3ff9ff434dbdd50249277a7f31bb0",
   failedTerminalInputHash: "4f7a9254242fa61d1388f0682236b0f3767a0106b4d466eeb081a30e3a7cd57c",
   failedItemHash: "f2836f51442d6812ddefbb2afe733c97e844fdc60c94a35d6a73806d8d953e41",
-  failedEvidenceHash: "a79c7210d3d197eefbcbda467cfa1da60d1f7041bb4d70d4bcbd1ac64ba8be80",
-  failedScopeEvidenceHash: "32661a0f837d3a257ecc5e4226a175e546e407c76ee104c74122bd5e0261b31e",
+  failedEvidenceHash: "eff5eaa09d82bdfb5a7e56577b1150aeb317935d70abcf5e88e8b66841cc0b62",
+  failedScopeEvidenceHash: "0f254208b3f59800e156ee75c7c4df6ea041c6925951e2ce644dfff920668263",
   failedScopeDecision: "reject",
   expectedScopeDecision: "reject",
 }, {
