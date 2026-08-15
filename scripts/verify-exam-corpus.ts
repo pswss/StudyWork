@@ -816,6 +816,7 @@ type ProblemManualTerminalTriggerSpec = {
   itemHash: string;
   evidenceHash: string;
   scopeEvidenceHash: string;
+  expectedScopeDecision?: ProblemTerminalFidelityItem["scopeDecision"];
 };
 
 type ProblemManualAdjudicationSpec = ProblemCropAdjudicationSpec & {
@@ -1529,6 +1530,27 @@ const Q7_5578421_REPLACEMENTS: ProblemManualReplacement[] = [
   { field: "question", from: "㉣같다라고", to: "㉣ 같다라고", count: 1 },
   { field: "question", from: "㉤붉은", to: "㉤ 붉은", count: 1 },
 ];
+
+const Q19_Q21_5578421_SOURCE_GA =
+  "[19 ~ 21] 다음 글을 읽고 물음에 답하시오.\n\n" +
+  "(가)\n" +
+  "외모도 남에 비해 그리 빠지지 않고\n" +
+  "바느질 솜씨 길쌈 솜씨도 좋건만\n" +
+  "가난한 집안에 태어나 자란 까닭에\n" +
+  "좋은 중매 자리 나를 몰라준다오. [A]\n\n" +
+  "춥고 굶주려도 겉으로는 내색하지 않고\n" +
+  "하루 종일 창가에서 베만 짠다네\n" +
+  "오직 내 부모님만 가엾다 여기실 뿐\n" +
+  "그 어떤 이웃이 이내 속을 알아주리오. [B]\n\n" +
+  "밤이 깊어도 베를 짜는 손 멈추지 않고\n" +
+  "베틀 소리만 삐걱삐걱 처량하게 우네\n" +
+  "베틀에 짜여 가는 이 한 필 비단\n" +
+  "끝내는 어느 색시의 옷이 되려나. [C]\n\n" +
+  "가위로 싹둑싹둑 옷감을 마르노라면\n" +
+  "추운 밤에 손끝이 곱아 오네\n" +
+  "시집가는 누군가를 위해 길옷을 만들고 있지만\n" +
+  "이내 몸은 해마다 홀로 잔다오. [D]\n\n" +
+  "- 허난설헌, ｢ 빈녀음(貧女吟) ｣ -";
 
 const Q19_Q21_5578421_SOURCE_NA = [
   "(나)",
@@ -5204,6 +5226,45 @@ const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevi
     "동전 없는 사회를 실현한 나라들도 있습니다.",
   ],
   expectedDecision: "reject",
+}, {
+  allowlistId: "ebsi-5578421-q21-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5578421-q21-manual-revision-v1",
+  parentRevisionEvidenceHash: "0accb187d715cb6e97349c8f7aff203607358d7c970f0c4bf5d80e9ab74b238d",
+  entryId: "ebsi:5578421",
+  key: "8:21",
+  sourcePage: 8,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  failedQuestionHash: "8ed4e485cb98c1c585106ad934abaa97a6b73871a3ad4b6dc721ffb605e58a11",
+  failedClassificationHash: "3f61cff6f54a7e618b98f54dbcffb0b27e13114d5c1c3e8131943cc2b5eb99d0",
+  failedClassificationEvidenceHash: "aed67429f4e4accee12d5438efbad72051f1e443d4a72747427a93120e8e32af",
+  terminalTrigger: {
+    kind: "checkpoint",
+    artifactPath: "problem-terminal-fidelity/" +
+      "v2-0000-b2298907d2516b7512ba9ef95d482177e44d5002fea798fbedc69769be2dfefa-" +
+      "204097c01e9dac4b59dfc0a0d6775df24dcfbb942b29542abad13592dc04f668.json",
+    artifactHash: "49a8bb4666a0e03746f79625fa2292311256f6a099925f044e598690844f9811",
+    effectiveCorpusHash: "b2298907d2516b7512ba9ef95d482177e44d5002fea798fbedc69769be2dfefa",
+    inputHash: "204097c01e9dac4b59dfc0a0d6775df24dcfbb942b29542abad13592dc04f668",
+    targetInputHash: "7ca378fa583de04463f0b797684d7f4a6ca8af64d6fe4b715f2c29c318fa9e7f",
+    itemHash: "581d255184e235e8b1611723d6b02e8dbf45d7a8c6cb0ee7f0eac2edf8824071",
+    evidenceHash: "2c31b000f41947013cb7342fcd26390eb7f2405795fe96275e3623a7bc49e0aa",
+    scopeEvidenceHash: "f4749d552b6685c5a75a6a2a25eef4a1ae9acf08b4d25f45587f8ad31ca6441e",
+    expectedScopeDecision: "accept",
+  },
+  replacement: {
+    field: "question",
+    from: "(나)\n\n이 밤 이제 조금만",
+    to: Q19_Q21_5578421_SOURCE_GA + "\n\n(나)\n\n이 밤 이제 조금만",
+    count: 1,
+  },
+  requiredTokens: [
+    "[19 ~ 21] 다음 글을 읽고 물음에 답하시오.", "(가)",
+    "베틀 소리만 삐걱삐걱 처량하게 우네", "- 허난설헌, ｢ 빈녀음(貧女吟) ｣ -", "(나)",
+    "곱새담*의 짚날을 뽑아 오고….", "*곱새담: 풀 짚으로 만든 담.",
+    "<보기>를 바탕으로 (나)를 감상할 때, 적절하지 않은 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
 }] as const;
 
 const PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST:
@@ -10900,6 +10961,9 @@ function verifyProblemManualSourceRevision(
         itemHash: spec.terminalTrigger.itemHash,
         evidenceHash: spec.terminalTrigger.evidenceHash,
         scopeEvidenceHash: spec.terminalTrigger.scopeEvidenceHash,
+        ...(spec.terminalTrigger.expectedScopeDecision
+          ? { expectedScopeDecision: spec.terminalTrigger.expectedScopeDecision }
+          : {}),
       }
       : {
         artifact: { path: spec.terminalTrigger.artifactPath, sha256: spec.terminalTrigger.artifactHash },
@@ -10926,37 +10990,90 @@ function verifyProblemManualSourceRevision(
       terminalTrigger.artifact,
       `${key} manual source revision terminal trigger`,
     );
-    if (terminalTrigger.kind === "checkpoint") {
-      throw new Error(`${key}: checkpoint-triggered manual source revision is not supported`);
-    }
-    if (!Array.isArray(checkpoint.items) || checkpoint.items.length !== 1) {
-      throw new Error(`${key}: manual source revision terminal trigger coverage is stale`);
-    }
-    const item = parseProblemTerminalFidelityItem(
-      checkpoint.items[0],
-      `${key}.manualSourceRevision.terminalTrigger.items[0]`,
-      contract,
-    );
-    const expectedInput = problemTerminalInput({
-      question: failedQuestion,
-      classification: failedClassification,
-      problemCheckpoint: { path: "", sha256: "" },
-      classificationCheckpoint: { path: "", sha256: "" },
-      contextFrom: 1,
-      contextTo: 1,
-    });
-    if (checkpoint.version !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION
-      || checkpoint.entryId !== entry.id || checkpoint.basisDigest !== terminalTrigger.basisDigest
-      || checkpoint.promptDigest !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST
-      || !isDeepStrictEqual(checkpoint.input, expectedInput)
-      || item.key !== key || item.status === "exact"
-      || item.scopeDecision !== (spec.terminalTrigger && "expectedScopeDecision" in spec.terminalTrigger
-        ? spec.terminalTrigger.expectedScopeDecision ?? "accept"
-        : "accept")
-      || (item.scopeConfidence ?? 0) < 0.9 || canonicalEvidenceHash(item) !== terminalTrigger.itemHash
-      || sha256(item.evidence) !== terminalTrigger.evidenceHash
-      || item.scopeEvidence === undefined || sha256(item.scopeEvidence) !== terminalTrigger.scopeEvidenceHash) {
-      throw new Error(`${key}: manual source revision terminal trigger authority is stale`);
+    if ("effectiveCorpusHash" in terminalTrigger) {
+      if (!Array.isArray(checkpoint.inputs) || !Array.isArray(checkpoint.items)) {
+        throw new Error(`${key}: manual source revision terminal checkpoint coverage is stale`);
+      }
+      const inputs = checkpoint.inputs.map((value, index) => object(
+        value,
+        `${key}.manualSourceRevision.terminalTrigger.inputs[${index}]`,
+      ));
+      const items = checkpoint.items.map((value, index) => parseProblemTerminalFidelityItem(
+        value,
+        `${key}.manualSourceRevision.terminalTrigger.items[${index}]`,
+        contract,
+      ));
+      const inputKeys = inputs.map((input, index) => exactString(
+        input.key,
+        `${key}.manualSourceRevision.terminalTrigger.inputs[${index}].key`,
+      ));
+      const itemKeys = items.map((item) => item.key);
+      const targetInputs = inputs.filter((input) => input.key === key);
+      const targetItems = items.filter((item) => item.key === key);
+      const item = targetItems[0];
+      const expectedPath = `problem-terminal-fidelity/v${PROBLEM_TERMINAL_FIDELITY_VERSION}-0000-` +
+        `${terminalTrigger.effectiveCorpusHash}-${terminalTrigger.inputHash}.json`;
+      if (contract.problemTerminalFidelityVersion !== PROBLEM_TERMINAL_FIDELITY_VERSION
+        || terminalTrigger.artifact.path !== expectedPath
+        || checkpoint.version !== PROBLEM_TERMINAL_FIDELITY_VERSION || checkpoint.entryId !== entry.id
+        || checkpoint.sourceHash !== problemEvidence.sha256
+        || checkpoint.effectiveCorpusHash !== terminalTrigger.effectiveCorpusHash
+        || checkpoint.inputHash !== terminalTrigger.inputHash
+        || canonicalEvidenceHash(checkpoint.inputs) !== terminalTrigger.inputHash
+        || checkpoint.transcriptionGateVersion !== TRANSCRIPTION_GATE_VERSION
+        || checkpoint.transcriptionPromptDigest !== TRANSCRIPTION_PROMPT_DIGEST
+        || checkpoint.rulesDigest !== rulesDigest
+        || checkpoint.scopePromptDigest !== PROBLEM_TERMINAL_SCOPE_PROMPT_DIGEST
+        || checkpoint.model !== "gpt-5.6-sol" || checkpoint.reasoningEffort !== "high"
+        || inputKeys.length !== itemKeys.length || new Set(inputKeys).size !== inputKeys.length
+        || new Set(itemKeys).size !== itemKeys.length || inputKeys.some((inputKey) => !itemKeys.includes(inputKey))
+        || targetInputs.length !== 1 || targetItems.length !== 1
+        || canonicalEvidenceHash(targetInputs[0]) !== terminalTrigger.targetInputHash
+        || !isDeepStrictEqual(targetInputs[0], problemTerminalInput({
+          question: failedQuestion,
+          classification: failedClassification,
+          problemCheckpoint: { path: "", sha256: "" },
+          classificationCheckpoint: { path: "", sha256: "" },
+          contextFrom: 1,
+          contextTo: 1,
+        }))
+        || !item || item.status !== "mismatch"
+        || item.scopeDecision !== (terminalTrigger.expectedScopeDecision ?? "reject")
+        || (item.scopeConfidence ?? 0) < 0.9 || canonicalEvidenceHash(item) !== terminalTrigger.itemHash
+        || sha256(item.evidence) !== terminalTrigger.evidenceHash
+        || item.scopeEvidence === undefined || sha256(item.scopeEvidence) !== terminalTrigger.scopeEvidenceHash) {
+        throw new Error(`${key}: manual source revision terminal checkpoint authority is stale`);
+      }
+    } else {
+      if (!Array.isArray(checkpoint.items) || checkpoint.items.length !== 1) {
+        throw new Error(`${key}: manual source revision terminal trigger coverage is stale`);
+      }
+      const item = parseProblemTerminalFidelityItem(
+        checkpoint.items[0],
+        `${key}.manualSourceRevision.terminalTrigger.items[0]`,
+        contract,
+      );
+      const expectedInput = problemTerminalInput({
+        question: failedQuestion,
+        classification: failedClassification,
+        problemCheckpoint: { path: "", sha256: "" },
+        classificationCheckpoint: { path: "", sha256: "" },
+        contextFrom: 1,
+        contextTo: 1,
+      });
+      if (checkpoint.version !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_VERSION
+        || checkpoint.entryId !== entry.id || checkpoint.basisDigest !== terminalTrigger.basisDigest
+        || checkpoint.promptDigest !== PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST
+        || !isDeepStrictEqual(checkpoint.input, expectedInput)
+        || item.key !== key || item.status === "exact"
+        || item.scopeDecision !== (spec.terminalTrigger && "expectedScopeDecision" in spec.terminalTrigger
+          ? spec.terminalTrigger.expectedScopeDecision ?? "accept"
+          : "accept")
+        || (item.scopeConfidence ?? 0) < 0.9 || canonicalEvidenceHash(item) !== terminalTrigger.itemHash
+        || sha256(item.evidence) !== terminalTrigger.evidenceHash
+        || item.scopeEvidence === undefined || sha256(item.scopeEvidence) !== terminalTrigger.scopeEvidenceHash) {
+        throw new Error(`${key}: manual source revision terminal trigger authority is stale`);
+      }
     }
   }
   const cropEvidenceArtifact = evidencePointer(
@@ -11742,6 +11859,9 @@ function verifyProblemManualAdjudication(
         itemHash: spec.terminalTrigger.itemHash,
         evidenceHash: spec.terminalTrigger.evidenceHash,
         scopeEvidenceHash: spec.terminalTrigger.scopeEvidenceHash,
+        ...(spec.terminalTrigger.expectedScopeDecision
+          ? { expectedScopeDecision: spec.terminalTrigger.expectedScopeDecision }
+          : {}),
       }
       : {
         artifact: {
@@ -11788,7 +11908,7 @@ function verifyProblemManualAdjudication(
       terminalTrigger.artifact,
       `${key} manual terminal trigger`,
     );
-    if (terminalTrigger.kind === "checkpoint") {
+    if ("effectiveCorpusHash" in terminalTrigger) {
       if (!Array.isArray(checkpoint.inputs) || !Array.isArray(checkpoint.items)) {
         throw new Error(`${key}: manual terminal checkpoint coverage is stale`);
       }
@@ -11835,8 +11955,9 @@ function verifyProblemManualAdjudication(
           contextFrom: 1,
           contextTo: 1,
         }))
-        || !item || item.status !== "mismatch" || item.scopeDecision !== "reject"
-        || item.scopeConfidence < 0.9 || canonicalEvidenceHash(item) !== terminalTrigger.itemHash
+        || !item || item.status !== "mismatch"
+        || item.scopeDecision !== (terminalTrigger.expectedScopeDecision ?? "reject")
+        || (item.scopeConfidence ?? 0) < 0.9 || canonicalEvidenceHash(item) !== terminalTrigger.itemHash
         || sha256(item.evidence) !== terminalTrigger.evidenceHash
         || item.scopeEvidence === undefined || sha256(item.scopeEvidence) !== terminalTrigger.scopeEvidenceHash) {
         throw new Error(`${key}: manual terminal checkpoint trigger authority is stale`);

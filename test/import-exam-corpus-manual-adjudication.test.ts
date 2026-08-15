@@ -1705,6 +1705,89 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 180_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
+    "completes and replays the Q21 shared-passage source revision",
+    async () => {
+    root = mkdtempSync(join(tmpdir(), "studywork-5578421-q21-source-revision-"));
+    cpSync(q31Q32LiveState, root, { recursive: true });
+    for (const directory of ["problem-manual-second-revisions", "classification-manual-second-revisions"]) {
+      const path = join(root, directory);
+      if (!existsSync(path)) continue;
+      for (const name of readdirSync(path)) {
+        if (name.startsWith("v1-0008-0021-")) rmSync(join(path, name));
+      }
+    }
+    const input = q27FixtureInputs(root);
+    const row = q19Q21ExactRecoveryParent5578421(root, "21");
+    const sourceSpec = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.find((spec) =>
+      spec.allowlistId === "ebsi-5578421-q21-manual-source-revision-v1"
+    )!;
+    expect({
+      length: PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.length,
+      prefixHash: canonicalEvidenceHash(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.slice(0, 3)),
+      allowlistHash: canonicalEvidenceHash(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST),
+      rowHash: canonicalEvidenceHash(sourceSpec),
+      replacementHash: canonicalEvidenceHash(sourceSpec.replacement),
+      triggerHash: canonicalEvidenceHash(sourceSpec.terminalTrigger),
+    }).toEqual({
+      length: 4,
+      prefixHash: "05d392d62117f4864b0a5964466970815e167655b12c69817909cdd43e006e1f",
+      allowlistHash: "ffc789e8918c8a5603c82d08faa7e2adefedba8aa15c5304f24a6ef8dd520922",
+      rowHash: "4c70814866ee7bcff53e2bb652f35158d4eada24cc14699fbcac2af4dc38a4a1",
+      replacementHash: "b7c5384c744504673b8c9b0d28b3f4df5d88485c69d8e2ef192873da8773639b",
+      triggerHash: "ccf2ee80611b4c2fd857538c26681d010982a8c421248b81337fc5312690b878",
+    });
+    const calls: string[] = [];
+    providerMock.complete.mockImplementation((request: { schema?: { name?: string }; prompt: string }) => {
+      expect(request.schema?.name).toBe("studywork_exam_corpus_classification");
+      const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
+        key: string;
+        question: string;
+      }>;
+      expect(items).toHaveLength(1);
+      const item = items[0];
+      calls.push(item.key);
+      expect(item.key).toBe("8:21");
+      expect(item.question).toContain("[19 ~ 21] 다음 글을 읽고 물음에 답하시오.");
+      expect(item.question).toContain("베틀 소리만 삐걱삐걱 처량하게 우네");
+      expect(item.question).toContain("(나)\n\n이 밤 이제 조금만");
+      return Promise.resolve({ text: JSON.stringify([{
+        key: item.key,
+        decision: "accept",
+        canonical_subject: "korean_literature",
+        curriculum_course: "문학",
+        domain: "현대시와 현대 수필의 공통 제재 비교 감상",
+        achievement_codes: ["12문학01-02", "12문학01-04"],
+        confidence: 0.99,
+        reason_codes: ["SOURCE_EXACT", "IN_SCOPE_KOREAN_LITERATURE"],
+        transcription_status: "exact",
+        transcription_evidence: "공식 7~8쪽의 [19~21] 공통 (가)·(나), 각주, <보기>, 21번이 일치한다.",
+      }]) });
+    });
+    const completed = await adjudicateProblemManual(
+      input.entry,
+      input.problem,
+      root,
+      row.failed,
+      row.parent
+    );
+    const { sourceRevision, ...parentRevision } = completed.evidence.revision!;
+    expect({
+      parentRevision: canonicalEvidenceHash(parentRevision),
+      question: canonicalEvidenceHash(completed.classified.question),
+      sourceAllowlistId: sourceRevision?.allowlistId,
+    }).toEqual({
+      parentRevision: "0accb187d715cb6e97349c8f7aff203607358d7c970f0c4bf5d80e9ab74b238d",
+      question: "66503b19287bc0e25dfb441e95a19d31cf3e1ce9a33eb2eab85f1c3def672e76",
+      sourceAllowlistId: "ebsi-5578421-q21-manual-source-revision-v1",
+    });
+    expect(calls).toEqual(["8:21"]);
+    const stable = stateSnapshot(root);
+    await adjudicateProblemManual(input.entry, input.problem, root, row.failed, row.parent);
+    expect(calls).toEqual(["8:21"]);
+    expect(stateSnapshot(root)).toEqual(stable);
+  }, 120_000);
+
+  it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
     "pins and applies the source-exact 5578421 Q44-Q45 shared passage",
     () => {
     const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
@@ -1901,6 +1984,12 @@ describe("exact allowlisted problem manual adjudication", () => {
       readdirSync(join(q31Q32LiveState, "classification-manual-adjudications"))
         .find((name) => name.startsWith("v1-0008-0021-"))!
     ), "utf8")).items[0];
+    const frozenQ21RevisionClassification = JSON.parse(readFileSync(join(
+      q31Q32LiveState,
+      "classification-manual-revisions",
+      readdirSync(join(q31Q32LiveState, "classification-manual-revisions"))
+        .find((name) => name.startsWith("v1-0008-0021-"))!
+    ), "utf8")).items[0];
     removeManualArtifacts(root, ["8:21"]);
     removeManualRevisionArtifacts(root, ["8:21"]);
     for (const directory of ["semantic-choice-checks", "answer-audit", "answer-attestation"]) {
@@ -1920,7 +2009,9 @@ describe("exact allowlisted problem manual adjudication", () => {
         q21Calls.push(item.key);
         expect(item.question).toContain("*곱새담: 풀 짚으로 만든 담.");
         expect(item.question).not.toContain("*곱새담: 짚 풀로 만든 담.");
-        return { text: JSON.stringify([frozenQ21Classification]) };
+        return { text: JSON.stringify([
+          q21Calls.length === 1 ? frozenQ21Classification : frozenQ21RevisionClassification,
+        ]) };
       }
       throw new Error(`seeded post-Q21 boundary: ${request.schema?.name ?? "unknown"}`);
     });
@@ -1932,7 +2023,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       input.classified,
       input.solutions
     )).rejects.toThrow("seeded post-Q21 boundary");
-    expect(q21Calls).toEqual(["8:21", "8:21"]);
+    expect(q21Calls).toEqual(["8:21", "8:21", "8:21"]);
     expect(readdirSync(join(root, "problem-manual-adjudications"))
       .filter((name) => name.startsWith("v1-0008-0021-"))).toHaveLength(1);
     expect(readdirSync(join(root, "classification-manual-adjudications"))
@@ -1940,6 +2031,10 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(readdirSync(join(root, "problem-manual-revisions"))
       .filter((name) => name.startsWith("v1-0008-0021-"))).toHaveLength(1);
     expect(readdirSync(join(root, "classification-manual-revisions"))
+      .filter((name) => name.startsWith("v1-0008-0021-"))).toHaveLength(1);
+    expect(readdirSync(join(root, "problem-manual-second-revisions"))
+      .filter((name) => name.startsWith("v1-0008-0021-"))).toHaveLength(1);
+    expect(readdirSync(join(root, "classification-manual-second-revisions"))
       .filter((name) => name.startsWith("v1-0008-0021-"))).toHaveLength(1);
   }, 120_000);
 
@@ -2153,7 +2248,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       replacementHash: canonicalEvidenceHash(sourceRevisionSpec.replacement),
       triggerHash: canonicalEvidenceHash(sourceRevisionSpec.terminalTrigger),
     }).toEqual({
-      allowlistHash: "05d392d62117f4864b0a5964466970815e167655b12c69817909cdd43e006e1f",
+      allowlistHash: "ffc789e8918c8a5603c82d08faa7e2adefedba8aa15c5304f24a6ef8dd520922",
       rowHash: "99ec8e696ea73ba0c61d31df0df9f657bcb29e62fa6ff43e8db1389542e821aa",
       replacementHash: "b0751915ae3df15620b51fcbccf08d95e0b29abb6edc28c8ae68333a4bbbe90a",
       triggerHash: "240e0e1d3617c2d0de839ea55687ed7efb658037c62d4608f934c3426cfd4704",
