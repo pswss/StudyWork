@@ -6423,6 +6423,68 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
       itemHash: "ae0a53375a681c904f74383c0503b86a6c1dd2e7bbf5cdf6c5b4afba32585ec6",
     },
   },
+}, {
+  allowlistId: "ebsi-5578421-q45-terminal-fidelity-v3",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5578421-q45-manual-v1",
+  parentManualRevisionAllowlistId: "ebsi-5578421-q45-manual-source-revision-v1",
+  entryId: "ebsi:5578421",
+  key: "16:45",
+  sourcePage: 16,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  solutionSourceHash: "95e7552f9264cec9649f648fe607bd12f9fe9f77bc9d06edb896971fcee34bf2",
+  parentQuestionHash: "06bc483a24e118a3b41c2da971bffeef560fb491c5b9625928dfce214b9b4a02",
+  parentClassificationHash: "3324c92ef603fb82c4f2b271a6bacab419b675d101272a4518b64a1597e29c31",
+  parentProblemArtifactPath: "problem-manual-second-revisions/" +
+    "v1-0016-0045-9b94e19535b026e98a2fc01ac0c0b4f2c17d407fc66ad89e11c924856a288311.json",
+  parentProblemArtifactHash: "ded0b18ad43cb3be1464c840b0567c452fc313ccd06f57226d9cea6779d53d8f",
+  parentClassificationArtifactPath: "classification-manual-second-revisions/" +
+    "v1-0016-0045-181fadd17124810f863e2fe8e5ab200e98430b8129f7ae4447693d1e4e766252-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "04ace38f06fbc276bcfa9da1abd15a6959ceabff24f60aa69e614a04b6b9c55a",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-272dbc34871780d5cd01399234857b08635b9545a1ca3751dca142218af72793-" +
+    "99ff1d694796f405493706d63c0f1e754e41788f9815366760e08ccbe6614e54.json",
+  failedTerminalArtifactHash: "aab784858ff1a37a632bb163d547e1a260252c3aef47d3e4d5829aa0451ddba1",
+  failedEffectiveCorpusHash: "272dbc34871780d5cd01399234857b08635b9545a1ca3751dca142218af72793",
+  failedInputHash: "99ff1d694796f405493706d63c0f1e754e41788f9815366760e08ccbe6614e54",
+  failedTerminalInputHash: "464e77776607255663c88b6a23ef6c2e033ce9e7ede442422965b43cdafc58d2",
+  failedItemHash: "cff3eb160f0d7fa43667a62fc862ad398f8921ecc43e54236d3c6e21c8caf11e",
+  failedEvidenceHash: "56836638ae7a4819a87e68d289bf614c269872555cc58e0a13ada3f0e66f4da0",
+  failedScopeEvidenceHash: "f658c2284d180c7c6b5a39fb38990105bad7535585291c00587d8f053c32d137",
+  pinnedAdjudicationArtifact: {
+    path: "problem-terminal-fidelity-adjudications/" +
+      "v1-0016-0045-0e625252f651f3ebb982270edf68870b6e07cb8fa7275a564c77f3cad2cca7ea.json",
+    sha256: "de1ae179aa55ab19691dc0a03a80d4911a6980f0e2c4ab8e509640a214d8f7b7",
+    itemHash: "aa88fa3414e86d2123dc22acdbf5fc8722921ad19eacc989469e9134f191ddfe",
+  },
+  policyRevision: {
+    allowlistId: "ebsi-5578421-q45-terminal-source-policy-v3",
+    kind: "source",
+    parentAdjudicationArtifactPath: "problem-terminal-fidelity-adjudications/" +
+      "v1-0016-0045-0e625252f651f3ebb982270edf68870b6e07cb8fa7275a564c77f3cad2cca7ea.json",
+    parentAdjudicationArtifactHash: "de1ae179aa55ab19691dc0a03a80d4911a6980f0e2c4ab8e509640a214d8f7b7",
+    parentAdjudicationBasisDigest: "0e625252f651f3ebb982270edf68870b6e07cb8fa7275a564c77f3cad2cca7ea",
+    parentAdjudicationItemHash: "aa88fa3414e86d2123dc22acdbf5fc8722921ad19eacc989469e9134f191ddfe",
+    parentAdjudicationEvidenceHash: "839958b31ec26b8167202da566c47dda013a39f3d3608d7b5b5052cdaba0f62d",
+    parentAdjudicationScopeEvidenceHash: "f0e0899d2474a9789bbe11db9ce20c16a4263b11f4e57a3410dbc9f5c9a59b27",
+    expectedItem: {
+      key: "16:45",
+      status: "exact",
+      evidence: "공식 문제 PDF 15쪽의 [43~45] 안내와 시 (가)의 시작, 16쪽의 나머지 시·<보기>·45번 " +
+        "탐구 과제·결과·①~⑤가 공급 전사와 모두 일치한다. 표는 ③에 B-(가)·B-(나), ④에 C-(가), " +
+        "⑤에 C-(나)가 대응한다.",
+      scopeDecision: "accept",
+      scopeConfidence: 1,
+      scopeEvidence: "두 현대시의 내용·형식·표현법과 주제 형상화를 비교·감상하는 국어 문학 문항이다.",
+    },
+    pinnedArtifact: {
+      path: "problem-terminal-fidelity-policy-revisions/" +
+        "v1-0016-0045-6e38a81cfd46b96422912058eebbd3519b8872d61b6b1218ebac95fe0cdf034e.json",
+      sha256: "af9fa2a90cab7229142cd0ba28e7af0f355c684df76c0d80be37cb3259fd07c2",
+      itemHash: "486104af6c841263dbbd06a17af7494657ea421bd1eec23722e0234bc7c24cfd",
+    },
+  },
 }] as const;
 
 export function manualAdjudicationAllowlistFingerprint(): string {

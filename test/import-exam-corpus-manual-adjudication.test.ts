@@ -1917,7 +1917,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 6)))
       .toBe("ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048");
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST))
-      .toBe("1f04e992a69de1fb2a68e7d02cff88b44cd6dab871fc67ed587495d284ab0ba3");
+      .toBe("b040e95dccced241fc445d6eb4f3fec1227d3eb59b02fd4332f2300f956717b2");
     expect(terminalSpecs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -1942,6 +1942,10 @@ describe("exact allowlisted problem manual adjudication", () => {
       key: "16:44",
       rowHash: "aa37f20570b7b5a5bb4c4edb32007b45b3dd9a18e70b21e31656673172b3ccc5",
       failedItemHash: "3f4d6e39b51eaa7437705f4f2b454223aeee5a9f2624ea69ce1abab624f070b6",
+    }, {
+      key: "16:45",
+      rowHash: "c6ecc1d284134c9524de28420b530a6fe1b1d706dbfe7739cd3ff8a1cd9d3b75",
+      failedItemHash: "cff3eb160f0d7fa43667a62fc862ad398f8921ecc43e54236d3c6e21c8caf11e",
     }]);
     expect(terminalSpecs[0].policyRevision).toMatchObject({
       allowlistId: "ebsi-5578421-q44-terminal-source-policy-v1",
@@ -1965,6 +1969,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       .toBe("8288a5aaf2b1549e072d9c298b94aed49faff5e5bb9fe9f749ed88bd9e1de596");
     expect(canonicalEvidenceHash(terminalSpecs[4].policyRevision))
       .toBe("4ae370f23ccd88c652d9f3949a7d4cc06614edfd593c498a5e880fe58581e40d");
+    expect(canonicalEvidenceHash(terminalSpecs[5].policyRevision))
+      .toBe("84246e50fd628dd54e1b691a7990fde782cd4278eb51ee2c9671ad1fbe18e2af");
   });
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
@@ -1992,11 +1998,13 @@ describe("exact allowlisted problem manual adjudication", () => {
       root,
       input.classified,
       input.solutions
-    )).rejects.toThrow(/seeded next importer boundary|problem recovery는 한 번만 허용됩니다/u);
+    )).rejects.toThrow(
+      /seeded next importer boundary|problem recovery는 한 번만 허용됩니다|final source-grounded recovery도 exact가 아닙니다/u,
+    );
     expect(terminalCalls).toEqual([]);
     const policyFiles = readdirSync(join(root, "problem-terminal-fidelity-policy-revisions"))
       .filter((name) => /^v1-0016-004[45]-/u.test(name));
-    expect(policyFiles).toHaveLength(4);
+    expect(policyFiles).toHaveLength(5);
     const policies = policyFiles.map((name) => JSON.parse(readFileSync(join(
       root,
       "problem-terminal-fidelity-policy-revisions",
@@ -2007,11 +2015,13 @@ describe("exact allowlisted problem manual adjudication", () => {
       "ebsi-5578421-q44-terminal-source-policy-v2",
       "ebsi-5578421-q44-terminal-source-policy-v3",
       "ebsi-5578421-q45-terminal-source-policy-v1",
+      "ebsi-5578421-q45-terminal-source-policy-v3",
     ]);
     expect(policies.map((policy) => policy.item)).toEqual([
       expect.objectContaining({ key: "16:44", status: "exact", scopeDecision: "accept" }),
       expect.objectContaining({ key: "16:44", status: "exact", scopeDecision: "accept" }),
       expect.objectContaining({ key: "16:44", status: "exact", scopeDecision: "accept" }),
+      expect.objectContaining({ key: "16:45", status: "exact", scopeDecision: "accept" }),
       expect.objectContaining({ key: "16:45", status: "exact", scopeDecision: "accept" }),
     ]);
     for (const policy of policies) {
@@ -2024,12 +2034,12 @@ describe("exact allowlisted problem manual adjudication", () => {
       });
     }
     const currentPolicy = policies.find((policy) =>
-      policy.basis.allowlistId === "ebsi-5578421-q44-terminal-source-policy-v3"
+      policy.basis.allowlistId === "ebsi-5578421-q45-terminal-source-policy-v3"
     )!;
     const currentPolicyPath = join(
       root,
       "problem-terminal-fidelity-policy-revisions",
-      `v1-0016-0044-${currentPolicy.basisDigest}.json`,
+      `v1-0016-0045-${currentPolicy.basisDigest}.json`,
     );
     writeFileSync(currentPolicyPath, Buffer.concat([readFileSync(currentPolicyPath), Buffer.from(" ")]));
     const beforeTamper = stateSnapshot(root);
@@ -2345,7 +2355,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         rowHash: canonicalEvidenceHash(candidate),
       })),
     }).toEqual({
-      allowlistHash: "1f04e992a69de1fb2a68e7d02cff88b44cd6dab871fc67ed587495d284ab0ba3",
+      allowlistHash: "b040e95dccced241fc445d6eb4f3fec1227d3eb59b02fd4332f2300f956717b2",
       prefixHash: "e4601a183669f046f4cc1f52cd30a860fe6347f96ffa41b30bdc8db2123630b3",
       rows: [{
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",
