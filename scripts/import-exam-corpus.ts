@@ -7122,6 +7122,37 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedScopeEvidenceHash: "d43fc1a8dfa512be9b2a04c9ef03dda209a8dc03afcd539ecfd0a238e5ac587d",
   failedScopeDecision: "reject",
   expectedScopeDecision: "reject",
+}, {
+  allowlistId: "ebsi-5578421-q2-terminal-fidelity-v2",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5578421-q2-manual-v1",
+  parentManualRevisionAllowlistId: "ebsi-5578421-q2-manual-source-revision-v1",
+  entryId: "ebsi:5578421",
+  key: "1:2",
+  sourcePage: 1,
+  sourceHash: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
+  solutionSourceHash: "95e7552f9264cec9649f648fe607bd12f9fe9f77bc9d06edb896971fcee34bf2",
+  parentQuestionHash: "b3d4ca3602e31cff626c4f461c2f4929adf8be4ee5ad0b31f9a73c789780cd30",
+  parentClassificationHash: "574ffd49fa7269acd9905b9c46a598eb35e54b6a627399a813f34c13b858d72a",
+  parentProblemArtifactPath: "problem-manual-second-revisions/" +
+    "v1-0001-0002-7d3f800b787723b7285a9db27c8db844c6eca6adc1800ffc53077778f858f79a.json",
+  parentProblemArtifactHash: "62c99b2fb3a42e93272f02384bdb8d70a6024b750585eaeb705b82f991beb5e6",
+  parentClassificationArtifactPath: "classification-manual-second-revisions/" +
+    "v1-0001-0002-e940744e8ffeeff61f780b2430a57678bbf7a300abbf016b6bc60cd8e12bdc33-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "70afb8308b45a4a3657d9f31fc2e415374cc6420a25ee73eeefb05b3cfe3bada",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-89315957b0a571851f1fe43ed52d9751e050c7009307b1ec8d90ba87047dea99-" +
+    "ca5f5d1e4638ca1aa8328dbda4852c165d93305a9f6b693e2700b117d341af3e.json",
+  failedTerminalArtifactHash: "7f4071eb662cd84f7d701076c106261e6f893d11501c5b1132c2c957faea460d",
+  failedEffectiveCorpusHash: "89315957b0a571851f1fe43ed52d9751e050c7009307b1ec8d90ba87047dea99",
+  failedInputHash: "ca5f5d1e4638ca1aa8328dbda4852c165d93305a9f6b693e2700b117d341af3e",
+  failedTerminalInputHash: "040c1ce5a5a22fc74f89c756c4580be3182f071e1582f544661fd0c3c2bba997",
+  failedItemHash: "2014e0042fd4d794da3616d11b3604c20ae84f1a001befd4469ddcd6044982cf",
+  failedEvidenceHash: "d9f5a30a44d4c6bb2e55d0278f7bf83c13d05d202ebe6205605a6b1fe21c619c",
+  failedScopeEvidenceHash: "68e28a5565107480c9bc284f61c8db1154a124d1d21e73cdb4387bf97abed483",
+  failedScopeDecision: "reject",
+  expectedScopeDecision: "reject",
 }] as const;
 
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(
@@ -18487,10 +18518,15 @@ function problemTerminalFidelityAdjudicationSpec(
   key: string,
   sourcePage: number,
   sourceHash: string,
-  solutionSourceHash: string
+  solutionSourceHash: string,
+  failedEffectiveCorpusHash: string,
+  failedTerminalPath: string,
+  failedInputHash: string
 ): ProblemTerminalFidelityAdjudicationSpec | null {
   const matches = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.filter((candidate) =>
-    candidate.entryId === entryId && candidate.key === key && candidate.sourcePage === sourcePage
+    candidate.entryId === entryId && candidate.key === key && candidate.sourcePage === sourcePage &&
+    candidate.failedEffectiveCorpusHash === failedEffectiveCorpusHash &&
+    candidate.failedTerminalPath === failedTerminalPath && candidate.failedInputHash === failedInputHash
   );
   if (matches.length > 1) throw new Error(`${entryId} ${key} terminal fidelity adjudication allowlist가 중복입니다`);
   const match = matches[0];
@@ -18578,12 +18614,16 @@ async function prepareProblemTerminalFidelityAdjudication(
 ): Promise<PreparedProblemTerminalFidelityAdjudication> {
   const key = questionKey(current.question);
   const sourcePage = current.question.page!;
+  const effectiveCorpusHash = canonicalEvidenceHash(classified);
   const spec = problemTerminalFidelityAdjudicationSpec(
     entry.id,
     key,
     sourcePage,
     problem.sha256,
-    solution.sha256
+    solution.sha256,
+    effectiveCorpusHash,
+    terminalCheckpoint.path,
+    terminalCheckpoint.inputHash
   );
   if (!spec) throw new Error(`${key} terminal fidelity adjudication allowlist에 없습니다`);
   const { terminalAdjudication: _terminalAdjudication, ...parentRepair } = repair;
@@ -18603,7 +18643,6 @@ async function prepareProblemTerminalFidelityAdjudication(
     ? parentManualAuthority?.classificationArtifact
     : spec.parentKind === "crop" ? parentCrop?.classificationArtifact
       : spec.parentKind === "scope-box" ? parentScopeBox?.classificationArtifact : parentRepair.classificationArtifact;
-  const effectiveCorpusHash = canonicalEvidenceHash(classified);
   const expectedParentDecision = expectedTerminalFidelityAdjudicationScope(spec);
   if (
     repair.key !== key || repair.scopeAdjudication || repair.revision?.scopeAdjudication ||
@@ -24074,6 +24113,7 @@ export async function repairAndAuditOfficialAnswers(
     const historicalManualTriggerPaths = new Set([...repairs.values()].flatMap((repair) => {
       const manual = repair.revision?.recovery?.manualAdjudication;
       return [
+        repair.terminalAdjudication?.adjudicationArtifact.path,
         manual?.terminalTrigger?.artifact.path,
         manual?.revision?.sourceRevision?.terminalTrigger?.artifact.path,
       ].filter((path): path is string =>
