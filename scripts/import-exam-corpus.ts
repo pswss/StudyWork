@@ -18697,7 +18697,8 @@ function is5578421PersistedSingletonManualSpec(spec: ProblemManualAdjudicationSp
 
 function is5578421PersistedManualHydrationSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return is5578421PersistedSingletonManualSpec(spec) ||
-    is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec);
+    is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q31Q32ManualBatchSpec(spec) ||
+    is5578421Q44Q45ManualBatchSpec(spec);
 }
 
 function isQ37ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
@@ -25158,7 +25159,8 @@ export async function repairAndAuditOfficialAnswers(
     );
     const currentRepair = repairs.get(spec.key);
     const allowSupersededBase = spec.key === "12:30" ||
-      is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec);
+      is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q31Q32ManualBatchSpec(spec) ||
+      is5578421Q44Q45ManualBatchSpec(spec);
     if (currentRepair && !allowSupersededBase && (
       currentRepair.revision ||
       canonicalEvidenceHash(currentRepair) !== canonicalEvidenceHash(pinnedBase.evidence)
