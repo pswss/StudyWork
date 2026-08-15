@@ -1801,7 +1801,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 6)))
       .toBe("ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048");
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST))
-      .toBe("7a5d9cc0b22a81fdf9740b5f4973095e26a9986cae2c790f318a34aa08d17655");
+      .toBe("65331091e8b8c01f66f901265be96b921e2818eefc0f58e464d40b3dd370ab44");
     expect(terminalSpecs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -1812,7 +1812,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       failedItemHash: "a18c117c38f96083dc886373293ea629f095e342c625e013f47f4a2eab4d5375",
     }, {
       key: "16:45",
-      rowHash: "1750340a7d8739f26968ef8953ea5c8e54dbf7cb853fa0b916485c82e6098376",
+      rowHash: "2c18e317f7612d30acbaaf06cc368e707bce348cf5c8a000d31a09020681b7fa",
       failedItemHash: "37573001f51bfc1b0ce117fe754972b880cbd7c08d99dee865296c6159faf460",
     }]);
     expect(terminalSpecs[0].policyRevision).toMatchObject({
@@ -1824,25 +1824,35 @@ describe("exact allowlisted problem manual adjudication", () => {
     });
     expect(canonicalEvidenceHash(terminalSpecs[0].policyRevision))
       .toBe("5086fa2581e0eb8343b0378be2b3d0287cf6af1118c136ee88f2c53253851537");
+    expect(terminalSpecs[1].policyRevision).toMatchObject({
+      allowlistId: "ebsi-5578421-q45-terminal-source-policy-v1",
+      kind: "source",
+      parentAdjudicationArtifactHash: "9418d9f3b996bc8c6d918aedc93ec73814586f802ab1476039567699a6bccf25",
+      parentAdjudicationItemHash: "29f8b0211c08ad1094e38ef204485da4b28038e759c6d33bd5723d420c0a1bd8",
+      expectedItem: expect.objectContaining({ key: "16:45", status: "exact", scopeDecision: "accept" }),
+    });
+    expect(canonicalEvidenceHash(terminalSpecs[1].policyRevision))
+      .toBe("8843e5a2fc6c81c5c75c34bdd589be10e13bcf0b947eec06c4916092fdd40c72");
   });
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
-    "source-revises the persisted Q44 unverifiable child before requesting Q45",
+    "source-revises the persisted Q44-Q45 unverifiable children before the next boundary",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-5578421-q44-terminal-source-policy-"));
     cpSync(q31Q32LiveState, root, { recursive: true });
     for (const directory of ["semantic-choice-checks", "answer-audit", "answer-attestation"]) {
       rmSync(join(root, directory), { recursive: true, force: true });
     }
+    rmSync(join(root, "problem-terminal-fidelity-policy-revisions"), { recursive: true, force: true });
     const input = q27FixtureInputs(root);
     const terminalCalls: string[] = [];
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
-      if (request.schema?.name !== "studywork_exam_corpus_problem_terminal_fidelity") {
-        throw new Error(`unexpected AI call: ${request.schema?.name ?? "unknown"}`);
+      if (request.schema?.name === "studywork_exam_corpus_problem_terminal_fidelity" &&
+        request.prompt.includes("Final question:\n")) {
+        const items = JSON.parse(request.prompt.split("Final question:\n")[1]) as Array<{ key: string }>;
+        terminalCalls.push(...items.map((item) => item.key));
       }
-      const items = JSON.parse(request.prompt.split("Final question:\n")[1]) as Array<{ key: string }>;
-      terminalCalls.push(...items.map((item) => item.key));
-      throw new Error("seeded Q45 terminal boundary");
+      throw new Error("seeded next importer boundary");
     });
     await expect(repairAndAuditOfficialAnswers(
       input.entry,
@@ -1851,27 +1861,33 @@ describe("exact allowlisted problem manual adjudication", () => {
       root,
       input.classified,
       input.solutions
-    )).rejects.toThrow("seeded Q45 terminal boundary");
-    expect(terminalCalls).toEqual(["16:45"]);
+    )).rejects.toThrow(/seeded next importer boundary|8:21 problem recovery는 한 번만 허용됩니다/u);
+    expect(terminalCalls).toEqual([]);
     const policyFiles = readdirSync(join(root, "problem-terminal-fidelity-policy-revisions"))
-      .filter((name) => name.startsWith("v1-0016-0044-"));
-    expect(policyFiles).toHaveLength(1);
-    const policy = JSON.parse(readFileSync(join(
+      .filter((name) => /^v1-0016-004[45]-/u.test(name));
+    expect(policyFiles).toHaveLength(2);
+    const policies = policyFiles.map((name) => JSON.parse(readFileSync(join(
       root,
       "problem-terminal-fidelity-policy-revisions",
-      policyFiles[0]
-    ), "utf8"));
-    expect(policy).toMatchObject({
-      basis: {
-        allowlistId: "ebsi-5578421-q44-terminal-source-policy-v1",
+      name
+    ), "utf8"))).sort((left, right) => left.item.key.localeCompare(right.item.key));
+    expect(policies.map((policy) => policy.basis.allowlistId)).toEqual([
+      "ebsi-5578421-q44-terminal-source-policy-v1",
+      "ebsi-5578421-q45-terminal-source-policy-v1",
+    ]);
+    expect(policies.map((policy) => policy.item)).toEqual([
+      expect.objectContaining({ key: "16:44", status: "exact", scopeDecision: "accept" }),
+      expect.objectContaining({ key: "16:45", status: "exact", scopeDecision: "accept" }),
+    ]);
+    for (const policy of policies) {
+      expect(policy.basis).toMatchObject({
         policyKind: "source",
         problemSourceEvidence: {
           path: "problem.pdf",
           sha256: "4c9aee0ec0c15f91678bc3c179efb4c781ab0f9023ca2e5347df94060012272e",
         },
-      },
-      item: { key: "16:44", status: "exact", scopeDecision: "accept" },
-    });
+      });
+    }
   }, 120_000);
 
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
@@ -2108,7 +2124,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         rowHash: canonicalEvidenceHash(candidate),
       })),
     }).toEqual({
-      allowlistHash: "7a5d9cc0b22a81fdf9740b5f4973095e26a9986cae2c790f318a34aa08d17655",
+      allowlistHash: "65331091e8b8c01f66f901265be96b921e2818eefc0f58e464d40b3dd370ab44",
       prefixHash: "e4601a183669f046f4cc1f52cd30a860fe6347f96ffa41b30bdc8db2123630b3",
       rows: [{
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",

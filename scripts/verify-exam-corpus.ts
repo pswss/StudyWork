@@ -5805,6 +5805,26 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedItemHash: "37573001f51bfc1b0ce117fe754972b880cbd7c08d99dee865296c6159faf460",
   failedEvidenceHash: "3eafefb8a957759c174dd7590e6c31bb585e1630822757aba47f06c0ac925b89",
   failedScopeEvidenceHash: "af6ee8ae1696b0b5c1ec44b73cbb89495ede432d5450f780b1d09fc8b7468a21",
+  policyRevision: {
+    allowlistId: "ebsi-5578421-q45-terminal-source-policy-v1",
+    kind: "source",
+    parentAdjudicationArtifactPath: "problem-terminal-fidelity-adjudications/" +
+      "v1-0016-0045-264876231c33beb56d3061968938c7ca496a90be12ff8c11e7a3b434ce756727.json",
+    parentAdjudicationArtifactHash: "9418d9f3b996bc8c6d918aedc93ec73814586f802ab1476039567699a6bccf25",
+    parentAdjudicationBasisDigest: "264876231c33beb56d3061968938c7ca496a90be12ff8c11e7a3b434ce756727",
+    parentAdjudicationItemHash: "29f8b0211c08ad1094e38ef204485da4b28038e759c6d33bd5723d420c0a1bd8",
+    parentAdjudicationEvidenceHash: "fdb9af2a7c50775681530a7fe54dfd357bcc97ba10c4aeef60434a2a08d20d7e",
+    parentAdjudicationScopeEvidenceHash: "1627e424ff5346fa9c0d4ee1eb1d3001c376f5101cff9b7e84c92802d69e19ef",
+    expectedItem: {
+      key: "16:45",
+      status: "exact",
+      evidence: "공식 문제 PDF 15쪽의 [43~45] 안내와 시 (가)의 시작, 16쪽의 나머지 시·<보기>·45번 " +
+        "탐구 과제·결과·①~⑤가 공급 전사와 모두 일치한다. 공식 표기는 ‘부딪히고’, ‘백힌다’이다.",
+      scopeDecision: "accept",
+      scopeConfidence: 1,
+      scopeEvidence: "두 현대시의 내용·형식·표현법과 주제 형상화를 비교·감상하는 국어 문학 문항이다.",
+    },
+  },
 }] as const;
 
 export function manualAdjudicationAllowlistFingerprint(): string {
