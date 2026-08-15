@@ -126,4 +126,36 @@ describe("quiz interaction polish", () => {
     if (blocks[0].kind !== "passage") throw new Error("공통 지문으로 묶이지 않았습니다");
     expect(passageQuestionText(blocks[0], items[1])).toBe("윗글의 내용과 일치하는 것은?");
   });
+
+  it("문항별 공백이 달라도 공식 번호 범위 전체를 한 지문으로 묶음", () => {
+    const question = (id: number, number: string, passage: string, stem: string) => ({
+      id,
+      source: "uploaded",
+      src_file_id: 42,
+      printed_number: number,
+      book_number: number,
+      question: `${passage}\n\n${number}. ${stem}`,
+      mock_exam_job_id: null,
+      exam_section: null,
+      passage_group: null,
+      passage: null,
+    } as Question);
+    const items = [
+      question(22, "22", "[22~25] 다음 글을 읽고 물음에 답하시오.\n\n첫 문단", "설명으로 적절하지 않은 것은?"),
+      question(23, "23", "[22 ~ 25] 다음 글을 읽고 물음에 답하시오.\n\n첫 문단\n\n둘째 문단", "그림의 설명으로 적절하지 않은 것은?"),
+      question(24, "24", "[22～25] 다음 글을 읽고 물음에 답하시오.\n\n첫 문단", "㉠에 들어갈 내용은?"),
+      question(25, "25", "[22 ∼ 25] 다음 글을 읽고 물음에 답하시오.\n\n첫 문단", "사전적 의미로 적절하지 않은 것은?"),
+    ];
+
+    const blocks = groupKoreanPassageQuestions(items);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      kind: "passage",
+      passageGroup: "22~25번 공통 지문",
+      passage: "[22 ~ 25] 다음 글을 읽고 물음에 답하시오.\n\n첫 문단\n\n둘째 문단",
+      items: [{ id: 22 }, { id: 23 }, { id: 24 }, { id: 25 }],
+    });
+    if (blocks[0].kind !== "passage") throw new Error("공통 지문으로 묶이지 않았습니다");
+    expect(passageQuestionText(blocks[0], items[2])).toBe("㉠에 들어갈 내용은?");
+  });
 });

@@ -285,12 +285,23 @@ function commonPassagePrefix(items: readonly Question[]): string | null {
   return items.every(item => item.question.slice(shared.length).trim()) ? shared : null;
 }
 
+function uploadedPassagePrefix(item: Question): string | null {
+  if (!uploadedPassageRange(item)) return null;
+  const number = questionNumber(item);
+  if (!number || !/^\d+$/u.test(number)) return null;
+  const marker = new RegExp(`\\n\\n\\s*0*${Number(number)}\\s*\\.\\s+`, "u").exec(item.question);
+  return marker && marker.index > 0 ? item.question.slice(0, marker.index + 2) : null;
+}
+
 export function passageQuestionText(
   block: Extract<QuizBankBlock, { kind: "passage" }>,
   item: Question,
 ): string {
-  const question = block.questionPrefix && item.question.startsWith(block.questionPrefix)
-    ? item.question.slice(block.questionPrefix.length).trim()
+  const prefix = block.questionPrefix && item.question.startsWith(block.questionPrefix)
+    ? block.questionPrefix
+    : uploadedPassagePrefix(item);
+  const question = prefix
+    ? item.question.slice(prefix.length).trim()
     : item.question;
   return questionTextWithoutNumber({ ...item, question });
 }
@@ -348,15 +359,19 @@ export function groupKoreanPassageQuestions(items: readonly Question[]): QuizBan
   return blocks.flatMap(block => {
     if (block.kind !== "uploaded-passage") return [block];
     const questionPrefix = commonPassagePrefix(block.items);
-    if (!questionPrefix) {
+    const itemPrefixes = block.items.map(uploadedPassagePrefix);
+    if (!questionPrefix && itemPrefixes.some(prefix => !prefix)) {
       return block.items.map(item => ({ kind: "question" as const, key: `question:${item.id}`, item }));
     }
+    const passage = questionPrefix ?? itemPrefixes.reduce<string>((longest, prefix) =>
+      (prefix?.length ?? 0) > longest.length ? prefix! : longest
+    , "");
     return [{
       kind: "passage" as const,
       key: block.key,
       section: null,
       passageGroup: `${block.first}~${block.last}번 공통 지문`,
-      passage: questionPrefix.trim(),
+      passage: passage.trim(),
       questionPrefix,
       items: block.items,
     }];
