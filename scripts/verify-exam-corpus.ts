@@ -3308,8 +3308,15 @@ const Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION =
   "중앙의 왼쪽 아래 부근, 오른쪽 아래 변 부근에 작은 흰 원이 각각 하나씩 표시되어 있다. 삼각형 내부는 " +
   "위치에 따라 밝기가 달라지는 회색 음영으로 표현되어 있다.";
 
-const Q26_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION =
+const Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V2 =
   Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION +
+  " 격자에서 ⓐ의 중심은 약 (0.4, 0.5), ⓑ의 중심은 약 (0.15, 0.8), ⓒ의 중심은 약 " +
+  "(0.75, 0.2)에 있다. 작은 흰 원은 세로축 위의 (0, 0.6), 삼각형 내부의 약 (0.3, 0.3), " +
+  "아래 빗변 부근의 약 (0.8, 0.05)에 있다. ⓐ·ⓑ·ⓒ 원과 작은 흰 원 사이를 잇는 별도의 " +
+  "연결선은 그려져 있지 않다.";
+
+const Q26_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION =
+  Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V2 +
   Q26_5577054_FIGURE_DESCRIPTION.slice(Q24_29_5577054_FIGURE_DESCRIPTION.length);
 
 
@@ -6251,6 +6258,31 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_reading",
 
+}, {
+  allowlistId: "ebsi-5577054-q24-source-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q24-source-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "9:24",
+  sourcePage: 9,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "c307bca50a2becc6aaef538e28bcf82de400bc74f212ba48d32681732cb8ef14",
+  failedClassificationHash: "15d2c83214105cdc4344ec4be412036e7b89de200042f659d36c82db4435dbf8",
+  failedClassificationEvidenceHash: "0394920476bc1d866e00c39cde68a25ffc6bb62267db6c9b1161092962ad5d55",
+  replacement: {
+    field: "figure_description",
+    from: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION,
+    to: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V2,
+    count: 1,
+  },
+  requiredTokens: [
+    "ⓐ의 중심은 약 (0.4, 0.5)", "ⓑ의 중심은 약 (0.15, 0.8)",
+    "ⓒ의 중심은 약 (0.75, 0.2)", "세로축 위의 (0, 0.6)",
+    "삼각형 내부의 약 (0.3, 0.3)", "아래 빗변 부근의 약 (0.8, 0.05)",
+    "별도의 연결선은 그려져 있지 않다", "24. 윗글에 대한 설명으로 가장 적절한 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_reading",
+
 }] as const;
 
 const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
@@ -6506,7 +6538,7 @@ const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevi
     {
       field: "figure_description",
       from: Q24_29_5577054_FIGURE_DESCRIPTION,
-      to: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION,
+      to: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V2,
       count: 1,
     },
   ],
