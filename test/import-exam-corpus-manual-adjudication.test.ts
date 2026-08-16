@@ -2298,9 +2298,9 @@ describe("exact allowlisted problem manual adjudication", () => {
         v2RowHashes: terminalSpecsV2.map((candidate) => canonicalEvidenceHash(candidate)),
       }).toEqual({
         length: 23,
-        allowlistHash: "08d46434ef73a07bf201172d51594e727a7d4d4f0046435adbd8e3b12597c09b",
-        q35RowHash: "93e085a405e16e848ba22ad8d782fecf8cdf6b628740951a0c2b3908c523e573",
-        q36RowHash: "95e0c84801937411e972ba514431f965b124e4397404e89dde53f43bc4415447",
+        allowlistHash: "fbeb3001328b2d648865bd419e2d36ccbd06be62ba79475acdddc18be7988054",
+        q35RowHash: "08c169cd5335b6fdcea2d8f5ebe6027a6ffc15009e366febf883e48a58ed750e",
+        q36RowHash: "1beffca4ead0209950734f824a7b7b4e42fba3c02e89e35796b01359908daefa",
         keys: ["13:35", "13:36"],
         parentQuestionHash: "9b83c044ec4160049b0a9a30a67cd51255b61e23982a297f06a2308a121bb00e",
         q36ParentQuestionHash: "007022fe882311c79d872914965258aa346dba184f04dcb4b6dd787723075ea9",
@@ -3128,7 +3128,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 6)))
       .toBe("ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048");
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST))
-      .toBe("08d46434ef73a07bf201172d51594e727a7d4d4f0046435adbd8e3b12597c09b");
+      .toBe("fbeb3001328b2d648865bd419e2d36ccbd06be62ba79475acdddc18be7988054");
     expect(terminalSpecs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -4370,7 +4370,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         rowHash: canonicalEvidenceHash(candidate),
       })),
     }).toEqual({
-      allowlistHash: "08d46434ef73a07bf201172d51594e727a7d4d4f0046435adbd8e3b12597c09b",
+      allowlistHash: "fbeb3001328b2d648865bd419e2d36ccbd06be62ba79475acdddc18be7988054",
       prefixHash: "e4601a183669f046f4cc1f52cd30a860fe6347f96ffa41b30bdc8db2123630b3",
       rows: [{
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",
