@@ -4934,6 +4934,54 @@ const Q29_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [{
   field: "answer", from: ":", to: " :", count: 1,
 }];
 
+const Q35_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "삼단 논증은 두 개",
+  to: "[33 ~ 36] 다음을 읽고 물음에 답하시오.\n\n삼단 논증은 두 개",
+  count: 1,
+}, {
+  field: "question",
+  from: "모든 사각형은 윤곽이 있는 도형이다.",
+  to: "모든 사각형은 음영이 있는 도형이다.",
+  count: 1,
+}, {
+  field: "question",
+  from: "그리고 ㉠ 믿을 만하지 못하면",
+  to: "그리고 ⓐ 믿을 만하지 못하면",
+  count: 1,
+}, {
+  field: "question", from: "의하면 ㉡ 전제들이", to: "의하면 ⓑ 전제들이", count: 1,
+}, {
+  field: "question",
+  from: "\n\n㉠과 ㉡을 통해",
+  to: "\n\n35. ⓐ와 ⓑ를 통해",
+  count: 1,
+}];
+
+const Q36_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "다음 글을 읽고 물음에 답하시오.",
+  to: "[33 ~ 36] 다음을 읽고 물음에 답하시오.",
+  count: 1,
+}, {
+  field: "question",
+  from: "생각하는 사람들이 많은 이유",
+  to: "생각하는 사람이 많은 이유",
+  count: 1,
+}, {
+  field: "question",
+  from: "모형을 만들고 결론이 만족스럽다면",
+  to: "모형을 만들고 결론이 만족스러운지 그 모형을 살펴보고 결론이 만족스럽다면",
+  count: 1,
+}, {
+  field: "question", from: "그러나 ㉠이 논증", to: "그러나 ㉠ 이 논증", count: 1,
+}, {
+  field: "question",
+  from: "\n\n윗글을 바탕으로 <보기>",
+  to: "\n\n36. 윗글을 바탕으로 <보기>",
+  count: 1,
+}];
+
 
 
 
@@ -7591,6 +7639,64 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     replacements: Q29_5577054_SOURCE_EXACT_REPLACEMENTS,
     figure: true,
     figureDescription: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V3,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5577054-q35-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "13:35",
+    sourcePage: 13,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "4c85182b48c685907a77cccac95468c529f336a70f19c9a0fca7b3e863c4c609",
+    dpi: 600,
+    failedQuestionHash: "57428e9088ef8771ca86c8f39b825461130141159c799ca04c0cf98070896a88",
+    failedClassificationHash: "28d4ecbf4d7d659f8ea358a4690e45a4a3e9e1416fe98178f47755cd29014181",
+    failedClassificationEvidenceHash: "405184c6136f1352c6495d337bad21006474a4dc8e6e0f1e34a8e20fd159e1e7",
+    views: [
+      { sourcePage: 12, label: "p12 full Q33-Q36 shared passage and Q33-Q34", rect: [0, 0, 1, 1] },
+      { sourcePage: 12, label: "p12 shared passage and mental model", rect: [0.07, 0.08, 0.50, 0.98] },
+      { sourcePage: 13, label: "p13 full Q35-Q36 and next passage", rect: [0, 0, 1, 1] },
+      { sourcePage: 13, label: "p13 left Q35-Q36", rect: [0.07, 0.08, 0.50, 0.48] },
+    ],
+    requiredTokens: [
+      "[33 ~ 36] 다음을 읽고 물음에 답하시오.", "모든 사각형은 음영이 있는 도형이다.",
+      "그러나 ㉠ 이 논증의 전제를 만족시키는 다른 심적 모형", "ⓐ 믿을 만하지 못하면",
+      "ⓑ 전제들이 논리적으로 더 복잡하다고 해서", "35. ⓐ와 ⓑ를 통해 이해한 내용",
+      "위쪽에는 회색으로 채워진 정사각형 세 개", "아래쪽에는 원 세 개",
+    ],
+    replacements: Q35_5577054_SOURCE_EXACT_REPLACEMENTS,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5577054-q36-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "13:36",
+    sourcePage: 13,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "67cb28e87abe133a0ba5bba0a0541898c46df8ce6326daf02d9c67db1434049b",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "abf804d7a345b22ccc71c60aeef2ff3bb5076f68361d1d9e85d751b16a9182f0",
+    failedClassificationHash: "4e1ac30e35b7c0c55112699c0b5c2db4c00875129640e3a6112563d7c4f1872f",
+    failedClassificationEvidenceHash: "ca72e919ae49c3cc5a5f8badbc30f0318da430602067abf3465d590be09edee2",
+    views: [
+      { sourcePage: 12, label: "p12 full Q33-Q36 shared passage and Q33-Q34", rect: [0, 0, 1, 1] },
+      { sourcePage: 12, label: "p12 shared passage and mental model", rect: [0.07, 0.08, 0.50, 0.98] },
+      { sourcePage: 13, label: "p13 full Q35-Q36 and next passage", rect: [0, 0, 1, 1] },
+      { sourcePage: 13, label: "p13 left Q35-Q36", rect: [0.07, 0.08, 0.50, 0.48] },
+    ],
+    requiredTokens: [
+      "[33 ~ 36] 다음을 읽고 물음에 답하시오.", "모든 사각형은 음영이 있는 도형이다.",
+      "모형을 만들고 결론이 만족스러운지 그 모형을 살펴보고", "그러나 ㉠ 이 논증",
+      "ⓐ 믿을 만하지 못하면", "ⓑ 전제들이 논리적으로 더 복잡하다고 해서",
+      "36. 윗글을 바탕으로 <보기>를 이해할 때, 적절하지 않은 것은? [3점]",
+      "어떤 인류학자는 생물학자가 아니다.",
+    ],
+    replacements: Q36_5577054_SOURCE_EXACT_REPLACEMENTS,
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_reading",
   },
