@@ -2435,6 +2435,7 @@ type ProblemManualRevisionSpec = {
   failedClassificationEvidenceHash: string;
   failedStatus?: "exact";
   replacement: ProblemManualReplacement;
+  additionalReplacements?: ProblemManualReplacement[];
   requiredTokens: string[];
   expectedDecision: "accept" | "reject";
   expectedCanonicalSubject?: CanonicalSubject;
@@ -5347,6 +5348,30 @@ const Q42_5577054_FIGURE_DESCRIPTION_REVISION =
 const Q41_5577054_FIGURE_DESCRIPTION = Q42_5577054_FIGURE_DESCRIPTION_REVISION +
   " 공식 15쪽 오른쪽 41번의 <보기>는 직사각형 테두리 안에 선생님 발화, (1)~(5) 사건 순서, " +
   "추가 설명, 학생 응답의 빈 밑줄을 위에서 아래로 배치한다.";
+
+const Q37_42_5577054_FIGURE_DESCRIPTION_FINAL =
+  "공식 13쪽 오른쪽 (나)에는 왼쪽으로 열린 세로 묶음 괄호 [A]가 ‘갑자기 한바탕 미친 듯한 " +
+  "바람이 일어나며 구름 속에서 크게 불러 말하기를,’부터 ‘그대는 어찌 금령을 구하지 아니하고 " +
+  "저다지 방황하느냐?’까지를 감싼다. 공식 14쪽 왼쪽에는 같은 모양의 괄호 [B]가 ‘(다) 하루는 " +
+  "옥황상제께서 사해용왕에게 말씀을 전하시기를,’부터 ‘심 소저 혼약할 기한이 가까우니, 인당수로 " +
+  "돌려보내어 좋은 때를 잃지 말게 하라.’까지를 감싼다. 두 괄호는 각각 오른쪽 세로선 하나와 " +
+  "왼쪽으로 뻗은 위·아래 가로 캡으로 이루어지며 서로 겹치지 않는다.";
+
+const Q41_5577054_FIGURE_DESCRIPTION_FINAL = Q37_42_5577054_FIGURE_DESCRIPTION_FINAL +
+  " 공식 15쪽 오른쪽 41번의 <보기>는 직사각형 테두리 안에 선생님 발화, (1)~(5) 사건 순서, " +
+  "추가 설명, 학생 응답의 빈 밑줄을 위에서 아래로 배치한다.";
+
+const Q37_42_5577054_BRACKET_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "갑자기 한바탕 미친 듯한 바람이 일어나며 구름 속에서 크게 불러 말하기를,\n[A]\n“그대는",
+  to: "[A]\n갑자기 한바탕 미친 듯한 바람이 일어나며 구름 속에서 크게 불러 말하기를,\n“그대는",
+  count: 1,
+}, {
+  field: "question",
+  from: "(다)\n하루는 옥황상제께서 사해용왕에게 말씀을 전하시기를,\n[B]\n“심 소저",
+  to: "[B]\n(다)\n하루는 옥황상제께서 사해용왕에게 말씀을 전하시기를,\n“심 소저",
+  count: 1,
+}];
 
 const Q38_5578421_REPLACEMENTS: ProblemManualReplacement[] = [
   { field: "question", from: "(가)\n", to: "[37 ~ 42] 다음 글을 읽고 물음에 답하시오.\n\n(가)\n", count: 1 },
@@ -8687,6 +8712,132 @@ export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSp
     "[43 ~ 45] 다음을 읽고 물음에 답하시오.", "이 방으로 돌아가",
     "43. (가)와 (나)의 공통점에 대한 설명으로 가장 적절한 것은?",
     "서로 겹치지 않는 [A], [B], [C] 순서",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q37-source-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q37-source-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "14:37",
+  sourcePage: 14,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedStatus: "exact",
+  failedQuestionHash: "8e6a86634dc26baf7c3f438dc4d4da82a61801ff6d150a420c63fd3e68944a70",
+  failedClassificationHash: "bf68b8673b6f0d43f716a088ea6040f971d0984fbcec0e785227e8749b96f9ad",
+  failedClassificationEvidenceHash: "b5e4bf07841037e625935941624d2cea5489139255436ed873c1c9d2c2f0fa9f",
+  replacement: Q37_42_5577054_BRACKET_REPLACEMENTS[0],
+  additionalReplacements: [Q37_42_5577054_BRACKET_REPLACEMENTS[1], {
+    field: "figure_description",
+    from: Q42_5577054_FIGURE_DESCRIPTION_REVISION,
+    to: Q37_42_5577054_FIGURE_DESCRIPTION_FINAL,
+    count: 1,
+  }],
+  requiredTokens: [
+    "[A]\n갑자기 한바탕 미친 듯한 바람이 일어나며", "저다지 방황하느냐?",
+    "[B]\n(다)\n하루는 옥황상제께서", "좋은 때를 잃지 말게 하라.",
+    "37. (가)의 내용과 일치하지 않는 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_reading",
+}, {
+  allowlistId: "ebsi-5577054-q38-source-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q38-source-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "15:38",
+  sourcePage: 15,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedStatus: "exact",
+  failedQuestionHash: "8327069bcb9e06649bf330052e14a1c9bbde8fec1b890e5887e7a3eff78c696f",
+  failedClassificationHash: "fe72cd3e9ae4bbd0aa3d157958e2971f2598d07c1fe55c59d16bf1948c51f6c8",
+  failedClassificationEvidenceHash: "0b51e876e352e3ff5d4f2097f5586ee7b48630bed34b143b447d029b6fed2d3f",
+  replacement: Q37_42_5577054_BRACKET_REPLACEMENTS[0],
+  additionalReplacements: [Q37_42_5577054_BRACKET_REPLACEMENTS[1], {
+    field: "figure_description",
+    from: Q42_5577054_FIGURE_DESCRIPTION_REVISION,
+    to: Q37_42_5577054_FIGURE_DESCRIPTION_FINAL,
+    count: 1,
+  }],
+  requiredTokens: [
+    "[A]\n갑자기 한바탕 미친 듯한 바람이 일어나며", "저다지 방황하느냐?",
+    "[B]\n(다)\n하루는 옥황상제께서", "좋은 때를 잃지 말게 하라.",
+    "38. ‘기이성’을 중심으로 (나)와 (다)를 감상한 내용으로",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q39-source-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q39-source-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "15:39",
+  sourcePage: 15,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedStatus: "exact",
+  failedQuestionHash: "01a3edf919c5b6b529d4eb77444dcd37a30a39c247d3e13f100825eb092dade0",
+  failedClassificationHash: "aca9fbd7816b31449c4753f390e038b435197e0650699667244938dbe40fef4b",
+  failedClassificationEvidenceHash: "acc8f8eeb4a24eb813fb4ce8f4a06cc8c61cc2671d4686aa19b0aa956a105eac",
+  replacement: Q37_42_5577054_BRACKET_REPLACEMENTS[0],
+  additionalReplacements: [Q37_42_5577054_BRACKET_REPLACEMENTS[1], {
+    field: "figure_description",
+    from: Q42_5577054_FIGURE_DESCRIPTION_REVISION,
+    to: Q37_42_5577054_FIGURE_DESCRIPTION_FINAL,
+    count: 1,
+  }],
+  requiredTokens: [
+    "[A]\n갑자기 한바탕 미친 듯한 바람이 일어나며", "저다지 방황하느냐?",
+    "[B]\n(다)\n하루는 옥황상제께서", "좋은 때를 잃지 말게 하라.",
+    "39. ㉠을 참고하여 (다)를 이해한 내용으로",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q40-source-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q40-source-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "15:40",
+  sourcePage: 15,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedStatus: "exact",
+  failedQuestionHash: "2c2d4545838b980193754a6868497d874b3f89a3bb285ee34206fb64719d11d5",
+  failedClassificationHash: "04f4769433bc790881731a48a53c5d994aa6d4f936c16052820b4ee3a68a7f83",
+  failedClassificationEvidenceHash: "e30984f53fc44db17d3e2ce2462d664f4de3f3b341fee5f5607c2ab95024b385",
+  replacement: Q37_42_5577054_BRACKET_REPLACEMENTS[0],
+  additionalReplacements: [Q37_42_5577054_BRACKET_REPLACEMENTS[1], {
+    field: "figure_description",
+    from: Q42_5577054_FIGURE_DESCRIPTION_REVISION,
+    to: Q37_42_5577054_FIGURE_DESCRIPTION_FINAL,
+    count: 1,
+  }],
+  requiredTokens: [
+    "[A]\n갑자기 한바탕 미친 듯한 바람이 일어나며", "저다지 방황하느냐?",
+    "[B]\n(다)\n하루는 옥황상제께서", "좋은 때를 잃지 말게 하라.",
+    "40. [A]와 [B]를 비교한 내용으로 가장 적절한 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q41-source-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q41-source-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "15:41",
+  sourcePage: 15,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedStatus: "exact",
+  failedQuestionHash: "dc93618fba9e6bf733013b64b1060f4bb735863cf6fad5c89de836b7d33fcf5a",
+  failedClassificationHash: "f9f633c873680b8b8550756d5b23f8b68065ceccf780ddf64f0f536ba2481a41",
+  failedClassificationEvidenceHash: "500677138874f9c4e9e998c5f6395887dc1c054627c4b12f642bea070372e6e2",
+  replacement: Q37_42_5577054_BRACKET_REPLACEMENTS[0],
+  additionalReplacements: [Q37_42_5577054_BRACKET_REPLACEMENTS[1], {
+    field: "figure_description",
+    from: Q41_5577054_FIGURE_DESCRIPTION,
+    to: Q41_5577054_FIGURE_DESCRIPTION_FINAL,
+    count: 1,
+  }],
+  requiredTokens: [
+    "[A]\n갑자기 한바탕 미친 듯한 바람이 일어나며", "저다지 방황하느냐?",
+    "[B]\n(다)\n하루는 옥황상제께서", "좋은 때를 잃지 말게 하라.",
+    "41. <보기>에서 선생님의 질문에 대한 학생의 대답으로",
+    "직사각형 테두리 안에 선생님 발화",
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
@@ -19925,6 +20076,7 @@ function problemManualRevisionCorrectionSpecHash(spec: ProblemManualRevisionSpec
     allowlistId: spec.allowlistId,
     parentAllowlistId: spec.parentAllowlistId,
     replacement: spec.replacement,
+    ...(spec.additionalReplacements ? { additionalReplacements: spec.additionalReplacements } : {}),
     requiredTokens: spec.requiredTokens,
     expectedDecision: spec.expectedDecision,
     expectedCanonicalSubject: spec.expectedCanonicalSubject,
@@ -19980,27 +20132,28 @@ export function applyAllowlistedProblemManualRevision(
     throw new Error(`${entryId} ${key} manual revision failed question hash가 다릅니다`);
   }
   const corrected = structuredClone(item);
-  const replacement = spec.replacement;
-  if (replacement.field === "choices") {
-    const choices = corrected.choices ?? [];
-    if (choices.reduce((count, choice) => count + exactOccurrenceCount(choice, replacement.from), 0) !==
-        replacement.count) {
-      throw new Error(`${key} manual revision replacement occurrence가 다릅니다`);
+  for (const replacement of [spec.replacement, ...(spec.additionalReplacements ?? [])]) {
+    if (replacement.field === "choices") {
+      const choices = corrected.choices ?? [];
+      if (choices.reduce((count, choice) => count + exactOccurrenceCount(choice, replacement.from), 0) !==
+          replacement.count) {
+        throw new Error(`${key} manual revision replacement occurrence가 다릅니다`);
+      }
+      corrected.choices = choices.map((choice) => choice.split(replacement.from).join(replacement.to));
+    } else {
+      const current = replacement.field === "question"
+        ? corrected.question
+        : replacement.field === "answer"
+          ? corrected.answer
+          : corrected.figure_description ?? "";
+      if (exactOccurrenceCount(current, replacement.from) !== replacement.count) {
+        throw new Error(`${key} manual revision replacement occurrence가 다릅니다`);
+      }
+      const next = current.split(replacement.from).join(replacement.to);
+      if (replacement.field === "question") corrected.question = next;
+      else if (replacement.field === "answer") corrected.answer = next;
+      else corrected.figure_description = next;
     }
-    corrected.choices = choices.map((choice) => choice.split(replacement.from).join(replacement.to));
-  } else {
-    const current = replacement.field === "question"
-      ? corrected.question
-      : replacement.field === "answer"
-        ? corrected.answer
-        : corrected.figure_description ?? "";
-    if (exactOccurrenceCount(current, replacement.from) !== replacement.count) {
-      throw new Error(`${key} manual revision replacement occurrence가 다릅니다`);
-    }
-    const next = current.split(replacement.from).join(replacement.to);
-    if (replacement.field === "question") corrected.question = next;
-    else if (replacement.field === "answer") corrected.answer = next;
-    else corrected.figure_description = next;
   }
   if (questionKey(corrected) !== key || corrected.page !== spec.sourcePage) {
     throw new Error(`${key} manual revision이 원본 key/page를 바꿨습니다`);
@@ -27533,6 +27686,14 @@ export async function repairAndAuditOfficialAnswers(
       repair: ProblemRepairEvidence;
       recovery: ProblemRecoveryEvidence;
     }> = [];
+    const manualRevisionCurrents: Array<{
+      key: string;
+      current: ClassifiedQuestion;
+      repair: ProblemRepairEvidence;
+      recovery: ProblemRecoveryEvidence;
+      manual: ProblemManualAdjudicationEvidence;
+      spec: ProblemManualRevisionSpec;
+    }> = [];
     const manualSourceRevisionCurrents: Array<{
       key: string;
       current: ClassifiedQuestion;
@@ -27583,6 +27744,27 @@ export async function repairAndAuditOfficialAnswers(
           }
           const manual = recovery?.manualAdjudication;
           const manualRevision = manual?.revision;
+          if (trigger.kind === "terminal" && recovery && manual && !manualRevision) {
+            const revisionSpec = problemManualRevisionSpec(
+              entry.id,
+              key,
+              current.question.page!,
+              problem.sha256,
+              manual,
+              current
+            );
+            if (revisionSpec) {
+              manualRevisionCurrents.push({
+                key,
+                current,
+                repair: existing,
+                recovery,
+                manual,
+                spec: revisionSpec,
+              });
+              continue;
+            }
+          }
           if (trigger.kind === "terminal" && recovery && manual && manualRevision && !manualRevision.sourceRevision) {
             const sourceRevisionSpec = problemManualSourceRevisionSpec(
               entry.id,
@@ -27619,14 +27801,23 @@ export async function repairAndAuditOfficialAnswers(
     }
     const manualPreflightSpecs = [
       ...exactRecoveryManualCurrents,
+      ...manualRevisionCurrents,
       ...manualSourceRevisionCurrents,
-    ].map((item) => problemManualAdjudicationSpec(
-      entry.id,
-      item.key,
-      item.current.question.page!,
-      problem.sha256,
-      canonicalEvidenceHash(item.current.question)
-    ));
+    ].map((item) => {
+      const manualAllowlistId = "manual" in item
+        ? (item.manual as ProblemManualAdjudicationEvidence).allowlistId
+        : undefined;
+      return PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((candidate) =>
+        candidate.entryId === entry.id && candidate.key === item.key &&
+        candidate.sourceHash === problem.sha256 && candidate.allowlistId === manualAllowlistId
+      ) ?? problemManualAdjudicationSpec(
+        entry.id,
+        item.key,
+        item.current.question.page!,
+        problem.sha256,
+        canonicalEvidenceHash(item.current.question)
+      );
+    });
     for (const spec of manualPreflightSpecs.filter(
       (candidate, index, all): candidate is ProblemManualAdjudicationSpec =>
         Boolean(candidate) && all.findIndex((other) => other?.allowlistId === candidate?.allowlistId) === index
@@ -27725,6 +27916,50 @@ export async function repairAndAuditOfficialAnswers(
         });
         changedKeys.add(item.key);
       }
+    }
+    for (const item of manualRevisionCurrents.sort((left, right) =>
+      compareCorpusQuestionKeys(left.key, right.key)
+    )) {
+      const prepared = {
+        artifact: item.manual.cropEvidenceArtifact,
+        pdf: {
+          ...item.manual.cropEvidencePdf,
+          absolutePath: confinedStateFile(
+            stateDir,
+            item.manual.cropEvidencePdf.path,
+            "manual revision crop evidence PDF"
+          ),
+        },
+        views: item.manual.cropViews,
+      };
+      const revised = await reviseProblemManualAdjudication(
+        entry,
+        stateDir,
+        item.current,
+        prepared,
+        item.manual,
+        item.spec,
+        false
+      );
+      if (!revised) throw new Error(`${item.key} manual revision child가 없습니다`);
+      const index = effective.findIndex((current) => questionKey(current.question) === item.key);
+      const existing = repairs.get(item.key);
+      const manual = existing?.revision?.recovery?.manualAdjudication;
+      if (index < 0 || !existing?.revision?.recovery || !manual || manual.revision) {
+        throw new Error(`${item.key} manual revision authority가 없습니다`);
+      }
+      effective[index] = revised.classified;
+      repairs.set(item.key, {
+        ...existing,
+        revision: {
+          ...existing.revision,
+          recovery: {
+            ...existing.revision.recovery,
+            manualAdjudication: { ...manual, revision: revised.evidence },
+          },
+        },
+      });
+      changedKeys.add(item.key);
     }
     for (const spec of forced5578421ManualSpecs) {
       const index = effective.findIndex((current) => questionKey(current.question) === spec.key);
