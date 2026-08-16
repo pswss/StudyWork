@@ -8037,6 +8037,30 @@ export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSou
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_reading",
 
+}, {
+  allowlistId: "ebsi-5577054-q26-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5577054-q26-manual-revision-v1",
+  parentRevisionEvidenceHash: "7384c5a55a6a15ed606535fe3bbec9b1984d30a2f4fd4d830f24320aff4fb198",
+  entryId: "ebsi:5577054",
+  key: "9:26",
+  sourcePage: 9,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "380306fbf78d87225fd69dc4b65b16b4940b9d11d814c6193559f7965f36c144",
+  failedClassificationHash: "c98b7f236564ead2f2aa1fca3f06e8bf5030346fd59f44d6cb186ef271c5cc57",
+  failedClassificationEvidenceHash: "f3924d2de3de5452ffbd97d5255be83240043f6778dee8f750dfda261ce2d670",
+  replacement: Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS[0],
+  additionalReplacements: Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS.slice(1),
+  requiredTokens: [
+    "[24~29] 다음을 읽고 물음에 답하시오.", "<그림 1>　<그림 2>", "<그림 3>",
+    "$S(\\text{색})=rR+gG+bB$", "㉮ <인상: 해돋이>", "화폭에 담으려",
+    "㉤ 인접한", "㉯ <우물가의 여인들>", "또한 시냐크는",
+    "각각 가는 선 하나로 연결되어 있다", "필터 A의 투과율", "필터 B의 투과율",
+    "26. 윗글을 바탕으로 <보기>에 대해 이해한 내용으로 적절하지 않은 것은? [3점]",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_reading",
+
+
 }] as const;
 
 export const PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST:
