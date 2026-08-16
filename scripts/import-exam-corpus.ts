@@ -10183,8 +10183,8 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedInputHash: "4cb3befe97f26283548e95994bf2ccd140dfc93e7b3356e00014afdd014d29b5",
   failedTerminalInputHash: "f7367de764fd780cf115097afe12efdacfd44e530ac7b593fa601635729a4962",
   failedItemHash: "d28e5cf56ae2ca3c96c3542715ebdaea69c9bed11f48bba132aab58f61f2e25c",
-  failedEvidenceHash: "e179de27c91d58aa0da251dabef598e79301a40e15e5dff5115a134e8c367387",
-  failedScopeEvidenceHash: "635d27304de85c1a2a38cdc62482cd9b67a5293a25953c0a2b01a95cb07ef783",
+  failedEvidenceHash: "1a90e8c4741b033dbfc0b1c290684333e0ff44f351ae0fc3d07d91603ef09a5a",
+  failedScopeEvidenceHash: "91687a73c9f7fa9bdb1ed57c16932e193d76ea2199c9056bef5757f7e5ae14d9",
 }] as const;
 
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(
