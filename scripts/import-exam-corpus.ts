@@ -8630,6 +8630,30 @@ export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSp
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_reading",
+}, {
+  allowlistId: "ebsi-5577054-q43-source-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q43-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "16:43",
+  sourcePage: 16,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedStatus: "exact",
+  failedQuestionHash: "66f7dac4210c123c63929abab14ac7b15360146dc613243105c0e3c3f1505d92",
+  failedClassificationHash: "67324adc8f8375896a0d92185916bb797cbd5e8354c05fcdf650c8d2de4b5048",
+  failedClassificationEvidenceHash: "031a93024e4d856fa9872748f3bb9061254672f2d61f2e8e1e5880756bd69a26",
+  replacement: {
+    field: "question",
+    from: "이 밤으로 돌아가",
+    to: "이 방으로 돌아가",
+    count: 1,
+  },
+  requiredTokens: [
+    "[43 ~ 45] 다음을 읽고 물음에 답하시오.", "이 방으로 돌아가",
+    "43. (가)와 (나)의 공통점에 대한 설명으로 가장 적절한 것은?",
+    "서로 겹치지 않는 [A], [B], [C] 순서",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
 }] as const;
 
 export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
