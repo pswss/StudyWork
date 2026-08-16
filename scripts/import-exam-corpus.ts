@@ -4734,6 +4734,67 @@ const Q26_5577054_FIGURE_DESCRIPTION = Q24_29_5577054_FIGURE_DESCRIPTION +
   "투과율이 0%인 수평선으로 표시되고, 500nm에서 100%로 수직 상승한 뒤 700nm까지 100%인 " +
   "수평선으로 이어진다.";
 
+const Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question", from: "[24~29] 다음 글을", to: "[24~29] 다음을", count: 1,
+}, {
+  field: "question", from: "<그림 1>  <그림 2>", to: "<그림 1>　<그림 2>", count: 1,
+}, {
+  field: "question", from: "$380\\sim780\\mathrm{nm}$", to: "380~780nm", count: 1,
+}, {
+  field: "question", from: "$600\\sim700\\mathrm{nm}$", to: "600~700nm", count: 1,
+}, {
+  field: "question", from: "$500\\sim600\\mathrm{nm}$", to: "500~600nm", count: 1,
+}, {
+  field: "question", from: "$400\\sim500\\mathrm{nm}$", to: "400~500nm", count: 1,
+}, {
+  field: "question",
+  from: "‘$S(\\text{색})=rR+gG+bB$’",
+  to: "$S(\\text{색})=rR+gG+bB$",
+  count: 1,
+}, {
+  field: "question", from: "‘$r$’", to: "‘r’", count: 1,
+}, {
+  field: "question", from: "$r$, $g$, $b$", to: "r, g, b", count: 2,
+}, {
+  field: "question",
+  from: "색에 대한 다양한 정보를 <그림 3>",
+  to: "색에 대한 다양한 정보는 <그림 3>",
+  count: 1,
+}, {
+  field: "question", from: "㉤ <인상·해돋이>", to: "㉮ <인상: 해돋이>", count: 1,
+}, {
+  field: "question",
+  from: "순간적인 광경을 회화에 담으려",
+  to: "순간적인 광경을 화폭에 담으려",
+  count: 1,
+}, {
+  field: "question", from: "㉥ 인접한", to: "㉤ 인접한", count: 1,
+}, {
+  field: "question", from: "㉦ <유람선의 여인들>", to: "㉯ <우물가의 여인들>", count: 1,
+}, {
+  field: "question", from: "또 시냐크는", to: "또한 시냐크는", count: 1,
+}];
+
+const Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION =
+  "본문에는 <그림 1>, <그림 2>, <그림 3>이 있다. <그림 1>은 세 원이 겹친 가법 혼합 도식이다. " +
+  "위쪽 원은 ‘빨강’, 왼쪽 아래 원은 ‘파랑’, 오른쪽 아래 원은 ‘초록’이며, 빨강과 파랑의 겹침은 ‘자홍’, " +
+  "빨강과 초록의 겹침은 ‘노랑’, 파랑과 초록의 겹침은 ‘청록’, 세 원의 중앙 겹침은 ‘흰색’으로 표시되어 " +
+  "있다. <그림 2>는 세 원이 겹친 감법 혼합 도식이다. 위쪽 원은 ‘청록’, 왼쪽 아래 원은 ‘노랑’, " +
+  "오른쪽 아래 원은 ‘자홍’이며, 청록과 노랑의 겹침은 ‘초록’, 청록과 자홍의 겹침은 ‘파랑’, 노랑과 " +
+  "자홍의 겹침은 ‘빨강’, 세 원의 중앙 겹침은 ‘검정’으로 표시되어 있다. <그림 3>은 정사각형 격자 안의 " +
+  "직각삼각형 색 삼각형이다. 가로축은 ‘빨강의 비율’로 오른쪽으로 0에서 1까지 증가하고 0.2, 0.4, 0.6, " +
+  "0.8, 1이 표시되어 있다. 세로축은 ‘초록의 비율’로 위쪽으로 0에서 1까지 증가하고 0, 0.2, 0.4, " +
+  "0.6, 0.8, 1이 표시되어 있다. 삼각형의 꼭짓점은 왼쪽 아래, 왼쪽 위, 오른쪽 아래에 있고, 왼쪽 " +
+  "위에서 오른쪽 아래로 내려오는 빗변이 그어져 있다. 삼각형 내부에는 ⓐ, ⓑ, ⓒ가 원으로 표시되어 있다. " +
+  "ⓐ는 중앙 부근, ⓑ는 왼쪽 위쪽, ⓒ는 오른쪽 아래쪽에 있다. 이 밖에 왼쪽 변의 초록 비율 0.6 지점, " +
+  "중앙의 왼쪽 아래 부근, 오른쪽 아래 변 부근에 작은 흰 원이 각각 하나씩 표시되어 있다. 삼각형 내부는 " +
+  "위치에 따라 밝기가 달라지는 회색 음영으로 표현되어 있다.";
+
+const Q26_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION =
+  Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION +
+  Q26_5577054_FIGURE_DESCRIPTION.slice(Q24_29_5577054_FIGURE_DESCRIPTION.length);
+
+
 
 
 const Q22_5577054_FAILED_CHOICE =
@@ -7263,6 +7324,40 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_reading",
   },
+  {
+    allowlistId: "ebsi-5577054-q24-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "9:24",
+    sourcePage: 9,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "d7c99f2fb8261b320d824ba8077842b842d07d94232fd22e0b003f90d36e082c",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "51d9c3df1c91d0e292d10f59e5d641a5218d5591bbe79b05314f25261558ac70",
+    failedClassificationHash: "a602627d33d1c59bfef3ab690d346e07da26513890d95375fe11d61a0e42ea64",
+    failedClassificationEvidenceHash: "43671e5ccfd75665ab7393b7953339bd7d8768d70ba96b6cf9a6e9adf4dc447e",
+    views: [
+      { sourcePage: 8, label: "p8 full Q24-Q29 shared passage start", rect: [0, 0, 1, 1] },
+      { sourcePage: 8, label: "p8 right passage and figures 1-3", rect: [0.50, 0.08, 0.95, 0.98] },
+      { sourcePage: 9, label: "p9 full passage continuation and Q24", rect: [0, 0, 1, 1] },
+      { sourcePage: 9, label: "p9 left passage continuation", rect: [0.07, 0.08, 0.50, 0.94] },
+      { sourcePage: 9, label: "p9 right Q24 stem and choices", rect: [0.51, 0.08, 0.95, 0.35] },
+    ],
+    requiredTokens: [
+      "[24~29] 다음을 읽고 물음에 답하시오.", "<그림 1>　<그림 2>", "<그림 3>",
+      "$S(\\text{색})=rR+gG+bB$", "㉮ <인상: 해돋이>", "화폭에 담으려",
+      "㉤ 인접한", "㉯ <우물가의 여인들>", "또한 시냐크는",
+      "0.2, 0.4, 0.6, 0.8, 1", "작은 흰 원이 각각 하나씩",
+      "24. 윗글에 대한 설명으로 가장 적절한 것은?",
+    ],
+    replacements: Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+
 
 
 
@@ -7615,6 +7710,31 @@ export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSp
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_reading",
+}, {
+  allowlistId: "ebsi-5577054-q26-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q26-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "9:26",
+  sourcePage: 9,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedStatus: "exact",
+  failedQuestionHash: "6c21f5f2fa81dbe1cc7b4681ac851da5036b48f21c9353d565d03f037a78c345",
+  failedClassificationHash: "0c5de2023e56ba2505e65aae4e79c942ae3d76d840324784c36ebfe6b1136731",
+  failedClassificationEvidenceHash: "fb9cdcfb112bafc00450b1c097061d5af9b9c872c3fd659afc7f3b179e44e93c",
+  replacement: {
+    field: "figure_description",
+    from: Q26_5577054_FIGURE_DESCRIPTION,
+    to: Q26_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION,
+    count: 1,
+  },
+  requiredTokens: [
+    "<그림 1>", "<그림 2>", "<그림 3>", "정사각형 격자 안의 직각삼각형 색 삼각형",
+    "왼쪽 변의 초록 비율 0.6 지점", "작은 흰 원이 각각 하나씩", "필터 A의 투과율",
+    "필터 B의 투과율", "600nm에서 0%로 수직 하강", "500nm에서 100%로 수직 상승",
+    "26. 윗글을 바탕으로 <보기>에 대해 이해한 내용으로 적절하지 않은 것은? [3점]",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_reading",
 
 }] as const;
 
@@ -7854,6 +7974,37 @@ export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSou
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q25-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5577054-q25-manual-revision-v1",
+  parentRevisionEvidenceHash: "e481871f21f7dfad21025859ae3e254843f494bf71ece49bcceb7c1d20976e6e",
+  entryId: "ebsi:5577054",
+  key: "9:25",
+  sourcePage: 9,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "053ea803cf6997b2203b32aa4882a89ceabc8993fa4baca37dbc7bb8cdbe54c2",
+  failedClassificationHash: "311fca60647c56fd54c79e62458e3b1ece591075874f02ae97cfd546b2834904",
+  failedClassificationEvidenceHash: "85927237fb7f477c000cfbf859abdde4b0dca7b40b6587dda932f445ac4afcc1",
+  replacement: Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS[0],
+  additionalReplacements: [
+    ...Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS.slice(1),
+    {
+      field: "figure_description",
+      from: Q24_29_5577054_FIGURE_DESCRIPTION,
+      to: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION,
+      count: 1,
+    },
+  ],
+  requiredTokens: [
+    "[24~29] 다음을 읽고 물음에 답하시오.", "<그림 1>　<그림 2>", "<그림 3>",
+    "$S(\\text{색})=rR+gG+bB$", "㉮ <인상: 해돋이>", "화폭에 담으려",
+    "㉤ 인접한", "㉯ <우물가의 여인들>", "또한 시냐크는",
+    "왼쪽 변의 초록 비율 0.6 지점", "작은 흰 원이 각각 하나씩",
+    "25. 윗글을 이해한 내용으로 적절하지 않은 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_reading",
+
 }] as const;
 
 export const PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST:
