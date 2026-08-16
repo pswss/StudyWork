@@ -2272,6 +2272,12 @@ describe("exact allowlisted problem manual adjudication", () => {
           "ebsi-5577054-q36-terminal-fidelity-v3",
         ].includes(candidate.allowlistId)
       );
+      const terminalSpecsV4 = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.filter((candidate) =>
+        [
+          "ebsi-5577054-q35-terminal-fidelity-v4",
+          "ebsi-5577054-q36-terminal-fidelity-v4",
+        ].includes(candidate.allowlistId)
+      );
       expect({
         length: PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.length,
         allowlistHash: canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST),
@@ -2303,9 +2309,10 @@ describe("exact allowlisted problem manual adjudication", () => {
         failedItemHashes: [q35TerminalSpec.failedItemHash, q36TerminalSpec.failedItemHash],
         v2RowHashes: terminalSpecsV2.map((candidate) => canonicalEvidenceHash(candidate)),
         v3RowHashes: terminalSpecsV3.map((candidate) => canonicalEvidenceHash(candidate)),
+        v4RowHashes: terminalSpecsV4.map((candidate) => canonicalEvidenceHash(candidate)),
       }).toEqual({
-        length: 25,
-        allowlistHash: "40adb016e691cf916a686b3bbfb537cb237fb9d7a2f45c24e91594d9d8898371",
+        length: 27,
+        allowlistHash: "c5a85e5c902eaf4d27c238e42ed7731490459497dda8e7910d941f85ef4a9e25",
         q35RowHash: "08c169cd5335b6fdcea2d8f5ebe6027a6ffc15009e366febf883e48a58ed750e",
         q36RowHash: "1beffca4ead0209950734f824a7b7b4e42fba3c02e89e35796b01359908daefa",
         keys: ["13:35", "13:36"],
@@ -2326,6 +2333,10 @@ describe("exact allowlisted problem manual adjudication", () => {
         v3RowHashes: [
           "17e7243ec36c81b105bbe718a8431ada0bce5aef26f842e61d0ae4190e8af71d",
           "4f5b71bbbf8429298fc5678c3f993816633e1fe3732b96c578e259b256012e2b",
+        ],
+        v4RowHashes: [
+          "5bf87e7f45655655190392daf118b70b38383c2d87c36a7f2d54c32a2e64f413",
+          "ce0fde4b07148ea7313c0380b3fd3b56b2286832d40ce35109755d0fb94fe80d",
         ],
       });
 
@@ -3263,7 +3274,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 6)))
       .toBe("ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048");
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST))
-      .toBe("40adb016e691cf916a686b3bbfb537cb237fb9d7a2f45c24e91594d9d8898371");
+      .toBe("c5a85e5c902eaf4d27c238e42ed7731490459497dda8e7910d941f85ef4a9e25");
     expect(terminalSpecs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -4505,7 +4516,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         rowHash: canonicalEvidenceHash(candidate),
       })),
     }).toEqual({
-      allowlistHash: "40adb016e691cf916a686b3bbfb537cb237fb9d7a2f45c24e91594d9d8898371",
+      allowlistHash: "c5a85e5c902eaf4d27c238e42ed7731490459497dda8e7910d941f85ef4a9e25",
       prefixHash: "e4601a183669f046f4cc1f52cd30a860fe6347f96ffa41b30bdc8db2123630b3",
       rows: [{
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",
