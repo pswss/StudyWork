@@ -4405,6 +4405,8 @@ const Q16_20_5577054_FIGURE_DESCRIPTION =
   "한계 비용의 교점은 B이고 생산량은 Q_m이다. Q_m에서 수요 곡선과 만나는 점은 A이고 가격은 P_m이다. " +
   "수요 곡선과 한계 비용의 교점은 C이고 생산량은 Q_c, 가격은 P_c이다. P_m·P_c에는 수평 점선, " +
   "Q_m·Q_c에는 수직 점선이 표시되어 있다.";
+const Q16_20_5577054_FIGURE_DESCRIPTION_REVISION =
+  `${Q16_20_5577054_FIGURE_DESCRIPTION} A, B, C 세 점은 각각 내부가 흰 속 빈 원(○)으로 표시되어 있다.`;
 
 const Q42_5577054_REPLACEMENTS: ProblemManualReplacement[] = [
   { field: "question", from: "[37~42] 다음을 읽고 물음에 답하시오.", to: "[37 ~ 42] 다음을 읽고 물음에 답하시오.", count: 1 },
@@ -7020,6 +7022,28 @@ export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSp
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q20-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q20-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "6:20",
+  sourcePage: 6,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "1536c1c410f642b57e47a46f7968ae3bd6a7586ee4afaf3a3c99ff0d22aec04c",
+  failedClassificationHash: "f058f3b440d0228eb235b35f7e25627713140ffac3b02569681bd42bb80eb297",
+  failedClassificationEvidenceHash: "31ca238108b4e41d4d5ff2bbc3db56a67233c3616e770effbad16f12aaa06978",
+  replacement: {
+    field: "figure_description",
+    from: Q16_20_5577054_FIGURE_DESCRIPTION,
+    to: Q16_20_5577054_FIGURE_DESCRIPTION_REVISION,
+    count: 1,
+  },
+  requiredTokens: [
+    "[16 ~ 20] 다음을 읽고 물음에 답하시오.", "20. ⓐ와 바꿔 쓰기에 적절한 것은?",
+    "A, B, C 세 점은 각각 내부가 흰 속 빈 원(○)", "세로축 위쪽 점은 α, 아래쪽 점은 β",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_reading",
 }] as const;
 
 export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
