@@ -8093,6 +8093,34 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
     "④ 전자 상거래로 피해를 입은 청소년에게 일어날 수 있는 2차 피해의 위험성을 뒷받침한다.",
   ],
   expectedDecision: "reject",
+}, {
+  allowlistId: "ebsi-5577054-q14-source-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q14-source-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "5:14",
+  sourcePage: 5,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "fc2ab0389e5d4d85b43c91156e4fa5731a93bda907dc307337412cd85588f2af",
+  failedClassificationHash: "6eb504978566bc6cd72bda7683211ba41ca8cd3eb5e3f42414100ca0ed51680c",
+  failedClassificationEvidenceHash: "bc35ef99546b544a9f5c9feda6d0fa5f86c41527032afdab9875484a63b26c0c",
+  replacement: {
+    field: "question",
+    from: "‘ㆍ, ㅏ, ㅗ’",
+    to: "‘ㅏ, ㅗ, ㆍ’",
+    count: 1,
+  },
+  additionalReplacements: [{
+    field: "answer",
+    from: "⑤ ᄀᆞᄃᆞᆨᄒᆞ- | ᄀᆞᄃᆞᆨᄒᆞ야 | 가득하- | 가득하여",
+    to: "⑤ - | 야 | 가득하- | 가득하여",
+    count: 1,
+  }],
+  requiredTokens: [
+    "‘ㅏ, ㅗ, ㆍ’ 등의 양성 모음은 양성 모음끼리",
+    "⑤ - | 야 | 가득하- | 가득하여",
+    "15세기 국어", "현대 국어", "용언 어간", "활용형",
+  ],
+  expectedDecision: "reject",
 }] as const;
 
 const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
