@@ -8664,7 +8664,7 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
   solutionSourceHash: "2abfea3ad57f76b754720050839da1698222201359f290054d3c5564d3121f8a",
   parentQuestionHash: "007022fe882311c79d872914965258aa346dba184f04dcb4b6dd787723075ea9",
-  parentClassificationHash: "770c2d18aa4ec3159f46da461ef452972949942ff4f6a9771044485faa146398",
+  parentClassificationHash: "45c3cba4b3188eaa144b74880e5f314c8eccdf0863efe6dad4a08d2ba839d5f3",
   parentProblemArtifactPath: "problem-manual-adjudications/" +
     "v1-0013-0036-518b353bd7522343b8393647d8ab4f97a875cf06b758c0a4987573af31b6342c.json",
   parentProblemArtifactHash: "2054d2a3fe861d90c069ec6945622a244c44f044f710110e13ef7658aedaf47d",
