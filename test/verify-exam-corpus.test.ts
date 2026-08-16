@@ -14457,11 +14457,11 @@ describe("exam corpus verifier", () => {
     "mirrors and verifies the exact 5578421 Q44-Q45 shared-passage authority",
     async () => {
     expect(problemManualAdjudicationAllowlistForTest()).toEqual(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(77);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(79);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("746927f192a7e97831fe84267569b321ea836c307ed0d03d4b68d284437d7ee3");
+      .toBe("7160ec12e79d1aff3a653466fadb2ae428e8884a1e262abb3928ba0c7886ba06");
     expect(manualRevisionAllowlistFingerprint())
       .toBe("e08765a1ecfae70d6c56ea5655d5b84758418e8e744ac1a908442cb2e153bf37");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 6)))
@@ -14546,9 +14546,9 @@ describe("exam corpus verifier", () => {
     "mirrors and verifies the exact 5578421 Q2 terminal-trigger authority",
     async () => {
     expect(problemManualAdjudicationAllowlistForTest()).toEqual(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(77);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(79);
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("746927f192a7e97831fe84267569b321ea836c307ed0d03d4b68d284437d7ee3");
+      .toBe("7160ec12e79d1aff3a653466fadb2ae428e8884a1e262abb3928ba0c7886ba06");
     expect({
       rowHash: canonicalEvidenceHash(Q2_5578421_MANUAL_SPEC),
       replacementsHash: canonicalEvidenceHash(Q2_5578421_MANUAL_SPEC.replacements),
@@ -14625,11 +14625,11 @@ describe("exam corpus verifier", () => {
     "mirrors and verifies the exact 5578421 Q14 tone-diagram authority",
     async () => {
     expect(problemManualAdjudicationAllowlistForTest()).toEqual(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(77);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(79);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 48)))
       .toBe("66ff6014e0969fa9a2f13b53c9157eb8a5ca945097cba7ee1d6416cf93e0cc8d");
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("746927f192a7e97831fe84267569b321ea836c307ed0d03d4b68d284437d7ee3");
+      .toBe("7160ec12e79d1aff3a653466fadb2ae428e8884a1e262abb3928ba0c7886ba06");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 8)))
       .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
     expect(manualRevisionAllowlistFingerprint())
@@ -14698,11 +14698,11 @@ describe("exam corpus verifier", () => {
     "mirrors and verifies the second source-exact 5578421 Q3 recovery",
     async () => {
     expect(problemManualAdjudicationAllowlistForTest()).toEqual(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(77);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(79);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 53)))
       .toBe("0ccd51016dcfc75b0fe1e9f5ed88216b02aa305911b232a9f7f90eb68cc6544c");
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("746927f192a7e97831fe84267569b321ea836c307ed0d03d4b68d284437d7ee3");
+      .toBe("7160ec12e79d1aff3a653466fadb2ae428e8884a1e262abb3928ba0c7886ba06");
     expect({
       rowHash: canonicalEvidenceHash(Q3_V2_5578421_MANUAL_SPEC),
       replacementsHash: canonicalEvidenceHash(Q3_V2_5578421_MANUAL_SPEC.replacements),
@@ -14754,11 +14754,11 @@ describe("exam corpus verifier", () => {
     "mirrors and verifies the exact 5578421 Q12 grammar-table authority",
     async () => {
     expect(problemManualAdjudicationAllowlistForTest()).toEqual(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(77);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(79);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 51)))
       .toBe("8377e380ffebc05e5e74bcf04896ff495c93630378b30f2051cc5c2e896c9e23");
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("746927f192a7e97831fe84267569b321ea836c307ed0d03d4b68d284437d7ee3");
+      .toBe("7160ec12e79d1aff3a653466fadb2ae428e8884a1e262abb3928ba0c7886ba06");
     expect({
       rowHash: canonicalEvidenceHash(Q12_5578421_MANUAL_SPEC),
       replacementsHash: canonicalEvidenceHash(Q12_5578421_MANUAL_SPEC.replacements),
@@ -14813,11 +14813,11 @@ describe("exam corpus verifier", () => {
     "mirrors and verifies the exact 5578421 Q43 shared-passage authority",
     async () => {
     expect(problemManualAdjudicationAllowlistForTest()).toEqual(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(77);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(79);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 52)))
       .toBe("d33bde802507edbe74051f14a89b6182714cbc675f3838d0245a91f405562a87");
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("746927f192a7e97831fe84267569b321ea836c307ed0d03d4b68d284437d7ee3");
+      .toBe("7160ec12e79d1aff3a653466fadb2ae428e8884a1e262abb3928ba0c7886ba06");
     expect({
       rowHash: canonicalEvidenceHash(Q43_5578421_MANUAL_SPEC),
       replacementsHash: canonicalEvidenceHash(Q43_5578421_MANUAL_SPEC.replacements),
@@ -14872,11 +14872,11 @@ describe("exam corpus verifier", () => {
     "mirrors and verifies the exact 5578421 Q38 shared-passage authority",
     async () => {
     expect(problemManualAdjudicationAllowlistForTest()).toEqual(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(77);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(79);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 54)))
       .toBe("3f9a653666b0b3b9e3d61ee0ce29700cd68f86ea98ca148a8280a22d9ec95769");
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("746927f192a7e97831fe84267569b321ea836c307ed0d03d4b68d284437d7ee3");
+      .toBe("7160ec12e79d1aff3a653466fadb2ae428e8884a1e262abb3928ba0c7886ba06");
     expect({
       rowHash: canonicalEvidenceHash(Q38_5578421_MANUAL_SPEC),
       replacementsHash: canonicalEvidenceHash(Q38_5578421_MANUAL_SPEC.replacements),
@@ -15828,7 +15828,7 @@ describe("exam corpus verifier", () => {
   it.skipIf(!existsSync(join(Q30_MANUAL_STATE, "problem.pdf")))(
     "verifies the exact 5578421 Q31-Q32 manual pair and rejects tamper, orphan, or symlink",
     async () => {
-      expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(77);
+      expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(79);
       expect(problemManualAdjudicationAllowlistForTest())
         .toEqual(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
       expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 36)))
@@ -15836,7 +15836,7 @@ describe("exam corpus verifier", () => {
       expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
         .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
       expect(manualAdjudicationAllowlistFingerprint())
-        .toBe("746927f192a7e97831fe84267569b321ea836c307ed0d03d4b68d284437d7ee3");
+        .toBe("7160ec12e79d1aff3a653466fadb2ae428e8884a1e262abb3928ba0c7886ba06");
       expect(Q31_Q32_5578421_MANUAL_SPECS.map((spec) => canonicalEvidenceHash(spec))).toEqual([
         "b5c5cfd215a05bb6f55f88aff21fae146465e33056a42a8c7cfff831148a51ca",
         "3aed2606c06fcdd6e45647693d4cb251196aa8b4653b8c6378fd8f9a480e336d",
@@ -15925,13 +15925,13 @@ describe("exam corpus verifier", () => {
     "mirrors and verifies the exact 5578421 Q19-Q21 shared-passage authority",
     async () => {
     expect(problemManualAdjudicationAllowlistForTest()).toEqual(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(77);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(79);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 43)))
       .toBe("e7dfb4cb4e9985bfc3d3077b96baa9f1f7e2ff7f5b8dee6fb26b342d301b04fc");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("746927f192a7e97831fe84267569b321ea836c307ed0d03d4b68d284437d7ee3");
+      .toBe("7160ec12e79d1aff3a653466fadb2ae428e8884a1e262abb3928ba0c7886ba06");
     expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(43, 46).map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -16025,7 +16025,7 @@ describe("exam corpus verifier", () => {
     !existsSync(join(Q27_MANUAL_STATE, "problem.pdf"))
       || !existsSync(join(Q27_MANUAL_STATE, "solution.pdf")),
   )("verifies the terminal-recovery Q6-Q7 and Q21-Q26 manual authority", async () => {
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(77);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(79);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 29)))
       .toBe("0b5d7d19255cd91566a55b289b11f8a9460a3014a06f255f9a266ebd62980cf9");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 36)))
@@ -16033,7 +16033,7 @@ describe("exam corpus verifier", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("746927f192a7e97831fe84267569b321ea836c307ed0d03d4b68d284437d7ee3");
+      .toBe("7160ec12e79d1aff3a653466fadb2ae428e8884a1e262abb3928ba0c7886ba06");
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST));
     const expected = new Map([
@@ -16256,10 +16256,10 @@ describe("exam corpus verifier", () => {
 
   it("keeps the manual-adjudication allowlist byte-aligned with the importer", () => {
     expect(problemManualAdjudicationAllowlistForTest()).toEqual(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST);
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(77);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(79);
     expect(manualAdjudicationAllowlistFingerprint())
-      .toBe("746927f192a7e97831fe84267569b321ea836c307ed0d03d4b68d284437d7ee3");
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(-2).map((spec) => ({
+      .toBe("7160ec12e79d1aff3a653466fadb2ae428e8884a1e262abb3928ba0c7886ba06");
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(-4).map((spec) => ({
       id: spec.allowlistId,
       row: canonicalEvidenceHash(spec),
       replacements: canonicalEvidenceHash(spec.replacements),
@@ -16271,6 +16271,14 @@ describe("exam corpus verifier", () => {
       id: "ebsi-5577054-q19-source-manual-v1",
       row: "543081a6108ddc1750d03965a40713704686ff06cce0f9bb93c793fb83b2364d",
       replacements: "ca0dd6f36306748c130eefb153b2612aaea312f060722de62305c582bf10458d",
+    }, {
+      id: "ebsi-5577054-q33-source-manual-v1",
+      row: "357ba6238a19d835559245a62e8470ba6075f7c644d9c2e629a1b86871429974",
+      replacements: "f17a6f71abf2b9ab18084b37487ce45fd072fcbcac601860d9a409aa22e75aa1",
+    }, {
+      id: "ebsi-5577054-q34-source-manual-v1",
+      row: "827a61b1f719b33b82901e77fc785329ef4b665b97499f55030089641d770da9",
+      replacements: "b10a5ebd7727f49a337f7e99e86ee0b9fa49f921e5e9d79b4eabcdd1663a6e89",
     }]);
   });
 
