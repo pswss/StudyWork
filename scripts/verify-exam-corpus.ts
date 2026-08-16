@@ -6720,6 +6720,42 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_literature",
   },
+  {
+    allowlistId: "ebsi-5577054-q10-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "4:10",
+    sourcePage: 4,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "02ff5c579f3b8d086334dc2efb52c0004e74a7cd8380d48218eb6e360486f5f8",
+    failedClassificationHash: "3e6d34f5ddcedc314ae4472044795de6b04ad678a61663302d8e53f600c3cb31",
+    failedClassificationEvidenceHash: "0d11700b4dc21c204c34f31d41281a551ba368340a84fb371ce44586d4e04313",
+    views: [
+      { sourcePage: 3, label: "p3 full Q9-Q10 passage start", rect: [0, 0, 1, 1] },
+      { sourcePage: 3, label: "p3 right Q9-Q10 header and passage", rect: [0.50, 0.64, 0.95, 0.98] },
+      { sourcePage: 4, label: "p4 left passage continuation and Q9-Q10", rect: [0.07, 0.08, 0.50, 0.66] },
+    ],
+    requiredTokens: [
+      "[9~10] 다음은 학생이 쓴 수행 평가의 후기이다. 물음에 답하시오.",
+      "자신의 생각인 양 표현하는 것이 문제점임을 설명해 주셨다.",
+      "㉠～㉤을 고쳐 쓰기 위한 방안으로 적절하지 않은 것은?",
+      "④ ㉣: 맞춤법에 어긋나므로 ‘짜집기’로 수정한다.",
+    ],
+    replacements: [{
+      field: "question",
+      from: "다음은 학생이 쓴 수행 평가의 후기이다. 물음에 답하십시오.",
+      to: "[9~10] 다음은 학생이 쓴 수행 평가의 후기이다. 물음에 답하시오.",
+      count: 1,
+    }, {
+      field: "question",
+      from: "자신의 생각인 양 표현하는 것이 문제임을 설명해 주셨다.",
+      to: "자신의 생각인 양 표현하는 것이 문제점임을 설명해 주셨다.",
+      count: 1,
+    }],
+    expectedDecision: "reject",
+  },
 ] as const;
 
 const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
