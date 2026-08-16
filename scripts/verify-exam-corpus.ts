@@ -7267,6 +7267,36 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_literature",
   },
+  {
+    allowlistId: "ebsi-5577054-q3-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "1:3",
+    sourcePage: 1,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "b7e8aadd04697b10b457164b3f16cf14f185852964770c6437f0edc107302bed",
+    dpi: 600,
+    failedQuestionHash: "70f6e312bc064cdcdbe430e0117b1c03f94b65de74cae80db2fde06e1215419b",
+    failedClassificationHash: "8a44d37526f35d0259978a0d848611f872c78f18c2d36cb0d66989093828e157",
+    failedClassificationEvidenceHash: "4f028c1b178978cd267d2f6d7770d9dfbc2ac8cb7f17a8fa3e072d191869eafa",
+    views: [
+      { sourcePage: 1, label: "p1 full Q1-Q3 discussion and Q3 draft", rect: [0, 0, 1, 1] },
+      { sourcePage: 1, label: "p1 left Q1-Q3 shared discussion", rect: [0.07, 0.08, 0.50, 0.98] },
+      { sourcePage: 1, label: "p1 right Q3 draft and choices", rect: [0.50, 0.08, 0.95, 0.98] },
+    ],
+    requiredTokens: [
+      "[1~3] 다음은 토의이다. 물음에 답하시오.", "전시도 관람도 불편합니다.",
+      "다음은 미술관 측에서 ○○ 문화 재단에 제출할 제안서 초안이다.",
+      "ㄱ. 시 외곽에 제2 미술관 건립 ⓐ", "① ⓐ",
+    ],
+    replacements: [{
+      field: "question",
+      from: "전시도 제대로 못합니다.",
+      to: "전시도 관람도 불편합니다.",
+      count: 1,
+    }],
+    expectedDecision: "reject",
+  },
 ] as const;
 
 const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
