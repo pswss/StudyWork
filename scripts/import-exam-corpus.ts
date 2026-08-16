@@ -4817,6 +4817,71 @@ const Q26_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V2 =
   Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V3 +
   Q26_5577054_FIGURE_DESCRIPTION.slice(Q24_29_5577054_FIGURE_DESCRIPTION.length);
 
+const Q27_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "이를 수식화하면 $S(\\text{색})=rR+gG+bB$로",
+  to: "이를 수식화하면 ‘$S(\\text{색})=rR+gG+bB$’로",
+  count: 1,
+}, {
+  field: "figure_description",
+  from: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION,
+  to: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V3,
+  count: 1,
+}];
+
+const Q28_5577054_FAILED_FIGURE_DESCRIPTION =
+  "공유 지문의 <그림 1>은 빨강·파랑·초록의 세 원이 겹치는 가법 혼합 그림으로, 두 원이 겹치는 " +
+  "부분에는 자홍·노랑·청록, 세 원이 모두 겹치는 중앙에는 흰색이 표시되어 있다. <그림 2>는 " +
+  "청록·노랑·자홍의 세 원이 겹치는 감법 혼합 그림으로, 두 원이 겹치는 부분에는 초록·파랑·빨강, " +
+  "중앙에는 검정이 표시되어 있다. <그림 3>은 가로축이 ‘빨강의 비율’, 세로축이 ‘초록의 비율’인 " +
+  "색 삼각형이다. 두 축은 0에서 1까지이며, (0, 1)과 (1, 0)을 잇는 대각선 아래가 삼각형 영역이다. " +
+  "영역 안에는 ⓐ가 중앙 부근, ⓑ가 왼쪽 위 부근, ⓒ가 오른쪽 아래 부근에 표시되어 있고 여러 흰 " +
+  "원형 점이 보인다. <보기>에는 고흐의 <아를르의 포룸 광장의 카페 테라스>를 흑백으로 제시한 " +
+  "그림이 있으며, 건물 사이로 이어지는 밤거리와 카페 테라스, 탁자와 의자, 거리의 사람들 및 위쪽의 " +
+  "밤하늘이 원근감 있게 나타나 있다.";
+
+const Q28_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION =
+  Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V3 +
+  " 또한 <보기>에는 고흐의 <아를르의 포룸 광장의 카페 테라스>를 흑백으로 제시한 그림이 있다. " +
+  "왼쪽 건물에서 안쪽으로 이어지는 밤거리, 카페 테라스의 탁자와 의자, 거리의 사람들, 위쪽의 " +
+  "밤하늘이 원근감 있게 나타나 있다.";
+
+const Q28_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "까닭은 무엇일까?\n\n색은",
+  to: "까닭은 무엇일까?\n\n<그림 1>　<그림 2>\n\n색은",
+  count: 1,
+}, {
+  field: "question", from: "380～780 nm", to: "380~780nm", count: 1,
+}, {
+  field: "question", from: "600～700 nm", to: "600~700nm", count: 1,
+}, {
+  field: "question", from: "500～600 nm", to: "500~600nm", count: 1,
+}, {
+  field: "question", from: "400～500 nm", to: "400~500nm", count: 1,
+}, {
+  field: "question",
+  from: "‘$S(색)=rR+gG+bB$’",
+  to: "‘$S(\\text{색})=rR+gG+bB$’",
+  count: 1,
+}, {
+  field: "question", from: "‘$r$’", to: "‘r’", count: 1,
+}, {
+  field: "question", from: "$r$, $g$, $b$", to: "r, g, b", count: 2,
+}, {
+  field: "question",
+  from: "\n\n감법 혼합의 원리는",
+  to: "\n\n<그림 3>\n\n감법 혼합의 원리는",
+  count: 1,
+}, {
+  field: "question", from: "노란 벽", to: "노란 별", count: 1,
+}, {
+  field: "figure_description",
+  from: Q28_5577054_FAILED_FIGURE_DESCRIPTION,
+  to: Q28_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION,
+  count: 1,
+}];
+
 
 
 
@@ -7380,10 +7445,71 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_reading",
   },
-
-
-
-
+  {
+    allowlistId: "ebsi-5577054-q27-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "10:27",
+    sourcePage: 10,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "f33a343a6709a94e86de6d671c6a8de5eb99255d84a216a57a6a66f5c952b89e",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "5307560b2267a43fd8608de362f2bdd3daab86cbeef81a725c71f3f7d15b1e09",
+    failedClassificationHash: "1a5827c2b30ac83d37d4558bf6e7bb93e09b4149eaac91a42b38e27b8b80f37e",
+    failedClassificationEvidenceHash: "174fc6c40443bd7c466882e5d31f9dcfc765e232d690101d7843eff81dc30738",
+    views: [
+      { sourcePage: 8, label: "p8 full Q24-Q29 shared passage start", rect: [0, 0, 1, 1] },
+      { sourcePage: 8, label: "p8 right passage and figures 1-3", rect: [0.50, 0.08, 0.95, 0.98] },
+      { sourcePage: 9, label: "p9 full Q24-Q29 passage continuation", rect: [0, 0, 1, 1] },
+      { sourcePage: 10, label: "p10 full Q27-Q29 and next passage", rect: [0, 0, 1, 1] },
+      { sourcePage: 10, label: "p10 left Q27 stem and choices", rect: [0.07, 0.08, 0.50, 0.33] },
+    ],
+    requiredTokens: [
+      "[24~29] 다음을 읽고 물음에 답하시오.", "<그림 1>　<그림 2>", "<그림 3>",
+      "‘$S(\\text{색})=rR+gG+bB$’", "㉮ <인상: 해돋이>", "㉯ <우물가의 여인들>",
+      "색 삼각형의 격자는 0.05 간격", "흰 원 약 (0.33, 0.33)",
+      "초록 비율 0.6 눈금", "빨강 비율 0.8 눈금",
+      "27. 윗글의 <그림 3>에 대한 이해로 적절한 것은?",
+    ],
+    replacements: Q27_5577054_SOURCE_EXACT_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V3,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5577054-q28-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "10:28",
+    sourcePage: 10,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "a07d6c98d69371d46e2fe678b8e5e68986e9f6c3fd67379d6cbdfd7557163720",
+    dpi: 600,
+    failedQuestionHash: "273cf882c279d056a8b7e5fbfe9b60f9ce87583bf3dc5cc6e4f8c9b32e692f2b",
+    failedClassificationHash: "4514e20a6bb90a2089baad8aea1767c80f826a0ff1489a5e3a4a7c7c23b7e038",
+    failedClassificationEvidenceHash: "82501dc33c5be8c7c1fdaa2d4425dcae5b6819cc8f5c69ba6335024e46901c08",
+    views: [
+      { sourcePage: 8, label: "p8 full Q24-Q29 shared passage start", rect: [0, 0, 1, 1] },
+      { sourcePage: 8, label: "p8 right passage and figures 1-3", rect: [0.50, 0.08, 0.95, 0.98] },
+      { sourcePage: 9, label: "p9 full Q24-Q29 passage continuation", rect: [0, 0, 1, 1] },
+      { sourcePage: 10, label: "p10 full Q27-Q29 and next passage", rect: [0, 0, 1, 1] },
+      { sourcePage: 10, label: "p10 left Q28 stem, artwork, and choices", rect: [0.07, 0.31, 0.50, 0.86] },
+    ],
+    requiredTokens: [
+      "[24~29] 다음을 읽고 물음에 답하시오.", "<그림 1>　<그림 2>", "<그림 3>",
+      "‘$S(\\text{색})=rR+gG+bB$’", "㉮ <인상: 해돋이>", "㉯ <우물가의 여인들>",
+      "색 삼각형의 격자는 0.05 간격", "왼쪽 건물에서 안쪽으로 이어지는 밤거리",
+      "28. 윗글의 ㉮, ㉯와 <보기>의 ㉰에 대해 이해한 내용으로 가장 적절한 것은?",
+      "별이 빛나는 파란 하늘과 노란 별", "㉰ <아를르의 포룸 광장의 카페 테라스>",
+    ],
+    replacements: Q28_5577054_SOURCE_EXACT_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q28_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
 ] as const;
 
 export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
