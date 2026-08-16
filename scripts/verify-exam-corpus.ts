@@ -6267,7 +6267,7 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
   sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
   failedQuestionHash: "c307bca50a2becc6aaef538e28bcf82de400bc74f212ba48d32681732cb8ef14",
   failedClassificationHash: "15d2c83214105cdc4344ec4be412036e7b89de200042f659d36c82db4435dbf8",
-  failedClassificationEvidenceHash: "0394920476bc1d866e00c39cde68a25ffc6bb62267db6c9b1161092962ad5d55",
+  failedClassificationEvidenceHash: "67e55c951da93a86d74e3742c0bfa10e49c4d55f2eca7a445efde15be207c7ae",
   replacement: {
     field: "figure_description",
     from: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION,
