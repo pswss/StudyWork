@@ -4601,6 +4601,55 @@ const Q23_5577054_FAILED_CHOICE =
 const Q23_5577054_CORRECTED_CHOICE =
   "\u2464 \u2018\ub300\ud61c\ubcf4\uac01\uc0ac\uc758 \uff62 \uc11c\uc7a5 \uff63\u2019\uc744 \ubcf4\uba70 \uc18c\ud68c\ub97c \ub290\ub080 \uac83\uc740, \uc624\ub79c \uc2dc\uac04 \ub3d9\uc548 \ub178\ub825\ud558\uc5ec \ucc45\uc774 \uc644\uc131\ub418\ub294 \uacfc\uc815\uc744 \uc0dd\uac01\ud588\uae30 \ub54c\ubb38\uc774\uaca0\uad70.";
 
+const Q25_5577054_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "[24~29] 다음을",
+  to: "[24~29] 다음 글을",
+  count: 1,
+}, {
+  field: "question", from: "380~780nm", to: "$380\\sim780\\mathrm{nm}$", count: 1,
+}, {
+  field: "question", from: "600~700nm", to: "$600\\sim700\\mathrm{nm}$", count: 1,
+}, {
+  field: "question", from: "500~600nm", to: "$500\\sim600\\mathrm{nm}$", count: 1,
+}, {
+  field: "question", from: "400~500nm", to: "$400\\sim500\\mathrm{nm}$", count: 1,
+}, {
+  field: "question", from: "색료의 3원색에 해당하며", to: "색료의 3원색이 되는데", count: 1,
+}, {
+  field: "question", from: "‘$S(색)=rR+gG+bB$’", to: "‘$S(\\text{색})=rR+gG+bB$’", count: 1,
+}, {
+  field: "question",
+  from: "가법 혼합의 방식으로 만드는 색에 대한 정보는",
+  to: "가법 혼합의 방식으로 만드는 색에 대한 다양한 정보를",
+  count: 1,
+}, {
+  field: "question",
+  from: "파랑의 비율은 1에서 빨강과 초록의 비율의 합을 뺀 값. " +
+    "색을 혼합하는 두 색의 좌표를 연결한 선 위에 있는데",
+  to: "파랑의 비율은 1에서 빨강과 초록의 비율의 합을 빼면 되므로 빨강과 초록이 0이 되는 " +
+    "지점에서 파랑의 비율은 1이 된다. 색 삼각형을 보면 두 색을 섞어 만들어 내는 혼합 색이 어떤 비율로 " +
+    "섞였는지 쉽게 ㉣ 예측할 수 있다. 두 색을 섞은 혼합 색은 두 색의 좌표를 연결한 선 위에 있는데",
+  count: 1,
+}, {
+  field: "question", from: "\n\n감법 혼합의 원리는", to: "\n\n<그림 3>\n\n감법 혼합의 원리는", count: 1,
+}, {
+  field: "question", from: "㉣〈인상·해돋이〉", to: "㉤ <인상·해돋이>", count: 1,
+}, {
+  field: "question", from: "인천 앞바다의 태양 빛", to: "아침 안개 속의 태양 빛", count: 1,
+}, {
+  field: "question", from: "순간적인 광경을 화폭에 담으려", to: "순간적인 광경을 회화에 담으려", count: 1,
+}, {
+  field: "question", from: "㉤ 인접한", to: "㉥ 인접한", count: 1,
+}, {
+  field: "question",
+  from: "㉥〈아를르의 포룸 광장의 카페 테라스〉",
+  to: "㉦ <유람선의 여인들>",
+  count: 1,
+}, {
+  field: "question", from: "또한 시냐크는", to: "또 시냐크는", count: 1,
+}];
+
 const Q22_5577054_FAILED_CHOICE =
   "\u2464 \uc81c6\uc218\uc5d0\uc11c\ub294 \ubc14\uc704\uc758 \uc18d\uc131\uc5d0 \uc0ac\ub78c \ubaab\uc758 \uc18d\uc131\uc744 \ub354\ud574 \uc138\uc18d\uc744 \uc774\uc0c1\uc801 \uacf5\uac04\uc73c\ub85c \uc815\ud654\ud558\ub824\ub294 \uc758\uc9c0\ub97c \ub4dc\ub7ec\ub0b4\uace0 \uc788\uad70.";
 const Q22_5577054_CORRECTED_CHOICE =
@@ -7066,6 +7115,37 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_literature",
   },
+  {
+    allowlistId: "ebsi-5577054-q25-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "9:25",
+    sourcePage: 9,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "94c0d95498e93fd60c341b59880b9bbb91d180cb086ad7a5b5f382dfe115e8b8",
+    dpi: 600,
+    failedQuestionHash: "090f0eddcbd15e4b513bc30b9474136368149a52eda2e9653f4ba0634dbf8663",
+    failedClassificationHash: "3ecc7a369357a8823c69f3286ed740298b0861dbf615163ccae788a0e363a8ab",
+    failedClassificationEvidenceHash: "2f087ecad93aaef8621fb447b8ce188107ebd765cb9cf06ac69390f26f9c557c",
+    views: [
+      { sourcePage: 8, label: "p8 full Q24-Q29 shared passage start", rect: [0, 0, 1, 1] },
+      { sourcePage: 8, label: "p8 right passage and figures 1-3", rect: [0.50, 0.08, 0.95, 0.98] },
+      { sourcePage: 9, label: "p9 full passage continuation and Q25", rect: [0, 0, 1, 1] },
+      { sourcePage: 9, label: "p9 left passage continuation", rect: [0.07, 0.08, 0.50, 0.94] },
+      { sourcePage: 9, label: "p9 right Q25 stem and choices", rect: [0.51, 0.33, 0.95, 0.60] },
+    ],
+    requiredTokens: [
+      "[24~29] 다음 글을 읽고 물음에 답하시오.", "$380\\sim780\\mathrm{nm}$",
+      "색료의 3원색이 되는데", "‘$S(\\text{색})=rR+gG+bB$’",
+      "빨강과 초록이 0이 되는 지점에서 파랑의 비율은 1이 된다.", "㉣ 예측할 수 있다.",
+      "<그림 3>", "㉤ <인상·해돋이>", "아침 안개 속의 태양 빛",
+      "㉦ <유람선의 여인들>", "25. 윗글을 이해한 내용으로 적절하지 않은 것은?",
+    ],
+    replacements: Q25_5577054_REPLACEMENTS,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+
 
 ] as const;
 
