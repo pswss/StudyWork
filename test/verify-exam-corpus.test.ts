@@ -14463,13 +14463,13 @@ describe("exam corpus verifier", () => {
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe("fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4");
     expect(manualRevisionAllowlistFingerprint())
-      .toBe("f44beb702975bbb1aa3acd44c1b2ce30c781c209cab33f84562bf23ca268168a");
+      .toBe("8547b0ed6c82eba363580994b1120ce95f926b42f097b1a6391284c42134b39b");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 6)))
       .toBe("33741ecff318e2d58cc2c0614a718d41171a0629f792d062c63df876e23ffa5c");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 8)))
       .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
     expect(manualRevisionAllowlistFingerprint())
-      .toBe("f44beb702975bbb1aa3acd44c1b2ce30c781c209cab33f84562bf23ca268168a");
+      .toBe("8547b0ed6c82eba363580994b1120ce95f926b42f097b1a6391284c42134b39b");
     expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(6, 8).map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -14633,7 +14633,7 @@ describe("exam corpus verifier", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 8)))
       .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
     expect(manualRevisionAllowlistFingerprint())
-      .toBe("f44beb702975bbb1aa3acd44c1b2ce30c781c209cab33f84562bf23ca268168a");
+      .toBe("8547b0ed6c82eba363580994b1120ce95f926b42f097b1a6391284c42134b39b");
     expect({
       rowHash: canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.find((candidate) =>
         candidate.allowlistId === "ebsi-5578421-q14-manual-revision-v1"
@@ -15952,7 +15952,7 @@ describe("exam corpus verifier", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 6)))
       .toBe("33741ecff318e2d58cc2c0614a718d41171a0629f792d062c63df876e23ffa5c");
     expect(manualRevisionAllowlistFingerprint())
-      .toBe("f44beb702975bbb1aa3acd44c1b2ce30c781c209cab33f84562bf23ca268168a");
+      .toBe("8547b0ed6c82eba363580994b1120ce95f926b42f097b1a6391284c42134b39b");
     expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(3, 6).map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),

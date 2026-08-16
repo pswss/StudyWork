@@ -8022,6 +8022,29 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
     "㉠~㉤ 중 <초고>에 반영되지 않은 것은?",
   ],
   expectedDecision: "reject",
+}, {
+  allowlistId: "ebsi-5577054-q7-source-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q7-source-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "3:7",
+  sourcePage: 3,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "64ee1feef76b3da3ecedc74f5d814b59040318559ae29530bbe90b766d959881",
+  failedClassificationHash: "5fddcf08994a81856dae58501a2240ae50c56e47f2ad2974a87f3ac9dd3e7458",
+  failedClassificationEvidenceHash: "5b9a498cdbea8da88aa92425f3b8be81b4939a7673f9233bcf0ca02102b4cc5f",
+  replacement: {
+    field: "choices",
+    from: "④ 전자 상거래 피해를 입은 청소년에게 일어날 수 있는 2차 피해의 위험성을 뒷받침한다.",
+    to: "④ 전자 상거래로 피해를 입은 청소년에게 일어날 수 있는 2차 피해의 위험성을 뒷받침한다.",
+    count: 1,
+  },
+  requiredTokens: [
+    "○ ㉮ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어.",
+    "전자 상거래에서 인한 피해를 입지 않도록",
+    "[B]",
+    "④ 전자 상거래로 피해를 입은 청소년에게 일어날 수 있는 2차 피해의 위험성을 뒷받침한다.",
+  ],
+  expectedDecision: "reject",
 }] as const;
 
 const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
