@@ -5361,6 +5361,25 @@ const Q41_5577054_FIGURE_DESCRIPTION_FINAL = Q37_42_5577054_FIGURE_DESCRIPTION_F
   " 공식 15쪽 오른쪽 41번의 <보기>는 직사각형 테두리 안에 선생님 발화, (1)~(5) 사건 순서, " +
   "추가 설명, 학생 응답의 빈 밑줄을 위에서 아래로 배치한다.";
 
+const Q37_42_5577054_FIGURE_DESCRIPTION_SOURCE_FINAL =
+  "공식 13쪽 오른쪽 (나)에는 왼쪽으로 열린 세로 묶음 괄호 [A]가 ‘갑자기 한바탕 미친 듯한 " +
+  "바람이 일어나며 구름 속에서 크게 불러 말하기를,’부터 ‘그대는 어찌 금령을 구하지 아니하고 " +
+  "저다지 방황하느냐?’까지를 감싼다. 공식 14쪽 왼쪽에는 같은 모양의 괄호 [B]가 ‘하루는 " +
+  "옥황상제께서 사해용왕에게 말씀을 전하시기를,’부터 ‘심 소저 혼약할 기한이 가까우니, 인당수로 " +
+  "돌려보내어 좋은 때를 잃지 말게 하라.’까지를 감싼다. 두 괄호는 각각 오른쪽 세로선 하나와 " +
+  "왼쪽으로 뻗은 위·아래 가로 캡으로 이루어지며 서로 겹치지 않는다.";
+
+const Q41_5577054_FIGURE_DESCRIPTION_SOURCE_FINAL = Q37_42_5577054_FIGURE_DESCRIPTION_SOURCE_FINAL +
+  " 공식 15쪽 오른쪽 41번의 <보기>는 직사각형 테두리 안에 선생님 발화, (1)~(5) 사건 순서, " +
+  "추가 설명, 학생 응답의 빈 밑줄을 위에서 아래로 배치한다.";
+
+const Q37_42_5577054_B_BRACKET_SOURCE_REPLACEMENT: ProblemManualReplacement = {
+  field: "question",
+  from: "[B]\n(다)\n하루는 옥황상제께서 사해용왕에게 말씀을 전하시기를,",
+  to: "(다)\n[B]\n하루는 옥황상제께서 사해용왕에게 말씀을 전하시기를,",
+  count: 1,
+};
+
 const Q37_42_5577054_BRACKET_REPLACEMENTS: ProblemManualReplacement[] = [{
   field: "question",
   from: "갑자기 한바탕 미친 듯한 바람이 일어나며 구름 속에서 크게 불러 말하기를,\n[A]\n“그대는",
@@ -9173,6 +9192,131 @@ export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSou
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_reading",
 
+}, {
+  allowlistId: "ebsi-5577054-q37-source-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5577054-q37-source-manual-revision-v1",
+  parentRevisionEvidenceHash: "88bee1c01baa04e8df16605d97c0e4e6cdf0795617599b1fa12b501157f5610c",
+  entryId: "ebsi:5577054",
+  key: "14:37",
+  sourcePage: 14,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedStatus: "mismatch",
+  failedQuestionHash: "05d011a08f13f457f9915557401151d0b54228fc740ddafddc0aef58adb7d249",
+  failedClassificationHash: "c71a43cb5fbd596ea8d1709155176b3186487855cefbdaf13e9af0aaacf00e7d",
+  failedClassificationEvidenceHash: "2c04ea21dc069f9402562c7a25d60f199f6776270da51f10bade719f54ab1152",
+  replacement: Q37_42_5577054_B_BRACKET_SOURCE_REPLACEMENT,
+  additionalReplacements: [{
+    field: "figure_description",
+    from: Q37_42_5577054_FIGURE_DESCRIPTION_FINAL,
+    to: Q37_42_5577054_FIGURE_DESCRIPTION_SOURCE_FINAL,
+    count: 1,
+  }],
+  requiredTokens: [
+    "[A]\n갑자기 한바탕 미친 듯한 바람이 일어나며", "(다)\n[B]\n하루는 옥황상제께서",
+    "괄호 [B]가 ‘하루는 옥황상제께서", "37. (가)의 내용과 일치하지 않는 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_reading",
+}, {
+  allowlistId: "ebsi-5577054-q38-source-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5577054-q38-source-manual-revision-v1",
+  parentRevisionEvidenceHash: "31bc99a5ebe0847742439456ef6ad9182780a9ce95a8ea6afa7db6c257abaa7a",
+  entryId: "ebsi:5577054",
+  key: "15:38",
+  sourcePage: 15,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedStatus: "mismatch",
+  failedQuestionHash: "763a3b50e3ea77dced41dc3a01b0490cc5aa1e3adc815243e6838fb3b2466853",
+  failedClassificationHash: "af39d2496895ccd69235d43e59cc19e6a142f9fa2ac037b97c213fa3154a1061",
+  failedClassificationEvidenceHash: "4650bf589878846845557608edafbe9c81ca0e7b4ecec68eccb0df985656fe94",
+  replacement: Q37_42_5577054_B_BRACKET_SOURCE_REPLACEMENT,
+  additionalReplacements: [{
+    field: "figure_description",
+    from: Q37_42_5577054_FIGURE_DESCRIPTION_FINAL,
+    to: Q37_42_5577054_FIGURE_DESCRIPTION_SOURCE_FINAL,
+    count: 1,
+  }],
+  requiredTokens: [
+    "[A]\n갑자기 한바탕 미친 듯한 바람이 일어나며", "(다)\n[B]\n하루는 옥황상제께서",
+    "괄호 [B]가 ‘하루는 옥황상제께서", "38. ‘기이성’을 중심으로",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q39-source-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5577054-q39-source-manual-revision-v1",
+  parentRevisionEvidenceHash: "a432ed9516a5436bbb005a7652ee8e1ade94a70ebccf6eefa84ff0491722ef46",
+  entryId: "ebsi:5577054",
+  key: "15:39",
+  sourcePage: 15,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "459eb877f9d3abd3873f4db341e7ec54cfdb52870bc5e6549a64841605c45520",
+  failedClassificationHash: "71a780afeea1d93f62713dc46ca016c58caed69900b830b01a7e97d93245290d",
+  failedClassificationEvidenceHash: "2a6df9519f67a2acdeb3b103f47958801999a8f86e342ecf926759c3f0bdfec6",
+  replacement: Q37_42_5577054_B_BRACKET_SOURCE_REPLACEMENT,
+  additionalReplacements: [{
+    field: "figure_description",
+    from: Q37_42_5577054_FIGURE_DESCRIPTION_FINAL,
+    to: Q37_42_5577054_FIGURE_DESCRIPTION_SOURCE_FINAL,
+    count: 1,
+  }],
+  requiredTokens: [
+    "[A]\n갑자기 한바탕 미친 듯한 바람이 일어나며", "(다)\n[B]\n하루는 옥황상제께서",
+    "괄호 [B]가 ‘하루는 옥황상제께서", "39. ㉠을 참고하여 (다)를 이해한 내용으로",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q40-source-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5577054-q40-source-manual-revision-v1",
+  parentRevisionEvidenceHash: "8d74e3615bd140a4fa6f65196c4e5bbb5c685496fcb4184fe30d97bfe4226991",
+  entryId: "ebsi:5577054",
+  key: "15:40",
+  sourcePage: 15,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedStatus: "mismatch",
+  failedQuestionHash: "6c48dbd93756eccc78abe46b0f7e72746822be1712b871637242c46fd03ff642",
+  failedClassificationHash: "63cf51cdfad783d7e69930df1e55167f2ea44b5a2f4a9229ea25aae8a5c61b72",
+  failedClassificationEvidenceHash: "e59de99c2c25f7a0052650953540c1a2c9f954f92021d6c9e3858561b76a909e",
+  replacement: Q37_42_5577054_B_BRACKET_SOURCE_REPLACEMENT,
+  additionalReplacements: [{
+    field: "figure_description",
+    from: Q37_42_5577054_FIGURE_DESCRIPTION_FINAL,
+    to: Q37_42_5577054_FIGURE_DESCRIPTION_SOURCE_FINAL,
+    count: 1,
+  }],
+  requiredTokens: [
+    "[A]\n갑자기 한바탕 미친 듯한 바람이 일어나며", "(다)\n[B]\n하루는 옥황상제께서",
+    "괄호 [B]가 ‘하루는 옥황상제께서", "40. [A]와 [B]를 비교한 내용으로",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q41-source-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5577054-q41-source-manual-revision-v1",
+  parentRevisionEvidenceHash: "e66b5e7655a61ca89ec3e2943889ed6335a3eb437b5863670afb27c56bc5dfb9",
+  entryId: "ebsi:5577054",
+  key: "15:41",
+  sourcePage: 15,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedStatus: "mismatch",
+  failedQuestionHash: "d1d9d76e6447cf25a0e0f9395b062086d5c05d29a535f0c8f044ff3bcb87a248",
+  failedClassificationHash: "ecf388b26c25fee40e4cb855e40b6514a9a06cce944841970cb163123468b755",
+  failedClassificationEvidenceHash: "6e4313f552ba6aa19001b55f93f4c562c1e50edae4cd6f70d714e82300607789",
+  replacement: Q37_42_5577054_B_BRACKET_SOURCE_REPLACEMENT,
+  additionalReplacements: [{
+    field: "figure_description",
+    from: Q41_5577054_FIGURE_DESCRIPTION_FINAL,
+    to: Q41_5577054_FIGURE_DESCRIPTION_SOURCE_FINAL,
+    count: 1,
+  }],
+  requiredTokens: [
+    "[A]\n갑자기 한바탕 미친 듯한 바람이 일어나며", "(다)\n[B]\n하루는 옥황상제께서",
+    "괄호 [B]가 ‘하루는 옥황상제께서", "41. <보기>에서 선생님의 질문에 대한 학생의 대답으로",
+    "직사각형 테두리 안에 선생님 발화",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
 }] as const;
 
 export const PROBLEM_MANUAL_CLASSIFICATION_POLICY_REVISION_ALLOWLIST:
