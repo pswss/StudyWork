@@ -3855,14 +3855,14 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 180_000);
 
   it.skipIf(!existsSync(join(q43LiveState5577054, "problem.pdf")))(
-    "hydrates the persisted 5577054 Q24-Q29, Q33-Q34, and Q43-Q45 generations before later work",
+    "hydrates the persisted 5577054 Q24-Q29, Q33-Q36, and Q43-Q45 generations before later work",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-5577054-cross-entry-hydration-"));
     cpSync(q43LiveState5577054, root, { recursive: true });
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       const persistedKeys = new Set([
         "9:24", "9:25", "9:26", "10:27", "10:28", "10:29",
-        "12:33", "12:34", "16:43", "16:44", "16:45",
+        "12:33", "12:34", "13:35", "13:36", "16:43", "16:44", "16:45",
       ]);
       if (request.schema?.name === "studywork_exam_corpus_classification") {
         const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{ key: string }>;
@@ -3881,6 +3881,9 @@ describe("exact allowlisted problem manual adjudication", () => {
         expect(item("9:24").question).toContain("㉮ <인상: 해돋이>");
         expect(item("10:27").question).toContain("감법 혼합의 원리는");
         expect(item("10:29").choices).toContain("③ ㉢ : 일정한 한도를 넘지 못하게 막음.");
+        expect(item("13:35").question).toContain("그러나 ㉠ 이 논증의 전제를 만족시키는");
+        expect(item("13:35").question).toContain("ⓐ 믿을 만하지 못하면");
+        expect(item("13:36").question).toContain("모든 사각형은 음영이 있는 도형이다.");
       }
       throw new Error("seeded 5577054 boundary after cross-entry preflight");
     });

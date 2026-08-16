@@ -21923,6 +21923,10 @@ function is5577054Q33Q34ManualBatchSpec(spec: ProblemManualAdjudicationSpec): bo
   return spec.entryId === "ebsi:5577054" && ["12:33", "12:34"].includes(spec.key);
 }
 
+function is5577054Q35Q36ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5577054" && ["13:35", "13:36"].includes(spec.key);
+}
+
 function is5577054Q24Q29ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5577054" &&
     ["9:24", "9:25", "9:26", "10:27", "10:28", "10:29"].includes(spec.key);
@@ -21961,7 +21965,8 @@ export function isPersistedManualHydrationSpec(spec: ProblemManualAdjudicationSp
     is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q31Q32ManualBatchSpec(spec) ||
     is5578421Q33Q34ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec) ||
     is5577054Q24Q29ManualBatchSpec(spec) || is5577054Q33Q34ManualBatchSpec(spec) ||
-    is5577054Q43ManualGenerationSpec(spec) || is5577054Q44Q45ManualBatchSpec(spec);
+    is5577054Q35Q36ManualBatchSpec(spec) || is5577054Q43ManualGenerationSpec(spec) ||
+    is5577054Q44Q45ManualBatchSpec(spec);
 }
 
 function isQ37ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
@@ -22386,6 +22391,8 @@ async function preflightProblemManualBatch(
     ? is5577054Q24Q29ManualBatchSpec
     : is5577054Q33Q34ManualBatchSpec(requestedSpec)
     ? is5577054Q33Q34ManualBatchSpec
+    : is5577054Q35Q36ManualBatchSpec(requestedSpec)
+    ? is5577054Q35Q36ManualBatchSpec
     : is5577054Q44Q45ManualBatchSpec(requestedSpec)
     ? is5577054Q44Q45ManualBatchSpec
     : is5578421Q31Q32ManualBatchSpec(requestedSpec)
@@ -28586,6 +28593,11 @@ export async function repairAndAuditOfficialAnswers(
       label: "Q33-Q34",
       expectedCount: 2,
     }, {
+      predicate: is5577054Q35Q36ManualBatchSpec,
+      signal: /^v\d+-0013-003[56](?:-|\.)/u,
+      label: "Q35-Q36",
+      expectedCount: 2,
+    }, {
       predicate: (spec: ProblemManualAdjudicationSpec) =>
         is5578421PersistedSingletonManualSpec(spec) && spec.key === "4:12",
       signal: /^v\d+-0004-0012(?:-|\.)/u,
@@ -28721,7 +28733,8 @@ export async function repairAndAuditOfficialAnswers(
       is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q31Q32ManualBatchSpec(spec) ||
       is5578421Q33Q34ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec) ||
       is5577054Q24Q29ManualBatchSpec(spec) || is5577054Q33Q34ManualBatchSpec(spec) ||
-      is5577054Q43ManualGenerationSpec(spec) || is5577054Q44Q45ManualBatchSpec(spec);
+      is5577054Q35Q36ManualBatchSpec(spec) || is5577054Q43ManualGenerationSpec(spec) ||
+      is5577054Q44Q45ManualBatchSpec(spec);
     if (currentRepair && !allowSupersededBase && (
       currentRepair.revision ||
       canonicalEvidenceHash(currentRepair) !== canonicalEvidenceHash(pinnedBase.evidence)
