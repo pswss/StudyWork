@@ -14573,7 +14573,7 @@ describe("exam corpus verifier", () => {
       replacementHash: canonicalEvidenceHash(Q2_5578421_MANUAL_SOURCE_REVISION_SPEC.replacement),
       triggerHash: canonicalEvidenceHash(Q2_5578421_MANUAL_SOURCE_REVISION_SPEC.terminalTrigger),
     }).toEqual({
-      allowlistHash: "a1b5386353baef9b7b16df3f869638d792d3e9d2581983c6fc5bc892b3679b6d",
+      allowlistHash: "01745ce26dcdd5cd53931f7b2f2b2ea3aa2d9bd40726aed915d55646444dc090",
       rowHash: "99ec8e696ea73ba0c61d31df0df9f657bcb29e62fa6ff43e8db1389542e821aa",
       replacementHash: "b0751915ae3df15620b51fcbccf08d95e0b29abb6edc28c8ae68333a4bbbe90a",
       triggerHash: "240e0e1d3617c2d0de839ea55687ed7efb658037c62d4608f934c3426cfd4704",
@@ -15476,7 +15476,7 @@ describe("exam corpus verifier", () => {
     expect(manualRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST));
     expect(manualSourceRevisionAllowlistFingerprint())
-      .toBe("a1b5386353baef9b7b16df3f869638d792d3e9d2581983c6fc5bc892b3679b6d");
+      .toBe("01745ce26dcdd5cd53931f7b2f2b2ea3aa2d9bd40726aed915d55646444dc090");
     expect(manualSourceRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST));
     expect(canonicalEvidenceHash(Q32_MANUAL_SOURCE_REVISION_SPEC))
