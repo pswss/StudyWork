@@ -2577,8 +2577,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       rowHash: canonicalEvidenceHash(revisionSpec),
       replacementHash: canonicalEvidenceHash(revisionSpec.replacement),
     }).toEqual({
-      length: 13,
-      allowlistHash: "19bcb160d927ab2f30db4cd1f55be04cfab010f3eb6b4bb8dbb1fcbc01573442",
+      length: 14,
+      allowlistHash: "c25c561f50b65b992eb7e6417b24269165462380ff7192c46f7d18ddcc111458",
       rowHash: "16ca1e7fb9f94fd2da81648e0f408706ccc67966c14d812ae12f80848a6c639c",
       replacementHash: "81be7218cb0c77f6c65dd51f00008cef6e1bf19a09da243ef74daca44c61c777",
     });
@@ -2757,8 +2757,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       rowHash: canonicalEvidenceHash(revisionSpec),
       replacementHash: canonicalEvidenceHash(revisionSpec.replacement),
     }).toEqual({
-      length: 13,
-      allowlistHash: "19bcb160d927ab2f30db4cd1f55be04cfab010f3eb6b4bb8dbb1fcbc01573442",
+      length: 14,
+      allowlistHash: "c25c561f50b65b992eb7e6417b24269165462380ff7192c46f7d18ddcc111458",
       rowHash: "46b8c9b0c1548b1409d689f49da6bd0ca3028869418b5cdb7d1385890be2d0b7",
       replacementHash: "30774b846f9b85135daf0f8c906eb8238845378c78752650683cbaa3e3dbe24d",
     });
@@ -2899,8 +2899,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       rowHash: canonicalEvidenceHash(revisionSpec),
       replacementHash: canonicalEvidenceHash(revisionSpec.replacement),
     }).toEqual({
-      length: 13,
-      allowlistHash: "19bcb160d927ab2f30db4cd1f55be04cfab010f3eb6b4bb8dbb1fcbc01573442",
+      length: 14,
+      allowlistHash: "c25c561f50b65b992eb7e6417b24269165462380ff7192c46f7d18ddcc111458",
       rowHash: "07ab54dc62ff0c4bd31034f7b96b1a491215108793e8d5eb7ad0780bd0da75fe",
       replacementHash: "c41df3c34a50bc440182e63e8d07faa4a0f2f4897e5e534c3b677a94194ef12e",
     });
@@ -3023,9 +3023,36 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(corrected.choices?.[4]).toContain("바위의 속성에 산과 물의 속성을 더해");
     expect(corrected.answer).toBe(corrected.choices?.[4]);
 
+    const revisionSpec = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === "ebsi-5577054-q22-manual-revision-v1"
+    )!;
+    expect({
+      length: PROBLEM_MANUAL_REVISION_ALLOWLIST.length,
+      allowlistHash: canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST),
+      rowHash: canonicalEvidenceHash(revisionSpec),
+      replacementHash: canonicalEvidenceHash(revisionSpec.replacement),
+    }).toEqual({
+      length: 14,
+      allowlistHash: "c25c561f50b65b992eb7e6417b24269165462380ff7192c46f7d18ddcc111458",
+      rowHash: "67e4f2c4a3c804602bff19688eedde97e80abcbc78b550bc5378e2b659ea3199",
+      replacementHash: "d9d7552367512ae81c55729c41090559bd8f1c998e8e61b5e6e78b4b1261d65b",
+    });
+    const revised = applyAllowlistedProblemManualRevision(
+      "ebsi:5577054",
+      spec.sourceHash,
+      spec.allowlistId,
+      corrected,
+    );
+    expect(canonicalEvidenceHash(revised))
+      .toBe("3a36a1d8419005ba398ef0af29035a2e254a0430d84685f14f3ccc357be0f058");
+    expect(canonicalEvidenceHash(revised.question))
+      .toBe("e031d0d704ce834ab3dfc5677e743ee64c15955d2474c18f6a56610ba0acaa94");
+    expect(revised.question).toContain("(나)\n\n우리 집엔 웃어른이 아니 계시다.");
+    expect(revised.question).toContain("상심낙사: 완상하는 마음과 즐거운 일.");
+
     root = mkdtempSync(join(tmpdir(), "studywork-5577054-q22-manual-"));
     cpSync(q43LiveState5577054, root, { recursive: true });
-    removeManualArtifacts(root, ["8:22"]);
+    removeManualRevisionArtifacts(root, ["8:22"]);
     const input = q27FixtureInputs(root);
     const row = q22ExactRecoveryParent5577054(root);
     const calls: string[] = [];
@@ -3039,7 +3066,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       expect(items).toHaveLength(1);
       calls.push(items[0].key);
       expect(canonicalEvidenceHash(items[0].question))
-        .toBe("284d905eb3036b542b5d0d30a3d99229c6bb83ec0ea50023c560156e151ca6ae");
+        .toBe("e031d0d704ce834ab3dfc5677e743ee64c15955d2474c18f6a56610ba0acaa94");
+      expect(items[0].question).toContain("(나)\n\n우리 집엔 웃어른이 아니 계시다.");
       expect(items[0].choices?.[4]).toContain("산과 물의 속성");
       return { text: JSON.stringify([{
         key: "8:22",
@@ -3051,7 +3079,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         confidence: 0.99,
         reason_codes: ["SOURCE_EXACT", "CLASSICAL_POETRY_INTERPRETATION"],
         transcription_status: "exact",
-        transcription_evidence: "공식 7~8쪽의 (가) 전문, <보기>, 22번 발문과 선택지가 일치한다.",
+        transcription_evidence: "공식 7~8쪽의 [21~23] 공통 지문 전체, <보기>, 22번 발문과 선택지가 일치한다.",
       }]) };
     });
     const run = () => adjudicateProblemManual(
@@ -3064,7 +3092,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     const completed = await run();
     expect(calls).toEqual(["8:22"]);
     expect(canonicalEvidenceHash(completed.classified.question))
-      .toBe("53428ca35ae5bdb9ac57fa1e1ceb948ef8ac70eda7ce42aa3e47a5251b3dd9b4");
+      .toBe("3a36a1d8419005ba398ef0af29035a2e254a0430d84685f14f3ccc357be0f058");
     const verified = withOnlyManualArtifactsForKey(root, "8:22", () =>
       verifyProblemManualAdjudicationForTest({
         stateDir: root,
@@ -3076,14 +3104,14 @@ describe("exact allowlisted problem manual adjudication", () => {
         manualAdjudication: completed.evidence,
       })) as { question: QuizItemEx; classification: ClassificationDecision };
     expect(canonicalEvidenceHash(verified.question))
-      .toBe("53428ca35ae5bdb9ac57fa1e1ceb948ef8ac70eda7ce42aa3e47a5251b3dd9b4");
+      .toBe("3a36a1d8419005ba398ef0af29035a2e254a0430d84685f14f3ccc357be0f058");
     expect(verified.classification.transcription_status).toBe("exact");
     const stable = stateSnapshot(root);
     await run();
     expect(calls).toEqual(["8:22"]);
     expect(stateSnapshot(root)).toEqual(stable);
 
-    const problemPath = join(root, completed.evidence.problemArtifact.path);
+    const problemPath = join(root, completed.evidence.revision!.problemArtifact.path);
     const problemBytes = readFileSync(problemPath);
     writeFileSync(problemPath, Buffer.concat([problemBytes, Buffer.from(" ")]));
     const beforeTamper = stateSnapshot(root);
@@ -3139,7 +3167,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 8)))
       .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST))
-      .toBe("19bcb160d927ab2f30db4cd1f55be04cfab010f3eb6b4bb8dbb1fcbc01573442");
+      .toBe("c25c561f50b65b992eb7e6417b24269165462380ff7192c46f7d18ddcc111458");
     const revisionSpec = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((candidate) =>
       candidate.allowlistId === "ebsi-5578421-q14-manual-revision-v1"
     )!;
@@ -3211,7 +3239,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       rowHash: canonicalEvidenceHash(revisionSpec),
       replacementHash: canonicalEvidenceHash(revisionSpec.replacement),
     }).toEqual({
-      allowlistHash: "19bcb160d927ab2f30db4cd1f55be04cfab010f3eb6b4bb8dbb1fcbc01573442",
+      allowlistHash: "c25c561f50b65b992eb7e6417b24269165462380ff7192c46f7d18ddcc111458",
       rowHash: "7fec9a6782faf9cc6e59837c3528335963319fabc58ea1b7adfaeb25651028e5",
       replacementHash: "da53d25545e236eadc2e0c064463a171d4678f640160ee3acb6be0928c805770",
     });
@@ -5096,6 +5124,9 @@ describe("exact allowlisted problem manual adjudication", () => {
     }), expect.objectContaining({
       allowlistId: "ebsi-5577054-q21-manual-revision-v1",
       parentAllowlistId: "ebsi-5577054-q21-manual-v1",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5577054-q22-manual-revision-v1",
+      parentAllowlistId: "ebsi-5577054-q22-manual-v1",
     })]);
     expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.map(canonicalEvidenceHash)).toEqual([
       "479ebd4d7b57bd6ead1a4082b29d8c8c2cba1c7ebdb21634a3eda063986480b4",
@@ -5111,6 +5142,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       "16ca1e7fb9f94fd2da81648e0f408706ccc67966c14d812ae12f80848a6c639c",
       "46b8c9b0c1548b1409d689f49da6bd0ca3028869418b5cdb7d1385890be2d0b7",
       "07ab54dc62ff0c4bd31034f7b96b1a491215108793e8d5eb7ad0780bd0da75fe",
+      "67e4f2c4a3c804602bff19688eedde97e80abcbc78b550bc5378e2b659ea3199",
     ]);
     const parent = JSON.parse(readFileSync(q30ManualProblemPath, "utf8")).item as QuizItemEx;
     expect(canonicalEvidenceHash(parent)).toBe(PROBLEM_MANUAL_REVISION_ALLOWLIST[0].failedQuestionHash);
