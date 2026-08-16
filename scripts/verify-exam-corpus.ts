@@ -3293,6 +3293,11 @@ const Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [{
   field: "question", from: "또 시냐크는", to: "또한 시냐크는", count: 1,
 }];
 
+const Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS_V2: ProblemManualReplacement[] = [
+  ...Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS.slice(0, 6),
+  ...Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS.slice(7),
+];
+
 const Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION =
   "본문에는 <그림 1>, <그림 2>, <그림 3>이 있다. <그림 1>은 세 원이 겹친 가법 혼합 도식이다. " +
   "위쪽 원은 ‘빨강’, 왼쪽 아래 원은 ‘파랑’, 오른쪽 아래 원은 ‘초록’이며, 빨강과 파랑의 겹침은 ‘자홍’, " +
@@ -3315,8 +3320,19 @@ const Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V2 =
   "아래 빗변 부근의 약 (0.8, 0.05)에 있다. ⓐ 원은 내부의 작은 흰 원, ⓑ 원은 세로축 위의 " +
   "흰 원, ⓒ 원은 아래 빗변 부근의 흰 원과 각각 가는 선 하나로 연결되어 있다.";
 
+const Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V3 =
+  Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION +
+  " 색 삼각형의 격자는 0.05 간격이다. ⓐ 표지 원은 내부의 흰 원 약 (0.33, 0.33)에서 " +
+  "오른쪽 위 방향으로 뻗은 가는 선과 연결된다. ⓑ 표지 원은 세로축의 초록 비율 0.6 눈금에 " +
+  "중심이 놓인 흰 원에서 오른쪽 위 방향으로 뻗은 가는 선과 연결된다. ⓒ 표지 원은 가로축의 " +
+  "빨강 비율 0.8 눈금에 중심이 놓인 흰 원에서 왼쪽 위 방향으로 뻗은 가는 선과 연결된다.";
+
 const Q26_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION =
   Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V2 +
+  Q26_5577054_FIGURE_DESCRIPTION.slice(Q24_29_5577054_FIGURE_DESCRIPTION.length);
+
+const Q26_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V2 =
+  Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V3 +
   Q26_5577054_FIGURE_DESCRIPTION.slice(Q24_29_5577054_FIGURE_DESCRIPTION.length);
 
 
@@ -6532,13 +6548,13 @@ const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevi
   failedQuestionHash: "053ea803cf6997b2203b32aa4882a89ceabc8993fa4baca37dbc7bb8cdbe54c2",
   failedClassificationHash: "311fca60647c56fd54c79e62458e3b1ece591075874f02ae97cfd546b2834904",
   failedClassificationEvidenceHash: "85927237fb7f477c000cfbf859abdde4b0dca7b40b6587dda932f445ac4afcc1",
-  replacement: Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS[0],
+  replacement: Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS_V2[0],
   additionalReplacements: [
-    ...Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS.slice(1),
+    ...Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS_V2.slice(1),
     {
       field: "figure_description",
       from: Q24_29_5577054_FIGURE_DESCRIPTION,
-      to: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V2,
+      to: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V3,
       count: 1,
     },
   ],
@@ -6563,18 +6579,57 @@ const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevi
   failedQuestionHash: "380306fbf78d87225fd69dc4b65b16b4940b9d11d814c6193559f7965f36c144",
   failedClassificationHash: "c98b7f236564ead2f2aa1fca3f06e8bf5030346fd59f44d6cb186ef271c5cc57",
   failedClassificationEvidenceHash: "f3924d2de3de5452ffbd97d5255be83240043f6778dee8f750dfda261ce2d670",
-  replacement: Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS[0],
-  additionalReplacements: Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS.slice(1),
+  replacement: Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS_V2[0],
+  additionalReplacements: [
+    ...Q24_29_5577054_SOURCE_EXACT_REPLACEMENTS_V2.slice(1),
+    {
+      field: "figure_description",
+      from: Q26_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION,
+      to: Q26_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V2,
+      count: 1,
+    },
+  ],
   requiredTokens: [
     "[24~29] 다음을 읽고 물음에 답하시오.", "<그림 1>　<그림 2>", "<그림 3>",
     "$S(\\text{색})=rR+gG+bB$", "㉮ <인상: 해돋이>", "화폭에 담으려",
     "㉤ 인접한", "㉯ <우물가의 여인들>", "또한 시냐크는",
-    "각각 가는 선 하나로 연결되어 있다", "필터 A의 투과율", "필터 B의 투과율",
+    "초록 비율 0.6 눈금", "빨강 비율 0.8 눈금", "필터 A의 투과율", "필터 B의 투과율",
     "26. 윗글을 바탕으로 <보기>에 대해 이해한 내용으로 적절하지 않은 것은? [3점]",
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_reading",
 
+
+}, {
+  allowlistId: "ebsi-5577054-q24-source-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5577054-q24-source-manual-revision-v1",
+  parentRevisionEvidenceHash: "59594c08c2f3e82d02cf6abd60ed41c735c1cfb6bd6ff9a1f36dab27ea93d1d8",
+  entryId: "ebsi:5577054",
+  key: "9:24",
+  sourcePage: 9,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "47c630a49702656d1c821570299f0f6fba1df18d4726916863bd4c6223497ad7",
+  failedClassificationHash: "7926affe04c74a0b564bdbcc0ee62dd5f469d0ed98371ec216f1b04608826eb1",
+  failedClassificationEvidenceHash: "c5adc3c153f1fc8829bb92b9eb91ac77105f89ebcf0f7e342aac5331e2df40fc",
+  replacement: {
+    field: "question",
+    from: "$S(\\text{색})=rR+gG+bB$",
+    to: "‘$S(\\text{색})=rR+gG+bB$’",
+    count: 1,
+  },
+  additionalReplacements: [{
+    field: "figure_description",
+    from: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V2,
+    to: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V3,
+    count: 1,
+  }],
+  requiredTokens: [
+    "‘$S(\\text{색})=rR+gG+bB$’", "색 삼각형의 격자는 0.05 간격",
+    "흰 원 약 (0.33, 0.33)", "초록 비율 0.6 눈금", "빨강 비율 0.8 눈금",
+    "왼쪽 위 방향으로 뻗은 가는 선과 연결된다", "24. 윗글에 대한 설명으로 가장 적절한 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_reading",
 
 }] as const;
 
