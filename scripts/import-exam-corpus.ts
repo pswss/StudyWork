@@ -8803,6 +8803,120 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     }],
     expectedDecision: "reject",
   },
+  {
+    allowlistId: "ebsi-5577054-q6-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "3:6",
+    sourcePage: 3,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "cfdbdaab54245a3fac0818a5508721396c9050c6f3ebe565308a03dc9221fee6",
+    dpi: 600,
+    failedQuestionHash: "78b5d596b94f0d32c137227809a126032cc45d268e7029e030ed53b3467d5590",
+    failedClassificationHash: "f9213db5ce2f18623ec871f0844232d4b0544168c31b5ab240bbef2418a8cfda",
+    failedClassificationEvidenceHash: "e2592073f1724cd12c9e1147ea464505c6259732dfaca731130b40544dfd0510",
+    views: [
+      { sourcePage: 2, label: "p2 right Q6-Q8 plan start", rect: [0.50, 0.58, 0.95, 0.99] },
+      { sourcePage: 3, label: "p3 left Q6 shared draft and stem", rect: [0.07, 0.05, 0.50, 0.72] },
+    ],
+    requiredTokens: [
+      "[6~8] 다음을 읽고 물음에 답하시오.",
+      "노력에 동참할 것을 촉구해야겠어. …… ㉮",
+      "전자 상거래에서 인한 피해를 입지 않도록",
+      "㉠~㉤ 중 <초고>에 반영되지 않은 것은?",
+    ],
+    replacements: [{
+      field: "question",
+      from: "○ ㉥ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어.",
+      to: "○ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어. …… ㉮",
+      count: 1,
+    }, {
+      field: "question",
+      from: "전자 상거래에서 입은 피해를 입지 않도록",
+      to: "전자 상거래에서 인한 피해를 입지 않도록",
+      count: 1,
+    }],
+    expectedDecision: "reject",
+  },
+  {
+    allowlistId: "ebsi-5577054-q7-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "3:7",
+    sourcePage: 3,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "ca02a83053d439a073df48dc02c52dfe4765466ec749d8ebf41de0ad93847c8f",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "b38cd5c62e9a133d168f310c1b2d76b3049f57f7a802965352bebd1832090c68",
+    failedClassificationHash: "d6731bff8388379b08cc2992edfb72e2182121ba78f078c893d0b1535fe147cf",
+    failedClassificationEvidenceHash: "0fa7ff102331d67e2f98d9cf42e520e57609bc1ac88fa4db4d90b2bc7585fdd4",
+    views: [
+      { sourcePage: 2, label: "p2 right Q6-Q8 plan start", rect: [0.50, 0.58, 0.95, 0.99] },
+      { sourcePage: 3, label: "p3 full Q7 shared draft and tables", rect: [0, 0, 1, 1] },
+    ],
+    requiredTokens: [
+      "[6~8] 다음을 읽고 물음에 답하시오.",
+      "노력에 동참할 것을 촉구해야겠어. …… ㉮",
+      "전자 상거래에서 인한 피해를 입지 않도록",
+      "<보기>의 (가), (나)를 모두 활용하여 [A]를 보완하기 위한 방안으로",
+      "의류 및 액세서리 | 52 %",
+    ],
+    replacements: [{
+      field: "question",
+      from: "○ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어. …… ㉥",
+      to: "○ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어. …… ㉮",
+      count: 1,
+    }, {
+      field: "question",
+      from: "전자 상거래에서 입은 피해를 입지 않도록",
+      to: "전자 상거래에서 인한 피해를 입지 않도록",
+      count: 1,
+    }],
+    expectedDecision: "reject",
+  },
+  {
+    allowlistId: "ebsi-5577054-q8-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "3:8",
+    sourcePage: 3,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "65a516771fed767b52e6b5532d62673e6cc7f6b1c1ca42158cc5bc71096f99f0",
+    failedStatus: "exact",
+    dpi: 600,
+    failedQuestionHash: "5fb4b2da9086602e33929e4b4b673d1e5463175617d22e5507766d0a44855808",
+    failedClassificationHash: "3a3e5aa855840124eb7b1425903ef51bc2e11675970ba47782af8ca7fb65f642",
+    failedClassificationEvidenceHash: "adb04597d577e97dce9e64765f321f68fea32c9b160d6221fdb44227c5de5913",
+    views: [
+      { sourcePage: 2, label: "p2 right Q6-Q8 plan start", rect: [0.50, 0.58, 0.95, 0.99] },
+      { sourcePage: 3, label: "p3 full Q8 shared draft and choices", rect: [0, 0, 1, 1] },
+    ],
+    requiredTokens: [
+      "[6~8] 다음을 읽고 물음에 답하시오.",
+      "노력에 동참할 것을 촉구해야겠어. …… ㉮",
+      "전자 상거래에서 인한 피해를 입지 않도록",
+      "청소년의 전자 상거래 이용에 관한 전망을 바탕으로 ㉮에 관한 내용을",
+      "8. [B]에 들어갈 글을 작성하고자 할 때",
+    ],
+    replacements: [{
+      field: "question",
+      from: "○ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어. …… ㉥",
+      to: "○ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어. …… ㉮",
+      count: 1,
+    }, {
+      field: "question",
+      from: "전자 상거래에서 입을 피해를 입지 않도록",
+      to: "전자 상거래에서 인한 피해를 입지 않도록",
+      count: 1,
+    }, {
+      field: "question",
+      from: "전망을 바탕으로 ㉥에 관한 내용을",
+      to: "전망을 바탕으로 ㉮에 관한 내용을",
+      count: 1,
+    }],
+    expectedDecision: "reject",
+  },
 ] as const;
 
 export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
@@ -21961,6 +22075,10 @@ function is5577054Q3ManualGenerationSpec(spec: ProblemManualAdjudicationSpec): b
   return spec.entryId === "ebsi:5577054" && spec.key === "1:3";
 }
 
+function is5577054Q6Q8ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5577054" && ["3:6", "3:7", "3:8"].includes(spec.key);
+}
+
 function is5577054Q10ManualGenerationSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5577054" && spec.key === "4:10";
 }
@@ -22015,7 +22133,8 @@ export function isPersistedManualHydrationSpec(spec: ProblemManualAdjudicationSp
   return is5578421PersistedSingletonManualSpec(spec) ||
     is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q31Q32ManualBatchSpec(spec) ||
     is5578421Q33Q34ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec) ||
-    is5577054Q3ManualGenerationSpec(spec) || is5577054Q10ManualGenerationSpec(spec) ||
+    is5577054Q3ManualGenerationSpec(spec) || is5577054Q6Q8ManualBatchSpec(spec) ||
+    is5577054Q10ManualGenerationSpec(spec) ||
     is5577054Q16Q20ManualBatchSpec(spec) || is5577054Q21Q23ManualBatchSpec(spec) ||
     is5577054Q24Q29ManualBatchSpec(spec) || is5577054Q33Q34ManualBatchSpec(spec) ||
     is5577054Q35Q36ManualBatchSpec(spec) || is5577054Q37Q42ManualBatchSpec(spec) ||
@@ -22442,6 +22561,8 @@ async function preflightProblemManualBatch(
     ? is5578421Q33Q34ManualBatchSpec
     : is5577054Q3ManualGenerationSpec(requestedSpec)
     ? is5577054Q3ManualGenerationSpec
+    : is5577054Q6Q8ManualBatchSpec(requestedSpec)
+    ? is5577054Q6Q8ManualBatchSpec
     : is5577054Q10ManualGenerationSpec(requestedSpec)
     ? is5577054Q10ManualGenerationSpec
     : is5577054Q16Q20ManualBatchSpec(requestedSpec)
@@ -22489,6 +22610,7 @@ async function preflightProblemManualBatch(
         predicate === isQ38Q40Q41Q42ManualBatchSpec
       ? 4
       : predicate === is5578421Q19Q20Q21ManualBatchSpec ||
+        predicate === is5577054Q6Q8ManualBatchSpec ||
         predicate === is5577054Q21Q23ManualBatchSpec ||
         predicate === isQ43To45ManualBatchSpec || predicate === isQ23Q28Q29ManualBatchSpec
       ? 3
