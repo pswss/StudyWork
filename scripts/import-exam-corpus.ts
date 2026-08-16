@@ -8972,6 +8972,173 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
       "⑤는 ‘- / 야 / 가득하- / 가득하여’이다.",
     expectedDecision: "reject",
   },
+  {
+    allowlistId: "ebsi-5577054-q30-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "11:30",
+    sourcePage: 11,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "62008bbfa0b5e0ee0877de80ece54e5a30255ae986417b45e9e0b801814b34cc",
+    dpi: 600,
+    failedQuestionHash: "09147ac7c8a06cd19da856120eef5edd1246da97363630905b43090bb5fb22c7",
+    failedClassificationHash: "a87e61aa5a4431177a57e47099f3f1c7105000445cb71efd3bc4d4cf26e37503",
+    failedClassificationEvidenceHash: "9858dfc54a44591b20eb95d438e707682e0fb88706c1ccbe782050fb65b3b18d",
+    failedStatus: "exact",
+    views: [
+      { sourcePage: 10, label: "p10 full Q30-Q32 passage start", rect: [0, 0, 1, 1] },
+      { sourcePage: 11, label: "p11 full Q30-Q32 passage end and questions", rect: [0, 0, 1, 1] },
+    ],
+    requiredTokens: [
+      "[30~32] 다음을 읽고 물음에 답하시오.", "<앞부분의 줄거리>",
+      "고향에서의 비참한 삶을 피해", "문의 유리의 하반부가 깨어진 것이",
+      "확연하게 드러난 듯도 했다", "뛰지 말고. 절대 서두르지 말고",
+      "강하원이지. 순순히 나를 따라와.", "교정으로 낯이 익은 한 이름",
+      "어떻든 그들의 이름은", "어디에고 그들과 연락을", "단 하나. 청계천의 ㉤ 헌책방",
+      "그러나 설령 수소문을 할 건덕지가", "뭉텅이로 갇혀 있던 종이 뭉치",
+      "- 최윤, ｢회색 눈사람｣ -", "윗글의 서술상의 특징으로 가장 적절한 것은?",
+    ],
+    replacements: [{
+      field: "question", from: "[앞부분의 줄거리]",
+      to: "[30~32] 다음을 읽고 물음에 답하시오.\n\n<앞부분의 줄거리>", count: 1,
+    }, {
+      field: "question", from: "문의 유리의 하단부가", to: "문의 유리의 하반부가", count: 1,
+    }, {
+      field: "question", from: "것처럼 확대되어 드러나는 듯도 했다",
+      to: "것처럼 확연하게 드러난 듯도 했다", count: 1,
+    }, {
+      field: "question", from: "뛰지 말고, 절대", to: "뛰지 말고. 절대", count: 1,
+    }, {
+      field: "question", from: "“장하원이지. 순순히", to: "“강하원이지. 순순히", count: 1,
+    }, {
+      field: "question",
+      from: "그들의 이름이 본명이면, 어떻게든 그들의 이름은 신문에 나지 않았어야 했다.",
+      to: "그들의 이름이 본명이라면, 어떻든 그들의 이름은 신문에 나지 않았다.", count: 1,
+    }, {
+      field: "question", from: "어디고 그들과 연락을", to: "어디에고 그들과 연락을", count: 1,
+    }, {
+      field: "question", from: "단 하나, 최계천의 ㉤ 헌책방",
+      to: "단 하나. 청계천의 ㉤ 헌책방", count: 1,
+    }, {
+      field: "question", from: "수소문을 할 건더지가", to: "수소문을 할 건덕지가", count: 1,
+    }, {
+      field: "question", from: "뭉텅이로 간직해 있던", to: "뭉텅이로 갇혀 있던", count: 1,
+    }, {
+      field: "question", from: "－ 최윤, 「회색 눈사람」 －",
+      to: "- 최윤, ｢회색 눈사람｣ -", count: 1,
+    }],
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  }, {
+    allowlistId: "ebsi-5577054-q31-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "11:31",
+    sourcePage: 11,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "e5b4339a692a7035baf754f713614c57aa155b176414c61b596d9f0820242f7a",
+    dpi: 600,
+    failedQuestionHash: "0cd757a92b57ab44b8534b1e6a67ac5f26849b0162cab92a52ee456156b9d772",
+    failedClassificationHash: "2eb57470367f062cebbe1e475bd12c4e6b5fcf4368570c2b4e5f56a330a2349e",
+    failedClassificationEvidenceHash: "167f9d9ec8fd5760fdf91861b646841a06b43fc56ba3c19804b8d3af94cbfc69",
+    views: [
+      { sourcePage: 10, label: "p10 full Q30-Q32 passage start", rect: [0, 0, 1, 1] },
+      { sourcePage: 11, label: "p11 full Q30-Q32 passage end and Q31", rect: [0, 0, 1, 1] },
+    ],
+    requiredTokens: [
+      "[30~32] 다음을 읽고 물음에 답하시오.", "<앞부분의 줄거리>",
+      "활짝 열려져 있는 유리문", "문의 유리의 하반부가 깨어진 것이",
+      "확연하게 드러난 듯도 했다", "강하원이지. 순순히 나를 따라와.",
+      "교정으로 낯이 익은 한 이름", "어떻든 그들의 이름은", "어디에고 그들과 연락을",
+      "단 하나. 청계천의 ㉤ 헌책방", "그러나 설령 수소문을 할 건덕지가",
+      "원문을 찾을 수 있었고 다음날", "｢회색 눈사람｣",
+      "<보기>의 입장에서 윗글을 감상한 내용으로 적절하지 않은 것은?",
+    ],
+    replacements: [{
+      field: "question", from: "[30~32] 다음 글을 읽고", to: "[30~32] 다음을 읽고", count: 1,
+    }, {
+      field: "question", from: "활짝 열려서 있는 유리문", to: "활짝 열려져 있는 유리문", count: 1,
+    }, {
+      field: "question", from: "문의 유리의 하단부가", to: "문의 유리의 하반부가", count: 1,
+    }, {
+      field: "question", from: "것처럼 확인하기도 겁난 듯도 했다",
+      to: "것처럼 확연하게 드러난 듯도 했다", count: 1,
+    }, {
+      field: "question", from: "뛰지 말고, 절대", to: "뛰지 말고. 절대", count: 1,
+    }, {
+      field: "question", from: "“장하영이지. 수순히", to: "“강하원이지. 순순히", count: 1,
+    }, {
+      field: "question", from: "교정으로 낯익은 한 이름", to: "교정으로 낯이 익은 한 이름", count: 1,
+    }, {
+      field: "question", from: "어쨌든 그들의 이름은", to: "어떻든 그들의 이름은", count: 1,
+    }, {
+      field: "question", from: "어디고 그들과 연락을", to: "어디에고 그들과 연락을", count: 1,
+    }, {
+      field: "question", from: "단 하나, 청계천의 ㉤ 헌책방",
+      to: "단 하나. 청계천의 ㉤ 헌책방", count: 1,
+    }, {
+      field: "question", from: "그러니 설령 수소문을 할 건더기가",
+      to: "그러나 설령 수소문을 할 건덕지가", count: 1,
+    }, {
+      field: "question", from: "원문을 찾을 수 있었고, 다음날",
+      to: "원문을 찾을 수 있었고 다음날", count: 1,
+    }, {
+      field: "question", from: "「회색 눈사람」", to: "｢회색 눈사람｣", count: 2,
+    }, {
+      field: "question", from: "<보기>의 입장에서 위 글을 감상한",
+      to: "<보기>의 입장에서 윗글을 감상한", count: 1,
+    }],
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  }, {
+    allowlistId: "ebsi-5577054-q32-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "11:32",
+    sourcePage: 11,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "7eb6f571ff3dd72d3a7b5c45786331d99203901e94d4f2b3039b71615721d74e",
+    dpi: 600,
+    failedQuestionHash: "b274953c25a7f750563f34afdad6156f343a77313567dda79828fae34edb28d5",
+    failedClassificationHash: "6fd50f9e139a90a3335d9d711e1104a7e814cda2950623c70790a7d829d0e68a",
+    failedClassificationEvidenceHash: "86496127027dd84e456850363b747cd1bca461284631741b3c5909880779cd0d",
+    failedStatus: "exact",
+    views: [
+      { sourcePage: 10, label: "p10 full Q30-Q32 passage start", rect: [0, 0, 1, 1] },
+      { sourcePage: 11, label: "p11 full Q30-Q32 passage end and Q32", rect: [0, 0, 1, 1] },
+    ],
+    requiredTokens: [
+      "[30~32] 다음을 읽고 물음에 답하시오.", "<앞부분의 줄거리>",
+      "상상하는 것은 어렵지 않았다", "문의 유리의 하반부가 깨어진 것이",
+      "뛰지 말고. 절대 서두르지 말고", "주머니에 집어넣고 행인들 사이에",
+      "어떻든 그들의 이름은", "단 하나. 청계천의 ㉤ 헌책방",
+      "그러나 설령 수소문을 할 건덕지가", "- 최윤, ｢회색 눈사람｣ -",
+      "㉠~㉤에 대한 설명으로 적절하지 않은 것은?",
+    ],
+    replacements: [{
+      field: "question", from: "그것이 어떤 결과를 가져올는지를 상상하는 일은",
+      to: "그것이 어떤 결과를 가져올는지를 상상하는 것은", count: 1,
+    }, {
+      field: "question", from: "문의 유리의 하단부가", to: "문의 유리의 하반부가", count: 1,
+    }, {
+      field: "question", from: "뛰지 말고, 절대", to: "뛰지 말고. 절대", count: 1,
+    }, {
+      field: "question", from: "주머니에 집어넣으며 행인들",
+      to: "주머니에 집어넣고 행인들", count: 1,
+    }, {
+      field: "question", from: "어쨌든 그들의 이름은", to: "어떻든 그들의 이름은", count: 1,
+    }, {
+      field: "question", from: "단 하나, 청계천의 ㉤ 헌책방",
+      to: "단 하나. 청계천의 ㉤ 헌책방", count: 1,
+    }, {
+      field: "question", from: "그러니 설령 수소문을 할 건더기가",
+      to: "그러나 설령 수소문을 할 건덕지가", count: 1,
+    }, {
+      field: "question", from: "「회색 눈사람」", to: "｢회색 눈사람｣", count: 1,
+    }],
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+}
 ] as const;
 
 export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
@@ -9627,7 +9794,7 @@ export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSp
     "15세기 국어", "현대 국어", "용언 어간", "활용형",
   ],
   expectedDecision: "reject",
-}] as const;
+  }] as const;
 
 export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
   allowlistId: "ebsi-5525982-q32-manual-source-revision-v1",
@@ -22218,6 +22385,10 @@ function is5577054Q14ManualGenerationSpec(spec: ProblemManualAdjudicationSpec): 
   return spec.entryId === "ebsi:5577054" && spec.key === "5:14";
 }
 
+function is5577054Q30Q32ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5577054" && ["11:30", "11:31", "11:32"].includes(spec.key);
+}
+
 function is5577054Q10ManualGenerationSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5577054" && spec.key === "4:10";
 }
@@ -22274,6 +22445,7 @@ export function isPersistedManualHydrationSpec(spec: ProblemManualAdjudicationSp
     is5578421Q33Q34ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec) ||
     is5577054Q3ManualGenerationSpec(spec) || is5577054Q6Q8ManualBatchSpec(spec) ||
     is5577054Q10ManualGenerationSpec(spec) || is5577054Q14ManualGenerationSpec(spec) ||
+    is5577054Q30Q32ManualBatchSpec(spec) ||
     is5577054Q16Q20ManualBatchSpec(spec) || is5577054Q21Q23ManualBatchSpec(spec) ||
     is5577054Q24Q29ManualBatchSpec(spec) || is5577054Q33Q34ManualBatchSpec(spec) ||
     is5577054Q35Q36ManualBatchSpec(spec) || is5577054Q37Q42ManualBatchSpec(spec) ||
@@ -22706,6 +22878,8 @@ async function preflightProblemManualBatch(
     ? is5577054Q10ManualGenerationSpec
     : is5577054Q14ManualGenerationSpec(requestedSpec)
     ? is5577054Q14ManualGenerationSpec
+    : is5577054Q30Q32ManualBatchSpec(requestedSpec)
+    ? is5577054Q30Q32ManualBatchSpec
     : is5577054Q16Q20ManualBatchSpec(requestedSpec)
     ? is5577054Q16Q20ManualBatchSpec
     : is5577054Q21Q23ManualBatchSpec(requestedSpec)
@@ -22752,6 +22926,7 @@ async function preflightProblemManualBatch(
       ? 4
       : predicate === is5578421Q19Q20Q21ManualBatchSpec ||
         predicate === is5577054Q6Q8ManualBatchSpec ||
+        predicate === is5577054Q30Q32ManualBatchSpec ||
         predicate === is5577054Q21Q23ManualBatchSpec ||
         predicate === isQ43To45ManualBatchSpec || predicate === isQ23Q28Q29ManualBatchSpec
       ? 3
@@ -29016,9 +29191,19 @@ export async function repairAndAuditOfficialAnswers(
       label: "Q3",
       expectedCount: 1,
     }, {
+      predicate: is5577054Q6Q8ManualBatchSpec,
+      signal: /^v\d+-0003-000[678](?:-|\.)/u,
+      label: "Q6-Q8",
+      expectedCount: 3,
+    }, {
       predicate: is5577054Q10ManualGenerationSpec,
       signal: /^v\d+-0004-0010(?:-|\.)/u,
       label: "Q10",
+      expectedCount: 1,
+    }, {
+      predicate: is5577054Q14ManualGenerationSpec,
+      signal: /^v\d+-0005-0014(?:-|\.)/u,
+      label: "Q14",
       expectedCount: 1,
     }, {
       predicate: is5577054Q16Q20ManualBatchSpec,
@@ -29035,6 +29220,11 @@ export async function repairAndAuditOfficialAnswers(
       signal: /^v\d+-(?:0009-002[4-6]|0010-002[7-9])(?:-|\.)/u,
       label: "Q24-Q29",
       expectedCount: 6,
+    }, {
+      predicate: is5577054Q30Q32ManualBatchSpec,
+      signal: /^v\d+-0011-003[012](?:-|\.)/u,
+      label: "Q30-Q32",
+      expectedCount: 3,
     }, {
       predicate: is5577054Q33Q34ManualBatchSpec,
       signal: /^v\d+-0012-003[34](?:-|\.)/u,
