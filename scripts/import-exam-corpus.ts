@@ -8924,6 +8924,54 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     }],
     expectedDecision: "reject",
   },
+  {
+    allowlistId: "ebsi-5577054-q14-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "5:14",
+    sourcePage: 5,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "76b4d731d9713ad680c5952a5d81b976877a8ec025576ee4f87836e49184a7e0",
+    dpi: 600,
+    failedQuestionHash: "951fa924cb27c06d086fa4e77fd8ecf285c20c9162e1177b66ecdce13c3ac8f1",
+    failedClassificationHash: "616d36bc08b095c5a53147926af23299f387e2fb0a045f9eb7567146de6c06f0",
+    failedClassificationEvidenceHash: "eab7cf1da2e44b9074a9845896ec4a72aad9f671dd88cfae910bf1a35ebe0493",
+    views: [
+      { sourcePage: 5, label: "p5 full Q14-Q15 passage and Q14 table", rect: [0, 0, 1, 1] },
+      { sourcePage: 5, label: "p5 lower-left Q14 table", rect: [0.07, 0.74, 0.50, 0.98] },
+    ],
+    requiredTokens: [
+      "[14~15] 다음을 읽고 물음에 답하시오.",
+      "14. ㉠과 ㉡을 모두 확인할 수 있는 예로 적절하지 않은 것은?",
+      "③ 오- | 와 | 깨우- | 깨워",
+      "④ - |  | 쓰- | 써",
+      "⑤ - | 야 | 가득하- | 가득하여",
+      "15세기 국어", "현대 국어", "용언 어간", "활용형",
+    ],
+    replacements: [{
+      field: "choices",
+      from: "③ ᄭᆡ오- | ᄭᆡ와 | 깨우- | 깨워",
+      to: "③ 오- | 와 | 깨우- | 깨워",
+      count: 1,
+    }, {
+      field: "choices",
+      from: "④ ᄡᅳ- | ᄡᅥ | 쓰- | 써",
+      to: "④ - |  | 쓰- | 써",
+      count: 1,
+    }, {
+      field: "choices",
+      from: "⑤ ᄀᆞᄃᆞᆨᄒᆞ- | ᄀᆞᄃᆞᆨᄒᆞ야 | 가득하- | 가득하여",
+      to: "⑤ - | 야 | 가득하- | 가득하여",
+      count: 1,
+    }],
+    figure: true,
+    figureDescription: "선택지가 표로 제시되어 있다. 맨 왼쪽 열에는 ①~⑤가 있고, 나머지 열은 " +
+      "‘15세기 국어’와 ‘현대 국어’로 나뉜다. 각 시대 아래에는 ‘용언 어간’과 ‘활용형’ 열이 있다. " +
+      "①은 ‘알- / 아라 / 알- / 알아’, ②는 ‘먹- / 머거 / 먹- / 먹어’, " +
+      "③은 ‘오- / 와 / 깨우- / 깨워’, ④는 ‘- /  / 쓰- / 써’, " +
+      "⑤는 ‘- / 야 / 가득하- / 가득하여’이다.",
+    expectedDecision: "reject",
+  },
 ] as const;
 
 export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
@@ -22138,6 +22186,10 @@ function is5577054Q6Q8ManualBatchSpec(spec: ProblemManualAdjudicationSpec): bool
   return spec.entryId === "ebsi:5577054" && ["3:6", "3:7", "3:8"].includes(spec.key);
 }
 
+function is5577054Q14ManualGenerationSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5577054" && spec.key === "5:14";
+}
+
 function is5577054Q10ManualGenerationSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5577054" && spec.key === "4:10";
 }
@@ -22193,7 +22245,7 @@ export function isPersistedManualHydrationSpec(spec: ProblemManualAdjudicationSp
     is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q31Q32ManualBatchSpec(spec) ||
     is5578421Q33Q34ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec) ||
     is5577054Q3ManualGenerationSpec(spec) || is5577054Q6Q8ManualBatchSpec(spec) ||
-    is5577054Q10ManualGenerationSpec(spec) ||
+    is5577054Q10ManualGenerationSpec(spec) || is5577054Q14ManualGenerationSpec(spec) ||
     is5577054Q16Q20ManualBatchSpec(spec) || is5577054Q21Q23ManualBatchSpec(spec) ||
     is5577054Q24Q29ManualBatchSpec(spec) || is5577054Q33Q34ManualBatchSpec(spec) ||
     is5577054Q35Q36ManualBatchSpec(spec) || is5577054Q37Q42ManualBatchSpec(spec) ||
@@ -22624,6 +22676,8 @@ async function preflightProblemManualBatch(
     ? is5577054Q6Q8ManualBatchSpec
     : is5577054Q10ManualGenerationSpec(requestedSpec)
     ? is5577054Q10ManualGenerationSpec
+    : is5577054Q14ManualGenerationSpec(requestedSpec)
+    ? is5577054Q14ManualGenerationSpec
     : is5577054Q16Q20ManualBatchSpec(requestedSpec)
     ? is5577054Q16Q20ManualBatchSpec
     : is5577054Q21Q23ManualBatchSpec(requestedSpec)
@@ -22674,7 +22728,8 @@ async function preflightProblemManualBatch(
         predicate === isQ43To45ManualBatchSpec || predicate === isQ23Q28Q29ManualBatchSpec
       ? 3
       : predicate === is5577054Q3ManualGenerationSpec ||
-          predicate === is5577054Q10ManualGenerationSpec || predicate === isQ30ManualBatchSpec ||
+          predicate === is5577054Q10ManualGenerationSpec ||
+          predicate === is5577054Q14ManualGenerationSpec || predicate === isQ30ManualBatchSpec ||
           predicate === isQ37ManualBatchSpec || predicate === isQ39ManualBatchSpec
         ? 1
         : 2;

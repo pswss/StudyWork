@@ -840,6 +840,16 @@ function q6Q8ExactRecoveryParent5577054(stateDir: string, number: "6" | "7" | "8
   );
 }
 
+function q14ExactRecoveryParent5577054(stateDir: string) {
+  return exactRecoveryParent(
+    stateDir,
+    "problem-recoveries/v1-0005-0014-d09919a7d33509ec552e954f5aa19eef07ee60c50f6ce368ac81e2fae7095646.json",
+    "classification-recoveries/v1-0005-0014-6aa3691f9ae29f3029afcfe4f828d748ea8bd41a0d871e9f6598b4e4b3eafaf9-" +
+      "7bb7cb863c8c4855.json",
+    "76b4d731d9713ad680c5952a5d81b976877a8ec025576ee4f87836e49184a7e0",
+  );
+}
+
 function q35ExactRecoveryParent5577054(stateDir: string) {
   return exactRecoveryParent(
     stateDir,
@@ -1743,13 +1753,13 @@ describe("exact allowlisted problem manual adjudication", () => {
     const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
       spec.entryId === "ebsi:5578421" && ["12:31", "12:32"].includes(spec.key)
     );
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(85);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(86);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 36)))
       .toBe("e260bb5cd9c24507cb1c434e19b03a63961ef07a29392b28fc49f6897040dd64");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4");
+      .toBe("7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805");
     expect(specs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -2098,8 +2108,8 @@ describe("exact allowlisted problem manual adjudication", () => {
         correctedHash: canonicalEvidenceHash(corrected),
         correctedQuestionHash: canonicalEvidenceHash(corrected.question),
       }).toEqual({
-        length: 85,
-        allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+        length: 86,
+        allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
         rowHash: "1b54e456a373449955afd6236b47e77ca58733e3248aaa3985692b8ffcec6ada",
         replacementsHash: "b6ae09e29f43d9e0fac4c89f0c703334e5a7c416e4177821c74de152f2564744",
         failedQuestionHash: "70f6e312bc064cdcdbe430e0117b1c03f94b65de74cae80db2fde06e1215419b",
@@ -2231,6 +2241,44 @@ describe("exact allowlisted problem manual adjudication", () => {
         q6Q8ExactRecoveryParent5577054(q43LiveState5577054, "8").failed.question,
       );
       expect(q8.question).toContain("전망을 바탕으로 ㉮에 관한 내용을");
+    },
+  );
+
+  it.skipIf(!existsSync(join(q43LiveState5577054, "problem.pdf")))(
+    "pins the source-exact 5577054 Q14 Middle Korean table",
+    () => {
+      const spec = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((candidate) =>
+        candidate.allowlistId === "ebsi-5577054-q14-source-manual-v1"
+      )!;
+      const pinned = q14ExactRecoveryParent5577054(q43LiveState5577054);
+      const corrected = applyAllowlistedProblemManualCorrection(
+        spec.entryId,
+        spec.sourceHash,
+        pinned.failed.question,
+      );
+      expect({
+        rowHash: canonicalEvidenceHash(spec),
+        replacementsHash: canonicalEvidenceHash(spec.replacements),
+        itemHash: canonicalEvidenceHash(corrected),
+        questionHash: canonicalEvidenceHash(corrected.question),
+        choicesHash: canonicalEvidenceHash(corrected.choices),
+        figureDescriptionHash: canonicalEvidenceHash(corrected.figure_description),
+      }).toEqual({
+        rowHash: "d5e952f9e4c233fa76e561172e2196eac8a470fb2e5a50b3834984c7e1c4a052",
+        replacementsHash: "8134eac4461cc9559fc304cae6a99cc8499df41be8b42730ec1ca386f147f126",
+        itemHash: "fc2ab0389e5d4d85b43c91156e4fa5731a93bda907dc307337412cd85588f2af",
+        questionHash: "624815aa3c3869ad3ef8feaf29583da8d75d88322b0cd9e49844308b599fb54f",
+        choicesHash: "8ad4e37d9fe1c5d35fef561e705fd14e74809c363c7e44deccdb0d70fe0a521d",
+        figureDescriptionHash: "503cefc6629bc8edcce99771c3fae015c394c4a204b023b99bbb179cae47d066",
+      });
+      expect(corrected.choices).toEqual(expect.arrayContaining([
+        "③ 오- | 와 | 깨우- | 깨워",
+        "④ - |  | 쓰- | 써",
+        "⑤ - | 야 | 가득하- | 가득하여",
+      ]));
+      expect(corrected.figure).toBe(true);
+      expect(corrected.figure_description).toContain("‘15세기 국어’와 ‘현대 국어’");
+      expect(corrected.answer).toBe(pinned.failed.question.answer);
     },
   );
 
@@ -2458,8 +2506,8 @@ describe("exact allowlisted problem manual adjudication", () => {
         q34Row: canonicalEvidenceHash(q34Spec),
         q34Replacements: canonicalEvidenceHash(q34Spec.replacements),
       }).toEqual({
-        length: 85,
-        allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+        length: 86,
+        allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
         q33Row: "357ba6238a19d835559245a62e8470ba6075f7c644d9c2e629a1b86871429974",
         q33Replacements: "f17a6f71abf2b9ab18084b37487ce45fd072fcbcac601860d9a409aa22e75aa1",
         q34Row: "827a61b1f719b33b82901e77fc785329ef4b665b97499f55030089641d770da9",
@@ -2527,7 +2575,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         q45Replacements: canonicalEvidenceHash(q45Spec.replacements),
       }).toEqual({
         manualLength: 81,
-        manualHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+        manualHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
         sourceRevisionLength: 18,
         sourceRevisionHash: "130e8110ebe558cc694cf19582ca4309e4824556d2dae35eef2b30fafa391d6a",
         q43Row: "be198b6e9d02562a142d371d760ef565a0d647879feca326cd9c4a3c848d3f2d",
@@ -2632,8 +2680,8 @@ describe("exact allowlisted problem manual adjudication", () => {
         q36Row: canonicalEvidenceHash(q36Spec),
         q36Replacements: canonicalEvidenceHash(q36Spec.replacements),
       }).toEqual({
-        length: 85,
-        allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+        length: 86,
+        allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
         q35Row: "7c62c74d8995fdf80a022bde0280ec4b7cd09075e14cf501ae696b23dd0ae203",
         q35Replacements: "d3ed8443a96e767c7835bfd9364c23670b94fa7dc471732c01a238b1affefcd9",
         q36Row: "a3028fd6d52b49e2782ae981169c6ba79645cb7c8fb26adc6d71e9ddbe390632",
@@ -2781,8 +2829,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       correctedHash: canonicalEvidenceHash(corrected),
       questionHash: canonicalEvidenceHash(corrected.question),
     }).toEqual({
-      length: 85,
-      allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+      length: 86,
+      allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
       rowHash: "d29d85e7ecafdd8bcdf1f95d704825e2ed704efc3f60911cd0c99263c67d4175",
       replacementsHash: "ae38b4e5cb8475a81f7cd94bde750c5c9dac7ac36d8049bed4246820d5f65f70",
       correctedHash: "70ce3c80d7cf2e134c8599f3da41a961473680cb1cfd20594ad1144748da013c",
@@ -2898,8 +2946,8 @@ describe("exact allowlisted problem manual adjudication", () => {
         q19Row: canonicalEvidenceHash(q19Spec),
         q19Replacements: canonicalEvidenceHash(q19Spec.replacements),
       }).toEqual({
-        length: 85,
-        allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+        length: 86,
+        allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
         q16Row: "0796f970ca37535087480884410f709dfec0c27864ac8ea199ae1397f43c6c6f",
         q16Replacements: "42a2ed457ae3bc6891e7c1cbd79399c22bd420170fbd4b49091a84680b1b3886",
         q19Row: "543081a6108ddc1750d03965a40713704686ff06cce0f9bb93c793fb83b2364d",
@@ -2962,8 +3010,8 @@ describe("exact allowlisted problem manual adjudication", () => {
         revisionReplacement: canonicalEvidenceHash(revisionSpec.replacement),
         sourceRevisionRow: canonicalEvidenceHash(sourceRevisionSpec),
       }).toEqual({
-        length: 85,
-        allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+        length: 86,
+        allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
         row: "5b421d2a2f032b5153a6a2d50c29eacc41e31284c7cb7d0f9c89cd751218a8cb",
         replacements: "d5bd6363671f51edf245ac6844487454673902e5f88d2718c40c10e83582722a",
         revisionLength: 24,
@@ -3022,8 +3070,8 @@ describe("exact allowlisted problem manual adjudication", () => {
         row: canonicalEvidenceHash(spec),
         replacements: canonicalEvidenceHash(spec.replacements),
       }).toEqual({
-        length: 85,
-        allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+        length: 86,
+        allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
         row: "43bd6c65dd0f78e3c41beba165b022ef7c7b4c3ddfbc9ec12616cabdbc226f9b",
         replacements: "c6829fe4992c98c42e1ffcf49df4e80a544d7e124728007ed4dbaebaf3a8076a",
       });
@@ -3061,8 +3109,8 @@ describe("exact allowlisted problem manual adjudication", () => {
         row: canonicalEvidenceHash(spec),
         replacements: canonicalEvidenceHash(spec.replacements),
       }).toEqual({
-        length: 85,
-        allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+        length: 86,
+        allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
         row: "4cbef3129b2f16176779536c68fd3cba7572783d391b35712368d3e7733dbc2b",
         replacements: "de9de8db132710389f9841bbcf6161e4cc576b94bf377dbc99c7e7c7f07dc0e4",
       });
@@ -3099,8 +3147,8 @@ describe("exact allowlisted problem manual adjudication", () => {
         row: canonicalEvidenceHash(spec),
         replacements: canonicalEvidenceHash(spec.replacements),
       }).toEqual({
-        length: 85,
-        allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+        length: 86,
+        allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
         row: "a42036176a0ab401a5afab917bc874c8af110eae67b7675758041638b0e57226",
         replacements: "95466ed76c7acc4a208d49d42ce24f998b9569f299d38c83dc682eccfb1d63aa",
       });
@@ -3137,8 +3185,8 @@ describe("exact allowlisted problem manual adjudication", () => {
         row: canonicalEvidenceHash(spec),
         replacements: canonicalEvidenceHash(spec.replacements),
       }).toEqual({
-        length: 85,
-        allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+        length: 86,
+        allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
         row: "df66c46fecda3f475b93ac7cd7a5dfa1a195f76e942dba2c1c5da2949ba3bbf5",
         replacements: "2305bad0b933117121bd79b4debaad9adf2378fe65c39bb05b09a7b483975a9b",
       });
@@ -3176,8 +3224,8 @@ describe("exact allowlisted problem manual adjudication", () => {
         row: canonicalEvidenceHash(spec),
         replacements: canonicalEvidenceHash(spec.replacements),
       }).toEqual({
-        length: 85,
-        allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+        length: 86,
+        allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
         row: "605988feed894c9bbb58a57b86ed6e3a3ab38d745b4e1b0d9558237f7dcc7b2b",
         replacements: "f0b6971f94884794df1ed30282d1399bf9d2010bea9ae55f8cec48930f5a00e5",
       });
@@ -3220,8 +3268,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       replacementsHash: canonicalEvidenceHash(spec.replacements),
       parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash,
     }).toEqual({
-      length: 85,
-      allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+      length: 86,
+      allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
       rowHash: "cefb111d67d66b95251e07b1099d4d38364330b21f2571b43c96ad18fa3b4fcd",
       replacementsHash: "ea56ed5974ed4516c2f6f82d6a16e748fc1cf71e833402447707b533d1ab39d9",
       parentRecoveryEvidenceHash: "94c0d95498e93fd60c341b59880b9bbb91d180cb086ad7a5b5f382dfe115e8b8",
@@ -3377,8 +3425,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       replacementsHash: canonicalEvidenceHash(spec.replacements),
       parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash,
     }).toEqual({
-      length: 85,
-      allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+      length: 86,
+      allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
       rowHash: "1291ff45e929dceaef36251a5b51c95969e0742341971a78a63352dc536d4b82",
       replacementsHash: "ced88a34bc2c9bf149abc34822f096c216529576f2ee92dd71af18d754497cde",
       parentRecoveryEvidenceHash: "594537e6c1a0db71e5b7526ac2dd4cefbd0f6ffb63f1349ae0487505c084e49a",
@@ -3573,11 +3621,11 @@ describe("exact allowlisted problem manual adjudication", () => {
     const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
       spec.entryId === "ebsi:5578421" && ["16:44", "16:45"].includes(spec.key)
     );
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(85);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(86);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4");
+      .toBe("7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805");
     expect(specs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -4050,28 +4098,38 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 180_000);
 
   it.skipIf(!existsSync(join(q43LiveState5577054, "problem.pdf")))(
-    "hydrates all 31 persisted 5577054 manual generations before later work",
+    "hydrates all 32 persisted 5577054 manual generations before later work",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-5577054-cross-entry-hydration-"));
     cpSync(q43LiveState5577054, root, { recursive: true });
-    const newManualKeys = new Set(["3:6", "3:7", "3:8"]);
+    const newManualKeys = new Set(["3:6", "3:7", "3:8", "5:14"]);
     const manualClassificationKeys: string[] = [];
     let terminalCalls = 0;
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       const persistedKeys = new Set([
-        "1:3", "3:6", "3:7", "3:8", "4:10", "6:16", "6:18", "6:19", "6:20", "7:21", "8:22", "8:23",
+        "1:3", "3:6", "3:7", "3:8", "4:10", "5:14", "6:16", "6:18", "6:19", "6:20", "7:21", "8:22", "8:23",
         "9:24", "9:25", "9:26", "10:27", "10:28", "10:29",
         "12:33", "12:34", "13:35", "13:36", "14:37",
         "15:38", "15:39", "15:40", "15:41", "15:42", "16:43", "16:44", "16:45",
       ]);
       if (request.schema?.name === "studywork_exam_corpus_classification") {
-        const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{ key: string; question: string }>;
+        const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{
+          key: string;
+          question: string;
+          choices: string[] | null;
+          figure_description: string | null;
+        }>;
         if (items.every((item) => newManualKeys.has(item.key))) {
           manualClassificationKeys.push(...items.map((item) => item.key));
-          for (const item of items) {
+          for (const item of items.filter((candidate) => candidate.key !== "5:14")) {
             expect(item.question).toContain("○ ㉮ 청소년의 전자 상거래 피해를 예방하기 위한 노력에");
             expect(item.question).toContain("전자 상거래에서 인한 피해를 입지 않도록");
             expect(item.question).toContain("\n\n[B]\n\n");
+          }
+          const q14 = items.find((item) => item.key === "5:14");
+          if (q14) {
+            expect(q14.choices).toContain("⑤ - | 야 | 가득하- | 가득하여");
+            expect(q14.figure_description).toContain("‘15세기 국어’와 ‘현대 국어’");
           }
           return { text: JSON.stringify(items.map((item) => ({
             key: item.key,
@@ -4103,6 +4161,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         expect(item("3:6").question).toContain("\n\n[B]\n\n㉠~㉤ 중");
         expect(item("3:7").question).toContain("전자 상거래에서 인한 피해를 입지 않도록");
         expect(item("3:8").question).toContain("전망을 바탕으로 ㉮에 관한 내용을");
+        expect(item("5:14").choices).toContain("⑤ - | 야 | 가득하- | 가득하여");
         expect(item("4:10").question).toContain("자신의 생각인 양 표현하는 것이 문제점임을");
         expect(item("6:16").question).toContain("[16 ~ 20] 다음을 읽고 물음에 답하시오.");
         expect(passage("9:24", 24)).toBe(passage("10:29", 29));
@@ -4138,9 +4197,9 @@ describe("exact allowlisted problem manual adjudication", () => {
     const spec = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((candidate) =>
       candidate.allowlistId === "ebsi-5577054-q42-manual-v1"
     )!;
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(85);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(86);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4");
+      .toBe("7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805");
     expect({
       rowHash: canonicalEvidenceHash(spec),
       replacementsHash: canonicalEvidenceHash(spec.replacements),
@@ -4364,8 +4423,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       replacementsHash: canonicalEvidenceHash(spec.replacements),
       parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash,
     }).toEqual({
-      length: 85,
-      allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+      length: 86,
+      allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
       rowHash: "5a9ea7744f3204342fa8d8252daaf9f40fdca16b8fa6b6b8a5b1535ed86d63ae",
       replacementsHash: "7484bdc1477ff1a76dcf935df971e94c7be2f803ab4c959244a0c7e7dd66e709",
       parentRecoveryEvidenceHash: "f89e028e1b52502b23762ba467747b4a6726e1fb22003d85744c0e4afb6132ff",
@@ -4519,8 +4578,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       replacementsHash: canonicalEvidenceHash(spec.replacements),
       parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash,
     }).toEqual({
-      length: 85,
-      allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+      length: 86,
+      allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
       rowHash: "41404dacd564049316497afc6ff33311c02e8989cc6329378b98bfa261c13fc9",
       replacementsHash: "27b2bc2c01c3837febcdbfaed92c09cfb3c4b3da50bf174d276c6f93a8a8a5c0",
       parentRecoveryEvidenceHash: "7935a025654eb7b4224af107fc29e149190d2b76f775a33194b3ae3b7665251e",
@@ -4662,8 +4721,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       replacementsHash: canonicalEvidenceHash(spec.replacements),
       parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash,
     }).toEqual({
-      length: 85,
-      allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+      length: 86,
+      allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
       rowHash: "ff64bc2933feae809301b2978bb8d59538939db172bd0076132b3cc2d1cae45d",
       replacementsHash: "5d29986633f21c495aadcc0efe1160e2de4e9b32113752ba4220744480d90d37",
       parentRecoveryEvidenceHash: "296ac6cdf488ca3081168adf9e798dd31763df6bbc3d30c57e552f3c05b3c0ee",
@@ -4795,8 +4854,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       replacementsHash: canonicalEvidenceHash(spec.replacements),
       parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash,
     }).toEqual({
-      length: 85,
-      allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+      length: 86,
+      allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
       rowHash: "a1d9adbd5a00146552f5135dc3c044c9df7702cbfccfcbbb66e3f26a9111771c",
       replacementsHash: "b2f8320f9ac229ef89ad96f0d6c6e59deed7e11ebc94144e691441e6e539763e",
       parentRecoveryEvidenceHash: "e486c77b1565458f4d68ff9df798111527610505ab2633e8809a3e71c379868a",
@@ -4894,11 +4953,11 @@ describe("exact allowlisted problem manual adjudication", () => {
   it.skipIf(!existsSync(join(q31Q32LiveState, "problem.pdf")))(
     "pins and applies the source-exact 5578421 Q14 tone diagram",
     () => {
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(85);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(86);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 48)))
       .toBe("66ff6014e0969fa9a2f13b53c9157eb8a5ca945097cba7ee1d6416cf93e0cc8d");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4");
+      .toBe("7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805");
     const spec = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((candidate) =>
       candidate.allowlistId === "ebsi-5578421-q14-manual-v1"
     )!;
@@ -4979,7 +5038,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 49)))
       .toBe("e0ad5b176a2568251ac73625e6e1abcd857a846f2250147f99db28fa5a07d7fe");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4");
+      .toBe("7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805");
     expect({
       rowHash: canonicalEvidenceHash(spec),
       replacementsHash: canonicalEvidenceHash(spec.replacements),
@@ -5114,9 +5173,9 @@ describe("exact allowlisted problem manual adjudication", () => {
       triggerHash: canonicalEvidenceHash(spec.terminalTrigger),
       parentRecoveryEvidenceHash: spec.parentRecoveryEvidenceHash,
     }).toEqual({
-      length: 85,
+      length: 86,
       prefixHash: "36c3b798d248e5fe13a0790cd1d6ae1bcac55a83f1b90856d1d93645648e4de7",
-      allowlistHash: "fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4",
+      allowlistHash: "7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805",
       rowHash: "84b4d3f2c2606efea15cfbbca0f6d15d2da56b1c78112283403472f996c6bc5d",
       replacementsHash: "3331c3f24153b9909c99169ccbfa72d8a3a4cf9771d8eb4b4d64eff059bfde49",
       triggerHash: "b26a8f937c864fd8f20ea7aee6fa38c55d03e1cd2f87051c87942fc9d3edc0cd",
@@ -5181,11 +5240,11 @@ describe("exact allowlisted problem manual adjudication", () => {
     const spec = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((candidate) =>
       candidate.allowlistId === "ebsi-5578421-q3-manual-v2"
     )!;
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(85);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(86);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 53)))
       .toBe("0ccd51016dcfc75b0fe1e9f5ed88216b02aa305911b232a9f7f90eb68cc6544c");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4");
+      .toBe("7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805");
     expect({
       rowHash: canonicalEvidenceHash(spec),
       replacementsHash: canonicalEvidenceHash(spec.replacements),
@@ -5272,7 +5331,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 51)))
       .toBe("8377e380ffebc05e5e74bcf04896ff495c93630378b30f2051cc5c2e896c9e23");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4");
+      .toBe("7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805");
     expect({
       rowHash: canonicalEvidenceHash(spec),
       replacementsHash: canonicalEvidenceHash(spec.replacements),
@@ -5341,11 +5400,11 @@ describe("exact allowlisted problem manual adjudication", () => {
     const spec = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((candidate) =>
       candidate.allowlistId === "ebsi-5578421-q43-manual-v1"
     )!;
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(85);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(86);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 52)))
       .toBe("d33bde802507edbe74051f14a89b6182714cbc675f3838d0245a91f405562a87");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4");
+      .toBe("7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805");
     expect({
       rowHash: canonicalEvidenceHash(spec),
       replacementsHash: canonicalEvidenceHash(spec.replacements),
@@ -5445,11 +5504,11 @@ describe("exact allowlisted problem manual adjudication", () => {
     const spec = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.find((candidate) =>
       candidate.allowlistId === "ebsi-5578421-q38-manual-v1"
     )!;
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(85);
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(86);
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 54)))
       .toBe("3f9a653666b0b3b9e3d61ee0ce29700cd68f86ea98ca148a8280a22d9ec95769");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4");
+      .toBe("7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805");
     expect({
       rowHash: canonicalEvidenceHash(spec),
       replacementsHash: canonicalEvidenceHash(spec.replacements),
@@ -6762,7 +6821,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 46)))
       .toBe("918b9267faab3d394cf64e5b9f02e9621024c5c6ad5d17d233fd8940fd1dac82");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST))
-      .toBe("fb288391deaeae97910edf43caaea03215de2de5e314f90b9c999d7f399e3aa4");
+      .toBe("7a8262dac066c3ab1d74f7ca63819a180762821f7019a0c955562d544de59805");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(0, 18)))
       .toBe("463fceef246487e1ec791ffb0489048f874cd5944d946f9c6d819f3fd3c76eda");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST[11]))
