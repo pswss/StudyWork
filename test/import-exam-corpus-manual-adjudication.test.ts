@@ -2567,8 +2567,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       rowHash: canonicalEvidenceHash(revisionSpec),
       replacementHash: canonicalEvidenceHash(revisionSpec.replacement),
     }).toEqual({
-      length: 12,
-      allowlistHash: "12685962d5001997ba3cb4ccbd2446651f005e922352bf9727ce5f92c84bd59d",
+      length: 13,
+      allowlistHash: "19bcb160d927ab2f30db4cd1f55be04cfab010f3eb6b4bb8dbb1fcbc01573442",
       rowHash: "16ca1e7fb9f94fd2da81648e0f408706ccc67966c14d812ae12f80848a6c639c",
       replacementHash: "81be7218cb0c77f6c65dd51f00008cef6e1bf19a09da243ef74daca44c61c777",
     });
@@ -2747,8 +2747,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       rowHash: canonicalEvidenceHash(revisionSpec),
       replacementHash: canonicalEvidenceHash(revisionSpec.replacement),
     }).toEqual({
-      length: 12,
-      allowlistHash: "12685962d5001997ba3cb4ccbd2446651f005e922352bf9727ce5f92c84bd59d",
+      length: 13,
+      allowlistHash: "19bcb160d927ab2f30db4cd1f55be04cfab010f3eb6b4bb8dbb1fcbc01573442",
       rowHash: "46b8c9b0c1548b1409d689f49da6bd0ca3028869418b5cdb7d1385890be2d0b7",
       replacementHash: "30774b846f9b85135daf0f8c906eb8238845378c78752650683cbaa3e3dbe24d",
     });
@@ -2880,9 +2880,36 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(corrected.answer).toBe(pinned.failed.question.answer);
     expect(corrected.figure).toBe(false);
 
+    const revisionSpec = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === "ebsi-5577054-q21-manual-revision-v1"
+    )!;
+    expect({
+      length: PROBLEM_MANUAL_REVISION_ALLOWLIST.length,
+      allowlistHash: canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST),
+      rowHash: canonicalEvidenceHash(revisionSpec),
+      replacementHash: canonicalEvidenceHash(revisionSpec.replacement),
+    }).toEqual({
+      length: 13,
+      allowlistHash: "19bcb160d927ab2f30db4cd1f55be04cfab010f3eb6b4bb8dbb1fcbc01573442",
+      rowHash: "07ab54dc62ff0c4bd31034f7b96b1a491215108793e8d5eb7ad0780bd0da75fe",
+      replacementHash: "c41df3c34a50bc440182e63e8d07faa4a0f2f4897e5e534c3b677a94194ef12e",
+    });
+    const revised = applyAllowlistedProblemManualRevision(
+      "ebsi:5577054",
+      spec.sourceHash,
+      spec.allowlistId,
+      corrected,
+    );
+    expect(canonicalEvidenceHash(revised))
+      .toBe("f815bfabb5c9a586a55b342b9f55b7a813e6525cf8c85746e2ae9b621ffc1bd0");
+    expect(canonicalEvidenceHash(revised.question))
+      .toBe("5db1a7651f12e0835afccfd45c2b1c494f4f9150deb9d9327bff180b704852c1");
+    expect(revised.question).toContain("오랜 세월 굳게 선 자태 고칠 적이 업다");
+    expect(revised.question).not.toContain("오랜 세월 곧게 선 자태 고칠 적이 업다");
+
     root = mkdtempSync(join(tmpdir(), "studywork-5577054-q21-manual-"));
     cpSync(q43LiveState5577054, root, { recursive: true });
-    removeManualArtifacts(root, ["7:21"]);
+    removeManualRevisionArtifacts(root, ["7:21"]);
     const input = q27FixtureInputs(root);
     const row = q21ExactRecoveryParent5577054(root);
     const calls: string[] = [];
@@ -2895,7 +2922,8 @@ describe("exact allowlisted problem manual adjudication", () => {
       expect(items).toHaveLength(1);
       calls.push(items[0].key);
       expect(canonicalEvidenceHash(items[0].question))
-        .toBe("0d0b8d693a00ea77d76499bd35ad6814e903c026ac5f83f70f8be7ab7d93288e");
+        .toBe("5db1a7651f12e0835afccfd45c2b1c494f4f9150deb9d9327bff180b704852c1");
+      expect(items[0].question).toContain("오랜 세월 굳게 선 자태 고칠 적이 업다");
       expect(items[0].question).toContain("왕기순인(枉己循人)*야 내 어 옮아가리오");
       expect(items[0].question).toContain("대혜보각사의 ｢ 서장(書狀) ｣");
       return { text: JSON.stringify([{
@@ -2921,7 +2949,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     const completed = await run();
     expect(calls).toEqual(["7:21"]);
     expect(canonicalEvidenceHash(completed.classified.question))
-      .toBe("ab83f6a5d5e188f11c8f0f585ed05a9ca51a70ef63732b89bad063fd6dfbedca");
+      .toBe("f815bfabb5c9a586a55b342b9f55b7a813e6525cf8c85746e2ae9b621ffc1bd0");
     const verified = withOnlyManualArtifactsForKey(root, "7:21", () =>
       verifyProblemManualAdjudicationForTest({
         stateDir: root,
@@ -2933,14 +2961,14 @@ describe("exact allowlisted problem manual adjudication", () => {
         manualAdjudication: completed.evidence,
       })) as { question: QuizItemEx; classification: ClassificationDecision };
     expect(canonicalEvidenceHash(verified.question))
-      .toBe("ab83f6a5d5e188f11c8f0f585ed05a9ca51a70ef63732b89bad063fd6dfbedca");
+      .toBe("f815bfabb5c9a586a55b342b9f55b7a813e6525cf8c85746e2ae9b621ffc1bd0");
     expect(verified.classification.transcription_status).toBe("exact");
     const stable = stateSnapshot(root);
     await run();
     expect(calls).toEqual(["7:21"]);
     expect(stateSnapshot(root)).toEqual(stable);
 
-    const problemPath = join(root, completed.evidence.problemArtifact.path);
+    const problemPath = join(root, completed.evidence.revision!.problemArtifact.path);
     const problemBytes = readFileSync(problemPath);
     writeFileSync(problemPath, Buffer.concat([problemBytes, Buffer.from(" ")]));
     const beforeTamper = stateSnapshot(root);
@@ -2996,7 +3024,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 8)))
       .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST))
-      .toBe("12685962d5001997ba3cb4ccbd2446651f005e922352bf9727ce5f92c84bd59d");
+      .toBe("19bcb160d927ab2f30db4cd1f55be04cfab010f3eb6b4bb8dbb1fcbc01573442");
     const revisionSpec = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((candidate) =>
       candidate.allowlistId === "ebsi-5578421-q14-manual-revision-v1"
     )!;
@@ -3068,7 +3096,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       rowHash: canonicalEvidenceHash(revisionSpec),
       replacementHash: canonicalEvidenceHash(revisionSpec.replacement),
     }).toEqual({
-      allowlistHash: "12685962d5001997ba3cb4ccbd2446651f005e922352bf9727ce5f92c84bd59d",
+      allowlistHash: "19bcb160d927ab2f30db4cd1f55be04cfab010f3eb6b4bb8dbb1fcbc01573442",
       rowHash: "7fec9a6782faf9cc6e59837c3528335963319fabc58ea1b7adfaeb25651028e5",
       replacementHash: "da53d25545e236eadc2e0c064463a171d4678f640160ee3acb6be0928c805770",
     });
@@ -4941,6 +4969,18 @@ describe("exact allowlisted problem manual adjudication", () => {
       failedQuestionHash: "0218c03170cbb7b5e03b5119d99cb1e71a14c9f4b36926893d7e0297517fee62",
       failedClassificationHash: "c14153a1d075664b123e836da971481f093dc88bcb2f4d275464833309287739",
       failedClassificationEvidenceHash: "870b857359eea9ecdff9f2182b6c6d27d437cfad88dbcfbd92141ab8ea8c1f20",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5578421-q2-manual-revision-v1",
+      parentAllowlistId: "ebsi-5578421-q2-manual-v1",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5577054-q42-manual-revision-v1",
+      parentAllowlistId: "ebsi-5577054-q42-manual-v1",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5577054-q20-manual-revision-v1",
+      parentAllowlistId: "ebsi-5577054-q20-manual-v1",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5577054-q21-manual-revision-v1",
+      parentAllowlistId: "ebsi-5577054-q21-manual-v1",
     })]);
     expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.map(canonicalEvidenceHash)).toEqual([
       "479ebd4d7b57bd6ead1a4082b29d8c8c2cba1c7ebdb21634a3eda063986480b4",
@@ -4952,6 +4992,10 @@ describe("exact allowlisted problem manual adjudication", () => {
       "41d2518dfff51233a9604956b19ea7cfe8d53a7257f80958a05565ddadcadaaf",
       "b3742ae0758ddba275a8131de206fc86e3bea2f0bfdfde9dadb0eb10be8baa00",
       "30bdb578aac86abb60471c18d06a6f5231101a46d7c3ab753a266789e2613d25",
+      "7fec9a6782faf9cc6e59837c3528335963319fabc58ea1b7adfaeb25651028e5",
+      "16ca1e7fb9f94fd2da81648e0f408706ccc67966c14d812ae12f80848a6c639c",
+      "46b8c9b0c1548b1409d689f49da6bd0ca3028869418b5cdb7d1385890be2d0b7",
+      "07ab54dc62ff0c4bd31034f7b96b1a491215108793e8d5eb7ad0780bd0da75fe",
     ]);
     const parent = JSON.parse(readFileSync(q30ManualProblemPath, "utf8")).item as QuizItemEx;
     expect(canonicalEvidenceHash(parent)).toBe(PROBLEM_MANUAL_REVISION_ALLOWLIST[0].failedQuestionHash);
@@ -5018,10 +5062,26 @@ describe("exact allowlisted problem manual adjudication", () => {
       failedQuestionHash: "cea6b791cba1ff2a19529d13cdd2c9fdef774bb5d17174e1ef1d2bfc6ad7c5fb",
       failedClassificationHash: "c5868275075ef9d18656313b2cecb97fdc9b3d2d6c6a4e8b728365aea7c8b786",
       failedClassificationEvidenceHash: "7d34789e5db02ef74ce06f85cbdee6c87318cd450bd9c9359f6688c7746b06e6",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5578421-q2-manual-source-revision-v1",
+      parentRevisionAllowlistId: "ebsi-5578421-q2-manual-revision-v1",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5578421-q21-manual-source-revision-v1",
+      parentRevisionAllowlistId: "ebsi-5578421-q21-manual-revision-v1",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5578421-q45-manual-source-revision-v1",
+      parentRevisionAllowlistId: "ebsi-5578421-q45-manual-revision-v1",
+    }), expect.objectContaining({
+      allowlistId: "ebsi-5577054-q42-manual-source-revision-v1",
+      parentRevisionAllowlistId: "ebsi-5577054-q42-manual-revision-v1",
     })]);
     expect(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.map(canonicalEvidenceHash)).toEqual([
       "e6287eb8f4eaef8f24099c08afc13d077ad7792a1345f0296b7ce39fa4b07d39",
       "5a41a08c9612227e83e4de3d53a6559a8cf37f515193cc783b7e51def4930743",
+      "99ec8e696ea73ba0c61d31df0df9f657bcb29e62fa6ff43e8db1389542e821aa",
+      "4c70814866ee7bcff53e2bb652f35158d4eada24cc14699fbcac2af4dc38a4a1",
+      "d1838baa7e6f533817722fca9207e3ca354e28c72b0474691cd17d950dbeeaa3",
+      "e34815c9d14643ee14f5bc34771ceb9f97894ad319a3878b1fd198db15acd999",
     ]);
     const q30SourceRevised = applyAllowlistedProblemManualSourceRevision(
       "ebsi:5578421",

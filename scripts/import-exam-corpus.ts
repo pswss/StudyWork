@@ -7112,6 +7112,28 @@ export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSp
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_reading",
+}, {
+  allowlistId: "ebsi-5577054-q21-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q21-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "7:21",
+  sourcePage: 7,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "ab83f6a5d5e188f11c8f0f585ed05a9ca51a70ef63732b89bad063fd6dfbedca",
+  failedClassificationHash: "aa6e02764f3989de053d6e681d757d47ca0ecd97a62e65501cab1efaf5b06289",
+  failedClassificationEvidenceHash: "68d77876c777504709d89678792288a56d6c2b95b33237340aea7a37243b363b",
+  replacement: {
+    field: "question",
+    from: "오랜 세월 곧게 선 자태 고칠 적이 업다",
+    to: "오랜 세월 굳게 선 자태 고칠 적이 업다",
+    count: 1,
+  },
+  requiredTokens: [
+    "[21 ~ 23] 다음을 읽고 물음에 답하시오.", "오랜 세월 굳게 선 자태 고칠 적이 업다",
+    "21. (가)와 (나)의 공통점으로 적절한 것은?", "① 지나온 삶에 대한 회한",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
 }] as const;
 
 export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
