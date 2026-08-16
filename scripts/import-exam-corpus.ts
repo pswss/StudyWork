@@ -21957,6 +21957,27 @@ function is5577054Q35Q36ManualBatchSpec(spec: ProblemManualAdjudicationSpec): bo
   return spec.entryId === "ebsi:5577054" && ["13:35", "13:36"].includes(spec.key);
 }
 
+function is5577054Q3ManualGenerationSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5577054" && spec.key === "1:3";
+}
+
+function is5577054Q10ManualGenerationSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5577054" && spec.key === "4:10";
+}
+
+function is5577054Q16Q20ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5577054" && ["6:16", "6:18", "6:19", "6:20"].includes(spec.key);
+}
+
+function is5577054Q21Q23ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5577054" && ["7:21", "8:22", "8:23"].includes(spec.key);
+}
+
+function is5577054Q37Q42ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5577054" &&
+    ["14:37", "15:38", "15:39", "15:40", "15:41", "15:42"].includes(spec.key);
+}
+
 function is5577054Q24Q29ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5577054" &&
     ["9:24", "9:25", "9:26", "10:27", "10:28", "10:29"].includes(spec.key);
@@ -21994,9 +22015,11 @@ export function isPersistedManualHydrationSpec(spec: ProblemManualAdjudicationSp
   return is5578421PersistedSingletonManualSpec(spec) ||
     is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q31Q32ManualBatchSpec(spec) ||
     is5578421Q33Q34ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec) ||
+    is5577054Q3ManualGenerationSpec(spec) || is5577054Q10ManualGenerationSpec(spec) ||
+    is5577054Q16Q20ManualBatchSpec(spec) || is5577054Q21Q23ManualBatchSpec(spec) ||
     is5577054Q24Q29ManualBatchSpec(spec) || is5577054Q33Q34ManualBatchSpec(spec) ||
-    is5577054Q35Q36ManualBatchSpec(spec) || is5577054Q43ManualGenerationSpec(spec) ||
-    is5577054Q44Q45ManualBatchSpec(spec);
+    is5577054Q35Q36ManualBatchSpec(spec) || is5577054Q37Q42ManualBatchSpec(spec) ||
+    is5577054Q43ManualGenerationSpec(spec) || is5577054Q44Q45ManualBatchSpec(spec);
 }
 
 function isQ37ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
@@ -22417,12 +22440,22 @@ async function preflightProblemManualBatch(
     ? is5578421Q6Q7ManualBatchSpec
     : is5578421Q33Q34ManualBatchSpec(requestedSpec)
     ? is5578421Q33Q34ManualBatchSpec
+    : is5577054Q3ManualGenerationSpec(requestedSpec)
+    ? is5577054Q3ManualGenerationSpec
+    : is5577054Q10ManualGenerationSpec(requestedSpec)
+    ? is5577054Q10ManualGenerationSpec
+    : is5577054Q16Q20ManualBatchSpec(requestedSpec)
+    ? is5577054Q16Q20ManualBatchSpec
+    : is5577054Q21Q23ManualBatchSpec(requestedSpec)
+    ? is5577054Q21Q23ManualBatchSpec
     : is5577054Q24Q29ManualBatchSpec(requestedSpec)
     ? is5577054Q24Q29ManualBatchSpec
     : is5577054Q33Q34ManualBatchSpec(requestedSpec)
     ? is5577054Q33Q34ManualBatchSpec
     : is5577054Q35Q36ManualBatchSpec(requestedSpec)
     ? is5577054Q35Q36ManualBatchSpec
+    : is5577054Q37Q42ManualBatchSpec(requestedSpec)
+    ? is5577054Q37Q42ManualBatchSpec
     : is5577054Q44Q45ManualBatchSpec(requestedSpec)
     ? is5577054Q44Q45ManualBatchSpec
     : is5578421Q31Q32ManualBatchSpec(requestedSpec)
@@ -22449,17 +22482,21 @@ async function preflightProblemManualBatch(
                       ? isQ39ManualBatchSpec
                       : null;
   if (!predicate) return;
-  const expectedCount = predicate === is5577054Q24Q29ManualBatchSpec
+  const expectedCount = predicate === is5577054Q24Q29ManualBatchSpec ||
+      predicate === is5577054Q37Q42ManualBatchSpec
     ? 6
-    : predicate === is5578421Q19Q20Q21ManualBatchSpec ||
-      predicate === isQ43To45ManualBatchSpec || predicate === isQ23Q28Q29ManualBatchSpec
+    : predicate === is5577054Q16Q20ManualBatchSpec ||
+        predicate === isQ38Q40Q41Q42ManualBatchSpec
+      ? 4
+      : predicate === is5578421Q19Q20Q21ManualBatchSpec ||
+        predicate === is5577054Q21Q23ManualBatchSpec ||
+        predicate === isQ43To45ManualBatchSpec || predicate === isQ23Q28Q29ManualBatchSpec
       ? 3
-      : predicate === isQ38Q40Q41Q42ManualBatchSpec
-        ? 4
-        : predicate === isQ30ManualBatchSpec || predicate === isQ37ManualBatchSpec ||
-            predicate === isQ39ManualBatchSpec
-          ? 1
-          : 2;
+      : predicate === is5577054Q3ManualGenerationSpec ||
+          predicate === is5577054Q10ManualGenerationSpec || predicate === isQ30ManualBatchSpec ||
+          predicate === isQ37ManualBatchSpec || predicate === isQ39ManualBatchSpec
+        ? 1
+        : 2;
   const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(predicate);
   if (
     specs.length !== expectedCount || problem.sha256 !== specs[0].sourceHash ||
@@ -22689,38 +22726,73 @@ async function restoredPersistedManualBaseRepair(
     JSON.parse(readFileSync(problemPath, "utf8")),
     parent.baseProblemRepairArtifact.path
   );
-  const problemMembers = Array.isArray(problemCheckpoint.members)
-    ? problemCheckpoint.members.map((value, index) => object(value, `${key} base problem member ${index + 1}`))
-    : [];
-  const problemItems = restoredSparseQuizItems(problemCheckpoint.items);
-  const memberMatches = problemMembers.filter((member) => member.key === key);
-  const itemMatches = problemItems.filter((item) => questionKey(item) === key);
-  const member = memberMatches[0];
-  const question = itemMatches[0];
-  const expectedMember = {
-    key,
-    printedNumber: parent.printedNumber,
-    baseProblemCheckpoint: baseQuestion.problem,
-    baseQuestionHash: baseQuestion.questionHash,
-    baseClassificationCheckpoint: baseQuestion.classification,
-    baseClassificationHash: baseQuestion.classificationHash,
-    baseSolutionCheckpoint: baseSolution.checkpoint,
-    baseSolutionItemHash: baseSolution.itemHash,
-    officialRawAnswerHash: sha256Text(solution.answer),
-  };
-  const problemChecks = {
-    version: problemCheckpoint.version === 1,
-    entry: problemCheckpoint.entryId === entry.id,
-    source: problemCheckpoint.sourceHash === problem.sha256,
-    context: problemCheckpoint.contextFrom === parent.contextFrom && problemCheckpoint.contextTo === parent.contextTo,
-    page: problemCheckpoint.sourcePage === parent.sourcePage,
-    memberCount: memberMatches.length === 1,
-    itemCount: itemMatches.length === 1,
-    member: Boolean(member) && canonicalEvidenceHash(member) === canonicalEvidenceHash(expectedMember),
-    item: Boolean(question) && canonicalEvidenceHash(question) === parent.baseProblemRepairItemHash,
-    raw: await sha256File(problemPath) === parent.baseProblemRepairArtifact.sha256,
-    canonical: canonicalEvidenceHash(problemCheckpoint) === parent.baseProblemRepairArtifact.sha256,
-  };
+  let question: QuizItemEx | undefined;
+  let problemChecks: Record<string, boolean>;
+  if (problemCheckpoint.version === PROBLEM_REPAIR_VERSION) {
+    question = restoredQuizItems([problemCheckpoint.item])[0];
+    const expectedPath = `problem-repairs/v${PROBLEM_REPAIR_VERSION}-` +
+      `${String(parent.sourcePage).padStart(4, "0")}-${parent.printedNumber.padStart(4, "0")}.json`;
+    const expectedCheckpoint = {
+      version: PROBLEM_REPAIR_VERSION,
+      entryId: entry.id,
+      key,
+      sourcePage: parent.sourcePage,
+      printedNumber: parent.printedNumber,
+      contextFrom: parent.contextFrom,
+      contextTo: parent.contextTo,
+      sourceHash: problem.sha256,
+      baseProblemCheckpoint: baseQuestion.problem,
+      baseQuestionHash: baseQuestion.questionHash,
+      baseSolutionCheckpoint: baseSolution.checkpoint,
+      baseSolutionItemHash: baseSolution.itemHash,
+      officialRawAnswerHash: sha256Text(solution.answer),
+      promptVersion: TARGETED_PROBLEM_TRANSCRIPTION_VERSION,
+      promptDigest: TARGETED_PROBLEM_PROMPT_DIGEST,
+      model: IMPORT_MODEL,
+      reasoningEffort: IMPORT_REASONING_EFFORT,
+      item: question,
+    };
+    problemChecks = {
+      path: parent.baseProblemRepairArtifact.path === expectedPath,
+      metadata: canonicalEvidenceHash(problemCheckpoint) === canonicalEvidenceHash(expectedCheckpoint),
+      item: canonicalEvidenceHash(question) === parent.baseProblemRepairItemHash,
+      raw: await sha256File(problemPath) === parent.baseProblemRepairArtifact.sha256,
+      canonical: canonicalEvidenceHash(problemCheckpoint) === parent.baseProblemRepairArtifact.sha256,
+    };
+  } else {
+    const problemMembers = Array.isArray(problemCheckpoint.members)
+      ? problemCheckpoint.members.map((value, index) => object(value, `${key} base problem member ${index + 1}`))
+      : [];
+    const problemItems = restoredSparseQuizItems(problemCheckpoint.items);
+    const memberMatches = problemMembers.filter((member) => member.key === key);
+    const itemMatches = problemItems.filter((item) => questionKey(item) === key);
+    const member = memberMatches[0];
+    question = itemMatches[0];
+    const expectedMember = {
+      key,
+      printedNumber: parent.printedNumber,
+      baseProblemCheckpoint: baseQuestion.problem,
+      baseQuestionHash: baseQuestion.questionHash,
+      baseClassificationCheckpoint: baseQuestion.classification,
+      baseClassificationHash: baseQuestion.classificationHash,
+      baseSolutionCheckpoint: baseSolution.checkpoint,
+      baseSolutionItemHash: baseSolution.itemHash,
+      officialRawAnswerHash: sha256Text(solution.answer),
+    };
+    problemChecks = {
+      version: problemCheckpoint.version === 1,
+      entry: problemCheckpoint.entryId === entry.id,
+      source: problemCheckpoint.sourceHash === problem.sha256,
+      context: problemCheckpoint.contextFrom === parent.contextFrom && problemCheckpoint.contextTo === parent.contextTo,
+      page: problemCheckpoint.sourcePage === parent.sourcePage,
+      memberCount: memberMatches.length === 1,
+      itemCount: itemMatches.length === 1,
+      member: Boolean(member) && canonicalEvidenceHash(member) === canonicalEvidenceHash(expectedMember),
+      item: Boolean(question) && canonicalEvidenceHash(question) === parent.baseProblemRepairItemHash,
+      raw: await sha256File(problemPath) === parent.baseProblemRepairArtifact.sha256,
+      canonical: canonicalEvidenceHash(problemCheckpoint) === parent.baseProblemRepairArtifact.sha256,
+    };
+  }
   if (!Object.values(problemChecks).every(Boolean)) {
     throw new Error(`${key} persisted manual base problem repair가 다릅니다: ${JSON.stringify(problemChecks)}`);
   }
@@ -22773,7 +22845,7 @@ async function restoredPersistedManualBaseRepair(
     canonicalEvidenceHash(classificationCheckpoint) !== parent.baseClassificationRepairArtifact.sha256
   ) throw new Error(`${key} persisted manual base classification repair가 다릅니다`);
   return {
-    classified: { question, classification },
+    classified: { question: question!, classification },
     evidence: {
       key,
       printedNumber: parent.printedNumber,
@@ -28623,11 +28695,6 @@ export async function repairAndAuditOfficialAnswers(
       label: "Q33-Q34",
       expectedCount: 2,
     }, {
-      predicate: is5577054Q35Q36ManualBatchSpec,
-      signal: /^v\d+-0013-003[56](?:-|\.)/u,
-      label: "Q35-Q36",
-      expectedCount: 2,
-    }, {
       predicate: (spec: ProblemManualAdjudicationSpec) =>
         is5578421PersistedSingletonManualSpec(spec) && spec.key === "4:12",
       signal: /^v\d+-0004-0012(?:-|\.)/u,
@@ -28680,6 +28747,26 @@ export async function repairAndAuditOfficialAnswers(
       manualNames.push(readdirSync(path));
     }
     for (const group of [{
+      predicate: is5577054Q3ManualGenerationSpec,
+      signal: /^v\d+-0001-0003(?:-|\.)/u,
+      label: "Q3",
+      expectedCount: 1,
+    }, {
+      predicate: is5577054Q10ManualGenerationSpec,
+      signal: /^v\d+-0004-0010(?:-|\.)/u,
+      label: "Q10",
+      expectedCount: 1,
+    }, {
+      predicate: is5577054Q16Q20ManualBatchSpec,
+      signal: /^v\d+-0006-(?:0016|0018|0019|0020)(?:-|\.)/u,
+      label: "Q16-Q20",
+      expectedCount: 4,
+    }, {
+      predicate: is5577054Q21Q23ManualBatchSpec,
+      signal: /^v\d+-(?:0007-0021|0008-002[23])(?:-|\.)/u,
+      label: "Q21-Q23",
+      expectedCount: 3,
+    }, {
       predicate: is5577054Q24Q29ManualBatchSpec,
       signal: /^v\d+-(?:0009-002[4-6]|0010-002[7-9])(?:-|\.)/u,
       label: "Q24-Q29",
@@ -28689,6 +28776,16 @@ export async function repairAndAuditOfficialAnswers(
       signal: /^v\d+-0012-003[34](?:-|\.)/u,
       label: "Q33-Q34",
       expectedCount: 2,
+    }, {
+      predicate: is5577054Q35Q36ManualBatchSpec,
+      signal: /^v\d+-0013-003[56](?:-|\.)/u,
+      label: "Q35-Q36",
+      expectedCount: 2,
+    }, {
+      predicate: is5577054Q37Q42ManualBatchSpec,
+      signal: /^v\d+-(?:0014-0037|0015-00(?:38|39|40|41|42))(?:-|\.)/u,
+      label: "Q37-Q42",
+      expectedCount: 6,
     }, {
       predicate: is5577054Q43ManualGenerationSpec,
       signal: /^v\d+-0016-0043(?:-|\.)/u,
@@ -28762,9 +28859,7 @@ export async function repairAndAuditOfficialAnswers(
     const allowSupersededBase = spec.key === "12:30" ||
       is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q31Q32ManualBatchSpec(spec) ||
       is5578421Q33Q34ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec) ||
-      is5577054Q24Q29ManualBatchSpec(spec) || is5577054Q33Q34ManualBatchSpec(spec) ||
-      is5577054Q35Q36ManualBatchSpec(spec) || is5577054Q43ManualGenerationSpec(spec) ||
-      is5577054Q44Q45ManualBatchSpec(spec);
+      (spec.entryId === "ebsi:5577054" && isPersistedManualHydrationSpec(spec));
     if (currentRepair && !allowSupersededBase && (
       currentRepair.revision ||
       canonicalEvidenceHash(currentRepair) !== canonicalEvidenceHash(pinnedBase.evidence)

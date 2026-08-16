@@ -3902,14 +3902,16 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 180_000);
 
   it.skipIf(!existsSync(join(q43LiveState5577054, "problem.pdf")))(
-    "hydrates the persisted 5577054 Q24-Q29, Q33-Q36, and Q43-Q45 generations before later work",
+    "hydrates all 27 persisted 5577054 manual generations before later work",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-5577054-cross-entry-hydration-"));
     cpSync(q43LiveState5577054, root, { recursive: true });
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
       const persistedKeys = new Set([
+        "1:3", "4:10", "6:16", "6:18", "6:19", "6:20", "7:21", "8:22", "8:23",
         "9:24", "9:25", "9:26", "10:27", "10:28", "10:29",
-        "12:33", "12:34", "13:35", "13:36", "16:43", "16:44", "16:45",
+        "12:33", "12:34", "13:35", "13:36", "14:37",
+        "15:38", "15:39", "15:40", "15:41", "15:42", "16:43", "16:44", "16:45",
       ]);
       if (request.schema?.name === "studywork_exam_corpus_classification") {
         const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{ key: string }>;
@@ -3924,6 +3926,9 @@ describe("exact allowlisted problem manual adjudication", () => {
         const item = (key: string) => items.find((candidate) => candidate.key === key)!;
         const passage = (key: string, number: number) =>
           item(key).question.slice(0, item(key).question.indexOf(`\n\n${number}. `));
+        expect(item("1:3").question).toContain("전시도 관람도 불편합니다.");
+        expect(item("4:10").question).toContain("자신의 생각인 양 표현하는 것이 문제점임을");
+        expect(item("6:16").question).toContain("[16 ~ 20] 다음을 읽고 물음에 답하시오.");
         expect(passage("9:24", 24)).toBe(passage("10:29", 29));
         expect(item("9:24").question).toContain("㉮ <인상: 해돋이>");
         expect(item("10:27").question).toContain("감법 혼합의 원리는");
@@ -3931,6 +3936,10 @@ describe("exact allowlisted problem manual adjudication", () => {
         expect(item("13:35").question).toContain("그러나 ㉠ 이 논증의 전제를 만족시키는");
         expect(item("13:35").question).toContain("ⓐ 믿을 만하지 못하면");
         expect(item("13:36").question).toContain("모든 사각형은 음영이 있는 도형이다.");
+        expect(item("14:37").question).toContain("[37 ~ 42] 다음을 읽고 물음에 답하시오.");
+        expect(item("14:37").question).toContain("금령(金鈴)*");
+        expect(item("16:43").question).toContain("시를 믿고 어떻게 살어가나");
+        expect(item("16:43").question).toContain("잠들은 아내와 어린것의 벼개 맡에");
       }
       throw new Error("seeded 5577054 boundary after cross-entry preflight");
     });
