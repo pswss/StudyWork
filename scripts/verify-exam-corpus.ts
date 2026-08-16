@@ -6683,6 +6683,31 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_reading",
 
+}, {
+  allowlistId: "ebsi-5577054-q18-source-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q18-source-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "6:18",
+  sourcePage: 6,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "aec7cdad6d5779054f0bdd5645f2ec7c095bde6b814b9331beffec2c511bd5bc",
+  failedClassificationHash: "a2b9f3419d999366825d7d74d83299c220a9d90c4e1f098f0ccf197d3214a1e9",
+  failedClassificationEvidenceHash: "1c0ea2ce890df0f7cd5325e10255d8091da0711e364d794fb764e2b6dfff20cd",
+  replacement: {
+    field: "figure_description",
+    from: "세로축의 a와 b, 그리고 두 직선이 둘러싼 삼각형 영역은 사선으로 음영 처리되어 있다.",
+    to: "세로축의 a와 P, 그리고 수요 직선이 둘러싼 위쪽 삼각형 aPE는 사선으로 음영 처리되어 있고, " +
+      "세로축의 P와 b, 그리고 한계 비용 직선이 둘러싼 아래쪽 삼각형 PbE는 점상 무늬로 음영 처리되어 있다.",
+    count: 1,
+  },
+  requiredTokens: [
+    "문항 18의 <보기>에는 세로축이 ‘가격’, 가로축이 ‘통화량’인 좌표 그래프",
+    "위쪽 삼각형 aPE는 사선으로 음영 처리", "아래쪽 삼각형 PbE는 점상 무늬로 음영 처리",
+    "$Q_1$ 위치에도 가로축에서 수요 직선까지 수직 점선",
+    "18. 윗글을 바탕으로 <보기>를 이해한 내용으로 적절하지 않은 것은? [3점]",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_reading",
 }] as const;
 
 const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
