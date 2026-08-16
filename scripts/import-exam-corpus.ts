@@ -4676,6 +4676,65 @@ const Q24_29_5577054_FIGURE_DESCRIPTION =
   "나타나며, 중앙 부근에 ⓐ, 왼쪽 위 부근에 ⓑ, 오른쪽 아래 부근에 ⓒ가 표시되어 있다. 세로축의 0.6 " +
   "부근, 삼각형 내부의 약 (0.3, 0.3), 가로축 가까이의 약 (0.8, 0.05)에도 흰 원 표시가 있다.";
 
+const Q26_5577054_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question", from: "[24~29] 다음을", to: "[24~29] 다음 글을", count: 1,
+}, {
+  field: "question", from: "㉠시도", to: "㉠ 시도", count: 1,
+}, {
+  field: "question", from: "\n\n색은 빛의 파장에", to: "\n\n<그림 1>  <그림 2>\n\n색은 빛의 파장에", count: 1,
+}, {
+  field: "question", from: "380～780nm", to: "$380\\sim780\\mathrm{nm}$", count: 1,
+}, {
+  field: "question", from: "600～700nm", to: "$600\\sim700\\mathrm{nm}$", count: 1,
+}, {
+  field: "question", from: "500～600nm", to: "$500\\sim600\\mathrm{nm}$", count: 1,
+}, {
+  field: "question", from: "400～500nm", to: "$400\\sim500\\mathrm{nm}$", count: 1,
+}, {
+  field: "question", from: "㉡방출", to: "㉡ 방출", count: 1,
+}, {
+  field: "question", from: "두 색빛이", to: "두 색이", count: 1,
+}, {
+  field: "question", from: "‘$S(색)=rR+gG+bB$’", to: "‘$S(\\text{색})=rR+gG+bB$’", count: 1,
+}, {
+  field: "question", from: "㉢조절", to: "㉢ 조절", count: 1,
+}, {
+  field: "question", from: "만들 수 있다.\n\n가법 혼합", to: "만들 수 있다. 가법 혼합", count: 1,
+}, {
+  field: "question",
+  from: "가법 혼합의 방식을 따르면 색에 대한 다양한 정보를",
+  to: "가법 혼합의 방식으로 만드는 색에 대한 다양한 정보를",
+  count: 1,
+}, {
+  field: "question", from: "㉣예측", to: "㉣ 예측", count: 1,
+}, {
+  field: "question", from: "색을 섞은 혼합 색은", to: "두 색을 섞은 혼합 색은", count: 1,
+}, {
+  field: "question", from: "\n\n감법 혼합의 원리는", to: "\n\n<그림 3>\n\n감법 혼합의 원리는", count: 1,
+}, {
+  field: "question", from: "㉤<인상·해돋이>", to: "㉤ <인상·해돋이>", count: 1,
+}, {
+  field: "question", from: "인천 안개 속의 태양 빛", to: "아침 안개 속의 태양 빛", count: 1,
+}, {
+  field: "question", from: "순간적인 광경을 화폭에 담으려", to: "순간적인 광경을 회화에 담으려", count: 1,
+}, {
+  field: "question", from: "㉥인접한", to: "㉥ 인접한", count: 1,
+}, {
+  field: "question", from: "㉦<우물가의 여인들>", to: "㉦ <유람선의 여인들>", count: 1,
+}, {
+  field: "question", from: "\n\n윗글을 바탕으로 <보기>", to: "\n\n26. 윗글을 바탕으로 <보기>", count: 1,
+}];
+
+const Q26_5577054_FIGURE_DESCRIPTION = Q24_29_5577054_FIGURE_DESCRIPTION +
+  " 또한 <보기>에는 필터 A와 필터 B의 투과율을 나타낸 계단형 그래프 두 개가 나란히 있다. 두 그래프 " +
+  "모두 가로축은 ‘파장(nm)’이며 오른쪽으로 증가하고 400, 500, 600, 700이 표시되어 있다. 세로축은 " +
+  "‘투과율(%)’이며 위쪽으로 증가하고 0, 50, 100이 표시되어 있다. ‘필터 A의 투과율’ 그래프는 파장 " +
+  "400nm부터 600nm까지 투과율이 100%인 수평선으로 표시되고, 600nm에서 0%로 수직 하강한 뒤 " +
+  "700nm까지 0%인 수평선으로 이어진다. ‘필터 B의 투과율’ 그래프는 파장 400nm부터 500nm까지 " +
+  "투과율이 0%인 수평선으로 표시되고, 500nm에서 100%로 수직 상승한 뒤 700nm까지 100%인 " +
+  "수평선으로 이어진다.";
+
+
 
 const Q22_5577054_FAILED_CHOICE =
   "\u2464 \uc81c6\uc218\uc5d0\uc11c\ub294 \ubc14\uc704\uc758 \uc18d\uc131\uc5d0 \uc0ac\ub78c \ubaab\uc758 \uc18d\uc131\uc744 \ub354\ud574 \uc138\uc18d\uc744 \uc774\uc0c1\uc801 \uacf5\uac04\uc73c\ub85c \uc815\ud654\ud558\ub824\ub294 \uc758\uc9c0\ub97c \ub4dc\ub7ec\ub0b4\uace0 \uc788\uad70.";
@@ -7172,6 +7231,39 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_reading",
   },
+  {
+    allowlistId: "ebsi-5577054-q26-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "9:26",
+    sourcePage: 9,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "594537e6c1a0db71e5b7526ac2dd4cefbd0f6ffb63f1349ae0487505c084e49a",
+    dpi: 600,
+    failedQuestionHash: "809fa8ea27afaa1e9b1adc2a91fb86dc080bcc31c23f764d029b03048a99eb15",
+    failedClassificationHash: "2b449bf488fb610933b1a9e8949bfa0c04d0a1433b4c858423d364ec8986c6b2",
+    failedClassificationEvidenceHash: "6d42f5545893a7cd2c20884a9287d1499e81fbd95f05296e18bb6b876153a48f",
+    views: [
+      { sourcePage: 8, label: "p8 full Q24-Q29 shared passage start", rect: [0, 0, 1, 1] },
+      { sourcePage: 8, label: "p8 right passage and figures 1-3", rect: [0.50, 0.08, 0.95, 0.98] },
+      { sourcePage: 9, label: "p9 full passage continuation and Q26", rect: [0, 0, 1, 1] },
+      { sourcePage: 9, label: "p9 left passage continuation", rect: [0.07, 0.08, 0.50, 0.94] },
+      { sourcePage: 9, label: "p9 right Q26 filter graphs and choices", rect: [0.51, 0.55, 0.95, 0.98] },
+    ],
+    requiredTokens: [
+      "[24~29] 다음 글을 읽고 물음에 답하시오.", "<그림 1>", "<그림 2>", "<그림 3>",
+      "㉤ <인상·해돋이>", "아침 안개 속의 태양 빛", "㉦ <유람선의 여인들>",
+      "26. 윗글을 바탕으로 <보기>에 대해 이해한 내용으로 적절하지 않은 것은? [3점]",
+      "필터 A의 투과율", "필터 B의 투과율", "400, 500, 600, 700",
+      "600nm에서 0%로 수직 하강", "500nm에서 100%로 수직 상승",
+    ],
+    replacements: Q26_5577054_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q26_5577054_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+
 
 
 ] as const;
