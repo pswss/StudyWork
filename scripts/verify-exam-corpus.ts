@@ -7351,20 +7351,26 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     ],
     requiredTokens: [
       "[6~8] 다음을 읽고 물음에 답하시오.",
-      "노력에 동참할 것을 촉구해야겠어. …… ㉮",
+      "○ ㉮ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어.",
       "전자 상거래에서 인한 피해를 입지 않도록",
+      "[B]",
       "<보기>의 (가), (나)를 모두 활용하여 [A]를 보완하기 위한 방안으로",
       "의류 및 액세서리 | 52 %",
     ],
     replacements: [{
       field: "question",
       from: "○ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어. …… ㉥",
-      to: "○ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어. …… ㉮",
+      to: "○ ㉮ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어.",
       count: 1,
     }, {
       field: "question",
       from: "전자 상거래에서 입은 피해를 입지 않도록",
       to: "전자 상거래에서 인한 피해를 입지 않도록",
+      count: 1,
+    }, {
+      field: "question",
+      from: "스스로 노력해야 한다.\n\n<보기>의",
+      to: "스스로 노력해야 한다.\n\n[B]\n\n<보기>의",
       count: 1,
     }],
     expectedDecision: "reject",
@@ -7388,15 +7394,16 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     ],
     requiredTokens: [
       "[6~8] 다음을 읽고 물음에 답하시오.",
-      "노력에 동참할 것을 촉구해야겠어. …… ㉮",
+      "○ ㉮ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어.",
       "전자 상거래에서 인한 피해를 입지 않도록",
+      "[B]",
       "청소년의 전자 상거래 이용에 관한 전망을 바탕으로 ㉮에 관한 내용을",
       "8. [B]에 들어갈 글을 작성하고자 할 때",
     ],
     replacements: [{
       field: "question",
       from: "○ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어. …… ㉥",
-      to: "○ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어. …… ㉮",
+      to: "○ ㉮ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어.",
       count: 1,
     }, {
       field: "question",
@@ -7986,6 +7993,35 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q6-source-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q6-source-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "3:6",
+  sourcePage: 3,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "9b6b87c5c7d40b61b6abbbaee664eeb181ebd4073930c1518765a37d14191675",
+  failedClassificationHash: "ddc6b02f4fcecab6214b73c39b33d7a17c366cd96a7922809bd61722fe4829f8",
+  failedClassificationEvidenceHash: "0a4f74dfe2ae71637915f404fa3b8fab4e1ac1b1d6e4c5a35c0e6a7fc57e7d9b",
+  replacement: {
+    field: "question",
+    from: "○ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어. …… ㉮",
+    to: "○ ㉮ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어.",
+    count: 1,
+  },
+  additionalReplacements: [{
+    field: "question",
+    from: "스스로 노력해야 한다.\n\n㉠~㉤ 중",
+    to: "스스로 노력해야 한다.\n\n[B]\n\n㉠~㉤ 중",
+    count: 1,
+  }],
+  requiredTokens: [
+    "○ ㉮ 청소년의 전자 상거래 피해를 예방하기 위한 노력에 동참할 것을 촉구해야겠어.",
+    "전자 상거래에서 인한 피해를 입지 않도록",
+    "[B]",
+    "㉠~㉤ 중 <초고>에 반영되지 않은 것은?",
+  ],
+  expectedDecision: "reject",
 }] as const;
 
 const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
