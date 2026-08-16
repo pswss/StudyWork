@@ -4372,6 +4372,156 @@ const Q43_FIGURE_DESCRIPTION =
   "오른쪽 세로선 하나와 왼쪽으로 뻗은 위·아래 가로 캡으로 이루어지며, 세 구획은 45번에서 시의 " +
   "부분별 내용을 가리키는 역할을 한다.";
 
+const Q43_45_5577054_PASSAGE = Q43_CORRECTED_QUESTION.slice(
+  0,
+  Q43_CORRECTED_QUESTION.lastIndexOf("\n\n43.")
+);
+const Q43_45_5577054_GA_PASSAGE = Q43_45_5577054_PASSAGE.slice(
+  Q43_45_5577054_PASSAGE.indexOf("(가)"),
+  Q43_45_5577054_PASSAGE.indexOf("\n\n(나)")
+);
+const Q43_45_5577054_NA_PASSAGE = Q43_45_5577054_PASSAGE.slice(
+  Q43_45_5577054_PASSAGE.indexOf("(나)")
+);
+const Q44_5577054_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "다음 (가)를 읽고 물음에 답하시오.",
+  to: "[43 ~ 45] 다음을 읽고 물음에 답하시오.",
+  count: 1,
+}, {
+  field: "question",
+  from: "서른 먹은 사내가 하나 잠을 못 잔다.\n먼― 기적(汽笛) 소리 치마를 스쳐가고",
+  to: "서른 먹은 사내가 하나 잠을 못 잔다.\n\n먼― 기적(汽笛) 소리 처마를 스쳐가고",
+  count: 1,
+}, {
+  field: "question",
+  from: "\n\n― 김광균, 「노신」 ―\n\n<보기>",
+  to: `\n- 김광균, ｢ 노신 ｣ -\n\n${Q43_45_5577054_NA_PASSAGE}\n\n` +
+    "44. <보기>의 관점에서 (가)를 감상한 내용으로 적절하지 않은 것은? [3점]\n\n<보기>",
+  count: 1,
+}, {
+  field: "question",
+  from: "「노신의 문학 입장」",
+  to: "｢ 노신의 문학 입장 ｣",
+  count: 1,
+}, {
+  field: "question",
+  from: "그의 시 「노신」에",
+  to: "그의 시 ｢ 노신 ｣에",
+  count: 1,
+}, {
+  field: "question",
+  from: "작품과 인간이 격양하고 충혈되었을 때",
+  to: "작품과 인간이 격앙하고 충혈되었을 때",
+  count: 1,
+}, {
+  field: "question",
+  from: "\n\n<보기>의 관점에서 (가)를 감상한 내용으로 적절하지 않은 것은? [3점]",
+  to: "",
+  count: 1,
+}, {
+  field: "choices",
+  from: "① ‘사내’가 ‘잠을 못’ 이루는 것은 혼란스러운 현실 속에서 고민하는 시인의 모습을 나타낸 것이겠군.",
+  to: "① ‘사내’가 ‘잠을 못’ 이루는 것은 혼란스러운 현실 속에서 고뇌하는 시인의 모습을 나타낸 것이겠군.",
+  count: 1,
+}, {
+  field: "choices",
+  from: "② ‘밤눈이 내려 쌓이는’ 것은 시인이 일상과 개인의 문제에 관심을 기울여 문학적 성취를 이루어 감을 의미하는 것이겠군.",
+  to: "② ‘밤눈이 내려 쌓이’는 것은 시인이 일상과 개인의 문제에 관심을 기울여 문학적 성취를 이루어 감을 의미하는 것이겠군.",
+  count: 1,
+}, {
+  field: "choices",
+  from: "③ ‘지나는 돌팔매에도 이제는 피곤하다’는 당대의 현실 속에서 시인이 힘들게 살았음을 드러낸 것이겠군.",
+  to: "③ ‘지나는 돌팔매에도 이제는 피곤하다’는 당대의 현실 속에서 시인이 힘들게 살았음을 드러내는 것이겠군.",
+  count: 1,
+}, {
+  field: "answer",
+  from: "② ‘밤눈이 내려 쌓이는’ 것은 시인이 일상과 개인의 문제에 관심을 기울여 문학적 성취를 이루어 감을 의미하는 것이겠군.",
+  to: "② ‘밤눈이 내려 쌓이’는 것은 시인이 일상과 개인의 문제에 관심을 기울여 문학적 성취를 이루어 감을 의미하는 것이겠군.",
+  count: 1,
+}];
+const Q45_5577054_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "다음 글을 읽고 물음에 답하시오.\n\n(나)\n\n[A]",
+  to: `[43 ~ 45] 다음을 읽고 물음에 답하시오.\n\n${Q43_45_5577054_GA_PASSAGE}\n\n(나)\n[A]`,
+  count: 1,
+}, {
+  field: "question",
+  from: "춥고 쓸쓸함이 목단비처럼 오는 날",
+  to: "춥고 쓸쓸함이 몽당빗자루 같은 날",
+  count: 1,
+}, {
+  field: "question",
+  from: "운암댐 소줏집에 서서",
+  to: "운암댐 소롯길에 서서",
+  count: 1,
+}, {
+  field: "question",
+  from: "혼자 보기는 아슴찮히 미안하여",
+  to: "혼자 보기는 아슴찬히 미안하여",
+  count: 1,
+}, {
+  field: "question",
+  from: "우리가 좁다고 버리고 싶은 세상에",
+  to: "우리가 춥다고 버리고 싶은 세상에",
+  count: 1,
+}, {
+  field: "question",
+  from: "내가 침 뱉고 오줌 내갈기고",
+  to: "내가 침 뱉고 오줌 내갈긴",
+  count: 1,
+}, {
+  field: "question",
+  from: "먹인 먹 순수의 눈나래에서나 배웠음직한 몸짓이랑",
+  to: "머언 먼 순은의 눈나라에서나 배웠음직한 몸짓이랑",
+  count: 1,
+}, {
+  field: "question",
+  from: "\n\n[B]\n물속에 실려 물에 젖지 않는",
+  to: "\n[B]\n물속에 살며 물에 젖지 않는",
+  count: 1,
+}, {
+  field: "question",
+  from: "네 가슴에 못 박혀 살고 싶은 속된 내 그리움은 또",
+  to: "네 가슴에 못 박혀 삭고 싶은 속된 내 그리움은 또",
+  count: 1,
+}, {
+  field: "question",
+  from: "\n\n[C]\n한 무리의 새떼는 또",
+  to: "\n[C]\n한 무리의 새떼는 또",
+  count: 1,
+}, {
+  field: "question",
+  from: "더 먼 길 떠난다 이 밤새",
+  to: "더 먼 길 떠난다 이 밤사",
+  count: 1,
+}, {
+  field: "question",
+  from: "\n\n－ 복효근, 「새에 대한 반성문」 －",
+  to: "\n- 복효근, ｢ 새에 대한 반성문 ｣ -",
+  count: 1,
+}, {
+  field: "question",
+  from: "\n\n(나)를 이해한 내용으로 적절하지 않은 것은?",
+  to: "\n\n45. (나)를 이해한 내용으로 적절하지 않은 것은?",
+  count: 1,
+}, {
+  field: "choices",
+  from: "① [A]에서 화자가 ‘청둥오리떼’를 보는 것은 ‘우리가’ 살아가는 세상에 대한 인식으로 이어지고 있다.",
+  to: "① [A]에서 화자가 ‘청둥오리떼’를 보는 것은 ‘우리’가 살아가는 세상에 대한 인식으로 이어지고 있다.",
+  count: 1,
+}, {
+  field: "choices",
+  from: "② [A]에서 화자는 새떼들의 아름다운 ‘몸짓’과 ‘목소리’를 ‘살얼음’과 같은 현실을 인식하는 데 방해가 된다고 여기고 있다.",
+  to: "② [A]에서 화자는 새떼들의 아름다운 ‘몸짓’과 ‘목소리’는 ‘살얼음’과 같은 현실을 인식하는 데 방해가 된다고 여기고 있다.",
+  count: 1,
+}, {
+  field: "answer",
+  from: "② [A]에서 화자는 새떼들의 아름다운 ‘몸짓’과 ‘목소리’를 ‘살얼음’과 같은 현실을 인식하는 데 방해가 된다고 여기고 있다.",
+  to: "② [A]에서 화자는 새떼들의 아름다운 ‘몸짓’과 ‘목소리’는 ‘살얼음’과 같은 현실을 인식하는 데 방해가 된다고 여기고 있다.",
+  count: 1,
+}];
+
 const Q3_5578421_FIGURE_DESCRIPTION =
   "회색 테두리의 인터넷 게시판 창이다. 위쪽에는 뒤로·앞으로 이동하는 원형 화살표, 긴 주소 " +
   "입력란, ‘×’가 표시된 입력란과 창 최소화·최대화·닫기 단추가 있다. 내부 상단의 공지 상자에는 " +
@@ -8564,6 +8714,65 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_reading",
   },
+  {
+    allowlistId: "ebsi-5577054-q44-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "16:44",
+    sourcePage: 16,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "e2b63349e506b0c611c2758ba1ed585565a10a64df38df3115840543b05fa317",
+    dpi: 600,
+    failedQuestionHash: "164c1a2d9614794664b3c271f00f156d8bf4d3d354d08dcb9a5bc1b66b094a0d",
+    failedClassificationHash: "210c2293987480d45a1c9abc930ed6b061f4ef0314afee2511a1a67d9c69a2b3",
+    failedClassificationEvidenceHash: "5c4ea087d2b5388160f928a96c6d65b8d5385de3ddfb5642124a4a01d0b15cf5",
+    views: [
+      { sourcePage: 15, label: "p15 bottom-right shared passage start", rect: [0.50, 0.82, 0.95, 0.98] },
+      { sourcePage: 16, label: "p16 left full poems and A-B-C brackets", rect: [0.07, 0.10, 0.52, 0.97] },
+      { sourcePage: 16, label: "p16 right Q44 stem view and choices", rect: [0.50, 0.26, 0.95, 0.76] },
+    ],
+    requiredTokens: [
+      "[43 ~ 45] 다음을 읽고 물음에 답하시오.", "이 밤으로 돌아가",
+      "44. <보기>의 관점에서 (가)를 감상한 내용으로 적절하지 않은 것은? [3점]",
+      "｢ 노신의 문학 입장 ｣", "작품과 인간이 격앙하고 충혈되었을 때",
+      "‘밤눈이 내려 쌓이’는", "드러내는 것이겠군.",
+      "서로 겹치지 않는 [A], [B], [C] 순서",
+    ],
+    replacements: Q44_5577054_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q43_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  },
+  {
+    allowlistId: "ebsi-5577054-q45-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "16:45",
+    sourcePage: 16,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "253e31187849a619ad4a181d592054f885225a1c83a6f7353e9ac6d3482c397b",
+    dpi: 600,
+    failedQuestionHash: "8d48b0b12ea07063a690b6f697c7a527f4de797b99e937cd19c274541d503981",
+    failedClassificationHash: "d669537f0cd9013c1f5d53d99b8c9599899a1b521d870cd7ca8cefc790e77fec",
+    failedClassificationEvidenceHash: "a84bedaf8dd5a68efeffef0b9f44451d3659d0ccf77f6937747a9ba3b17c3521",
+    views: [
+      { sourcePage: 15, label: "p15 bottom-right shared passage start", rect: [0.50, 0.82, 0.95, 0.98] },
+      { sourcePage: 16, label: "p16 left full poems and A-B-C brackets", rect: [0.07, 0.10, 0.52, 0.97] },
+      { sourcePage: 16, label: "p16 right Q45 stem and choices", rect: [0.50, 0.64, 0.95, 0.96] },
+    ],
+    requiredTokens: [
+      "[43 ~ 45] 다음을 읽고 물음에 답하시오.", "운암댐 소롯길", "아슴찬히",
+      "머언 먼 순은의 눈나라에서나", "물속에 살며 물에 젖지 않는", "이 밤사",
+      "45. (나)를 이해한 내용으로 적절하지 않은 것은?", "‘우리’가 살아가는 세상",
+      "‘목소리’는 ‘살얼음’과 같은 현실", "서로 겹치지 않는 [A], [B], [C] 순서",
+    ],
+    replacements: Q45_5577054_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q43_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  },
 ] as const;
 
 export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
@@ -9669,6 +9878,30 @@ export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSou
     "[A]\n갑자기 한바탕 미친 듯한 바람이 일어나며", "(다)\n[B]\n하루는 옥황상제께서",
     "괄호 [B]가 ‘하루는 옥황상제께서", "41. <보기>에서 선생님의 질문에 대한 학생의 대답으로",
     "직사각형 테두리 안에 선생님 발화",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q43-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5577054-q43-source-manual-revision-v1",
+  parentRevisionEvidenceHash: "402c4975c352ee82ac921469a54d2512a7d057051981e365ff8073ceb6addced",
+  entryId: "ebsi:5577054",
+  key: "16:43",
+  sourcePage: 16,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "13546a03e13d27bde15534f7badf2891477c1683e23d7e7dc0531ae15fbde0d1",
+  failedClassificationHash: "e8565a646d1ac99189d904a892669790707cce3b6cb332c47121261529ca5665",
+  failedClassificationEvidenceHash: "564e54ee9ff32e4a6cbabaf23309361460fe1c2727c1185a743ac344ea5bc410",
+  replacement: {
+    field: "question",
+    from: "이 방으로 돌아가",
+    to: "이 밤으로 돌아가",
+    count: 1,
+  },
+  requiredTokens: [
+    "[43 ~ 45] 다음을 읽고 물음에 답하시오.", "이 밤으로 돌아가",
+    "43. (가)와 (나)의 공통점에 대한 설명으로 가장 적절한 것은?",
+    "서로 겹치지 않는 [A], [B], [C] 순서",
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
@@ -21686,6 +21919,18 @@ function is5578421Q33Q34ManualBatchSpec(spec: ProblemManualAdjudicationSpec): bo
   return spec.entryId === "ebsi:5578421" && ["12:33", "12:34"].includes(spec.key);
 }
 
+function is5577054Q33Q34ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5577054" && ["12:33", "12:34"].includes(spec.key);
+}
+
+function is5577054Q44Q45ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5577054" && ["16:44", "16:45"].includes(spec.key);
+}
+
+function is5577054Q43ManualGenerationSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5577054" && spec.key === "16:43";
+}
+
 function is5578421Q6Q7ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5578421" && ["3:6", "3:7"].includes(spec.key);
 }
@@ -21706,10 +21951,12 @@ function is5578421PersistedSingletonManualSpec(spec: ProblemManualAdjudicationSp
   return spec.entryId === "ebsi:5578421" && ["4:12", "12:30", "16:43"].includes(spec.key);
 }
 
-function is5578421PersistedManualHydrationSpec(spec: ProblemManualAdjudicationSpec): boolean {
+export function isPersistedManualHydrationSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return is5578421PersistedSingletonManualSpec(spec) ||
     is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q31Q32ManualBatchSpec(spec) ||
-    is5578421Q33Q34ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec);
+    is5578421Q33Q34ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec) ||
+    is5577054Q33Q34ManualBatchSpec(spec) || is5577054Q43ManualGenerationSpec(spec) ||
+    is5577054Q44Q45ManualBatchSpec(spec);
 }
 
 function isQ37ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
@@ -22129,6 +22376,10 @@ async function preflightProblemManualBatch(
     ? is5578421Q6Q7ManualBatchSpec
     : is5578421Q33Q34ManualBatchSpec(requestedSpec)
     ? is5578421Q33Q34ManualBatchSpec
+    : is5577054Q33Q34ManualBatchSpec(requestedSpec)
+    ? is5577054Q33Q34ManualBatchSpec
+    : is5577054Q44Q45ManualBatchSpec(requestedSpec)
+    ? is5577054Q44Q45ManualBatchSpec
     : is5578421Q31Q32ManualBatchSpec(requestedSpec)
     ? is5578421Q31Q32ManualBatchSpec
     : isQ43To45ManualBatchSpec(requestedSpec)
@@ -28352,6 +28603,55 @@ export async function repairAndAuditOfficialAnswers(
       await preflightProblemManualBatch(entry, problem, stateDir, pairSpecs[0]);
     }
   }
+  if (
+    entry.id === "ebsi:5577054" &&
+    problem.sha256 === "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062"
+  ) {
+    const manualNames: string[][] = [];
+    for (const directory of [
+      "problem-recoveries", "classification-recoveries", "problem-manual-evidence",
+      "problem-manual-adjudications", "classification-manual-adjudications",
+      "problem-manual-revisions", "classification-manual-revisions",
+      "problem-manual-second-revisions", "classification-manual-second-revisions",
+    ]) {
+      const path = join(stateDir, directory);
+      let stat;
+      try {
+        stat = lstatSync(path);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw error;
+      }
+      if (stat.isSymbolicLink() || !stat.isDirectory()) {
+        throw new Error(`${directory} 디렉터리가 유효하지 않습니다`);
+      }
+      manualNames.push(readdirSync(path));
+    }
+    for (const group of [{
+      predicate: is5577054Q33Q34ManualBatchSpec,
+      signal: /^v\d+-0012-003[34](?:-|\.)/u,
+      label: "Q33-Q34",
+      expectedCount: 2,
+    }, {
+      predicate: is5577054Q43ManualGenerationSpec,
+      signal: /^v\d+-0016-0043(?:-|\.)/u,
+      label: "Q43",
+      expectedCount: 1,
+    }, {
+      predicate: is5577054Q44Q45ManualBatchSpec,
+      signal: /^v\d+-0016-004[45](?:-|\.)/u,
+      label: "Q44-Q45",
+      expectedCount: 2,
+    }]) {
+      if (!manualNames.some((names) => names.some((name) => group.signal.test(name)))) continue;
+      const pairSpecs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(group.predicate)
+        .sort((left, right) => compareCorpusQuestionKeys(left.key, right.key));
+      if (pairSpecs.length !== group.expectedCount) {
+        throw new Error(`ebsi:5577054 ${group.label} manual allowlist가 다릅니다`);
+      }
+      await preflightProblemManualBatch(entry, problem, stateDir, pairSpecs[0]);
+    }
+  }
   let effective = [...initial];
   const repairs = new Map<string, ProblemRepairEvidence>();
   const persistedRepairs = await hydratePersistedProblemRepairBatches(
@@ -28371,7 +28671,7 @@ export async function repairAndAuditOfficialAnswers(
   }
   const persistedManualSpecs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter((spec) =>
     spec.entryId === entry.id && spec.sourceHash === problem.sha256 &&
-    is5578421PersistedManualHydrationSpec(spec) && strictArtifactNames(
+    isPersistedManualHydrationSpec(spec) && strictArtifactNames(
       join(stateDir, "problem-recoveries"),
       `${spec.key} persisted manual recovery`,
       (name) => /^v\d+-\d{4}-\d{4}-[a-f0-9]{64}\.json$/u.test(name)
@@ -28404,7 +28704,9 @@ export async function repairAndAuditOfficialAnswers(
     const currentRepair = repairs.get(spec.key);
     const allowSupersededBase = spec.key === "12:30" ||
       is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q31Q32ManualBatchSpec(spec) ||
-      is5578421Q33Q34ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec);
+      is5578421Q33Q34ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec) ||
+      is5577054Q33Q34ManualBatchSpec(spec) || is5577054Q43ManualGenerationSpec(spec) ||
+      is5577054Q44Q45ManualBatchSpec(spec);
     if (currentRepair && !allowSupersededBase && (
       currentRepair.revision ||
       canonicalEvidenceHash(currentRepair) !== canonicalEvidenceHash(pinnedBase.evidence)
