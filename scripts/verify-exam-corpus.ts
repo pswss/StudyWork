@@ -3654,6 +3654,62 @@ const Q38_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [
   { field: "question", from: "\n\n‘", to: "\n\n38. ‘", count: 1 },
 ];
 
+const Q37_42_5577054_NA_SOURCE_EXACT = `(나)
+차설. 해룡이 벌써 집을 떠나 남쪽으로 가는 데 한 곳에 다다르니 큰 산이 앞길을 막았거늘, 갈 길을 못 찾아 주저할 즈음에 금령(金鈴)*이 굴러 길을 인도하였다. 금령을 따라 여러 고개를 넘어가니 절벽 사이에 푸른 잔디와 암석이 바라보이매, 해룡이 돌 위에 앉아 잠깐 쉬고 있었는데, ⓐ 문득 벽력같은 소리가 진동하며 금털 돋친 짐승이 주홍 같은 입을 벌리고 달려들어 해룡을 물려고 하였다. 해룡이 급히 피하려 하였는데 금령이 내달아 막으니, 그것이 몸을 흔들어 변하여 아홉 머리 가진 것이 되어 금령을 집어삼키고 골짜기로 들어갔다.
+
+해룡이 낙담하며 말하기를,
+“분명코 금령이 죽었도다.”
+하고, 탄식하여 어찌할 줄 몰랐다.
+갑자기 한바탕 미친 듯한 바람이 일어나며 구름 속에서 크게 불러 말하기를,
+[A]
+“그대는 어찌 금령을 구하지 아니하고 저다지 방황하느냐?”
+하고, 간 데 없었다.
+
+해룡이 생각하되, ‘하늘이 가르치시나 몸에 촌철(寸鐵)이 없으니 어찌 대적하리요? 그러나 금령이 아니었더라면 내가 어찌 살아났으리요?’ 하고 옷차림을 단단히 하고 뛰어 들어가니, 지척을 분별할 수 없었다. 몇 리를 들어가되 종적이 없거늘, 죽을힘을 다하여 기어 들어가니 ⓑ 홀연 천지가 명랑하고 일월이 조요하였다. 두루 살펴보니 돌 비석에 금자로 새겼으되, ‘남전산 봉래동’이라 하였고, 구름 같은 석교에 만장폭포가 거룩하였다. 거기를 지나 들어가서 문을 활짝 여니 동중에 주궁패궐*과 내성 외곽이 은은히 뵈거늘, 자세히 본즉 문 위에 금자로 크게, ‘금선수도부’라 씌어 있었다.
+
+(중략)
+
+해룡이 뛰어 올라가 보니, 그 짐승이 상 위에 누워 앓다가 사람을 보고 일어나려 하다가 도로 자빠지며 일신을 뒤틀며 움직이지 못하고 입으로 피를 무수히 토하였다. 해룡이 하수하고자* 하나 손에 촌철이 없었는데, 홀연 미인 한 사람이 칠보홍군을 입고 가볍게 걸어서 벽에 걸린 보검을 갖다가 해룡에게 주었다. 해룡이 급히 칼을 들고 달려들어 요귀의 가슴을 무수히 찌르니, 그 짐승이 그제야 죽어 늘어졌다. 자세히 보니 금 터럭 돋친 암퇘지이거늘, 가슴을 헤치고 보니 금령이 굴러 나왔다. 해룡이 크게 반기며 소리 질러 말하기를,
+“너희 수십인 계집이 다 요귀로 변하여 사람을 속임이 아니냐?”
+모든 여자들이 일시에 꿇어 아뢰기를,
+“우리들은 요귀가 아니요. 사람으로서 요귀에게 잡혀 와 욕을 참고 사환하였나이다. 아까 칼 갖다 주던 이는 다른 사람이 아니라 지금 천자의 외동딸 금선 공주입니다.”
+말이 채 끝나기도 전에 공주가 슬픈 기색으로 나아와 사례하기를,
+“나는 과연 공주러니, 6년 전에 모후 낭낭을 뫼시고 후원에서 달구경을 하다가 이 요귀에게 잡혀 와 시녀들이 밤낮으로 지키는 까닭으로 지금까지 욕을 참고 살았었습니다. 천행으로 그대의 구함을 입어 고국에 돌아가 부모를 만나 보고 죽게 되니 다시 한이 없을까 합니다.”
+하며 소매로 낯을 가리고 통곡하였다.
+
+- 작자 미상, ｢ 금령전 ｣ -
+
+* 금령: 금방울.
+* 주궁패궐: 진주나 조개 따위의 보석으로 호화찬란하게 꾸민 궁궐.
+* 하수하고자: 손을 대어 죽이고자.`;
+
+const Q39_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [
+  { field: "question", from: "(가", to: "[37 ~ 42] 다음을 읽고 물음에 답하시오.\n\n(가", count: 1 },
+  { field: "question", from: "\n\n고전", to: "\n고전", count: 1 },
+  { field: "question", from: "「금령전", to: "｢ 금령전", count: 1 },
+  { field: "question", from: "」에", to: " ｣에", count: 1 },
+  { field: "question", from: "「흥부전", to: "｢ 흥부전", count: 1 },
+  { field: "question", from: "」,", to: " ｣,", count: 1 },
+  { field: "question", from: "「심청전」 등을", to: "｢ 심청전 ｣ 등을", count: 1 },
+  {
+    field: "question",
+    from: "\n\n(다)\n\n하루는 옥황상제께서",
+    to: `\n\n${Q37_42_5577054_NA_SOURCE_EXACT}\n\n(다)\n하루는 옥황상제께서`,
+    count: 1,
+  },
+  { field: "question", from: "[B] “심", to: "[B]\n“심", count: 1 },
+  { field: "question", from: "보냈다", to: "보내었다", count: 1 },
+  { field: "question", from: "하지만은", to: "하지마는", count: 1 },
+  { field: "question", from: " ㉢", to: "\nⓒ", count: 1 },
+  { field: "question", from: "㉣", to: "ⓓ", count: 1 },
+  { field: "question", from: "당하며", to: "당하매", count: 1 },
+  { field: "question", from: "㉤", to: "ⓔ", count: 1 },
+  { field: "question", from: "— ", to: "- ", count: 1 },
+  { field: "question", from: "미상, 「", to: "미상, ｢ ", count: 1 },
+  { field: "question", from: "」 —", to: " ｣ -", count: 1 },
+  { field: "question", from: "㉠을", to: "39. ㉠을", count: 1 },
+];
+
 
 
 
@@ -6462,6 +6518,38 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
       "괄호 [A]가 ‘크게 불러 말하기를,’부터", "같은 모양의 괄호 [B]",
     ],
     replacements: Q38_5577054_SOURCE_EXACT_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q42_5577054_FIGURE_DESCRIPTION_REVISION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  },
+  {
+    allowlistId: "ebsi-5577054-q39-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "15:39",
+    sourcePage: 15,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "2db71cbd5466a6c577f821d9a69f535c1bca48dc44308f736e10209160ef8f33",
+    dpi: 600,
+    failedQuestionHash: "63fc3dd5b001f8a26c6bd93d194b94e8607c1c3ce68ce251b6fa630636d2e5e0",
+    failedClassificationHash: "e3856976b7da044b769926caf059fdedbe92413cc75bfd77f0355dc6e6ed51ca",
+    failedClassificationEvidenceHash: "cd59a3ee7ee56c6bb5915dcb9d57b62e78e9f31008c37d50173545350afee7cf",
+    views: [
+      { sourcePage: 13, label: "p13 full Q37-Q42 passage start and A bracket", rect: [0, 0, 1, 1] },
+      { sourcePage: 14, label: "p14 full Q37-Q42 passage and B bracket", rect: [0, 0, 1, 1] },
+      { sourcePage: 15, label: "p15 left Q39 stem and choices", rect: [0.07, 0.42, 0.50, 0.78] },
+    ],
+    requiredTokens: [
+      "[37 ~ 42] 다음을 읽고 물음에 답하시오.", "(나)\n차설. 해룡이 벌써 집을 떠나",
+      "금령(金鈴)*", "[A]\n“그대는 어찌 금령을 구하지 아니하고 저다지 방황하느냐?”",
+      "금선수도부", "사람을 속임이 아니냐?", "밤낮으로 지키는 까닭으로",
+      "- 작자 미상, ｢ 금령전 ｣ -", "[B]\n“심 소저 혼약할 기한이 가까우니",
+      "인당수로 보내었다", "하지마는", "ⓒ 바람이 분들 끄떡하며", "ⓓ 예쁜 용녀",
+      "혼인날이 당하매", "ⓔ 위엄이", "39. ㉠을 참고하여 (다)를 이해한 내용으로",
+      "괄호 [A]가 ‘크게 불러 말하기를,’부터", "같은 모양의 괄호 [B]",
+    ],
+    replacements: Q39_5577054_SOURCE_EXACT_REPLACEMENTS,
     figure: true,
     figureDescription: Q42_5577054_FIGURE_DESCRIPTION_REVISION,
     expectedDecision: "accept",
