@@ -7614,6 +7614,35 @@ const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevi
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
 }, {
+  allowlistId: "ebsi-5577054-q42-manual-source-revision-v2",
+  parentRevisionAllowlistId: "ebsi-5577054-q42-manual-source-revision-v1",
+  parentRevisionEvidenceHash: "20726471e605134dcf01fa3aa74848e323b69335f2373878553c3262b24230dd",
+  entryId: "ebsi:5577054",
+  key: "15:42",
+  sourcePage: 15,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "7b413957c243f4c4d7328649e77877dfb644b14257de20ab8eafd10019e06cb2",
+  failedClassificationHash: "abed1afa54070cc76b7ed0011b5832843dc7b8a418a6f0ee98776cd298355c29",
+  failedClassificationEvidenceHash: "b33aa235d2e8cfc935d1c5e594a3952bfe4ae3e8321b80eda74890d78ff6aad3",
+  replacement: Q37_42_5577054_BRACKET_REPLACEMENTS[0],
+  additionalReplacements: [{
+    field: "question",
+    from: "(다)\n하루는 옥황상제께서 사해용왕에게 말씀을 전하시기를,\n[B]\n“심 소저",
+    to: "(다)\n[B]\n하루는 옥황상제께서 사해용왕에게 말씀을 전하시기를,\n“심 소저",
+    count: 1,
+  }, {
+    field: "figure_description",
+    from: Q42_5577054_FIGURE_DESCRIPTION_REVISION,
+    to: Q37_42_5577054_FIGURE_DESCRIPTION_SOURCE_FINAL,
+    count: 1,
+  }],
+  requiredTokens: [
+    "[A]\n갑자기 한바탕 미친 듯한 바람이 일어나며", "(다)\n[B]\n하루는 옥황상제께서",
+    "괄호 [B]가 ‘하루는 옥황상제께서", "42. ⓐ ~ ⓔ에 대한 설명으로",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
   allowlistId: "ebsi-5577054-q25-manual-source-revision-v1",
   parentRevisionAllowlistId: "ebsi-5577054-q25-manual-revision-v1",
   parentRevisionEvidenceHash: "e481871f21f7dfad21025859ae3e254843f494bf71ece49bcceb7c1d20976e6e",
@@ -10841,12 +10870,16 @@ function verifyProblemTerminalFidelityAdjudications(
     const parentManualFirstRevision = parentManual?.revision === undefined
       ? undefined
       : object(parentManual.revision, `${key}.revision.recovery.manualAdjudication.revision`);
-    const parentManualRevision = parentManualFirstRevision?.sourceRevision === undefined
-      ? parentManualFirstRevision
-      : object(
-          parentManualFirstRevision.sourceRevision,
-          `${key}.revision.recovery.manualAdjudication.revision.sourceRevision`,
-        );
+    let parentManualRevision = parentManualFirstRevision;
+    let parentManualRevisionDepth = 0;
+    while (parentManualRevision?.sourceRevision !== undefined) {
+      parentManualRevision = object(
+        parentManualRevision.sourceRevision,
+        `${key}.revision.recovery.manualAdjudication.revision.` +
+          `${"sourceRevision.".repeat(parentManualRevisionDepth)}sourceRevision`,
+      );
+      parentManualRevisionDepth += 1;
+    }
     const parentManualAuthority = spec.parentManualRevisionAllowlistId
       ? parentManualRevision
       : parentManual;
@@ -13198,10 +13231,13 @@ function verifyProblemRecoveryCoverage(
           ["problem manual revision", manualRevision.problemArtifact, true],
           ["classification manual revision", manualRevision.classificationArtifact, true],
         );
-        if (manualRevision.sourceRevision !== undefined) {
+        let sourceRevisionValue = manualRevision.sourceRevision;
+        let sourceRevisionDepth = 0;
+        while (sourceRevisionValue !== undefined) {
           const sourceRevision = object(
-            manualRevision.sourceRevision,
-            `answer audit repairs[${index}].revision.recovery.manualAdjudication.revision.sourceRevision`,
+            sourceRevisionValue,
+            `answer audit repairs[${index}].revision.recovery.manualAdjudication.revision.` +
+              `${"sourceRevision.".repeat(sourceRevisionDepth)}sourceRevision`,
           );
           if (sourceRevision.terminalTrigger !== undefined) {
             const trigger = object(
@@ -13221,6 +13257,8 @@ function verifyProblemRecoveryCoverage(
             ["problem manual source revision", sourceRevision.problemArtifact, true],
             ["classification manual source revision", sourceRevision.classificationArtifact, true],
           );
+          sourceRevisionValue = sourceRevision.sourceRevision;
+          sourceRevisionDepth += 1;
         }
       }
       if (manual.policyRevision !== undefined) {
@@ -14337,7 +14375,8 @@ function verifyProblemManualSourceRevision(
   contract: VerificationContract,
 ): { question: ProblemQuestion; classification: ClassificationEvidence; evidence: Record<string, unknown> } {
   const key = failedQuestion.key;
-  const revision = object(value, `${key}.revision.recovery.manualAdjudication.revision.sourceRevision`);
+  const revisionEnvelope = object(value, `${key}.revision.recovery.manualAdjudication.revision.sourceRevision`);
+  const { sourceRevision, ...revision } = revisionEnvelope;
   const spec = optionalProblemManualSourceRevisionSpec(
     entry,
     key,
@@ -14673,6 +14712,26 @@ function verifyProblemManualSourceRevision(
   };
   if (!isDeepStrictEqual(revision, evidence)) {
     throw new Error(`${key}: manual source revision evidence envelope does not match its exact chain`);
+  }
+  if (sourceRevision !== undefined) {
+    const nested = verifyProblemManualSourceRevision(
+      sourceRevision,
+      evidence,
+      parentManual,
+      question,
+      classification,
+      stateDir,
+      entry,
+      problemEvidence,
+      rulesDigest,
+      cache,
+      contract,
+    );
+    return {
+      question: nested.question,
+      classification: nested.classification,
+      evidence: { ...evidence, sourceRevision: nested.evidence },
+    };
   }
   return { question, classification, evidence };
 }
@@ -15801,6 +15860,15 @@ export function verifyProblemManualAdjudicationForTest(input: {
     new Map(),
     CURRENT_CONTRACT,
   );
+  const sourceRevisionPaths: string[] = [];
+  let sourceRevision = manual.revision?.sourceRevision;
+  while (sourceRevision) {
+    sourceRevisionPaths.push(
+      sourceRevision.problemArtifact.path,
+      sourceRevision.classificationArtifact.path,
+    );
+    sourceRevision = sourceRevision.sourceRevision;
+  }
   const declaredManual = new Set<string>([
     manual.problemArtifact.path,
     manual.classificationArtifact.path,
@@ -15815,12 +15883,7 @@ export function verifyProblemManualAdjudicationForTest(input: {
       ? [
           manual.revision.problemArtifact.path,
           manual.revision.classificationArtifact.path,
-          ...(manual.revision.sourceRevision
-            ? [
-                manual.revision.sourceRevision.problemArtifact.path,
-                manual.revision.sourceRevision.classificationArtifact.path,
-              ]
-            : []),
+          ...sourceRevisionPaths,
         ]
       : []),
     ...(manual.policyRevision ? [manual.policyRevision.policyArtifact.path] : []),

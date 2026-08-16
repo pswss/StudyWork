@@ -1524,7 +1524,28 @@ export type ProblemManualSourceRevisionEvidence = {
   effectiveQuestionHash: string;
   baseClassificationHash: string;
   effectiveClassificationHash: string;
+  sourceRevision?: ProblemManualSourceRevisionEvidence;
 };
+
+function latestProblemManualRevisionEvidence(
+  revision: ProblemManualRevisionEvidence | undefined
+): ProblemManualRevisionEvidence | ProblemManualSourceRevisionEvidence | undefined {
+  let current: ProblemManualRevisionEvidence | ProblemManualSourceRevisionEvidence | undefined = revision;
+  while (current?.sourceRevision) current = current.sourceRevision;
+  return current;
+}
+
+function problemManualSourceRevisionChain(
+  revision: ProblemManualRevisionEvidence | undefined
+): ProblemManualSourceRevisionEvidence[] {
+  const chain: ProblemManualSourceRevisionEvidence[] = [];
+  let current = revision?.sourceRevision;
+  while (current) {
+    chain.push(current);
+    current = current.sourceRevision;
+  }
+  return chain;
+}
 
 export type ProblemScopeAdjudicationEvidence = {
   allowlistId: string;
@@ -9095,6 +9116,35 @@ export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSou
     "부귀와 영광으로 만만세를 즐기소서.", "괄호 [A]가 ‘크게 불러 말하기를,’부터",
     "괄호 [B]가 ‘심 소저 혼약할 기한이 가까우니’부터",
     "42. ⓐ ~ ⓔ에 대한 설명으로 적절하지 않은 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q42-manual-source-revision-v2",
+  parentRevisionAllowlistId: "ebsi-5577054-q42-manual-source-revision-v1",
+  parentRevisionEvidenceHash: "20726471e605134dcf01fa3aa74848e323b69335f2373878553c3262b24230dd",
+  entryId: "ebsi:5577054",
+  key: "15:42",
+  sourcePage: 15,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "7b413957c243f4c4d7328649e77877dfb644b14257de20ab8eafd10019e06cb2",
+  failedClassificationHash: "abed1afa54070cc76b7ed0011b5832843dc7b8a418a6f0ee98776cd298355c29",
+  failedClassificationEvidenceHash: "b33aa235d2e8cfc935d1c5e594a3952bfe4ae3e8321b80eda74890d78ff6aad3",
+  replacement: Q37_42_5577054_BRACKET_REPLACEMENTS[0],
+  additionalReplacements: [{
+    field: "question",
+    from: "(다)\n하루는 옥황상제께서 사해용왕에게 말씀을 전하시기를,\n[B]\n“심 소저",
+    to: "(다)\n[B]\n하루는 옥황상제께서 사해용왕에게 말씀을 전하시기를,\n“심 소저",
+    count: 1,
+  }, {
+    field: "figure_description",
+    from: Q42_5577054_FIGURE_DESCRIPTION_REVISION,
+    to: Q37_42_5577054_FIGURE_DESCRIPTION_SOURCE_FINAL,
+    count: 1,
+  }],
+  requiredTokens: [
+    "[A]\n갑자기 한바탕 미친 듯한 바람이 일어나며", "(다)\n[B]\n하루는 옥황상제께서",
+    "괄호 [B]가 ‘하루는 옥황상제께서", "42. ⓐ ~ ⓔ에 대한 설명으로",
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
@@ -19754,11 +19804,12 @@ function problemManualSourceRevisionSpec(
   key: string,
   sourcePage: number,
   sourceHash: string,
-  parentRevision: ProblemManualRevisionEvidence,
+  parentRevision: ProblemManualRevisionEvidence | ProblemManualSourceRevisionEvidence,
   failed: ClassifiedQuestion
 ): ProblemManualSourceRevisionSpec | null {
   const matches = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.filter((spec) =>
-    spec.entryId === entryId && spec.key === key && spec.sourcePage === sourcePage
+    spec.entryId === entryId && spec.key === key && spec.sourcePage === sourcePage &&
+    spec.parentRevisionAllowlistId === parentRevision.allowlistId
   );
   if (matches.length > 1) throw new Error(`${entryId} ${key} manual source revision allowlist가 중복입니다`);
   const match = matches[0];
@@ -20978,7 +21029,7 @@ async function reviseProblemManualSourceRevision(
   stateDir: string,
   failed: ClassifiedQuestion,
   prepared: PreparedProblemCropEvidence,
-  parentRevision: ProblemManualRevisionEvidence,
+  parentRevision: ProblemManualRevisionEvidence | ProblemManualSourceRevisionEvidence,
   spec: ProblemManualSourceRevisionSpec,
   existingOnly: boolean
 ): Promise<{ classified: ClassifiedQuestion; evidence: ProblemManualSourceRevisionEvidence } | null> {
@@ -21062,14 +21113,49 @@ async function reviseProblemManualSourceRevision(
   ).filter((name) => name.startsWith(prefix));
   const expectedProblemName = problemRelativePath.slice(problemRelativePath.lastIndexOf("/") + 1);
   const expectedClassificationName = classificationRelativePath.slice(classificationRelativePath.lastIndexOf("/") + 1);
+  const parentProblemName = parentRevision.problemArtifact.path.startsWith("problem-manual-second-revisions/")
+    ? parentRevision.problemArtifact.path.slice(parentRevision.problemArtifact.path.lastIndexOf("/") + 1)
+    : null;
+  const parentClassificationName = parentRevision.classificationArtifact.path
+    .startsWith("classification-manual-second-revisions/")
+    ? parentRevision.classificationArtifact.path.slice(parentRevision.classificationArtifact.path.lastIndexOf("/") + 1)
+    : null;
+  const allowedSourceRevisionIds = new Set([spec.allowlistId]);
+  if (parentProblemName) allowedSourceRevisionIds.add(parentRevision.allowlistId);
+  for (;;) {
+    const next = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.filter((candidate) =>
+      candidate.entryId === entry.id && candidate.key === key && candidate.sourceHash === spec.sourceHash &&
+      allowedSourceRevisionIds.has(candidate.parentRevisionAllowlistId) &&
+      !allowedSourceRevisionIds.has(candidate.allowlistId)
+    );
+    if (next.length === 0) break;
+    next.forEach((candidate) => allowedSourceRevisionIds.add(candidate.allowlistId));
+  }
+  const hasAllowedBasis = (directory: string, name: string): boolean => {
+    const checkpoint = object(JSON.parse(readFileSync(confinedStateFile(
+      stateDir,
+      `${directory}/${name}`,
+      `${key} manual source revision generation`
+    ), "utf8")), name);
+    const basis = object(checkpoint.basis, `${key} manual source revision generation basis`);
+    return allowedSourceRevisionIds.has(exactString(
+      basis.allowlistId,
+      `${key} manual source revision generation allowlistId`
+    ));
+  };
   if (
-    problemNames.length > 1 || classificationNames.length > 1 ||
-    (classificationNames.length > 0 && problemNames.length === 0) ||
-    problemNames.some((name) => name !== expectedProblemName) ||
-    classificationNames.some((name) => name !== expectedClassificationName)
+    problemNames.length > allowedSourceRevisionIds.size ||
+    classificationNames.length > allowedSourceRevisionIds.size ||
+    (parentProblemName !== null && !problemNames.includes(parentProblemName)) ||
+    (parentClassificationName !== null && !classificationNames.includes(parentClassificationName)) ||
+    (classificationNames.includes(expectedClassificationName) && !problemNames.includes(expectedProblemName)) ||
+    problemNames.some((name) => !hasAllowedBasis("problem-manual-second-revisions", name)) ||
+    classificationNames.some((name) =>
+      !hasAllowedBasis("classification-manual-second-revisions", name)
+    )
   ) throw new Error(`${key} manual source revision preflight orphan/conflict`);
 
-  if (problemNames.length === 1) {
+  if (problemNames.includes(expectedProblemName)) {
     const checkpoint = object(JSON.parse(readFileSync(
       confinedStateFile(stateDir, problemRelativePath, "problem manual second revision"),
       "utf8"
@@ -21089,7 +21175,7 @@ async function reviseProblemManualSourceRevision(
     `${spec.requiredTokens.join(" | ")}.`;
   let classification: ClassificationDecision;
   let classificationCheckpoint: Record<string, unknown>;
-  if (classificationNames.length === 1) {
+  if (classificationNames.includes(expectedClassificationName)) {
     classificationCheckpoint = object(JSON.parse(readFileSync(confinedStateFile(
       stateDir,
       classificationRelativePath,
@@ -22181,12 +22267,18 @@ async function adjudicateProblemManualOne(
       candidate.entryId === entry.id && candidate.key === key && candidate.sourcePage === sourcePage &&
       candidate.sourceHash === problem.sha256 && candidate.parentAllowlistId === spec.allowlistId
     );
-    const sourceRevisionSpecs = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.filter((candidate) =>
-      candidate.entryId === entry.id && candidate.key === key && candidate.sourcePage === sourcePage &&
-      candidate.sourceHash === problem.sha256 && revisionSpecs.some((revisionSpec) =>
-        revisionSpec.allowlistId === candidate.parentRevisionAllowlistId
-      )
-    );
+    const sourceRevisionSpecs: ProblemManualSourceRevisionSpec[] = [];
+    const sourceRevisionParentIds = new Set(revisionSpecs.map((revisionSpec) => revisionSpec.allowlistId));
+    for (;;) {
+      const next = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.filter((candidate) =>
+        candidate.entryId === entry.id && candidate.key === key && candidate.sourcePage === sourcePage &&
+        candidate.sourceHash === problem.sha256 && sourceRevisionParentIds.has(candidate.parentRevisionAllowlistId) &&
+        !sourceRevisionSpecs.includes(candidate)
+      );
+      if (next.length === 0) break;
+      sourceRevisionSpecs.push(...next);
+      next.forEach((candidate) => sourceRevisionParentIds.add(candidate.allowlistId));
+    }
     const evidenceBasis = {
       allowlistId: spec.allowlistId,
       entryId: entry.id,
@@ -22213,14 +22305,15 @@ async function adjudicateProblemManualOne(
     if (
       evidenceExtras.length > 0 || pinnedProblemNames.length > 1 || pinnedClassificationNames.length > 1 ||
       revisionProblemNames.length > 1 || revisionClassificationNames.length > 1 ||
-      sourceRevisionProblemNames.length > 1 || sourceRevisionClassificationNames.length > 1 ||
+      sourceRevisionProblemNames.length > sourceRevisionSpecs.length ||
+      sourceRevisionClassificationNames.length > sourceRevisionSpecs.length ||
       (revisionClassificationNames.length > 0 && revisionProblemNames.length === 0) ||
-      (sourceRevisionClassificationNames.length > 0 && sourceRevisionProblemNames.length === 0) ||
+      sourceRevisionClassificationNames.length > sourceRevisionProblemNames.length ||
       (hasRevision && (
         revisionSpecs.length !== 1 || (requiresManualEvidence && !hasEvidenceCheckpoint) ||
         pinnedProblemNames.length !== 1 || pinnedClassificationNames.length !== 1
       )) || (hasSourceRevision && (
-        sourceRevisionSpecs.length !== 1 || revisionProblemNames.length !== 1 ||
+        sourceRevisionSpecs.length === 0 || revisionProblemNames.length !== 1 ||
         revisionClassificationNames.length !== 1
       )) || (requiresManualEvidence && !hasEvidenceCheckpoint && (
         pinnedProblemNames.length > 0 || pinnedClassificationNames.length > 0 || hasSourceRevision
@@ -22545,6 +22638,36 @@ async function adjudicateProblemManualOne(
     existingOnly
   );
   if (!sourceRevised) return null;
+  const nextSourceRevisionSpec = problemManualSourceRevisionSpec(
+    entry.id,
+    key,
+    sourcePage,
+    problem.sha256,
+    sourceRevised.evidence,
+    sourceRevised.classified
+  );
+  if (nextSourceRevisionSpec) {
+    const nextSourceRevised = await reviseProblemManualSourceRevision(
+      entry,
+      stateDir,
+      sourceRevised.classified,
+      prepared,
+      sourceRevised.evidence,
+      nextSourceRevisionSpec,
+      existingOnly
+    );
+    if (!nextSourceRevised) return null;
+    return {
+      classified: nextSourceRevised.classified,
+      evidence: {
+        ...evidence,
+        revision: {
+          ...revised.evidence,
+          sourceRevision: { ...sourceRevised.evidence, sourceRevision: nextSourceRevised.evidence },
+        },
+      },
+    };
+  }
   return {
     classified: sourceRevised.classified,
     evidence: {
@@ -22680,7 +22803,7 @@ async function prepareProblemTerminalFidelityAdjudication(
   if (!spec) throw new Error(`${key} terminal fidelity adjudication allowlist에 없습니다`);
   const { terminalAdjudication: _terminalAdjudication, ...parentRepair } = repair;
   const parentManual = parentRepair.revision?.recovery?.manualAdjudication;
-  const parentManualRevision = parentManual?.revision?.sourceRevision ?? parentManual?.revision;
+  const parentManualRevision = latestProblemManualRevisionEvidence(parentManual?.revision);
   const parentManualAuthority = spec.parentManualRevisionAllowlistId
     ? parentManualRevision
     : parentManual;
@@ -23749,7 +23872,7 @@ export async function assertProblemManualAdjudicationAuthority(
     )) throw new Error(`${repair.key} manual classification policy revision evidence가 없습니다`);
 
     if (manualRevision) {
-      const { sourceRevision, ...manualRevisionBase } = manualRevision;
+      const { sourceRevision: sourceRevisionEnvelope, ...manualRevisionBase } = manualRevision;
       const revisionMatches = PROBLEM_MANUAL_REVISION_ALLOWLIST.filter((candidate) =>
         candidate.allowlistId === manualRevisionBase.allowlistId &&
         candidate.parentAllowlistId === manual.allowlistId && candidate.entryId === spec.entryId &&
@@ -23940,10 +24063,10 @@ export async function assertProblemManualAdjudicationAuthority(
         manualRevisionBase.classificationArtifact.revisionVersion !== PROBLEM_MANUAL_REVISION_VERSION ||
         manualRevisionBase.classificationArtifact.revisionPromptDigest !== PROBLEM_MANUAL_REVISION_PROMPT_DIGEST ||
         !revisionClassification || !expectedManualRevision || revisionClassification.key !== manual.key ||
-        (!sourceRevision && (
+        (!sourceRevisionEnvelope && (
           revisionClassification.transcription_status !== "exact" ||
           !matchesProblemManualExpectedDecision(revisionSpec, revisionClassification)
-        )) || revisionSpec.expectedDecision === "accept" && !sourceRevision && (
+        )) || revisionSpec.expectedDecision === "accept" && !sourceRevisionEnvelope && (
           revisionClassification.canonical_subject === null ||
           revisionClassification.achievement_codes.some((code) =>
             !isAllowedAchievementCode(revisionClassification.canonical_subject!, code)
@@ -23962,10 +24085,11 @@ export async function assertProblemManualAdjudicationAuthority(
       if (sourceRevisionMatches.length > 1) {
         throw new Error(`${repair.key} manual source revision allowlist authority가 중복입니다`);
       }
-      if (!sourceRevision && sourceRevisionMatches.some((candidate) =>
+      if (!sourceRevisionEnvelope && sourceRevisionMatches.some((candidate) =>
         candidate.parentRevisionEvidenceHash === canonicalEvidenceHash(manualRevisionBase)
       )) throw new Error(`${repair.key} manual source revision evidence가 없습니다`);
-      if (sourceRevision) {
+      if (sourceRevisionEnvelope) {
+        const { sourceRevision: nestedSourceRevision, ...sourceRevision } = sourceRevisionEnvelope;
         if (sourceRevisionMatches.length !== 1 || !expectedManualRevision) {
           throw new Error(`${repair.key} manual source revision allowlist authority가 없습니다`);
         }
@@ -24176,6 +24300,193 @@ export async function assertProblemManualAdjudicationAuthority(
             canonicalEvidenceHash(expectedSourceClassificationCheckpoint) ||
           canonicalEvidenceHash(sourceRevision) !== canonicalEvidenceHash(expectedSourceRevision)
         ) throw new Error(`${repair.key} classification manual second revision checkpoint가 다릅니다`);
+
+        if (nestedSourceRevision) {
+          if (!expectedSourceRevision || nestedSourceRevision.sourceRevision) {
+            throw new Error(`${repair.key} nested manual source revision depth가 유효하지 않습니다`);
+          }
+          const nestedSpec = problemManualSourceRevisionSpec(
+            spec.entryId,
+            manual.key,
+            manual.sourcePage,
+            manual.sourceHash,
+            expectedSourceRevision,
+            { question: expectedSourceItem, classification: sourceClassification }
+          );
+          if (!nestedSpec) throw new Error(`${repair.key} nested manual source revision allowlist가 없습니다`);
+          const nestedTerminalTrigger = await validatedProblemManualTerminalTrigger(
+            stateDir,
+            nestedSpec,
+            { question: expectedSourceItem, classification: sourceClassification }
+          );
+          if (
+            nestedSourceRevision.allowlistId !== nestedSpec.allowlistId ||
+            nestedSourceRevision.parentRevisionAllowlistId !== expectedSourceRevision.allowlistId ||
+            nestedSourceRevision.parentRevisionEvidenceHash !== canonicalEvidenceHash(expectedSourceRevision) ||
+            nestedSourceRevision.failedQuestionHash !== canonicalEvidenceHash(expectedSourceItem) ||
+            nestedSourceRevision.failedClassificationHash !== canonicalEvidenceHash(sourceClassification) ||
+            nestedSourceRevision.failedClassificationEvidenceHash !==
+              sha256Text(sourceClassification.transcription_evidence) ||
+            Boolean(nestedSourceRevision.terminalTrigger) !== Boolean(nestedTerminalTrigger) ||
+            (nestedSourceRevision.terminalTrigger && canonicalEvidenceHash(nestedSourceRevision.terminalTrigger) !==
+              canonicalEvidenceHash(nestedTerminalTrigger)) ||
+            nestedSourceRevision.correctionSpecHash !== problemManualSourceRevisionCorrectionSpecHash(nestedSpec)
+          ) throw new Error(`${repair.key} nested manual source revision parent/allowlist가 다릅니다`);
+          await declare("nested problem manual source revision", nestedSourceRevision.problemArtifact);
+          await declare("nested classification manual source revision", nestedSourceRevision.classificationArtifact);
+          if (nestedTerminalTrigger) {
+            await declare("nested manual source revision terminal trigger", nestedTerminalTrigger.artifact, false);
+          }
+          const nestedCommonBasis = {
+            allowlistId: nestedSpec.allowlistId,
+            parentRevisionAllowlistId: nestedSpec.parentRevisionAllowlistId,
+            entryId: spec.entryId,
+            key: manual.key,
+            printedNumber: manual.printedNumber,
+            sourcePage: manual.sourcePage,
+            sourceHash: manual.sourceHash,
+            parentRevision: expectedSourceRevision,
+            parentRevisionEvidenceHash: nestedSourceRevision.parentRevisionEvidenceHash,
+            parentProblemArtifact: nestedSourceRevision.parentProblemArtifact,
+            parentProblemArtifactItemHash: nestedSourceRevision.parentProblemArtifactItemHash,
+            parentClassificationArtifact: nestedSourceRevision.parentClassificationArtifact,
+            parentClassificationArtifactItemHash: nestedSourceRevision.parentClassificationArtifactItemHash,
+            failedQuestionHash: nestedSourceRevision.failedQuestionHash,
+            failedClassificationHash: nestedSourceRevision.failedClassificationHash,
+            failedClassificationEvidenceHash: nestedSourceRevision.failedClassificationEvidenceHash,
+            ...(nestedTerminalTrigger ? { terminalTrigger: nestedTerminalTrigger } : {}),
+            correctionSpecHash: nestedSourceRevision.correctionSpecHash,
+            cropEvidenceArtifact: manual.cropEvidenceArtifact,
+            cropEvidencePdf: manual.cropEvidencePdf,
+            cropViews: manual.cropViews,
+          };
+          const nestedBasisDigest = canonicalEvidenceHash(nestedCommonBasis);
+          const nestedStem = `v${PROBLEM_MANUAL_SOURCE_REVISION_VERSION}-` +
+            `${String(manual.sourcePage).padStart(4, "0")}-${manual.printedNumber.padStart(4, "0")}-` +
+            `${nestedBasisDigest}`;
+          const nestedProblemPath = `problem-manual-second-revisions/${nestedStem}.json`;
+          const nestedProblemCheckpoint = object(JSON.parse(readFileSync(confinedStateFile(
+            stateDir,
+            nestedProblemPath,
+            "nested problem manual source revision"
+          ), "utf8")), nestedProblemPath);
+          const nestedItem = applyAllowlistedProblemManualSourceRevision(
+            spec.entryId,
+            spec.sourceHash,
+            expectedSourceRevision.allowlistId,
+            expectedSourceItem
+          );
+          const expectedNestedProblemCheckpoint = {
+            version: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+            entryId: spec.entryId,
+            basisDigest: nestedBasisDigest,
+            basis: nestedCommonBasis,
+            correctionVersion: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+            correctionDigest: PROBLEM_MANUAL_SOURCE_REVISION_CORRECTION_DIGEST,
+            item: nestedItem,
+          };
+          const nestedProblemSha = canonicalEvidenceHash(expectedNestedProblemCheckpoint);
+          if (
+            nestedSourceRevision.problemArtifact.path !== nestedProblemPath ||
+            nestedSourceRevision.problemArtifact.sha256 !== nestedProblemSha ||
+            canonicalEvidenceHash(nestedProblemCheckpoint) !== nestedProblemSha ||
+            nestedSourceRevision.problemArtifactItemHash !== canonicalEvidenceHash(nestedItem)
+          ) throw new Error(`${repair.key} nested problem manual source revision checkpoint가 다릅니다`);
+          const nestedClassificationBasis = {
+            ...nestedCommonBasis,
+            problemArtifact: { path: nestedProblemPath, sha256: nestedProblemSha },
+            problemArtifactItemHash: nestedSourceRevision.problemArtifactItemHash,
+            effectiveQuestionHash: nestedSourceRevision.effectiveQuestionHash,
+          };
+          const nestedClassificationBasisDigest = canonicalEvidenceHash(nestedClassificationBasis);
+          const nestedClassificationPath = `classification-manual-second-revisions/` +
+            `v${CLASSIFICATION_MANUAL_SOURCE_REVISION_VERSION}-` +
+            `${String(manual.sourcePage).padStart(4, "0")}-${manual.printedNumber.padStart(4, "0")}-` +
+            `${nestedClassificationBasisDigest}-${CLASSIFIER_DIGEST}.json`;
+          const nestedClassificationCheckpoint = object(JSON.parse(readFileSync(confinedStateFile(
+            stateDir,
+            nestedClassificationPath,
+            "nested classification manual source revision"
+          ), "utf8")), nestedClassificationPath);
+          const nestedClassification = Array.isArray(nestedClassificationCheckpoint.items) &&
+              nestedClassificationCheckpoint.items.length === 1
+            ? parseHistoricalDecision(
+                nestedClassificationCheckpoint.items[0],
+                manual.key,
+                "nested manual source revision classification item"
+              )
+            : null;
+          const expectedNestedClassificationCheckpoint = {
+            version: CLASSIFICATION_MANUAL_SOURCE_REVISION_VERSION,
+            entryId: spec.entryId,
+            basisDigest: nestedClassificationBasisDigest,
+            basis: nestedClassificationBasis,
+            classifierVersion: CLASSIFIER_VERSION,
+            rulesDigest: CLASSIFIER_DIGEST,
+            transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+            transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+            sourceRevisionVersion: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+            sourceRevisionPromptDigest: PROBLEM_MANUAL_SOURCE_REVISION_PROMPT_DIGEST,
+            model: IMPORT_MODEL,
+            reasoningEffort: IMPORT_REASONING_EFFORT,
+            items: nestedClassification ? [nestedClassification] : [],
+          };
+          const nestedClassificationSha = canonicalEvidenceHash(expectedNestedClassificationCheckpoint);
+          const expectedNestedEvidence: ProblemManualSourceRevisionEvidence | null = nestedClassification ? {
+            allowlistId: nestedSpec.allowlistId,
+            parentRevisionAllowlistId: nestedSpec.parentRevisionAllowlistId,
+            key: manual.key,
+            printedNumber: manual.printedNumber,
+            sourcePage: manual.sourcePage,
+            sourceHash: manual.sourceHash,
+            parentRevisionEvidenceHash: canonicalEvidenceHash(expectedSourceRevision),
+            parentProblemArtifact: {
+              path: expectedSourceRevision.problemArtifact.path,
+              sha256: expectedSourceRevision.problemArtifact.sha256,
+            },
+            parentProblemArtifactItemHash: expectedSourceRevision.problemArtifactItemHash,
+            parentClassificationArtifact: {
+              path: expectedSourceRevision.classificationArtifact.path,
+              sha256: expectedSourceRevision.classificationArtifact.sha256,
+            },
+            parentClassificationArtifactItemHash: expectedSourceRevision.classificationArtifactItemHash,
+            failedQuestionHash: nestedSpec.failedQuestionHash,
+            failedClassificationHash: nestedSpec.failedClassificationHash,
+            failedClassificationEvidenceHash: nestedSpec.failedClassificationEvidenceHash,
+            ...(nestedTerminalTrigger ? { terminalTrigger: nestedTerminalTrigger } : {}),
+            correctionSpecHash: problemManualSourceRevisionCorrectionSpecHash(nestedSpec),
+            problemArtifact: {
+              path: nestedProblemPath,
+              sha256: nestedProblemSha,
+              correctionVersion: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+              correctionDigest: PROBLEM_MANUAL_SOURCE_REVISION_CORRECTION_DIGEST,
+            },
+            problemArtifactItemHash: canonicalEvidenceHash(nestedItem),
+            classificationArtifact: {
+              path: nestedClassificationPath,
+              sha256: nestedClassificationSha,
+              rulesDigest: CLASSIFIER_DIGEST,
+              transcriptionGateVersion: TRANSCRIPTION_GATE_VERSION,
+              transcriptionPromptDigest: TRANSCRIPTION_PROMPT_DIGEST,
+              sourceRevisionVersion: PROBLEM_MANUAL_SOURCE_REVISION_VERSION,
+              sourceRevisionPromptDigest: PROBLEM_MANUAL_SOURCE_REVISION_PROMPT_DIGEST,
+            },
+            classificationArtifactItemHash: canonicalEvidenceHash(nestedClassification),
+            baseQuestionHash: nestedSpec.failedQuestionHash,
+            effectiveQuestionHash: canonicalEvidenceHash(nestedItem),
+            baseClassificationHash: nestedSpec.failedClassificationHash,
+            effectiveClassificationHash: canonicalEvidenceHash(nestedClassification),
+          } : null;
+          if (
+            !nestedClassification || !expectedNestedEvidence ||
+            nestedClassification.transcription_status !== "exact" ||
+            !matchesProblemManualExpectedDecision(nestedSpec, nestedClassification) ||
+            nestedSourceRevision.classificationArtifact.path !== nestedClassificationPath ||
+            nestedSourceRevision.classificationArtifact.sha256 !== nestedClassificationSha ||
+            canonicalEvidenceHash(nestedClassificationCheckpoint) !== nestedClassificationSha ||
+            canonicalEvidenceHash(nestedSourceRevision) !== canonicalEvidenceHash(expectedNestedEvidence)
+          ) throw new Error(`${repair.key} nested classification manual source revision checkpoint가 다릅니다`);
+        }
       }
     }
   }
@@ -24227,12 +24538,13 @@ export async function assertProblemTerminalFidelityAdjudicationAuthority(
   );
   for (const repair of repairList) {
     const manual = repair.revision?.recovery?.manualAdjudication;
+    const latestManualRevision = latestProblemManualRevisionEvidence(manual?.revision);
     const current = classified.find((candidate) => questionKey(candidate.question) === repair.key);
-    const pendingSourceSpecs = manual?.revision && !manual.revision.sourceRevision && current
+    const pendingSourceSpecs = latestManualRevision && current
       ? PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.filter((spec) =>
           spec.entryId === entryId && spec.key === repair.key && spec.sourceHash === sourceHash &&
-          spec.terminalTrigger && spec.parentRevisionAllowlistId === manual.revision!.allowlistId &&
-          spec.parentRevisionEvidenceHash === canonicalEvidenceHash(manual.revision) &&
+          spec.terminalTrigger && spec.parentRevisionAllowlistId === latestManualRevision.allowlistId &&
+          spec.parentRevisionEvidenceHash === canonicalEvidenceHash(latestManualRevision) &&
           spec.failedQuestionHash === canonicalEvidenceHash(current.question) &&
           spec.failedClassificationHash === canonicalEvidenceHash(current.classification) &&
           spec.failedClassificationEvidenceHash === sha256Text(current.classification.transcription_evidence)
@@ -24246,7 +24558,7 @@ export async function assertProblemTerminalFidelityAdjudicationAuthority(
       : undefined;
     for (const trigger of [
       manual?.terminalTrigger,
-      manual?.revision?.sourceRevision?.terminalTrigger,
+      ...problemManualSourceRevisionChain(manual?.revision).map((revision) => revision.terminalTrigger),
       pendingTrigger,
     ].filter((value): value is NonNullable<ProblemManualAdjudicationEvidence["terminalTrigger"]> =>
       Boolean(value)
@@ -27924,7 +28236,7 @@ export async function repairAndAuditOfficialAnswers(
       repair: ProblemRepairEvidence;
       recovery: ProblemRecoveryEvidence;
       manual: ProblemManualAdjudicationEvidence;
-      revision: ProblemManualRevisionEvidence;
+      revision: ProblemManualRevisionEvidence | ProblemManualSourceRevisionEvidence;
       spec: ProblemManualSourceRevisionSpec;
     }> = [];
     for (const key of uniqueKeys) {
@@ -27989,13 +28301,14 @@ export async function repairAndAuditOfficialAnswers(
               continue;
             }
           }
-          if (trigger.kind === "terminal" && recovery && manual && manualRevision && !manualRevision.sourceRevision) {
+          if (trigger.kind === "terminal" && recovery && manual && manualRevision) {
+            const sourceRevisionParent = manualRevision.sourceRevision ?? manualRevision;
             const sourceRevisionSpec = problemManualSourceRevisionSpec(
               entry.id,
               key,
               current.question.page!,
               problem.sha256,
-              manualRevision,
+              sourceRevisionParent,
               current
             );
             if (sourceRevisionSpec) {
@@ -28005,7 +28318,7 @@ export async function repairAndAuditOfficialAnswers(
                 repair: existing,
                 recovery,
                 manual,
-                revision: manualRevision,
+                revision: sourceRevisionParent,
                 spec: sourceRevisionSpec,
               });
               continue;
@@ -28278,10 +28591,17 @@ export async function repairAndAuditOfficialAnswers(
       const index = effective.findIndex((current) => questionKey(current.question) === item.key);
       const existing = repairs.get(item.key);
       const manual = existing?.revision?.recovery?.manualAdjudication;
-      if (index < 0 || !existing?.revision?.recovery || !manual?.revision || manual.revision.sourceRevision) {
+      if (
+        index < 0 || !existing?.revision?.recovery || !manual?.revision ||
+        item.revision.allowlistId === manual.revision.allowlistId && manual.revision.sourceRevision ||
+        item.revision.allowlistId !== manual.revision.allowlistId &&
+          item.revision.allowlistId !== manual.revision.sourceRevision?.allowlistId ||
+        manual.revision.sourceRevision?.sourceRevision
+      ) {
         throw new Error(`${item.key} manual source revision authority가 없습니다`);
       }
       effective[index] = revised.classified;
+      const sourceRevision = manual.revision.sourceRevision;
       repairs.set(item.key, {
         ...existing,
         revision: {
@@ -28290,7 +28610,12 @@ export async function repairAndAuditOfficialAnswers(
             ...existing.revision.recovery,
             manualAdjudication: {
               ...manual,
-              revision: { ...manual.revision, sourceRevision: revised.evidence },
+              revision: {
+                ...manual.revision,
+                sourceRevision: sourceRevision
+                  ? { ...sourceRevision, sourceRevision: revised.evidence }
+                  : revised.evidence,
+              },
             },
           },
         },
@@ -28363,8 +28688,9 @@ export async function repairAndAuditOfficialAnswers(
       const repair = repairs.get(spec.key);
       const recovery = repair?.revision?.recovery;
       const manual = recovery?.manualAdjudication;
-      const revision = manual?.revision;
-      return index >= 0 && current && repair?.revision && recovery && manual && revision && !revision.sourceRevision &&
+      const revision = latestProblemManualRevisionEvidence(manual?.revision);
+      return index >= 0 && current && repair?.revision && recovery && manual && revision &&
+          revision.allowlistId === spec.parentRevisionAllowlistId &&
           canonicalEvidenceHash(current.question) === spec.failedQuestionHash &&
           canonicalEvidenceHash(current.classification) === spec.failedClassificationHash
         ? [{ spec, index, current, repair, recovery, manual, revision }]
@@ -28415,6 +28741,7 @@ export async function repairAndAuditOfficialAnswers(
     );
     if (!revised) throw new Error(`${item.spec.key} triggered manual source revision child가 없습니다`);
     effective[item.index] = revised.classified;
+    const firstSourceRevision = item.manual.revision?.sourceRevision;
     repairs.set(item.spec.key, {
       ...item.repair,
       revision: {
@@ -28423,7 +28750,12 @@ export async function repairAndAuditOfficialAnswers(
           ...item.recovery,
           manualAdjudication: {
             ...item.manual,
-            revision: { ...item.revision, sourceRevision: revised.evidence },
+            revision: {
+              ...item.manual.revision!,
+              sourceRevision: firstSourceRevision
+                ? { ...firstSourceRevision, sourceRevision: revised.evidence }
+                : revised.evidence,
+            },
           },
         },
       },
@@ -28471,7 +28803,8 @@ export async function repairAndAuditOfficialAnswers(
       return [
         repair.terminalAdjudication?.adjudicationArtifact.path,
         manual?.terminalTrigger?.artifact.path,
-        manual?.revision?.sourceRevision?.terminalTrigger?.artifact.path,
+        ...problemManualSourceRevisionChain(manual?.revision)
+          .map((revision) => revision.terminalTrigger?.artifact.path),
       ].filter((path): path is string =>
         Boolean(path?.startsWith("problem-terminal-fidelity-adjudications/"))
       );

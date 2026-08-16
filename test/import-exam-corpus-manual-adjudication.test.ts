@@ -2481,9 +2481,9 @@ describe("exact allowlisted problem manual adjudication", () => {
       expect(PROBLEM_MANUAL_REVISION_ALLOWLIST).toHaveLength(24);
       expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST))
         .toBe("e08765a1ecfae70d6c56ea5655d5b84758418e8e744ac1a908442cb2e153bf37");
-      expect(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST).toHaveLength(14);
+      expect(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST).toHaveLength(15);
       expect(canonicalEvidenceHash(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST))
-        .toBe("4f75f209838d3ba3e04751565a4086887d1f7b3c1ac915cb8f42daa9c7685089");
+        .toBe("a1b5386353baef9b7b16df3f869638d792d3e9d2581983c6fc5bc892b3679b6d");
       for (const [key, [rowHash, correctedHash, sourceRowHash, finalHash]] of expected) {
         const spec = PROBLEM_MANUAL_REVISION_ALLOWLIST.find((candidate) =>
           candidate.entryId === "ebsi:5577054" && candidate.key === key &&
@@ -3086,9 +3086,9 @@ describe("exact allowlisted problem manual adjudication", () => {
       replacementHash: canonicalEvidenceHash(sourceSpec.replacement),
       triggerHash: canonicalEvidenceHash(sourceSpec.terminalTrigger),
     }).toEqual({
-      length: 14,
+      length: 15,
       prefixHash: "05d392d62117f4864b0a5964466970815e167655b12c69817909cdd43e006e1f",
-      allowlistHash: "4f75f209838d3ba3e04751565a4086887d1f7b3c1ac915cb8f42daa9c7685089",
+      allowlistHash: "a1b5386353baef9b7b16df3f869638d792d3e9d2581983c6fc5bc892b3679b6d",
       rowHash: "4c70814866ee7bcff53e2bb652f35158d4eada24cc14699fbcac2af4dc38a4a1",
       replacementHash: "b7c5384c744504673b8c9b0d28b3f4df5d88485c69d8e2ef192873da8773639b",
       triggerHash: "ccf2ee80611b4c2fd857538c26681d010982a8c421248b81337fc5312690b878",
@@ -3228,9 +3228,9 @@ describe("exact allowlisted problem manual adjudication", () => {
         ...(sourceRevisionSpec.additionalReplacements ?? []),
       ]),
     }).toEqual({
-      length: 14,
+      length: 15,
       prefixHash: "ffc789e8918c8a5603c82d08faa7e2adefedba8aa15c5304f24a6ef8dd520922",
-      allowlistHash: "4f75f209838d3ba3e04751565a4086887d1f7b3c1ac915cb8f42daa9c7685089",
+      allowlistHash: "a1b5386353baef9b7b16df3f869638d792d3e9d2581983c6fc5bc892b3679b6d",
       rowHash: "d1838baa7e6f533817722fca9207e3ca354e28c72b0474691cd17d950dbeeaa3",
       replacementsHash: "c7d8df99440c1308c253b783a315c35360b97413e00913ef6658bdd74cec11ca",
     });
@@ -3722,6 +3722,9 @@ describe("exact allowlisted problem manual adjudication", () => {
     const sourceRevisionSpec = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.find((candidate) =>
       candidate.allowlistId === "ebsi-5577054-q42-manual-source-revision-v1"
     )!;
+    const finalSourceRevisionSpec = PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.find((candidate) =>
+      candidate.allowlistId === "ebsi-5577054-q42-manual-source-revision-v2"
+    )!;
     expect({
       length: PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST.length,
       allowlistHash: canonicalEvidenceHash(PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST),
@@ -3729,11 +3732,23 @@ describe("exact allowlisted problem manual adjudication", () => {
       replacementHash: canonicalEvidenceHash(sourceRevisionSpec.replacement),
       parentRevisionEvidenceHash: sourceRevisionSpec.parentRevisionEvidenceHash,
     }).toEqual({
-      length: 14,
-      allowlistHash: "4f75f209838d3ba3e04751565a4086887d1f7b3c1ac915cb8f42daa9c7685089",
+      length: 15,
+      allowlistHash: "a1b5386353baef9b7b16df3f869638d792d3e9d2581983c6fc5bc892b3679b6d",
       rowHash: "e34815c9d14643ee14f5bc34771ceb9f97894ad319a3878b1fd198db15acd999",
       replacementHash: "88ac126111a80b5b6f4fbfc135f927c2c6cd39d24392dfd6188b1dc3b5c79821",
       parentRevisionEvidenceHash: "9b6286fc828c0ea5e816ca236be868868c97e8b59a3e3235ba6c0afd02c2a802",
+    });
+    expect({
+      rowHash: canonicalEvidenceHash(finalSourceRevisionSpec),
+      replacementsHash: canonicalEvidenceHash([
+        finalSourceRevisionSpec.replacement,
+        ...(finalSourceRevisionSpec.additionalReplacements ?? []),
+      ]),
+      parentRevisionEvidenceHash: finalSourceRevisionSpec.parentRevisionEvidenceHash,
+    }).toEqual({
+      rowHash: "212c7c6a1e62398c1b70c754bc3324177374e9e72b21b2241ccdc34c1b680b95",
+      replacementsHash: "ea62c14c33a9a348534659a7255a5b142b1ab61b1b59b7d9b79481ff32fe6349",
+      parentRevisionEvidenceHash: "20726471e605134dcf01fa3aa74848e323b69335f2373878553c3262b24230dd",
     });
     const sourceCorrected = applyAllowlistedProblemManualSourceRevision(
       "ebsi:5577054",
@@ -3749,6 +3764,19 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(sourceCorrected.question).not.toContain("부귀와 영화로 만만세를 즐기소서.");
     expect(sourceCorrected.choices).toEqual(pinned.failed.question.choices);
     expect(sourceCorrected.answer).toBe(pinned.failed.question.answer);
+    const finalSourceCorrected = applyAllowlistedProblemManualSourceRevision(
+      "ebsi:5577054",
+      spec.sourceHash,
+      sourceRevisionSpec.allowlistId,
+      sourceCorrected,
+    );
+    expect(canonicalEvidenceHash(finalSourceCorrected))
+      .toBe("041f221e6e73707b95a28f63894f076b808ef694816c1f0dd9483b497ebd829c");
+    expect(canonicalEvidenceHash(finalSourceCorrected.question))
+      .toBe("9b1c9d8d0f18654f95a730262aa1d74385449d3a315eb074ce084b93eb3628e6");
+    expect(finalSourceCorrected.question).toContain("[A]\n갑자기 한바탕 미친 듯한 바람이");
+    expect(finalSourceCorrected.question).toContain("(다)\n[B]\n하루는 옥황상제께서");
+    expect(finalSourceCorrected.figure_description).toContain("괄호 [B]가 ‘하루는 옥황상제께서");
 
     root = mkdtempSync(join(tmpdir(), "studywork-5577054-q42-manual-"));
     cpSync(q43LiveState5577054, root, { recursive: true });
@@ -3765,21 +3793,32 @@ describe("exact allowlisted problem manual adjudication", () => {
       }>;
       expect(items).toHaveLength(1);
       calls.push(items[0].key);
-      expect(canonicalEvidenceHash(items[0].question))
-        .toBe("f0d6eb14980af2f6d5da0f402dbbd2afbd2e53bb015a641118bf7735f9948939");
+      expect(canonicalEvidenceHash(items[0].question)).toBe(calls.length === 1
+        ? "f0d6eb14980af2f6d5da0f402dbbd2afbd2e53bb015a641118bf7735f9948939"
+        : "9b1c9d8d0f18654f95a730262aa1d74385449d3a315eb074ce084b93eb3628e6");
       expect(items[0].question).toContain("부귀와 영광으로 만만세를 즐기소서.");
-      expect(items[0].figure_description).toContain("괄호 [A]가 ‘크게 불러 말하기를,’부터");
+      expect(items[0].figure_description).toContain(calls.length === 1
+        ? "괄호 [A]가 ‘크게 불러 말하기를,’부터"
+        : "괄호 [A]가 ‘갑자기 한바탕");
+      const first = calls.length === 1;
       return { text: JSON.stringify([{
         key: "15:42",
         decision: "accept",
         canonical_subject: "korean_literature",
         curriculum_course: "문학",
-        domain: "고전 소설의 인물과 서사 전개",
+        domain: first ? "고전 소설의 서술·표현 방식과 효과" : "고전 소설의 인물과 서사 전개",
         achievement_codes: ["12문학01-02"],
         confidence: 0.99,
-        reason_codes: ["SOURCE_EXACT", "IN_SCOPE_KOREAN_LITERATURE"],
+        reason_codes: first
+          ? ["CLASSICAL_FICTION_COMPREHENSION", "LITERARY_EXPRESSION_EFFECT", "SINGLE_SUBJECT_SCOPE"]
+          : ["SOURCE_EXACT", "IN_SCOPE_KOREAN_LITERATURE"],
         transcription_status: "exact",
-        transcription_evidence: "공식 13~15쪽의 [37~42] 공통 지문과 42번 발문·선지가 일치한다.",
+        transcription_evidence: first
+          ? "공식 13~15쪽에서 (가)~(다)의 전체 제시문, 중략·주석, ⓐ~ⓔ, 42번 발문과 5개 선택지를 " +
+            "대조했으며 모두 일치한다. 필수 문구 ‘부귀와 영광으로 만만세를 즐기소서.’가 확인되고, " +
+            "[A]는 ‘크게 불러 말하기를,’부터 해당 인용문까지, [B]는 ‘심 소저 혼약할 기한이 가까우니’부터 " +
+            "해당 인용문 끝까지를 감싸는 오른쪽 세로선·왼쪽 방향 캡으로 정확히 기술되었다."
+          : "공식 13~15쪽의 [37~42] 공통 지문과 42번 발문·선지가 일치한다.",
       }]) };
     });
     const run = () => adjudicateProblemManual(
@@ -3790,9 +3829,9 @@ describe("exact allowlisted problem manual adjudication", () => {
       row.parent,
     );
     const completed = await run();
-    expect(calls).toEqual(["15:42"]);
+    expect(calls).toEqual(["15:42", "15:42"]);
     expect(canonicalEvidenceHash(completed.classified.question))
-      .toBe("7b413957c243f4c4d7328649e77877dfb644b14257de20ab8eafd10019e06cb2");
+      .toBe("041f221e6e73707b95a28f63894f076b808ef694816c1f0dd9483b497ebd829c");
     expect(completed.classified.classification).toEqual(expect.objectContaining({
       key: "15:42",
       decision: "accept",
@@ -3810,11 +3849,11 @@ describe("exact allowlisted problem manual adjudication", () => {
         manualAdjudication: completed.evidence,
       })) as { question: QuizItemEx; classification: ClassificationDecision };
     expect(canonicalEvidenceHash(verified.question))
-      .toBe("7b413957c243f4c4d7328649e77877dfb644b14257de20ab8eafd10019e06cb2");
+      .toBe("041f221e6e73707b95a28f63894f076b808ef694816c1f0dd9483b497ebd829c");
     expect(verified.classification.transcription_status).toBe("exact");
     const stable = stateSnapshot(root);
     await run();
-    expect(calls).toEqual(["15:42"]);
+    expect(calls).toEqual(["15:42", "15:42"]);
     expect(stateSnapshot(root)).toEqual(stable);
 
     const problemPath = join(root, completed.evidence.revision!.sourceRevision!.problemArtifact.path);
@@ -3822,7 +3861,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     writeFileSync(problemPath, Buffer.concat([problemBytes, Buffer.from(" ")]));
     const beforeTamper = stateSnapshot(root);
     await expect(run()).rejects.toThrow(/hash|canonical|envelope|allowlist/u);
-    expect(calls).toEqual(["15:42"]);
+    expect(calls).toEqual(["15:42", "15:42"]);
     expect(stateSnapshot(root)).toEqual(beforeTamper);
   }, 180_000);
 
@@ -4492,7 +4531,7 @@ describe("exact allowlisted problem manual adjudication", () => {
       replacementHash: canonicalEvidenceHash(sourceRevisionSpec.replacement),
       triggerHash: canonicalEvidenceHash(sourceRevisionSpec.terminalTrigger),
     }).toEqual({
-      allowlistHash: "4f75f209838d3ba3e04751565a4086887d1f7b3c1ac915cb8f42daa9c7685089",
+      allowlistHash: "a1b5386353baef9b7b16df3f869638d792d3e9d2581983c6fc5bc892b3679b6d",
       rowHash: "99ec8e696ea73ba0c61d31df0df9f657bcb29e62fa6ff43e8db1389542e821aa",
       replacementHash: "b0751915ae3df15620b51fcbccf08d95e0b29abb6edc28c8ae68333a4bbbe90a",
       triggerHash: "240e0e1d3617c2d0de839ea55687ed7efb658037c62d4608f934c3426cfd4704",
