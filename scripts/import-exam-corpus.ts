@@ -4420,6 +4420,43 @@ const Q20_5577054_FAILED_QUESTION =
   "너무 낮은 수준으로 매기면 수입이 줄어들기 때문이다.”";
 const Q20_5577054_CORRECTED_QUESTION =
   `${Q16_20_5577054_PASSAGE}\n\n20. ⓐ와 바꿔 쓰기에 적절한 것은?`;
+const Q16_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "[16~20] 다음을 읽고 물음에 답하시오.",
+  to: "[16 ~ 20] 다음을 읽고 물음에 답하시오.",
+  count: 1,
+}, {
+  field: "question",
+  from: "\n\nⓑ 이부가격설정은",
+  to: "\n\n㉡ 이부가격설정은",
+  count: 1,
+}, {
+  field: "question",
+  from: "\n\n윗글을 읽고 답할 수 있는 질문이 아닌 것은?",
+  to: "\n\n16. 윗글을 읽고 답할 수 있는 질문이 아닌 것은?",
+  count: 1,
+}];
+const Q19_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "다음 글을 읽고 물음에 답하시오.",
+  to: "[16 ~ 20] 다음을 읽고 물음에 답하시오.",
+  count: 1,
+}, {
+  field: "question",
+  from: "$βP_mAB$",
+  to: "$\\beta P_mAB$",
+  count: 1,
+}, {
+  field: "question",
+  from: "$P_mAα$",
+  to: "$P_m\\alpha A$",
+  count: 1,
+}, {
+  field: "question",
+  from: "\n\n㉡을 이해한 내용으로 가장 적절한 것은?",
+  to: "\n\n19. ㉡을 이해한 내용으로 가장 적절한 것은?",
+  count: 1,
+}];
 const Q16_20_5577054_FIGURE_DESCRIPTION =
   "공식 6쪽 왼쪽의 <그림>은 가격-생산량 그래프이다. 세로축은 ‘가격’, 가로축은 ‘생산량’이며 원점은 " +
   "O이다. 세로축 위쪽 점은 α, 아래쪽 점은 β이다. α에서 오른쪽 아래로 내려가는 ‘수요’ 곡선과 더 " +
@@ -8305,6 +8342,67 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
       count: 1,
     }],
     expectedDecision: "reject",
+  },
+  {
+    allowlistId: "ebsi-5577054-q16-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "6:16",
+    sourcePage: 6,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "06f19ef8cf027fae08a38c6858fa9525ce038e48826e350eb03262d2f21ece7a",
+    dpi: 600,
+    failedStatus: "exact",
+    failedQuestionHash: "8baee65aefc18b67fe9c9ba1cb3aa2420fc28a97fe3d51a2d76aa3b56e53b654",
+    failedClassificationHash: "e88101d172cfc6b80b58e113ba070287d1cf79969e3d327df6e522b53b5f2873",
+    failedClassificationEvidenceHash: "ead16eb3f238218f31971f467579812941c2ce878ae51ca841de51a42428f786",
+    views: [
+      { sourcePage: 5, label: "p5 full and Q16-Q20 passage start", rect: [0, 0, 1, 1] },
+      { sourcePage: 6, label: "p6 full passage, graph, and Q16-Q20", rect: [0, 0, 1, 1] },
+      { sourcePage: 6, label: "p6 left shared graph and Q16", rect: [0.07, 0.08, 0.50, 0.98] },
+    ],
+    requiredTokens: [
+      "[16 ~ 20] 다음을 읽고 물음에 답하시오.", "㉡ 이부가격설정은",
+      "삼각형 $P_m\\alpha A$", "16. 윗글을 읽고 답할 수 있는 질문이 아닌 것은?",
+      "④ 생산자 잉여는 어떤 경우에 소비자에게 혜택이 되는가?",
+      "세로축 위쪽 점은 α, 아래쪽 점은 β", "Q_m·Q_c에는 수직 점선",
+    ],
+    replacements: Q16_5577054_SOURCE_EXACT_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q16_20_5577054_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5577054-q19-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "6:19",
+    sourcePage: 6,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "e83f95fb242f711b0da4cd1cb0b0f57fcb29dc46e40e73abe20ecd7de78ba4de",
+    dpi: 600,
+    failedStatus: "exact",
+    failedQuestionHash: "f80153dfc13f6c57a866f4fddf1cb7c31326f602a8ab0da573608f69fec8a813",
+    failedClassificationHash: "f1cf6ffb0a70d8cbba3c15474c62a81fffe5115f63a95a6cd99139421bb5c3db",
+    failedClassificationEvidenceHash: "4dbf84154137153e7d830d203ee7da17a99988455cdaf3976dd0ba646394a913",
+    views: [
+      { sourcePage: 5, label: "p5 full and Q16-Q20 passage start", rect: [0, 0, 1, 1] },
+      { sourcePage: 6, label: "p6 full passage, graph, and Q16-Q20", rect: [0, 0, 1, 1] },
+      { sourcePage: 6, label: "p6 right Q19 stem and choices", rect: [0.50, 0.70, 0.95, 0.93] },
+    ],
+    requiredTokens: [
+      "[16 ~ 20] 다음을 읽고 물음에 답하시오.", "㉡ 이부가격설정은",
+      "사다리꼴 $\\beta P_mAB$", "삼각형 $P_m\\alpha A$",
+      "19. ㉡을 이해한 내용으로 가장 적절한 것은?",
+      "① 생산량이 늘어나 사회 전체로는 총잉여가 증가하는 것이겠군.",
+      "세로축 위쪽 점은 α, 아래쪽 점은 β", "Q_m·Q_c에는 수직 점선",
+    ],
+    replacements: Q19_5577054_SOURCE_EXACT_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q16_20_5577054_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
   },
 ] as const;
 
