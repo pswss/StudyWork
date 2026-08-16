@@ -21923,6 +21923,11 @@ function is5577054Q33Q34ManualBatchSpec(spec: ProblemManualAdjudicationSpec): bo
   return spec.entryId === "ebsi:5577054" && ["12:33", "12:34"].includes(spec.key);
 }
 
+function is5577054Q24Q29ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5577054" &&
+    ["9:24", "9:25", "9:26", "10:27", "10:28", "10:29"].includes(spec.key);
+}
+
 function is5577054Q44Q45ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5577054" && ["16:44", "16:45"].includes(spec.key);
 }
@@ -21955,8 +21960,8 @@ export function isPersistedManualHydrationSpec(spec: ProblemManualAdjudicationSp
   return is5578421PersistedSingletonManualSpec(spec) ||
     is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q31Q32ManualBatchSpec(spec) ||
     is5578421Q33Q34ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec) ||
-    is5577054Q33Q34ManualBatchSpec(spec) || is5577054Q43ManualGenerationSpec(spec) ||
-    is5577054Q44Q45ManualBatchSpec(spec);
+    is5577054Q24Q29ManualBatchSpec(spec) || is5577054Q33Q34ManualBatchSpec(spec) ||
+    is5577054Q43ManualGenerationSpec(spec) || is5577054Q44Q45ManualBatchSpec(spec);
 }
 
 function isQ37ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
@@ -22006,7 +22011,8 @@ async function restoredPinnedManualRecovery(
     "manual batch classification recovery",
     (name) => /^v\d+-\d{4}-\d{4}-[a-f0-9]{64}-[a-f0-9]{16}\.json$/u.test(name)
   ).filter((name) => keyPattern.test(name));
-  const allowSupersededGenerations = spec.entryId === "ebsi:5578421";
+  const allowSupersededGenerations = spec.entryId === "ebsi:5578421" ||
+    (spec.entryId === "ebsi:5577054" && isPersistedManualHydrationSpec(spec));
   const matchingProblemNames = allowSupersededGenerations
     ? problemNames.filter((name) => {
       const checkpoint = object(JSON.parse(readFileSync(confinedStateFile(
@@ -22376,6 +22382,8 @@ async function preflightProblemManualBatch(
     ? is5578421Q6Q7ManualBatchSpec
     : is5578421Q33Q34ManualBatchSpec(requestedSpec)
     ? is5578421Q33Q34ManualBatchSpec
+    : is5577054Q24Q29ManualBatchSpec(requestedSpec)
+    ? is5577054Q24Q29ManualBatchSpec
     : is5577054Q33Q34ManualBatchSpec(requestedSpec)
     ? is5577054Q33Q34ManualBatchSpec
     : is5577054Q44Q45ManualBatchSpec(requestedSpec)
@@ -22404,15 +22412,17 @@ async function preflightProblemManualBatch(
                       ? isQ39ManualBatchSpec
                       : null;
   if (!predicate) return;
-  const expectedCount = predicate === is5578421Q19Q20Q21ManualBatchSpec ||
+  const expectedCount = predicate === is5577054Q24Q29ManualBatchSpec
+    ? 6
+    : predicate === is5578421Q19Q20Q21ManualBatchSpec ||
       predicate === isQ43To45ManualBatchSpec || predicate === isQ23Q28Q29ManualBatchSpec
-    ? 3
-    : predicate === isQ38Q40Q41Q42ManualBatchSpec
-      ? 4
-      : predicate === isQ30ManualBatchSpec || predicate === isQ37ManualBatchSpec ||
-          predicate === isQ39ManualBatchSpec
-        ? 1
-        : 2;
+      ? 3
+      : predicate === isQ38Q40Q41Q42ManualBatchSpec
+        ? 4
+        : predicate === isQ30ManualBatchSpec || predicate === isQ37ManualBatchSpec ||
+            predicate === isQ39ManualBatchSpec
+          ? 1
+          : 2;
   const specs = PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.filter(predicate);
   if (
     specs.length !== expectedCount || problem.sha256 !== specs[0].sourceHash ||
@@ -28628,6 +28638,11 @@ export async function repairAndAuditOfficialAnswers(
       manualNames.push(readdirSync(path));
     }
     for (const group of [{
+      predicate: is5577054Q24Q29ManualBatchSpec,
+      signal: /^v\d+-(?:0009-002[4-6]|0010-002[7-9])(?:-|\.)/u,
+      label: "Q24-Q29",
+      expectedCount: 6,
+    }, {
       predicate: is5577054Q33Q34ManualBatchSpec,
       signal: /^v\d+-0012-003[34](?:-|\.)/u,
       label: "Q33-Q34",
@@ -28705,8 +28720,8 @@ export async function repairAndAuditOfficialAnswers(
     const allowSupersededBase = spec.key === "12:30" ||
       is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q31Q32ManualBatchSpec(spec) ||
       is5578421Q33Q34ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec) ||
-      is5577054Q33Q34ManualBatchSpec(spec) || is5577054Q43ManualGenerationSpec(spec) ||
-      is5577054Q44Q45ManualBatchSpec(spec);
+      is5577054Q24Q29ManualBatchSpec(spec) || is5577054Q33Q34ManualBatchSpec(spec) ||
+      is5577054Q43ManualGenerationSpec(spec) || is5577054Q44Q45ManualBatchSpec(spec);
     if (currentRepair && !allowSupersededBase && (
       currentRepair.revision ||
       canonicalEvidenceHash(currentRepair) !== canonicalEvidenceHash(pinnedBase.evidence)

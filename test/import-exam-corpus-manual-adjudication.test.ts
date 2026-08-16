@@ -3855,15 +3855,33 @@ describe("exact allowlisted problem manual adjudication", () => {
   }, 180_000);
 
   it.skipIf(!existsSync(join(q43LiveState5577054, "problem.pdf")))(
-    "hydrates the persisted 5577054 Q33-Q34 and Q43-Q45 generations before later work",
+    "hydrates the persisted 5577054 Q24-Q29, Q33-Q34, and Q43-Q45 generations before later work",
     async () => {
     root = mkdtempSync(join(tmpdir(), "studywork-5577054-cross-entry-hydration-"));
     cpSync(q43LiveState5577054, root, { recursive: true });
     providerMock.complete.mockImplementation(async (request: { schema?: { name?: string }; prompt: string }) => {
-      expect(request.schema?.name).toBe("studywork_exam_corpus_classification");
-      const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{ key: string }>;
-      const persistedKeys = new Set(["12:33", "12:34", "16:43", "16:44", "16:45"]);
-      expect(items.map((item) => item.key).filter((key) => persistedKeys.has(key))).toEqual([]);
+      const persistedKeys = new Set([
+        "9:24", "9:25", "9:26", "10:27", "10:28", "10:29",
+        "12:33", "12:34", "16:43", "16:44", "16:45",
+      ]);
+      if (request.schema?.name === "studywork_exam_corpus_classification") {
+        const items = JSON.parse(request.prompt.split("Questions:\n")[1]) as Array<{ key: string }>;
+        expect(items.map((item) => item.key).filter((key) => persistedKeys.has(key))).toEqual([]);
+      } else {
+        expect(request.schema?.name).toBe("studywork_exam_corpus_problem_terminal_fidelity");
+        const items = JSON.parse(request.prompt.split("Final questions:\n")[1]) as Array<{
+          key: string;
+          question: string;
+          choices: string[] | null;
+        }>;
+        const item = (key: string) => items.find((candidate) => candidate.key === key)!;
+        const passage = (key: string, number: number) =>
+          item(key).question.slice(0, item(key).question.indexOf(`\n\n${number}. `));
+        expect(passage("9:24", 24)).toBe(passage("10:29", 29));
+        expect(item("9:24").question).toContain("㉮ <인상: 해돋이>");
+        expect(item("10:27").question).toContain("감법 혼합의 원리는");
+        expect(item("10:29").choices).toContain("③ ㉢ : 일정한 한도를 넘지 못하게 막음.");
+      }
       throw new Error("seeded 5577054 boundary after cross-entry preflight");
     });
     const input = q27FixtureInputs(root);
