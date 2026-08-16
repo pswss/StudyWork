@@ -10285,6 +10285,12 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedItemHash: "f179ed25251e3df847f19eefaf4a0540c241de850f681a96b10206d27bf528df",
   failedEvidenceHash: "151b97b11b42a356a0a6a5de8191b8d93b71bf672d87e1dac7160272da26d635",
   failedScopeEvidenceHash: "1b020077359e6a20ede8e58acc8bb8a5b21f8bc762f541a96a2b377a39d31121",
+  pinnedAdjudicationArtifact: {
+    path: "problem-terminal-fidelity-adjudications/" +
+      "v1-0013-0035-397669c2c78a8c65f57a8cb8936cba8b140d34a4c0307320a54b27d68b8f6f3d.json",
+    sha256: "7badb4886e5e0370309929bdf67334aabe3b9920fd78afcf5501f41443b8520f",
+    itemHash: "a82fb2f397ccb04d87e81967573f8ef6609ddbf8934a2e63076a8243371146aa",
+  },
 }, {
   allowlistId: "ebsi-5577054-q36-terminal-fidelity-v2",
   parentKind: "manual",
@@ -10313,6 +10319,12 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedItemHash: "6e87cb4a27c8d9d3d7fc313e82b6c293daea4f8256abe30576d33dcc880d2dbb",
   failedEvidenceHash: "1d01a4287645f0dea1b7275a841f240eeb7d40c9f6deffd1c7d4daf90cefc113",
   failedScopeEvidenceHash: "c7e5ee8470ecec7f2dc421ef39237458aae4da1c02fdc329eaab53b29712830a",
+  pinnedAdjudicationArtifact: {
+    path: "problem-terminal-fidelity-adjudications/" +
+      "v1-0013-0036-facdbcdf421534c52cde144896b03b600c0267415247430a77c7d641c2a214c5.json",
+    sha256: "ab7eecbf48dd98322fadd2139cb4ea77ace5925b851e62aaa162259201204e48",
+    itemHash: "5233427e89a22e53760cbec5970da60286a80fbb0a6a9e235fef163191ddb883",
+  },
 }] as const;
 
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(
