@@ -3400,6 +3400,58 @@ const Q28_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [{
   count: 1,
 }];
 
+const Q29_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "다음 글을 읽고 물음에 답하시오.",
+  to: "[24~29] 다음을 읽고 물음에 답하시오.",
+  count: 1,
+}, {
+  field: "question",
+  from: "까닭은 무엇일까?\n\n색은",
+  to: "까닭은 무엇일까?\n\n<그림 1>　<그림 2>\n\n색은",
+  count: 1,
+}, {
+  field: "question", from: "㉠시도", to: "㉠ 시도", count: 1,
+}, {
+  field: "question", from: "㉡방출", to: "㉡ 방출", count: 1,
+}, {
+  field: "question",
+  from: "이를 수식화하면 $S(\\text{색})=rR+gG+bB$로",
+  to: "이를 수식화하면 ‘$S(\\text{색})=rR+gG+bB$’로",
+  count: 1,
+}, {
+  field: "question", from: "㉢조절", to: "㉢ 조절", count: 1,
+}, {
+  field: "question",
+  from: "색에 대한 정보는 <그림 3>",
+  to: "색에 대한 다양한 정보는 <그림 3>",
+  count: 1,
+}, {
+  field: "question", from: "㉣예측", to: "㉣ 예측", count: 1,
+}, {
+  field: "question", from: "채도는 낮아지고", to: "채도가 낮아지고", count: 1,
+}, {
+  field: "question",
+  from: "\n\n감법 혼합의 원리는",
+  to: "\n\n<그림 3>\n\n감법 혼합의 원리는",
+  count: 1,
+}, {
+  field: "question", from: "㉮<인상·해돋이>", to: "㉮ <인상: 해돋이>", count: 1,
+}, {
+  field: "question", from: "㉤인접한", to: "㉤ 인접한", count: 1,
+}, {
+  field: "question", from: "㉯<우물가의 여인들>", to: "㉯ <우물가의 여인들>", count: 1,
+}, {
+  field: "question",
+  from: "\n\n㉠~㉤의 사전적 의미",
+  to: "\n\n29. ㉠ ~ ㉤의 사전적 의미",
+  count: 1,
+}, {
+  field: "choices", from: ":", to: " :", count: 5,
+}, {
+  field: "answer", from: ":", to: " :", count: 1,
+}];
+
 
 
 
@@ -6022,6 +6074,38 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     replacements: Q28_5577054_SOURCE_EXACT_REPLACEMENTS,
     figure: true,
     figureDescription: Q28_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5577054-q29-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "10:29",
+    sourcePage: 10,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "447593a3f9828e60ab2193ac5fdff82b5b2270feab312d6e1e5090032260e2bc",
+    dpi: 600,
+    failedQuestionHash: "4014a3df45e0f292445442d5bddbaf663daf137879f30af5f04a37111d58bb97",
+    failedClassificationHash: "6f53b89fb4c87ac3d6e1fcf9a97bd667d15694d33152ed2559f5128f7278cc81",
+    failedClassificationEvidenceHash: "2b1b67db4a4c40eeeb3a0e759b2218083fa5ed9dae98662861e25929a20f6ce1",
+    views: [
+      { sourcePage: 8, label: "p8 full Q24-Q29 shared passage start", rect: [0, 0, 1, 1] },
+      { sourcePage: 8, label: "p8 right passage and figures 1-3", rect: [0.50, 0.08, 0.95, 0.98] },
+      { sourcePage: 9, label: "p9 full Q24-Q29 passage continuation", rect: [0, 0, 1, 1] },
+      { sourcePage: 10, label: "p10 full Q27-Q29 and next passage", rect: [0, 0, 1, 1] },
+      { sourcePage: 10, label: "p10 left Q29 stem and choices", rect: [0.07, 0.82, 0.50, 0.98] },
+    ],
+    requiredTokens: [
+      "[24~29] 다음을 읽고 물음에 답하시오.", "<그림 1>　<그림 2>", "<그림 3>",
+      "‘$S(\\text{색})=rR+gG+bB$’", "㉮ <인상: 해돋이>", "㉯ <우물가의 여인들>",
+      "색 삼각형의 격자는 0.05 간격", "초록 비율 0.6 눈금", "빨강 비율 0.8 눈금",
+      "29. ㉠ ~ ㉤의 사전적 의미로 적절하지 않은 것은?",
+      "③ ㉢ : 일정한 한도를 넘지 못하게 막음.",
+    ],
+    replacements: Q29_5577054_SOURCE_EXACT_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V3,
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_reading",
   },
