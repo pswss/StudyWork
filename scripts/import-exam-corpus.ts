@@ -4982,6 +4982,43 @@ const Q36_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [{
   count: 1,
 }];
 
+const Q18_5577054_FAILED_SHARED_FIGURE_DESCRIPTION =
+  "공유 지문의 <그림>은 세로축이 ‘가격’, 가로축이 ‘생산량’인 좌표 그래프이다. 원점은 O이고, " +
+  "세로축에는 아래에서 위로 $P_c$, $P_m$, a가, 가로축에는 왼쪽부터 $Q_m$, $Q_c$가 표시되어 있다. " +
+  "a에서 오른쪽 아래로 향하는 ‘수요’ 직선이 점 A와 C를 지나며, β에서 오른쪽 위로 향하는 ‘한계 비용’ " +
+  "직선이 점 B와 C를 지난다. a에서 오른쪽 아래로 더 가파르게 향하는 ‘한계 수입’ 직선은 점 B를 지난다. " +
+  "점 A와 B는 $Q_m$에 대응하고, 점 C는 $Q_c$와 $P_c$에 대응한다. $P_m$에서 A까지와 $P_c$에서 " +
+  "C까지 수평 점선이 있으며, $Q_m$에서 A까지와 $Q_c$에서 C까지 수직 점선이 있다.";
+
+const Q18_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [{
+  field: "question",
+  from: "[16~20] 다음 글을 읽고 물음에 답하시오.",
+  to: "[16 ~ 20] 다음을 읽고 물음에 답하시오.",
+  count: 1,
+}, {
+  field: "question",
+  from: "소비자에게, 생산자에게 혜택이 될 수 있다.",
+  to: "소비자 잉여는 소비자에게, 생산자 잉여는 생산자에게 혜택이 될 수 있다.",
+  count: 1,
+}, {
+  field: "question", from: "$P_maA$", to: "$P_m\\alpha A$", count: 1,
+}, {
+  field: "question",
+  from: "상품의 생산량이 적기 때문에 소비자는",
+  to: "상품의 생산량이 적고 가격은 높다. 따라서 소비자는",
+  count: 1,
+}, {
+  field: "figure_description",
+  from: Q18_5577054_FAILED_SHARED_FIGURE_DESCRIPTION,
+  to: Q16_20_5577054_FIGURE_DESCRIPTION_REVISION,
+  count: 1,
+}, {
+  field: "figure_description",
+  from: "$Q_1$ 위치에도 가로축에서 P 높이까지 수직 점선이 있다.",
+  to: "$Q_1$ 위치에도 가로축에서 수요 직선까지 수직 점선이 있다.",
+  count: 1,
+}];
+
 
 
 
@@ -7697,6 +7734,37 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
       "어떤 인류학자는 생물학자가 아니다.",
     ],
     replacements: Q36_5577054_SOURCE_EXACT_REPLACEMENTS,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5577054-q18-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "6:18",
+    sourcePage: 6,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "ed98ba5f4376b7686d629f8bb95e9a4277b315303262e23edad7afecbf9d4c46",
+    dpi: 600,
+    failedQuestionHash: "e4b27539f28a8bfb3f081d81cc85f81ff01e1c2b0d81e0d657b1674c699c5dbf",
+    failedClassificationHash: "8ed47268024ffae4f6e458ccda82a57e7339b7d8230afba0a1bdc7c5443c3bf7",
+    failedClassificationEvidenceHash: "26a6eec3fc995cd89fc64846eb5c59300a00f2a0442d080203cdd3a6d42724c2",
+    views: [
+      { sourcePage: 5, label: "p5 full Q16-Q20 shared passage start", rect: [0, 0, 1, 1] },
+      { sourcePage: 5, label: "p5 right Q16-Q20 passage start", rect: [0.50, 0.72, 0.95, 0.98] },
+      { sourcePage: 6, label: "p6 full Q16-Q20 passage and questions", rect: [0, 0, 1, 1] },
+      { sourcePage: 6, label: "p6 left shared passage and graph", rect: [0.07, 0.08, 0.50, 0.86] },
+      { sourcePage: 6, label: "p6 right Q18 graph and choices", rect: [0.50, 0.27, 0.95, 0.74] },
+    ],
+    requiredTokens: [
+      "[16 ~ 20] 다음을 읽고 물음에 답하시오.",
+      "소비자 잉여는 소비자에게, 생산자 잉여는 생산자에게 혜택이 될 수 있다.",
+      "삼각형 $P_m\\alpha A$", "상품의 생산량이 적고 가격은 높다. 따라서 소비자는",
+      "18. 윗글을 바탕으로 <보기>를 이해한 내용으로 적절하지 않은 것은? [3점]",
+      "A, B, C 세 점은 각각 내부가 흰 속 빈 원(○)",
+      "$Q_1$ 위치에도 가로축에서 수요 직선까지 수직 점선",
+    ],
+    replacements: Q18_5577054_SOURCE_EXACT_REPLACEMENTS,
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_reading",
   },
