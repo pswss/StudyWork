@@ -10129,6 +10129,34 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
       itemHash: "486104af6c841263dbbd06a17af7494657ea421bd1eec23722e0234bc7c24cfd",
     },
   },
+}, {
+  allowlistId: "ebsi-5577054-q35-terminal-fidelity-v1",
+  parentKind: "manual",
+  parentManualAllowlistId: "ebsi-5577054-q35-source-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "13:35",
+  sourcePage: 13,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  solutionSourceHash: "2abfea3ad57f76b754720050839da1698222201359f290054d3c5564d3121f8a",
+  parentQuestionHash: "9b83c044ec4160049b0a9a30a67cd51255b61e23982a297f06a2308a121bb00e",
+  parentClassificationHash: "a4c2545766cf2561bc6c8cad83e959e69dbfa93d7aea636a930becd4041c233f",
+  parentProblemArtifactPath: "problem-manual-adjudications/" +
+    "v1-0013-0035-321727ab8e01323b4b02aac10bd23cbb06d777b5195378888df9da26758ca127.json",
+  parentProblemArtifactHash: "66755a9ca660e515cb84a2a2f0efcdcdb10d9809e49e24cbdedd27f5ceb93457",
+  parentClassificationArtifactPath: "classification-manual-adjudications/" +
+    "v1-0013-0035-fa2bcbbf8341c7232099efc29d75ecfeb553b8ce5f5563ea0f60811aa90a3345-" +
+    "7bb7cb863c8c4855.json",
+  parentClassificationArtifactHash: "97886ba46fc85d87fafb1db95e2564c75724a1fb54458213079c9b730ff95221",
+  failedTerminalPath: "problem-terminal-fidelity/" +
+    "v2-0000-1b48b90c19b9ae250508aef66e6c9f8eb8878983086434a314b69242cc34eb81-" +
+    "4cb3befe97f26283548e95994bf2ccd140dfc93e7b3356e00014afdd014d29b5.json",
+  failedTerminalArtifactHash: "4ace502426882605be2005e4ed9e40f36a4b467aebaef6a27b4fc8a60ea15b40",
+  failedEffectiveCorpusHash: "1b48b90c19b9ae250508aef66e6c9f8eb8878983086434a314b69242cc34eb81",
+  failedInputHash: "4cb3befe97f26283548e95994bf2ccd140dfc93e7b3356e00014afdd014d29b5",
+  failedTerminalInputHash: "5ac8f0f85c39fc568602c6e173efb5b09672c30501a4f949f1e2193924e8ba88",
+  failedItemHash: "bf72e1414fcd8435096e0ff864a308f1b14f2f3359ab5133153e8c7003b60164",
+  failedEvidenceHash: "737d7d8cd1abc7470a4ae25af82f1c17c36a6f1e676cb2616e9feef2aea64e87",
+  failedScopeEvidenceHash: "65c94f8b8a4184772b11d97d45c2dd9f4c02ed91446afd62bc01c3fd021fc403",
 }] as const;
 
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(
