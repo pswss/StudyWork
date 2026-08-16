@@ -4794,8 +4794,8 @@ const Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V2 =
   Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION +
   " 격자에서 ⓐ의 중심은 약 (0.4, 0.5), ⓑ의 중심은 약 (0.15, 0.8), ⓒ의 중심은 약 " +
   "(0.75, 0.2)에 있다. 작은 흰 원은 세로축 위의 (0, 0.6), 삼각형 내부의 약 (0.3, 0.3), " +
-  "아래 빗변 부근의 약 (0.8, 0.05)에 있다. ⓐ·ⓑ·ⓒ 원과 작은 흰 원 사이를 잇는 별도의 " +
-  "연결선은 그려져 있지 않다.";
+  "아래 빗변 부근의 약 (0.8, 0.05)에 있다. ⓐ 원은 내부의 작은 흰 원, ⓑ 원은 세로축 위의 " +
+  "흰 원, ⓒ 원은 아래 빗변 부근의 흰 원과 각각 가는 선 하나로 연결되어 있다.";
 
 const Q26_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION =
   Q24_29_5577054_SOURCE_EXACT_FIGURE_DESCRIPTION_V2 +
@@ -7763,7 +7763,7 @@ export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSp
     "ⓐ의 중심은 약 (0.4, 0.5)", "ⓑ의 중심은 약 (0.15, 0.8)",
     "ⓒ의 중심은 약 (0.75, 0.2)", "세로축 위의 (0, 0.6)",
     "삼각형 내부의 약 (0.3, 0.3)", "아래 빗변 부근의 약 (0.8, 0.05)",
-    "별도의 연결선은 그려져 있지 않다", "24. 윗글에 대한 설명으로 가장 적절한 것은?",
+    "각각 가는 선 하나로 연결되어 있다", "24. 윗글에 대한 설명으로 가장 적절한 것은?",
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_reading",
