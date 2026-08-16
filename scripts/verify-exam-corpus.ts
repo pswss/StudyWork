@@ -3683,6 +3683,10 @@ const Q37_42_5577054_NA_SOURCE_EXACT = `(나)
 * 주궁패궐: 진주나 조개 따위의 보석으로 호화찬란하게 꾸민 궁궐.
 * 하수하고자: 손을 대어 죽이고자.`;
 
+const Q37_42_5577054_GA_SOURCE_EXACT = "[37 ~ 42] 다음을 읽고 물음에 답하시오.\n\n(가)\n고전 소설에 널리 이용되어 온 ‘기이성(奇異性)’은 새롭고 낯선 것에서 느껴지는 성질로서, 당대 독자들의 호기심을 자극해 왔다. 기이성은 다양한 요소를 통해 형성되는데, 그중에서 가장 중요한 것이 비현실성이다. 비현실성은 현실에서는 도저히 일어날 수 없는 일이라고 여겨지는 초경험적이고 환상적인 것이기 때문에 기이성을 형성하는 데 아주 효과적이다. 또한 인물의 극단적인 성격이나 사건의 극적인 전개도 기이성을 형성하는 데 중요한 요소가 된다. 고전 소설에서는 아름다움, 추함, 선함, 악함, 효심, 충성심 등과 같은 인물의 성격이 극단적으로 나타나는 경우가 많으며, 또한 헤어짐에서 만남으로, 가난에서 부귀로, 위험에서 평온으로 등과 같이 사건의 전개가 극적으로 이루어지는 경우도 흔히 나타난다. 이외에 다른 나라를 배경으로 삼음으로써 나타나게 되는 이국정취 등도 기이성 형성의 한 요소가 된다. 이러한 요소들은 작품에서 복합적으로 작용하면서 기이성을 형성한다.\n\n그런데 이러한 기이성도 소설의 역사적인 발전 단계에 따라 구현되는 양상이 달라지는데, 비현실성이 이러한 변화에 가장 큰 영향을 미쳤다. 아직도 설화의 흔적이 남아 있던 17세기의 소설에서는 비현실성이 많이 나타났다. 대부분의 불교계 국문 소설과 전기 소설 등이 여기에 해당하는데, 현실의 논리 같은 것은 크게 고려하지 않았으며 초현실적 존재가 현실계나 환상계에서 활약하는 것을 극대화하여 독자의 호기심을 자극하였다. 전기 소설의 하나인 ｢ 금령전 ｣에 이러한 특징이 잘 나타난다.\n\n하지만 18세기에 이르면, 합리적 사고와 사회의식이 성장하면서 초기 소설이 가지고 있던 비현실성은 점차 희석되고 현실성의 비중이 높아진다. 그리고 비현실성과 현실성이 유기적으로 결합하면서 이원적인 세계관을 형성하게 된다. 경험 세계인 현실계와 초경험 세계인 환상계가 개별적인 독립성과 함께 상호 유기성을 갖는 공간으로 설정된 것이다. 이를 통해 현실계에서 일어나는 비현실성의 근거를 환상계에 귀속시킴으로써 독자들이 큰 저항 없이 비현실성을 수용할 수 있었다. 이 시기의 적강형 영웅 소설 등이 대표적인 예라고 할 수 있다.\n\n한편 19세기에 접어들면서 민중적인 가치를 담아 발전해 간 판소리계 소설은 현실적인 요소를 확대하였다. 하지만 ｢ 흥부전 ｣, ｢ 심청전 ｣ 등을 통해 알 수 있듯이, 인물의 극단적인 성격과 사건의 극적인 전개 등은 여전히 기이성 형성에 중요한 역할을 하였다. 또한 ㉠ 환상계가 현실계에 영향력을 미칠 수 있는 위계질서를 갖추게 됨으로써, 환상계의 질서에 귀속되는 비현실성이 사건의 극적인 전개에 중요한 장치로 작용하는 경우도 많았다.";
+
+const Q37_42_5577054_DA_SOURCE_EXACT = "(다)\n하루는 옥황상제께서 사해용왕에게 말씀을 전하시기를,\n[B]\n“심 소저 혼약할 기한이 가까우니, 인당수로 돌려보내어 좋은 때를 잃지 말게 하라.”\n분부가 지엄하시니 사해용왕이 명을 듣고 심 소저를 보내실 제, 큰 꽃송이에 넣고 두 시녀를 곁에서 모시게 하여 아침저녁 먹을 것과 비단 보배를 많이 넣고 옥 화분에 고이 담아 인당수로 보내었다. 이때 사해용왕이 친히 나와 전송하고 각궁 시녀와 여덟 선녀가 여쭙기를,\n“소저는 인간 세상에 나아가서 부귀와 영광으로 만만세를 즐기소서.”\n소저 대답하기를,\n“여러 왕의 덕을 입어 죽을 몸이 다시 살아 세상에 나가오니 은혜를 잊을 수가 없습니다. 모든 시녀들과도 정이 깊어 떠나기 섭섭하오나 이승과 저승의 길이 다르기에 이별하고 가기는 하지마는 수궁의 귀하신 몸 내내 평안하옵소서.”\n하직하고 돌아서니, 순식간에 꿈같이 인당수에 번듯 떠서 뚜렷이 수면을 영롱케 하니 천신의 조화요 용왕의 신령이었다.\nⓒ 바람이 분들 끄떡하며 비가 온들 떠내려 갈소냐. 오색 무지개가 꽃봉 속에 어리어 둥덩실 떠 있을 적에, 남경 갔던 뱃사람들이 억 십만 금 이문을 내어 고국으로 돌아오다가 인당수에 다다라서 배를 매고 제물을 깨끗이 차려 용왕에게 제를 지내면서 비는 말이,\n“우리 일행 수십 명 몸에 재액을 막아 주시고 소망을 뜻한 대로 이루어 주셔서 용왕님의 넓으신 덕택을 한 잔 술로 정성을 드리오니, 어여삐 보셔서 이 제물을 받아 주시옵소서.”\n하고 제를 올린 뒤에 제물을 다시 차려 심 소저의 혼을 불러 슬픈 말로 위로한다.\n“출천 효녀 심 소저는 늙으신 아버지 눈 뜨기를 위하여 젊은 나이에 죽기를 마다 않고 바닷속 외로운 혼이 되었으니 어찌 아니 가련하고 불쌍하리오. 우리 뱃사람들은 소저로 말미암아 장사에 이문을 내어 고국으로 돌아가지만 소저의 영혼이야 어느 날에 다시 돌아올까? 가다가 도화동에 들어가서 소저의 아버지 살았는가 여부를 알아보고 가오리다. 한 잔 술로 위로하니 만일 아시거든 영혼은 이를 받으소서.”\n제물을 풀고 눈물을 쏟고 나서, 한곳을 바라보니 한 송이 꽃봉이 너른 바다 가운데 둥덩실 떠 있으니 뱃사람들이 괴이히 여겨 저희들끼리 의논하기를,\n“아마도 심 소저의 영혼이 꽃이 되어 떴나 보다.”\n가까이 가서 보니 과연 심 소저가 빠졌던 곳이어서 마음이 감동하여 꽃을 건져 내어 놓고 보니, 크기가 수레바퀴처럼 생겼고 두세 사람이 넉넉히 앉을 만했다.\n\n(중략)\n\n하루는 천자께서 당나라의 옛일을 본받아 궁녀에게 명하시어 화청지에 목욕하시고 친히 달을 따라 화단을 배회하시는데, 밝은 달은 뜰에 가득하고 산들바람 부는 중에 문득 강선화 봉오리가 흔들리며 가만히 벌어지고 무슨 소리 나는 듯했다. 천자께서 몸을 숨겨 가만히 살펴보니 ⓓ 예쁜 용녀가 얼굴을 반만 들어 꽃봉 밖으로 반만 내다보더니, 사람 자취 있음을 보고 도로 헤치고 들어갔다. 천자께서 보시고 문득 몸과 마음이 황홀하시어 의아한 생각이 들어 아무리 서 있어도 다시는 기척이 없었다. 가까이 가서 꽃봉을 가만히 벌리고 보시니 한 처녀와 두 미인이 있기에 천자 반기며 물으시기를,\n“너희가 귀신이냐 사람이냐?”\n미인이 즉시 내려와 땅에 엎드려 여쭙기를,\n“소녀는 남해 용궁 시녀이온데 소저를 모시고 세상으로 나왔다가 황제의 모습을 뵈오니 극히 황공하옵니다.”\n하니 천자 마음속으로 생각하시기를, ‘상제께옵서 좋은 인연을 보내신 것이로구나. 하늘이 내리신 바를 받아들이지 않으면 이런 좋은 기회가 다시는 오지 않으리라.’ 하시고, ‘배필을 정하리라.’ 결심하시어 혼인을 하기로 작정하시고 태사관으로 하여금 날을 잡으라 하니 5월 5일 갑자일이었다. 소저를 황후로 봉하여 승상의 집으로 모신 뒤에 혼인날이 당하매 명하시기를,\n“이러한 일은 천만고에 없는 일이니 예의범절을 특별히 마련하도록 하라.”\n하시니 ⓔ 위엄이 이 세상에서 처음이요 천고에 더욱 없는 일이었다.\n\n- 작자 미상, ｢ 심청전 ｣ -";
+
 const Q39_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [
   { field: "question", from: "(가", to: "[37 ~ 42] 다음을 읽고 물음에 답하시오.\n\n(가", count: 1 },
   { field: "question", from: "\n\n고전", to: "\n고전", count: 1 },
@@ -3753,8 +3757,56 @@ const Q40_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [
   { field: "question", from: "심청전」 —", to: "심청전 ｣ -", count: 1 },
 ];
 
-
-
+const Q41_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [
+  { field: "question", from: "\n\n차설", to: "\n차설", count: 1 },
+  { field: "question", from: "가는데", to: "가는", count: 1 },
+  { field: "question", from: "한 곳에", to: "데 한 곳에", count: 1 },
+  { field: "question", from: "金鈴", to: "金鈴", count: 1 },
+  { field: "question", from: ")이 굴러", to: ")*이 굴러", count: 1 },
+  { field: "question", from: "바라보이며", to: "바라보이매", count: 1 },
+  { field: "question", from: "있는데", to: "있었는데", count: 1 },
+  { field: "question", from: "㉠", to: "ⓐ", count: 1 },
+  { field: "question", from: "바람 같은", to: "벽력같은", count: 1 },
+  { field: "question", from: "“그대는", to: "[A]\n“그대는", count: 1 },
+  { field: "question", from: "방황하는가", to: "방황하느냐", count: 1 },
+  { field: "question", from: " [A]", to: "", count: 1 },
+  { field: "question", from: ".\n해룡이", to: ".\n\n해룡이", count: 1 },
+  { field: "question", from: "대적하리오", to: "대적하리요", count: 1 },
+  { field: "question", from: "아니었다면", to: "아니었더라면", count: 1 },
+  { field: "question", from: "살아났으리오", to: "살아났으리요", count: 1 },
+  { field: "question", from: "옷자락을", to: "옷차림을", count: 1 },
+  { field: "question", from: "㉡", to: "ⓑ", count: 1 },
+  { field: "question", from: "버섯에", to: "비석에", count: 1 },
+  { field: "question", from: "글자로", to: "금자로", count: 1 },
+  { field: "question", from: "주궁패궐과", to: "주궁패궐*과", count: 1 },
+  { field: "question", from: "금선수호부", to: "금선수도부", count: 1 },
+  { field: "question", from: "앉다가", to: "앓다가", count: 1 },
+  { field: "question", from: "암돼지이거늘", to: "암퇘지이거늘", count: 1 },
+  { field: "question", from: "죽임이", to: "속임이", count: 1 },
+  { field: "question", from: "나와서", to: "나아와", count: 1 },
+  { field: "question", from: "살았나이다", to: "살았었습니다", count: 1 },
+  {
+    field: "question",
+    from: "— 작자 미상, 「금령전」 —",
+    to: "- 작자 미상, ｢ 금령전 ｣ -",
+    count: 1,
+  },
+  {
+    field: "question",
+    from: "(나)\n차설.",
+    to: `${Q37_42_5577054_GA_SOURCE_EXACT}\n\n(나)\n차설.`,
+    count: 1,
+  },
+  {
+    field: "question",
+    from: "* 하수하고자: 손을 대어 죽이고자.\n\n<보기>에서",
+    to: `* 하수하고자: 손을 대어 죽이고자.\n\n${Q37_42_5577054_DA_SOURCE_EXACT}\n\n41. <보기>에서`,
+    count: 1,
+  },
+  { field: "question", from: "요괴", to: "요귀", count: 4 },
+  { field: "choices", from: "요괴", to: "요귀", count: 4 },
+  { field: "answer", from: "요괴", to: "요귀", count: 1 },
+];
 
 const Q22_5577054_FAILED_CHOICE =
   "\u2464 \uc81c6\uc218\uc5d0\uc11c\ub294 \ubc14\uc704\uc758 \uc18d\uc131\uc5d0 \uc0ac\ub78c \ubaab\uc758 \uc18d\uc131\uc744 \ub354\ud574 \uc138\uc18d\uc744 \uc774\uc0c1\uc801 \uacf5\uac04\uc73c\ub85c \uc815\ud654\ud558\ub824\ub294 \uc758\uc9c0\ub97c \ub4dc\ub7ec\ub0b4\uace0 \uc788\uad70.";
@@ -3809,6 +3861,10 @@ const Q42_5577054_FIGURE_DESCRIPTION_REVISION =
   "(다)에는 같은 모양의 괄호 [B]가 ‘심 소저 혼약할 기한이 가까우니’부터 ‘좋은 때를 잃지 " +
   "말게 하라.’까지의 인용문만 감싼다. 두 괄호는 각각 오른쪽 세로선 하나와 왼쪽으로 뻗은 " +
   "위·아래 가로 캡으로 이루어지며 서로 겹치지 않는다.";
+
+const Q41_5577054_FIGURE_DESCRIPTION = Q42_5577054_FIGURE_DESCRIPTION_REVISION +
+  " 공식 15쪽 오른쪽 41번의 <보기>는 직사각형 테두리 안에 선생님 발화, (1)~(5) 사건 순서, " +
+  "추가 설명, 학생 응답의 빈 밑줄을 위에서 아래로 배치한다.";
 
 const Q38_5578421_REPLACEMENTS: readonly ProblemManualReplacement[] = [
   { field: "question", from: "(가)\n", to: "[37 ~ 42] 다음 글을 읽고 물음에 답하시오.\n\n(가)\n", count: 1 },
@@ -6628,6 +6684,39 @@ const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudicationS
     replacements: Q40_5577054_SOURCE_EXACT_REPLACEMENTS,
     figure: true,
     figureDescription: Q42_5577054_FIGURE_DESCRIPTION_REVISION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_literature",
+  },
+  {
+    allowlistId: "ebsi-5577054-q41-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "15:41",
+    sourcePage: 15,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "d21ae7fdcc887561105596d51b5ce1f30a4b30cc09f97fd590d83dc103770b9d",
+    dpi: 600,
+    failedQuestionHash: "5542b6b9ef062dd3b7a8e04f6ee69d126b8f77575eedb4921b4026a26d2135e3",
+    failedClassificationHash: "7dffb98114d991f3df268e7e6d4d94c12afebee5222354c236cf9455f9919aeb",
+    failedClassificationEvidenceHash: "a828c3d7d75c37b051e514d0053d691099e6e8008261705be6e7d1e456dd5e52",
+    views: [
+      { sourcePage: 13, label: "p13 full Q37-Q42 passage start and A bracket", rect: [0, 0, 1, 1] },
+      { sourcePage: 14, label: "p14 full Q37-Q42 passage and B bracket", rect: [0, 0, 1, 1] },
+      { sourcePage: 15, label: "p15 right Q41 stem, box, and choices", rect: [0.50, 0.08, 0.95, 0.74] },
+    ],
+    requiredTokens: [
+      "[37 ~ 42] 다음을 읽고 물음에 답하시오.", "금령(金鈴)*", "ⓐ 문득 벽력같은 소리",
+      "[A]\n“그대는 어찌 금령을 구하지 아니하고 저다지 방황하느냐?”", "ⓑ 홀연",
+      "(다)\n하루는 옥황상제께서", "[B]\n“심 소저 혼약할 기한이 가까우니",
+      "ⓒ 바람이 분들 끄떡하며", "ⓓ 예쁜 용녀", "ⓔ 위엄이",
+      "41. <보기>에서 선생님의 질문에 대한 학생의 대답으로 적절하지 않은 것은? [3점]",
+      "지하국에 사는 요귀가 공주들을 납치하자", "요귀의 약점인 비늘을 떼어내어",
+      "「금령전」도 이것을 잘 보여 주는 작품입니다.", "학생: (나)에서는",
+      "직사각형 테두리 안에 선생님 발화", "학생 응답의 빈 밑줄",
+    ],
+    replacements: Q41_5577054_SOURCE_EXACT_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q41_5577054_FIGURE_DESCRIPTION,
     expectedDecision: "accept",
     expectedCanonicalSubject: "korean_literature",
   },
