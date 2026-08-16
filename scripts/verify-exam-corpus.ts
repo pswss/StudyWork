@@ -3168,6 +3168,33 @@ const Q25_5577054_REPLACEMENTS: ProblemManualReplacement[] = [{
   field: "question", from: "또한 시냐크는", to: "또 시냐크는", count: 1,
 }];
 
+const Q25_5577054_FAILED_FIGURE_DESCRIPTION =
+  "공유 지문에는 세 개의 그림이 있다. <그림 1>은 색광의 가법 혼합을 나타낸 세 원의 벤 다이어그램이다. " +
+  "위쪽 원은 빨강, 왼쪽 아래 원은 파랑, 오른쪽 아래 원은 초록이며, 빨강과 파랑의 겹친 부분은 자홍, " +
+  "빨강과 초록의 겹친 부분은 노랑, 파랑과 초록의 겹친 부분은 청록, 세 원이 모두 겹친 중앙은 흰색으로 " +
+  "표시되어 있다. <그림 2>는 색료의 감법 혼합을 나타낸 세 원의 벤 다이어그램이다. 위쪽 원은 청록, " +
+  "왼쪽 아래 원은 노랑, 오른쪽 아래 원은 자홍이며, 청록과 노랑의 겹친 부분은 초록, 청록과 자홍의 겹친 " +
+  "부분은 파랑, 노랑과 자홍의 겹친 부분은 빨강, 세 원이 모두 겹친 중앙은 검정으로 표시되어 있다. " +
+  "<그림 3>은 가로축이 ‘빨강의 비율’, 세로축이 ‘초록의 비율’인 색 삼각형이다. 두 축은 0에서 1까지 " +
+  "표시되어 있고 격자가 그려져 있으며, 왼쪽 위의 (빨강 0, 초록 1) 지점과 오른쪽 아래의 (빨강 1, " +
+  "초록 0) 지점을 잇는 하강 대각선과 두 좌표축이 삼각형을 이룬다. 삼각형 내부에는 명암이 연속적으로 " +
+  "변하는 색 분포와 ⓐ, ⓑ, ⓒ로 표시된 지점들이 있으며, ⓐ는 중앙의 흰색 지점, ⓑ는 왼쪽 위쪽, ⓒ는 " +
+  "오른쪽 아래쪽에 표시되어 있다. 삼각형의 꼭짓점과 변 부근에는 혼합 관계를 나타내는 작은 원형 지점들도 " +
+  "표시되어 있다.";
+
+const Q24_29_5577054_FIGURE_DESCRIPTION =
+  "<그림 1>은 세 원이 겹치는 가법 혼합 그림이다. 위 원은 ‘빨강’, 왼쪽 아래 원은 ‘파랑’, 오른쪽 아래 " +
+  "원은 ‘초록’으로 표시되어 있다. 빨강과 파랑의 겹침은 ‘자홍’, 빨강과 초록의 겹침은 ‘노랑’, 파랑과 " +
+  "초록의 겹침은 ‘청록’, 세 원의 중앙 겹침은 ‘흰색’이다. <그림 2>는 세 원이 겹치는 감법 혼합 " +
+  "그림이다. 위 원은 ‘청록’, 왼쪽 아래 원은 ‘노랑’, 오른쪽 아래 원은 ‘자홍’으로 표시되어 있다. " +
+  "청록과 노랑의 겹침은 ‘초록’, 청록과 자홍의 겹침은 ‘파랑’, 노랑과 자홍의 겹침은 ‘빨강’, 세 원의 " +
+  "중앙 겹침은 ‘검정’이다. <그림 3>은 직각삼각형 모양의 색 삼각형 그래프이다. 가로축은 ‘빨강의 " +
+  "비율’, 세로축은 ‘초록의 비율’이며 두 축 모두 0에서 1까지이고 0.2 간격의 수치가 표시되어 있다. " +
+  "빗변은 세로축의 1 지점에서 가로축의 1 지점으로 내려간다. 삼각형 내부에는 격자와 명암 변화가 " +
+  "나타나며, 중앙 부근에 ⓐ, 왼쪽 위 부근에 ⓑ, 오른쪽 아래 부근에 ⓒ가 표시되어 있다. 세로축의 0.6 " +
+  "부근, 삼각형 내부의 약 (0.3, 0.3), 가로축 가까이의 약 (0.8, 0.05)에도 흰 원 표시가 있다.";
+
+
 const Q22_5577054_FAILED_CHOICE =
   "\u2464 \uc81c6\uc218\uc5d0\uc11c\ub294 \ubc14\uc704\uc758 \uc18d\uc131\uc5d0 \uc0ac\ub78c \ubaab\uc758 \uc18d\uc131\uc744 \ub354\ud574 \uc138\uc18d\uc744 \uc774\uc0c1\uc801 \uacf5\uac04\uc73c\ub85c \uc815\ud654\ud558\ub824\ub294 \uc758\uc9c0\ub97c \ub4dc\ub7ec\ub0b4\uace0 \uc788\uad70.";
 const Q22_5577054_CORRECTED_CHOICE =
@@ -5987,6 +6014,31 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q25-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q25-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "9:25",
+  sourcePage: 9,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "0cc203d2fd4bb8d230402aadcfead57419b2eefabb21bb299b937f5ccbdac749",
+  failedClassificationHash: "93278c997388ccdda8ed03172f5f3c312b9e82e557187554dd8d013bc43721d7",
+  failedClassificationEvidenceHash: "d368ef46cb9a05398c0a020502386f74ce0bfd5edda857a24c0952183d673d1f",
+  replacement: {
+    field: "figure_description",
+    from: Q25_5577054_FAILED_FIGURE_DESCRIPTION,
+    to: Q24_29_5577054_FIGURE_DESCRIPTION,
+    count: 1,
+  },
+  requiredTokens: [
+    "[24~29] 다음 글을 읽고 물음에 답하시오.", "<그림 1>", "<그림 2>", "<그림 3>",
+    "두 축 모두 0에서 1까지이고 0.2 간격", "세로축의 0.6 부근",
+    "삼각형 내부의 약 (0.3, 0.3)", "가로축 가까이의 약 (0.8, 0.05)",
+    "25. 윗글을 이해한 내용으로 적절하지 않은 것은?",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_reading",
+
 }] as const;
 
 const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
