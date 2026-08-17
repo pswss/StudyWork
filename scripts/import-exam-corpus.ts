@@ -9112,7 +9112,7 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
       "상상하는 것은 어렵지 않았다", "문의 유리의 하반부가 깨어진 것이",
       "뛰지 말고. 절대 서두르지 말고", "주머니에 집어넣고 행인들 사이에",
       "어떻든 그들의 이름은", "단 하나. 청계천의 ㉤ 헌책방",
-      "그러나 설령 수소문을 할 건덕지가", "- 최윤, ｢회색 눈사람｣ -",
+      "그러나 설령 수소문을 할 건더지가", "- 최윤, ｢회색 눈사람｣ -",
       "㉠~㉤에 대한 설명으로 적절하지 않은 것은?",
     ],
     replacements: [{
@@ -9132,7 +9132,7 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
       to: "단 하나. 청계천의 ㉤ 헌책방", count: 1,
     }, {
       field: "question", from: "그러니 설령 수소문을 할 건더기가",
-      to: "그러나 설령 수소문을 할 건덕지가", count: 1,
+      to: "그러나 설령 수소문을 할 건더지가", count: 1,
     }, {
       field: "question", from: "「회색 눈사람」", to: "｢회색 눈사람｣", count: 1,
     }],
@@ -9817,6 +9817,30 @@ export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSp
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q30-source-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q30-source-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "11:30",
+  sourcePage: 11,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "37fafb1776ef07b87dc4e2213137b20e8f2b20998b34d17fcbe57478f690636c",
+  failedClassificationHash: "4cf0c80ccdccd9d74dfac9731fceda0f138b07223add64aab890495a0a1b59d0",
+  failedClassificationEvidenceHash: "1a5b1a4934b364dc8297accafd904f46ca59ccec773bfba5dfc386d62213f0f9",
+  failedStatus: "exact",
+  replacement: {
+    field: "question",
+    from: "수소문을 할 건덕지가",
+    to: "수소문을 할 건더지가",
+    count: 1,
+  },
+  requiredTokens: [
+    "그러나 설령 수소문을 할 건더지가 있었다고 해도",
+    "윗글의 서술상의 특징으로 가장 적절한 것은?",
+    "- 최윤, ｢회색 눈사람｣ -",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
   }] as const;
 
 export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
@@ -10371,6 +10395,31 @@ export const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSou
     "[43 ~ 45] 다음을 읽고 물음에 답하시오.", "이 밤으로 돌아가",
     "43. (가)와 (나)의 공통점에 대한 설명으로 가장 적절한 것은?",
     "서로 겹치지 않는 [A], [B], [C] 순서",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q31-source-manual-source-revision-v1",
+  parentRevisionAllowlistId: "ebsi-5577054-q31-source-manual-revision-v1",
+  parentRevisionEvidenceHash: "92c919ae7e7427c6fa4bf32a538f6af6ce013d12d62f87c3a4ee30fb834ebeb9",
+  entryId: "ebsi:5577054",
+  key: "11:31",
+  sourcePage: 11,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedStatus: "mismatch",
+  failedQuestionHash: "9d21cdbb5f23d65a61e194d24b03990bad21bf2bc09ce5f8a8fe4bbd33661cf6",
+  failedClassificationHash: "5fff27741bfe84eec81ba11641359b3175a3a641eb9792b5327d3590976d6761",
+  failedClassificationEvidenceHash: "2af6b7289adb14294f0b9a465ef20e37c9816cf352f1a72d88a613f06521c1ae",
+  replacement: {
+    field: "question",
+    from: "수소문을 할 건덕지가",
+    to: "수소문을 할 건더지가",
+    count: 1,
+  },
+  requiredTokens: [
+    "그러나 설령 수소문을 할 건더지가 있었다고 해도",
+    "① ‘문의 유리의 하반부가 깨어진 것’은 ‘나’를 억압하는 요인이 폭력적 속성을 지녔음을 상징적으로 나타낸다고 볼 수 있어.",
+    "- 최윤, ｢회색 눈사람｣ -",
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
