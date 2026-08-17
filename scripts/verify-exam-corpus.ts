@@ -8433,6 +8433,56 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
   ],
   expectedDecision: "accept",
   expectedCanonicalSubject: "korean_literature",
+}, {
+  allowlistId: "ebsi-5577054-q15-source-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q15-source-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "5:15",
+  sourcePage: 5,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "b383d5d2049c69d965877aebebae232ef93453e0b6edcdaf40add8f5208aca80",
+  failedClassificationHash: "eae798c9c38174671ff4d5a94c3706804550a6c39cc7a004dbe2def095b59eee",
+  failedClassificationEvidenceHash: "4d3deaf3591eec67ddd8773e6c75c861bc13323e8b8f2e908af0a0fc43d7543e",
+  replacement: {
+    field: "question",
+    from: "거스레 소 둔 옷 니버 아니 고 녀르메 서늘  가디 아니 며  쌀 두 홉로 죽을 오 소곰과 을 먹디 아니 더라",
+    to: "겨레 소옴 둔 오 닙디 아니 고 녀르메 서늘  가디 아니 며   두 호로 쥭을 오 소곰과  먹디 아니 더라",
+    count: 1,
+  },
+  additionalReplacements: [{
+    field: "question",
+    from: "겨울에 솜 둔 옷을",
+    to: "겨울에 솜 든 옷을",
+    count: 1,
+  }, {
+    field: "question",
+    from: "타락과 초와 쟝과 소곰과 겨 로와 파과 마과 부치와 기름과 무우과 외와 가지 등 여러가지 믈과 긔 알과",
+    to: "타락과 초와 쟝과 소금과 계 와 파과 마과 부와 기름과 댓무우과 외와 가지 등 여러가지 믈과 긔 알과",
+    count: 1,
+  }, {
+    field: "choices",
+    from: "① 15세기에는 한 단어 내에서 모음 조화가 잘 지켜졌음을 (가)의 ‘거스레’와 ‘’를 통해 확인할 수 있군.",
+    to: "① 15세기에는 한 단어 내에서 모음 조화가 잘 지켜졌음을 (가)의 ‘겨’과 ‘’를 통해 확인할 수 있군.",
+    count: 1,
+  }, {
+    field: "choices",
+    from: "② 15세기에는 체언에 목적격 조사가 결합할 때 모음 조화가 지켜졌음을 (가)의 ‘옷’과 ‘죽을’을 통해 확인할 수 있군.",
+    to: "② 15세기에는 체언에 목적격 조사가 결합할 때 모음 조화가 지켜졌음을 (가)의 ‘오’과 ‘쥭을’을 통해 확인할 수 있군.",
+    count: 1,
+  }, {
+    field: "choices",
+    from: "⑤ 둘째 음절의 ‘ㆍ’가 ‘ㅡ’로 변화했음을 (가)의 ‘’과 (나)의 ‘믈’을 통해 확인할 수 있군.",
+    to: "⑤ 둘째 음절의 ‘ㆍ’가 ‘ㅡ’로 변하였음을 (가)의 ‘’과 (나)의 ‘믈’을 통해 확인할 수 있군.",
+    count: 1,
+  }],
+  requiredTokens: [
+    "겨레 소옴 둔 오 닙디 아니 고", "겨울에 솜 든 옷을 입지 아니하고",
+    "타락과 초와 쟝과 소금과 계 와", "부와 기름과 댓무우과",
+    "① 15세기에는 한 단어 내에서 모음 조화가 잘 지켜졌음을 (가)의 ‘겨’과 ‘’를",
+    "② 15세기에는 체언에 목적격 조사가 결합할 때 모음 조화가 지켜졌음을 (가)의 ‘오’과 ‘쥭을’을",
+    "⑤ 둘째 음절의 ‘ㆍ’가 ‘ㅡ’로 변하였음을 (가)의 ‘’과 (나)의 ‘믈’을",
+  ],
+  expectedDecision: "reject",
   }] as const;
 
 const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
