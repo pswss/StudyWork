@@ -12398,6 +12398,12 @@ readonly ProblemTerminalFidelityAdjudicationSpec[] = [{
   failedEvidenceHash: "162c625c3758fbe743827d05d04741de0f60aec979ba77e66bf04e6e9ad61066",
   failedScopeEvidenceHash: "faf496e5d938c2b23a3d1b027968613b20204e386db2b18e136c148b6d4c99e1",
   failedScopeDecision: "reject", expectedScopeDecision: "reject",
+  pinnedAdjudicationArtifact: {
+    path: "problem-terminal-fidelity-adjudications/" +
+      "v1-0001-0003-eac8831ad900b7abdaadf01c21afe2d3d300cb58d1a1d4b5ce24c4e8e407c0c2.json",
+    sha256: "5ec2129f92f281b9143665f8525ba8f31b15d7e9eec5f9ab172e7f5270b27f78",
+    itemHash: "55664e584f099ec8ba5142e24e8ba29f9cb580a428edde703b806ba6233b0fe8",
+  },
 }] as const;
 
 const TARGETED_SOLUTION_PROMPT_DIGEST = sha256Text(

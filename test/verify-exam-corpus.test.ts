@@ -11605,7 +11605,7 @@ describe("exam corpus verifier", () => {
     expect(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST)
       .toBe("e92ed29fdd979e63d56635b2f7c99284ad01f14893384e680acd150cb2a29728");
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("4314a5ca86e80306f449e6a57b9b90a05307bef427b895a60177c5a647ecf31d");
+      .toBe("27f85925154179fa837fd8c7670682d4ea0958877fe3fb1eab4a08ce182f838a");
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST));
 
@@ -16330,13 +16330,13 @@ describe("exam corpus verifier", () => {
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST));
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("4314a5ca86e80306f449e6a57b9b90a05307bef427b895a60177c5a647ecf31d");
+      .toBe("27f85925154179fa837fd8c7670682d4ea0958877fe3fb1eab4a08ce182f838a");
     expect(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(-1).map((spec) => ({
       id: spec.allowlistId,
       row: canonicalEvidenceHash(spec),
     }))).toEqual([{
       id: "ebsi-5577054-q3-terminal-fidelity-v3",
-      row: "4e2b59c9441adc6d195cf6eb7579cdb174ad04dad5f3c0a6f11852e5a9c04dcd",
+      row: "9286b633ee4e5ca91378a0c4a07065bde5478801f2d485e5bbf22879646c82cf",
     }]);
   });
 
@@ -16778,7 +16778,7 @@ describe("exam corpus verifier", () => {
     expect(scopeBoxRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST));
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("4314a5ca86e80306f449e6a57b9b90a05307bef427b895a60177c5a647ecf31d");
+      .toBe("27f85925154179fa837fd8c7670682d4ea0958877fe3fb1eab4a08ce182f838a");
     const terminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((spec) =>
       spec.entryId === "ebsi:5577055" && spec.key === "4:11")!;
     const policySpec = terminalSpec.policyRevision!;

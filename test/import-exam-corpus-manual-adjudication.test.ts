@@ -2172,7 +2172,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         revisionReplacementHash: "0897e4c2aefaa617e6e57f5e73e935ff70dc9059993daa3f766cacacd6e3123f",
         revisedHash: "659aa94b2de2547562ec5d7e69c729cefd0dec173b664561850267ac593b5483",
         revisedQuestionHash: "60c25042a8d94badc0a805a40de85a89463afa8932bb11ec638187b52ee23841",
-        terminalRowHash: "4e2b59c9441adc6d195cf6eb7579cdb174ad04dad5f3c0a6f11852e5a9c04dcd",
+        terminalRowHash: "9286b633ee4e5ca91378a0c4a07065bde5478801f2d485e5bbf22879646c82cf",
       });
       expect(corrected.question).toContain("전시도 관람도 불편합니다.");
       expect(corrected.question).toContain("예술 단체나 시설을 보조하는 것이었습니다.");
@@ -2438,7 +2438,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         row: canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.at(-1)),
       }).toEqual({
         id: "ebsi-5577054-q3-terminal-fidelity-v3",
-        row: "4e2b59c9441adc6d195cf6eb7579cdb174ad04dad5f3c0a6f11852e5a9c04dcd",
+        row: "9286b633ee4e5ca91378a0c4a07065bde5478801f2d485e5bbf22879646c82cf",
       });
       const sourceRevisedQ14 = applyAllowlistedProblemManualSourceRevision(
         spec.entryId,
@@ -3051,7 +3051,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         v5RowHashes: terminalSpecsV5.map((candidate) => canonicalEvidenceHash(candidate)),
       }).toEqual({
         length: 38,
-        allowlistHash: "4314a5ca86e80306f449e6a57b9b90a05307bef427b895a60177c5a647ecf31d",
+        allowlistHash: "27f85925154179fa837fd8c7670682d4ea0958877fe3fb1eab4a08ce182f838a",
         q35RowHash: "08c169cd5335b6fdcea2d8f5ebe6027a6ffc15009e366febf883e48a58ed750e",
         q36RowHash: "1beffca4ead0209950734f824a7b7b4e42fba3c02e89e35796b01359908daefa",
         keys: ["13:35", "13:36"],
@@ -4103,7 +4103,7 @@ describe("exact allowlisted problem manual adjudication", () => {
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(0, 6)))
       .toBe("ed50715b038c943772bf68371f3b835910b95db1806b2758eddc6b8a6695b048");
     expect(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST))
-      .toBe("4314a5ca86e80306f449e6a57b9b90a05307bef427b895a60177c5a647ecf31d");
+      .toBe("27f85925154179fa837fd8c7670682d4ea0958877fe3fb1eab4a08ce182f838a");
     expect(terminalSpecs.map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -5540,7 +5540,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         rowHash: canonicalEvidenceHash(candidate),
       })),
     }).toEqual({
-      allowlistHash: "4314a5ca86e80306f449e6a57b9b90a05307bef427b895a60177c5a647ecf31d",
+      allowlistHash: "27f85925154179fa837fd8c7670682d4ea0958877fe3fb1eab4a08ce182f838a",
       prefixHash: "e4601a183669f046f4cc1f52cd30a860fe6347f96ffa41b30bdc8db2123630b3",
       rows: [{
         allowlistId: "ebsi-5578421-q2-terminal-fidelity-v1",
