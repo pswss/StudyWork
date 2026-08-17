@@ -11605,7 +11605,7 @@ describe("exam corpus verifier", () => {
     expect(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST)
       .toBe("e92ed29fdd979e63d56635b2f7c99284ad01f14893384e680acd150cb2a29728");
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("2001a95ad25a1a1f946ed57f078a1d36cc853b76cc11274082c0f2dfe2d015d7");
+      .toBe("ee37c784669b5ab79348571d4dae4372d2c29e1832861e926a837c88b4e46191");
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST));
 
@@ -14463,13 +14463,13 @@ describe("exam corpus verifier", () => {
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe("3ed755eca82ad21bffd89172e6f9706a68d331620969034d8a4ef8be48bdf219");
     expect(manualRevisionAllowlistFingerprint())
-      .toBe("1736eacfad5308d535d7f652cfc157104c3351cf03a8fcf1d65f14c514e6bd5e");
+      .toBe("706a971562026d94ae52e3eb57678e4f162a65af16127e547a1818c3579bb7f2");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 6)))
       .toBe("33741ecff318e2d58cc2c0614a718d41171a0629f792d062c63df876e23ffa5c");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 8)))
       .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
     expect(manualRevisionAllowlistFingerprint())
-      .toBe("1736eacfad5308d535d7f652cfc157104c3351cf03a8fcf1d65f14c514e6bd5e");
+      .toBe("706a971562026d94ae52e3eb57678e4f162a65af16127e547a1818c3579bb7f2");
     expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(6, 8).map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -14633,7 +14633,7 @@ describe("exam corpus verifier", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 8)))
       .toBe("1e10a56d615f8323979ecfe72bccd6f8ac2b58850545ac3beb7a409344651fd6");
     expect(manualRevisionAllowlistFingerprint())
-      .toBe("1736eacfad5308d535d7f652cfc157104c3351cf03a8fcf1d65f14c514e6bd5e");
+      .toBe("706a971562026d94ae52e3eb57678e4f162a65af16127e547a1818c3579bb7f2");
     expect({
       rowHash: canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.find((candidate) =>
         candidate.allowlistId === "ebsi-5578421-q14-manual-revision-v1"
@@ -15952,7 +15952,7 @@ describe("exam corpus verifier", () => {
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(0, 6)))
       .toBe("33741ecff318e2d58cc2c0614a718d41171a0629f792d062c63df876e23ffa5c");
     expect(manualRevisionAllowlistFingerprint())
-      .toBe("1736eacfad5308d535d7f652cfc157104c3351cf03a8fcf1d65f14c514e6bd5e");
+      .toBe("706a971562026d94ae52e3eb57678e4f162a65af16127e547a1818c3579bb7f2");
     expect(PROBLEM_MANUAL_REVISION_ALLOWLIST.slice(3, 6).map((spec) => ({
       key: spec.key,
       rowHash: canonicalEvidenceHash(spec),
@@ -16259,7 +16259,7 @@ describe("exam corpus verifier", () => {
     expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST).toHaveLength(91);
     expect(manualAdjudicationAllowlistFingerprint())
       .toBe("3ed755eca82ad21bffd89172e6f9706a68d331620969034d8a4ef8be48bdf219");
-    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(-12).map((spec) => ({
+    expect(PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST.slice(-14).map((spec) => ({
       id: spec.allowlistId,
       row: canonicalEvidenceHash(spec),
       replacements: canonicalEvidenceHash(spec.replacements),
@@ -16311,24 +16311,32 @@ describe("exam corpus verifier", () => {
       id: "ebsi-5577054-q32-source-manual-v1",
       row: "01693f5fc4fdf83405645eb412f9c560891732bd31081b2aa734aac13671883f",
       replacements: "e88331fbefcd0801465a3f0092e087870817b3acf36fa1e3afa2a50f25e0ecc4",
+    }, {
+      id: "ebsi-5577054-q17-source-manual-v1",
+      row: "b3ada309e76c39ee8f8cb21bd266bb815bb66feb90548b9796041f936566b4bc",
+      replacements: "d36ef2846d6857e0fae30517fbbeb0a5fe448b46029a208f7d3e7c089988eb48",
+    }, {
+      id: "ebsi-5577054-q15-source-manual-v1",
+      row: "60d5ab979e53806a005b1527cdf2f4f9fab0e1ed0673143fa4f1fa7559465bc9",
+      replacements: "bbb300c26a781a9e45df44e1035d3bac6cfc4c8392ffafb620d81d2ebb4e60b5",
     }]);
     expect(manualRevisionAllowlistFingerprint())
-      .toBe("1736eacfad5308d535d7f652cfc157104c3351cf03a8fcf1d65f14c514e6bd5e");
+      .toBe("706a971562026d94ae52e3eb57678e4f162a65af16127e547a1818c3579bb7f2");
     expect(canonicalEvidenceHash(PROBLEM_MANUAL_REVISION_ALLOWLIST.at(-1)))
-      .toBe("4687d37a28c5cdcba65dd3b379dac4e9c6d581a8e4821fd3ad7ffa3aeb4498fe");
+      .toBe("80610dd155718b0608e794967cdf8f966ae5da6966b8be13b263c10082ffc0b3");
   });
 
   it("keeps the terminal-adjudication allowlist byte-aligned with the importer", () => {
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST));
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("2001a95ad25a1a1f946ed57f078a1d36cc853b76cc11274082c0f2dfe2d015d7");
+      .toBe("ee37c784669b5ab79348571d4dae4372d2c29e1832861e926a837c88b4e46191");
     expect(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(-1).map((spec) => ({
       id: spec.allowlistId,
       row: canonicalEvidenceHash(spec),
     }))).toEqual([{
-      id: "ebsi-5577054-q3-terminal-fidelity-v2",
-      row: "5b03bf9ed136f57a5c40d0edb41f5980f6a7be003deb9469cee8db12c3157541",
+      id: "ebsi-5577054-q42-terminal-fidelity-v1",
+      row: "f6c528fe912447f6d26ebc48f2c068f502b9dd0fd674790e313e02fc1c9c05c0",
     }]);
   });
 
@@ -16770,7 +16778,7 @@ describe("exam corpus verifier", () => {
     expect(scopeBoxRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST));
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("2001a95ad25a1a1f946ed57f078a1d36cc853b76cc11274082c0f2dfe2d015d7");
+      .toBe("ee37c784669b5ab79348571d4dae4372d2c29e1832861e926a837c88b4e46191");
     const terminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((spec) =>
       spec.entryId === "ebsi:5577055" && spec.key === "4:11")!;
     const policySpec = terminalSpec.policyRevision!;
