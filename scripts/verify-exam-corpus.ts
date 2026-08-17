@@ -8297,7 +8297,7 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
   sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
   failedQuestionHash: "d10471aa0f091ed92fde27778e24ada33c790b6b4db3b79256024cf55412400c",
   failedClassificationHash: "9fbdb707ac4ab68cd86237f795dacad6a367fddf826ff1e7dc704b37870522a9",
-  failedClassificationEvidenceHash: "da3b6994852e56b5c043cd871b16fa6067c0792db4051066643e2ef4e4c9954c",
+  failedClassificationEvidenceHash: "0b341a78841a04e21ac30fb2908bda086f84db8463b1ba5128f0b50d138ba223",
   replacement: {
     field: "choices",
     from: "① ‘문의 유리의 하단부가 깨어진 것’은 ‘나’를 억압하는 요인이 폭력적 속성을 지녔음을 상징적으로 나타낸다고 볼 수 있어.",
