@@ -8288,6 +8288,29 @@ const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = 
     "15세기 국어", "현대 국어", "용언 어간", "활용형",
   ],
   expectedDecision: "reject",
+}, {
+  allowlistId: "ebsi-5577054-q31-source-manual-revision-v1",
+  parentAllowlistId: "ebsi-5577054-q31-source-manual-v1",
+  entryId: "ebsi:5577054",
+  key: "11:31",
+  sourcePage: 11,
+  sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  failedQuestionHash: "d10471aa0f091ed92fde27778e24ada33c790b6b4db3b79256024cf55412400c",
+  failedClassificationHash: "9fbdb707ac4ab68cd86237f795dacad6a367fddf826ff1e7dc704b37870522a9",
+  failedClassificationEvidenceHash: "da3b6994852e56b5c043cd871b16fa6067c0792db4051066643e2ef4e4c9954c",
+  replacement: {
+    field: "choices",
+    from: "① ‘문의 유리의 하단부가 깨어진 것’은 ‘나’를 억압하는 요인이 폭력적 속성을 지녔음을 상징적으로 나타낸다고 볼 수 있어.",
+    to: "① ‘문의 유리의 하반부가 깨어진 것’은 ‘나’를 억압하는 요인이 폭력적 속성을 지녔음을 상징적으로 나타낸다고 볼 수 있어.",
+    count: 1,
+  },
+  requiredTokens: [
+    "문의 유리의 하반부가 깨어진 것이",
+    "① ‘문의 유리의 하반부가 깨어진 것’은 ‘나’를 억압하는 요인이 폭력적 속성을 지녔음을 상징적으로 나타낸다고 볼 수 있어.",
+    "- 최윤, ｢회색 눈사람｣ -",
+  ],
+  expectedDecision: "accept",
+  expectedCanonicalSubject: "korean_literature",
   }] as const;
 
 const PROBLEM_MANUAL_SOURCE_REVISION_ALLOWLIST: readonly ProblemManualSourceRevisionSpec[] = [{
