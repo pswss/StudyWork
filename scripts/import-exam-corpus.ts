@@ -9237,6 +9237,99 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
     }],
     expectedDecision: "reject",
   },
+  {
+    allowlistId: "ebsi-5577054-q1-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "1:1",
+    sourcePage: 1,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "f19b967cdc435fe6940232770298319c27b6d974bf0850aa99a9da688e634f20",
+    dpi: 600,
+    failedQuestionHash: "4cfa29bf9e381563c1728aa4f9097046c8381f760fd5f1670b829a674d89ec6b",
+    failedClassificationHash: "8a2a35a83e1fd3a2cb5744390eeb1b72dac6e666192fcedd99ec80dc6be9bf50",
+    failedClassificationEvidenceHash: "d9e31e70f02b2a3443cf7fb15d8a3951df3bf716d7f9f1fc5fcb9a8329452371",
+    failedStatus: "exact",
+    views: [
+      { sourcePage: 1, label: "p1 full Q1-Q3 discussion", rect: [0, 0, 1, 1] },
+      { sourcePage: 1, label: "p1 left Q1-Q3 shared discussion", rect: [0.07, 0.08, 0.50, 0.98] },
+      { sourcePage: 1, label: "p1 right Q1 stem and choices", rect: [0.50, 0.08, 0.95, 0.55] },
+    ],
+    requiredTokens: [
+      "[1~3] 다음은 토의이다. 물음에 답하시오.", "전시도 관람도 불편합니다. [A]",
+      "접근성이 떨어져 미술관을 찾는 시민들의 불편함이", "예술 단체나 시설을 보조하는 것이었습니다.",
+      "관람객이 크게 증가할 것입니다. 그리고 프로그램도 다양화할 수 있습니다. [E]",
+      "토의 참여자의 발화 [A]~[E]에 대한 설명으로 적절하지 않은 것은?",
+    ],
+    replacements: [{
+      field: "question",
+      from: "다음은 토의이다. 물음에 답하시오.",
+      to: "[1~3] 다음은 토의이다. 물음에 답하시오.",
+      count: 1,
+    }, {
+      field: "question",
+      from: "전시도 제대로 못합니다.",
+      to: "전시도 관람도 불편합니다.",
+      count: 1,
+    }, {
+      field: "question", from: "㉠그럼", to: "㉠ 그럼", count: 1,
+    }, {
+      field: "question", from: "㉡어떻게", to: "㉡ 어떻게", count: 1,
+    }],
+    expectedDecision: "reject",
+  },
+  {
+    allowlistId: "ebsi-5577054-q2-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "1:2",
+    sourcePage: 1,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "56fce2f819703f943be07ee72993abb1f8f69d6044c4b3cc3bc4d0a749b39f75",
+    dpi: 600,
+    failedQuestionHash: "3ed255550564ec9389c771b69c003ddaaaad584032acdbb6639faee33d6a30ef",
+    failedClassificationHash: "29694b4ba177e332b5fc18f5eb0af7f748e5c104dcb354c692450c8b8b416334",
+    failedClassificationEvidenceHash: "f3b432a1a7d3669a1014a47c9928b6570380200e87cd482b46602fff1cdfa159",
+    failedStatus: "exact",
+    views: [
+      { sourcePage: 1, label: "p1 full Q1-Q3 discussion", rect: [0, 0, 1, 1] },
+      { sourcePage: 1, label: "p1 left Q1-Q3 shared discussion", rect: [0.07, 0.08, 0.50, 0.98] },
+      { sourcePage: 1, label: "p1 right Q2 stem and choices", rect: [0.50, 0.42, 0.95, 0.80] },
+    ],
+    requiredTokens: [
+      "[1~3] 다음은 토의이다. 물음에 답하시오.", "전시도 관람도 불편합니다. [A]",
+      "접근성이 떨어져 미술관을 찾는 시민들의 불편함이", "예술 단체나 시설을 보조하는 것이었습니다.",
+      "관람객이 크게 증가할 것입니다. 그리고 프로그램도 다양화할 수 있습니다. [E]",
+      "㉠과 ㉡에 대한 설명으로 적절한 것은?",
+    ],
+    replacements: [{
+      field: "question",
+      from: "[A] 위원 1: 건물이 너무 낡은 데다 전시 공간도 협소해서 전시도 관람도 불편합니다.",
+      to: "위원 1: 건물이 너무 낡은 데다 전시 공간도 협소해서 전시도 관람도 불편합니다. [A]",
+      count: 1,
+    }, {
+      field: "question",
+      from: "[B] 위원 1: 현재의 공간을 그대로 활용하는 데는 한계가 있습니다. 지난주에 시에서 미술관을 시 외곽으로 이전하자고 제안을 했습니다. 이 제안을 받아들이면 좋겠습니다.",
+      to: "위원 1: 현재의 공간을 그대로 활용하는 데는 한계가 있습니다. 지난주에 시에서 미술관을 시 외곽으로 이전하자고 제안을 했습니다. 이 제안을 받아들이면 좋겠습니다. [B]",
+      count: 1,
+    }, {
+      field: "question",
+      from: "[C] 위원 2: 미술관을 시 외곽으로 이전하면 접근성이 떨어져 그만큼 찾는 시민들의 불편함이 커지기 때문에 이전을 반대하는 의견이 더 많을 것입니다. 저는 다양한 프로그램을 통해 시민 참여를 확대하는 것이 실현 가능성이 더 높다고 생각합니다.",
+      to: "위원 2: 미술관을 시 외곽으로 이전하면 접근성이 떨어져 미술관을 찾는 시민들의 불편함이 커지기 때문에 이전을 반대하는 의견이 더 많을 것입니다. 저는 다양한 프로그램을 통해 시민 참여를 확대하는 것이 실현 가능성이 더 높다고 생각합니다. [C]",
+      count: 1,
+    }, {
+      field: "question",
+      from: "[D] 위원 1: 미술 강좌를 개설하거나 다양한 프로그램을 진행하려면 모두 비용이 많이 들 것입니다. 또 가뜩이나 예산이 부족한 상황에서 전시료와 관람료를 낮추면 예산 확보가 더 어려워질 것입니다.",
+      to: "위원 1: 미술 강좌를 개설하거나 다양한 프로그램을 진행하려면 모두 비용이 많이 들 것입니다. 또 가뜩이나 예산이 부족한 상황에서 전시료와 관람료를 낮추면 예산 확보가 더 어려워질 것입니다. [D]",
+      count: 1,
+    }, {
+      field: "question",
+      from: "[E] 위원 2: 그게 좋겠네요. 예산 지원을 받는다면 전시료 인하로 작지만 알찬 전시회가 자주 열릴 수 있으며, 관람료도 인하되어 관람객이 크게 증가할 것입니다. 그리고 프로그램도 다양화할 수 있습니다.",
+      to: "위원 2: 그게 좋겠네요. 예산 지원을 받는다면 전시료 인하로 작지만 알찬 전시회가 자주 열릴 수 있으며, 관람료도 인하되어 관람객이 크게 증가할 것입니다. 그리고 프로그램도 다양화할 수 있습니다. [E]",
+      count: 1,
+    }],
+    expectedDecision: "reject",
+  },
 ] as const;
 
 export const PROBLEM_MANUAL_REVISION_ALLOWLIST: readonly ProblemManualRevisionSpec[] = [{
@@ -22919,6 +23012,10 @@ function is5577054Q35Q36ManualBatchSpec(spec: ProblemManualAdjudicationSpec): bo
   return spec.entryId === "ebsi:5577054" && ["13:35", "13:36"].includes(spec.key);
 }
 
+function is5577054Q1Q2ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
+  return spec.entryId === "ebsi:5577054" && ["1:1", "1:2"].includes(spec.key);
+}
+
 function is5577054Q3ManualGenerationSpec(spec: ProblemManualAdjudicationSpec): boolean {
   return spec.entryId === "ebsi:5577054" && spec.key === "1:3";
 }
@@ -22989,7 +23086,8 @@ export function isPersistedManualHydrationSpec(spec: ProblemManualAdjudicationSp
   return is5578421PersistedSingletonManualSpec(spec) ||
     is5578421Q19Q20Q21ManualBatchSpec(spec) || is5578421Q31Q32ManualBatchSpec(spec) ||
     is5578421Q33Q34ManualBatchSpec(spec) || is5578421Q44Q45ManualBatchSpec(spec) ||
-    is5577054Q3ManualGenerationSpec(spec) || is5577054Q6Q8ManualBatchSpec(spec) ||
+    is5577054Q1Q2ManualBatchSpec(spec) || is5577054Q3ManualGenerationSpec(spec) ||
+    is5577054Q6Q8ManualBatchSpec(spec) ||
     is5577054Q10ManualGenerationSpec(spec) || is5577054Q14ManualGenerationSpec(spec) ||
     is5577054Q30Q32ManualBatchSpec(spec) ||
     is5577054Q16Q20ManualBatchSpec(spec) || is5577054Q21Q23ManualBatchSpec(spec) ||
@@ -23416,6 +23514,8 @@ async function preflightProblemManualBatch(
     ? is5578421Q6Q7ManualBatchSpec
     : is5578421Q33Q34ManualBatchSpec(requestedSpec)
     ? is5578421Q33Q34ManualBatchSpec
+    : is5577054Q1Q2ManualBatchSpec(requestedSpec)
+    ? is5577054Q1Q2ManualBatchSpec
     : is5577054Q3ManualGenerationSpec(requestedSpec)
     ? is5577054Q3ManualGenerationSpec
     : is5577054Q6Q8ManualBatchSpec(requestedSpec)
@@ -29740,6 +29840,11 @@ export async function repairAndAuditOfficialAnswers(
       manualNames.push(readdirSync(path));
     }
     for (const group of [{
+      predicate: is5577054Q1Q2ManualBatchSpec,
+      signal: /^v\d+-0001-000[12](?:-|\.)/u,
+      label: "Q1-Q2",
+      expectedCount: 2,
+    }, {
       predicate: is5577054Q3ManualGenerationSpec,
       signal: /^v\d+-0001-0003(?:-|\.)/u,
       label: "Q3",
