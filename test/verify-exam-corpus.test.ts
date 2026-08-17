@@ -11605,7 +11605,7 @@ describe("exam corpus verifier", () => {
     expect(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_PROMPT_DIGEST)
       .toBe("e92ed29fdd979e63d56635b2f7c99284ad01f14893384e680acd150cb2a29728");
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("ee37c784669b5ab79348571d4dae4372d2c29e1832861e926a837c88b4e46191");
+      .toBe("2001a95ad25a1a1f946ed57f078a1d36cc853b76cc11274082c0f2dfe2d015d7");
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST));
 
@@ -16322,19 +16322,13 @@ describe("exam corpus verifier", () => {
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST));
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("ee37c784669b5ab79348571d4dae4372d2c29e1832861e926a837c88b4e46191");
-    expect(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(-2).map((spec) => ({
+      .toBe("2001a95ad25a1a1f946ed57f078a1d36cc853b76cc11274082c0f2dfe2d015d7");
+    expect(PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.slice(-1).map((spec) => ({
       id: spec.allowlistId,
       row: canonicalEvidenceHash(spec),
-      item: spec.pinnedAdjudicationArtifact?.itemHash,
     }))).toEqual([{
-      id: "ebsi-5577054-q35-terminal-fidelity-v5",
-      row: "744232062f4bb536fda6f5c136da442ce4eb3296ef90899d55b62af9d516419d",
-      item: "d2134d5d63a371954b9671ceb2633d86cc1e31805a2cdab9c5b2d8695ff0b59b",
-    }, {
-      id: "ebsi-5577054-q36-terminal-fidelity-v5",
-      row: "bbf500136b20ae330f09f3a96998efb6fe4a4293c72c61e01d55f24fcede4bd4",
-      item: "068d940f52f66e89e94291b67c0f9879f4915d529683db2c1aa3cd319a0695b2",
+      id: "ebsi-5577054-q3-terminal-fidelity-v2",
+      row: "5b03bf9ed136f57a5c40d0edb41f5980f6a7be003deb9469cee8db12c3157541",
     }]);
   });
 
@@ -16776,7 +16770,7 @@ describe("exam corpus verifier", () => {
     expect(scopeBoxRevisionAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(PROBLEM_SCOPE_BOX_REVISION_ALLOWLIST));
     expect(terminalFidelityAdjudicationAllowlistFingerprint())
-      .toBe("ee37c784669b5ab79348571d4dae4372d2c29e1832861e926a837c88b4e46191");
+      .toBe("2001a95ad25a1a1f946ed57f078a1d36cc853b76cc11274082c0f2dfe2d015d7");
     const terminalSpec = PROBLEM_TERMINAL_FIDELITY_ADJUDICATION_ALLOWLIST.find((spec) =>
       spec.entryId === "ebsi:5577055" && spec.key === "4:11")!;
     const policySpec = terminalSpec.policyRevision!;
