@@ -26402,6 +26402,7 @@ export async function assertProblemTerminalFidelityAdjudicationAuthority(
       if (await sha256File(path) !== trigger.artifact.sha256) {
         throw new Error(`manual terminal trigger hash가 다릅니다: ${trigger.artifact.path}`);
       }
+      if (!trigger.artifact.path.startsWith("problem-terminal-fidelity-adjudications/")) continue;
       declared.set(trigger.artifact.path, trigger.artifact.sha256);
     }
   }

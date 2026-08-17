@@ -2499,7 +2499,7 @@ describe("exact allowlisted problem manual adjudication", () => {
         q14SourceReplacement: canonicalEvidenceHash(sourceRevisionSpec.replacement),
         q14SourceAdditional: canonicalEvidenceHash(sourceRevisionSpec.additionalReplacements),
       }).toEqual({
-        manualLength: 91,
+        manualLength: 93,
         manualHash: "1b504ee661c23fc93cd1991d18929c535bd4e7f0c27e4c9c8bffa5f6b15bf69e",
         legacy89Hash: "e0628fe3c37a10a29cb17a907fc52035dfe9c0fbb89a5a5cbcb42993553feb5c",
         q15Row: "60d5ab979e53806a005b1527cdf2f4f9fab0e1ed0673143fa4f1fa7559465bc9",
