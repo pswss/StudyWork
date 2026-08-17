@@ -58,6 +58,7 @@ import {
   parseDecisions,
   repairAndAuditOfficialAnswers,
   solutionRepairFidelityEvidence,
+  terminalFidelityRepairFirstIssues,
   writeAnswerAttestation,
   type ClassificationDecision,
   type ClassifiedQuestion,
@@ -7572,6 +7573,15 @@ describe("exact allowlisted problem manual adjudication", () => {
       .toThrow("terminal fidelity 최종 adjudication 대기: 4:8, 9:23");
     expect(() => actionableTerminalFidelityIssues(["4:8"], deferred))
       .toThrow("deferred terminal fidelity issue가 terminal issue 집합에 없습니다");
+  });
+
+  it("repairs Q1-Q2 before rechecking the shared Q3 terminal false negative", () => {
+    const entry = { id: "ebsi:5577054" };
+    const problem = { sha256: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062" };
+    expect(terminalFidelityRepairFirstIssues(entry, problem, ["1:1", "1:2", "1:3"]))
+      .toEqual(["1:1", "1:2"]);
+    expect(terminalFidelityRepairFirstIssues(entry, problem, ["1:3"]))
+      .toEqual(["1:3"]);
   });
 
   it.skipIf(!existsSync(join(q27LiveState, "problem.pdf")))(

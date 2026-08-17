@@ -29583,11 +29583,16 @@ export function actionableTerminalFidelityIssues(
   return actionableIssues;
 }
 
-function terminalFidelityRepairFirstIssues5525982(
-  entry: CorpusManifestEntry,
-  problem: PdfEvidence,
+export function terminalFidelityRepairFirstIssues(
+  entry: Pick<CorpusManifestEntry, "id">,
+  problem: Pick<PdfEvidence, "sha256">,
   terminalIssues: readonly string[]
 ): string[] {
+  if (
+    entry.id === "ebsi:5577054" &&
+    problem.sha256 === "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062" &&
+    terminalIssues.length > 1 && terminalIssues.includes("1:3")
+  ) return terminalIssues.filter((key) => key !== "1:3");
   if (
     entry.id !== "ebsi:5525982" ||
     problem.sha256 !== "6d28eff474ebb29ef9c097e723be6375ca62d30d1edef5d1ac5e8c82c057b132"
@@ -30851,7 +30856,7 @@ export async function repairAndAuditOfficialAnswers(
       .filter((item) => item.status !== "exact" && !authorizedScopeRejects.has(item.key))
       .map((item) => item.key);
     if (terminalIssues.length > 0) {
-      const repairFirstIssues = terminalFidelityRepairFirstIssues5525982(entry, problem, terminalIssues);
+      const repairFirstIssues = terminalFidelityRepairFirstIssues(entry, problem, terminalIssues);
       if (repairFirstIssues.length > 0 && repairFirstIssues.length < terminalIssues.length) {
         const terminalTriggers = new Map<string, Extract<ProblemRevisionTrigger, { kind: "terminal" }>>();
         const preRecoveryEffectiveCorpusHash = canonicalEvidenceHash(effective);
