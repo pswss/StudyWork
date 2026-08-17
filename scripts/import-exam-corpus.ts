@@ -4570,6 +4570,18 @@ const Q20_5577054_FAILED_QUESTION =
   "너무 낮은 수준으로 매기면 수입이 줄어들기 때문이다.”";
 const Q20_5577054_CORRECTED_QUESTION =
   `${Q16_20_5577054_PASSAGE}\n\n20. ⓐ와 바꿔 쓰기에 적절한 것은?`;
+const Q17_5577054_FAILED_QUESTION =
+  "소비자가 어떤 상품을 구매하기 위하여 지불할 용의가 있는 금액보다 실제로 지불한 가격이 낮아 얻는 " +
+  "이득을 소비자 잉여라고 하고, 생산자가 어떤 상품을 판매하여 얻은 실제 수입이 그 상품을 판매하여 꼭 " +
+  "얻어야겠다고 생각한 금액보다 많아 얻는 이득을 생산자 잉여라고 한다. 그리고 소비자 잉여와 생산자 " +
+  "잉여의 합을 총잉여라고 한다. 상품이 거래되지 않을 때에 비해 어떤 상품이 시장에서 거래될 때에 " +
+  "소비자에게, 생산자에게 혜택이 될 수 있다. 그런데 ㉠ 시장 가격을 임의의 수준으로 결정할 수 있는 " +
+  "독점적 지위를 가진 생산자는 소비자 잉여를 생산자의 이윤으로 흡수하기 위해 이부가격을 설정하기도 한다.\n\n" +
+  "‘이부가격설정’이란 어떤 상품에 대하여 두 차례 가격을 치르도록 하는 방식이다. 즉 소비자로 하여금 " +
+  "특정한 상품을 이용할 수 있는 권리를 구입하게 한 다음, 상품을 이용하는 양에 비례하여 가격을 부담시키는 방식이다.\n\n" +
+  "㉠의 사례로 가장 적절한 것은?";
+const Q17_5577054_CORRECTED_QUESTION =
+  `${Q16_20_5577054_PASSAGE}\n\n17. ㉠의 사례로 가장 적절한 것은?`;
 const Q16_5577054_SOURCE_EXACT_REPLACEMENTS: ProblemManualReplacement[] = [{
   field: "question",
   from: "[16~20] 다음을 읽고 물음에 답하시오.",
@@ -8619,6 +8631,41 @@ export const PROBLEM_MANUAL_ADJUDICATION_ALLOWLIST: readonly ProblemManualAdjudi
       "세로축 위쪽 점은 α, 아래쪽 점은 β", "Q_m·Q_c에는 수직 점선",
     ],
     replacements: Q16_5577054_SOURCE_EXACT_REPLACEMENTS,
+    figure: true,
+    figureDescription: Q16_20_5577054_FIGURE_DESCRIPTION,
+    expectedDecision: "accept",
+    expectedCanonicalSubject: "korean_reading",
+  },
+  {
+    allowlistId: "ebsi-5577054-q17-source-manual-v1",
+    entryId: "ebsi:5577054",
+    key: "6:17",
+    sourcePage: 6,
+    sourceHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+    parentKind: "recovery",
+    parentRecoveryEvidenceHash: "bd527aec09cfaa79caa225f56ace9c44db7294763a4bb8a8f2f9098e32d695ad",
+    dpi: 600,
+    failedQuestionHash: "4c54551d3bf5fd47ce3663b0912e6ee7a577990212569f9a40843177a778ea88",
+    failedClassificationHash: "45e37fb81fa942908bf19a2da6d8dfb350ffd68ab35e8f27ef0da5270265c033",
+    failedClassificationEvidenceHash: "3bd8fbf54143e6e8b7417cc1430486291f0875da9f9082930d6f52baf719e830",
+    views: [
+      { sourcePage: 5, label: "p5 full and Q16-Q20 passage start", rect: [0, 0, 1, 1] },
+      { sourcePage: 6, label: "p6 full passage, graph, and Q16-Q20", rect: [0, 0, 1, 1] },
+      { sourcePage: 6, label: "p6 right Q17 stem and choices", rect: [0.50, 0.08, 0.95, 0.42] },
+    ],
+    requiredTokens: [
+      "[16 ~ 20] 다음을 읽고 물음에 답하시오.", "㉡ 이부가격설정은",
+      "사다리꼴 $\\beta P_mAB$", "삼각형 $P_m\\alpha A$",
+      "17. ㉠의 사례로 가장 적절한 것은?",
+      "① 어느 지역의 유일한 △△ 골프장은 입회비를 내고 회원으로 등록해야",
+      "세로축 위쪽 점은 α, 아래쪽 점은 β", "Q_m·Q_c에는 수직 점선",
+    ],
+    replacements: [{
+      field: "question",
+      from: Q17_5577054_FAILED_QUESTION,
+      to: Q17_5577054_CORRECTED_QUESTION,
+      count: 1,
+    }],
     figure: true,
     figureDescription: Q16_20_5577054_FIGURE_DESCRIPTION,
     expectedDecision: "accept",
@@ -22466,7 +22513,7 @@ function is5577054Q10ManualGenerationSpec(spec: ProblemManualAdjudicationSpec): 
 }
 
 function is5577054Q16Q20ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
-  return spec.entryId === "ebsi:5577054" && ["6:16", "6:18", "6:19", "6:20"].includes(spec.key);
+  return spec.entryId === "ebsi:5577054" && ["6:16", "6:17", "6:18", "6:19", "6:20"].includes(spec.key);
 }
 
 function is5577054Q21Q23ManualBatchSpec(spec: ProblemManualAdjudicationSpec): boolean {
@@ -22993,8 +23040,9 @@ async function preflightProblemManualBatch(
   const expectedCount = predicate === is5577054Q24Q29ManualBatchSpec ||
       predicate === is5577054Q37Q42ManualBatchSpec
     ? 6
-    : predicate === is5577054Q16Q20ManualBatchSpec ||
-        predicate === isQ38Q40Q41Q42ManualBatchSpec
+    : predicate === is5577054Q16Q20ManualBatchSpec
+      ? 5
+      : predicate === isQ38Q40Q41Q42ManualBatchSpec
       ? 4
       : predicate === is5578421Q19Q20Q21ManualBatchSpec ||
         predicate === is5577054Q6Q8ManualBatchSpec ||
@@ -29279,9 +29327,9 @@ export async function repairAndAuditOfficialAnswers(
       expectedCount: 1,
     }, {
       predicate: is5577054Q16Q20ManualBatchSpec,
-      signal: /^v\d+-0006-(?:0016|0018|0019|0020)(?:-|\.)/u,
+      signal: /^v\d+-0006-(?:0016|0017|0018|0019|0020)(?:-|\.)/u,
       label: "Q16-Q20",
-      expectedCount: 4,
+      expectedCount: 5,
     }, {
       predicate: is5577054Q21Q23ManualBatchSpec,
       signal: /^v\d+-(?:0007-0021|0008-002[23])(?:-|\.)/u,
