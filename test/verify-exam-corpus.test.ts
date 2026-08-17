@@ -11504,7 +11504,7 @@ describe("exam corpus verifier", () => {
 
   it("keeps the exact existing-corpus migration allowlist aligned with the importer", () => {
     expect(existingCorpusMigrationAllowlistFingerprint())
-      .toBe("0c6efd85302d9cf50e390df5281b78e7995314dac351e2005dc4da20947128a2");
+      .toBe("ae9c6a08adf2b80050edee6b10496d4ec85623b4ed361998c38bb9e701ae4c6b");
     expect(existingCorpusMigrationAllowlistFingerprint())
       .toBe(canonicalEvidenceHash(EXISTING_CORPUS_MIGRATION_ALLOWLIST));
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.map((spec) => spec.entryId)).toEqual([
@@ -11529,6 +11529,7 @@ describe("exam corpus verifier", () => {
       "ebsi:5578423",
       "ebsi:5772823",
       "ebsi:5525982",
+      "ebsi:5577054",
     ]);
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.filter((spec) =>
       !["ebsi:5695028", "ebsi:5853841", "ebsi:5577055", "ebsi:5525984"].includes(spec.entryId)
@@ -11594,6 +11595,20 @@ describe("exam corpus verifier", () => {
     expect(koreanMigration.answerChoiceRevisions).toHaveLength(10);
     expect(canonicalEvidenceHash(koreanMigration.answerChoiceRevisions))
       .toBe("994bf57c028f32483050547cefa5baba67d2ec831e953318b86f7702fba600e3");
+    const reclassifiedKoreanMigration = EXISTING_CORPUS_MIGRATION_ALLOWLIST.find(
+      (spec) => spec.entryId === "ebsi:5577054"
+    )!;
+    expect(reclassifiedKoreanMigration).toMatchObject({
+      entryToken: "4745f3573f575a93f6adcccb",
+      beforeProjectionHash: "00670a10f10220d81750c7b7c7a89871432004f28e943174a90f005ef46769c2",
+      afterProjectionHash: "64d08641aadfae9c6143f471668deae65531f76c49554e6367314f3fde05b6b9",
+      bookIds: [64, 65],
+      newKeys: [],
+      newQuestions: [],
+    });
+    expect(reclassifiedKoreanMigration.answerChoiceRevisions).toHaveLength(12);
+    expect(canonicalEvidenceHash(reclassifiedKoreanMigration.answerChoiceRevisions))
+      .toBe("e48887ad30476228e668c75cd2c4cea5479ad78e562bab122c4bbd56e4fd309d");
   });
 
   it.skipIf(

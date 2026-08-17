@@ -247,9 +247,10 @@ describe("existing corpus migration v1", () => {
       "ebsi:5578423",
       "ebsi:5772823",
       "ebsi:5525982",
+      "ebsi:5577054",
     ]);
     expect(canonicalEvidenceHash(EXISTING_CORPUS_MIGRATION_ALLOWLIST))
-      .toBe("0c6efd85302d9cf50e390df5281b78e7995314dac351e2005dc4da20947128a2");
+      .toBe("ae9c6a08adf2b80050edee6b10496d4ec85623b4ed361998c38bb9e701ae4c6b");
     expect(EXISTING_CORPUS_MIGRATION_ALLOWLIST.filter((spec) =>
       !["ebsi:5695028", "ebsi:5853841", "ebsi:5577055", "ebsi:5525984"].includes(spec.entryId)
     ).every((spec) =>
@@ -288,6 +289,19 @@ describe("existing corpus migration v1", () => {
     expect(koreanMigration.answerChoiceRevisions).toHaveLength(10);
     expect(canonicalEvidenceHash(koreanMigration.answerChoiceRevisions))
       .toBe("994bf57c028f32483050547cefa5baba67d2ec831e953318b86f7702fba600e3");
+    const reclassifiedKoreanMigration = EXISTING_CORPUS_MIGRATION_ALLOWLIST.find(
+      (spec) => spec.entryId === "ebsi:5577054"
+    )!;
+    expect(reclassifiedKoreanMigration).toMatchObject({
+      receiptCoreSha256: "830856f6ac7c3958d60bbd341cf07444fc033879195910290e1354f759522336",
+      beforeProjectionHash: "00670a10f10220d81750c7b7c7a89871432004f28e943174a90f005ef46769c2",
+      afterProjectionHash: "64d08641aadfae9c6143f471668deae65531f76c49554e6367314f3fde05b6b9",
+      newKeys: [],
+      newQuestions: [],
+    });
+    expect(reclassifiedKoreanMigration.answerChoiceRevisions).toHaveLength(12);
+    expect(canonicalEvidenceHash(reclassifiedKoreanMigration.answerChoiceRevisions))
+      .toBe("e48887ad30476228e668c75cd2c4cea5479ad78e562bab122c4bbd56e4fd309d");
     expect(() => selectExistingMigrationPlan([{
       identity: { entryId: "ebsi:stale", oldReceipt: { sha256: oldReceiptSha } },
     }], "ebsi:5695028", oldReceiptSha)).toThrow("충돌");
@@ -330,6 +344,15 @@ describe("existing corpus migration v1", () => {
       stableAfterProjectionHash: "151811cfa19fadbcc99381123df01916c0c6008653b0173efef189f7e32d0317",
       accepted: 30,
     },
+    {
+      entryId: "ebsi:5577054",
+      entryToken: "4745f3573f575a93f6adcccb",
+      oldReceiptSha256: "48b3c4ccfe2dd649d424013d287037a9f04382d208000f696fb11424afe0826b",
+      beforeProjectionHash: "00670a10f10220d81750c7b7c7a89871432004f28e943174a90f005ef46769c2",
+      afterProjectionHash: "64d08641aadfae9c6143f471668deae65531f76c49554e6367314f3fde05b6b9",
+      stableAfterProjectionHash: "2398b27ea9075d7befee3371480667ff253813b47e6612ea741696e787d3fb7a",
+      accepted: 30,
+    },
   ] satisfies SameKeyMigrationCase[])(
     "migrates $entryId from persisted authority without AI",
     async (migration) => {
@@ -350,6 +373,29 @@ describe("existing corpus migration v1", () => {
         expect(plan.identity.operations.itemInserts).toHaveLength(0);
         expect(plan.identity.operations.questionUpdates).toHaveLength(migration.accepted);
         expect(plan.identity.operations.itemUpdates).toHaveLength(migration.accepted * 2);
+        if (migration.entryId === "ebsi:5577054") {
+          const q37 = plan.identity.operations.questionUpdates.find(
+            (operation: { before: Record<string, unknown> }) =>
+              operation.before.src_page === 14 && operation.before.printed_number === "37"
+          );
+          expect(q37).toMatchObject({
+            id: 2907,
+            before: { subject_id: 11, book_id: 65, src_file_id: 78 },
+            after: { subject_id: 10, book_id: 64, src_file_id: 76 },
+          });
+          expect(plan.identity.operations.itemUpdates.filter(
+            (operation: { before: Record<string, unknown> }) => operation.before.number === "37"
+          )).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+              before: expect.objectContaining({ book_id: 65, file_id: 78 }),
+              after: expect.objectContaining({ book_id: 64, file_id: 76 }),
+            }),
+            expect.objectContaining({
+              before: expect.objectContaining({ book_id: 65, file_id: 79 }),
+              after: expect.objectContaining({ book_id: 64, file_id: 77 }),
+            }),
+          ]));
+        }
         const replay = await runSameKeyMigration(root, migration);
         expect(replay.stdout).toContain(`existing ${migration.entryId} ${migration.accepted}`);
       } finally {

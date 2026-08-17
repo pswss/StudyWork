@@ -633,6 +633,51 @@ export const EXISTING_CORPUS_MIGRATION_ALLOWLIST: readonly ExistingCorpusMigrati
     { key: "16:45", choiceIndex: 1, beforeSelectedChoiceHash: "cd380195f1ade4d45c047cec54f2e763e2bdf8850473c23c96687a9c4d47758a",
       afterSelectedChoiceHash: "02a329bdb522c5de3c88871123fcd5ce2b63eb282402cacddb0341c5c5d658aa" },
   ],
+}, {
+  entryId: "ebsi:5577054",
+  entryToken: "4745f3573f575a93f6adcccb",
+  oldReceiptSha256: "48b3c4ccfe2dd649d424013d287037a9f04382d208000f696fb11424afe0826b",
+  receiptCoreSha256: "830856f6ac7c3958d60bbd341cf07444fc033879195910290e1354f759522336",
+  beforeProjectionHash: "00670a10f10220d81750c7b7c7a89871432004f28e943174a90f005ef46769c2",
+  afterProjectionHash: "64d08641aadfae9c6143f471668deae65531f76c49554e6367314f3fde05b6b9",
+  auditPath: "answer-audit/v5-2ee022d1002e3c1abbf8783c3a25905de1010eb82a90efca3bc00591f99e3ab5.json",
+  auditSha256: "78bd7c4bf97b4151941c02701014f8c0d6eefdca2e87fe850f634a1a9c83ecfc",
+  effectiveCorpusHash: "53ae5fce128cd071ed729aad7b034975aac22a2b172a7400148c7037a33bc04e",
+  effectiveSolutionCorpusHash: "b694f7c09fb18fa5fd024b8083254f085fc22525090374c1eff5780a771915b2",
+  problemHash: "d7664675fc1e39cc99f507d6cc7bf7c4a1404106d140d9a2f904726ddec4c062",
+  solutionHash: "2abfea3ad57f76b754720050839da1698222201359f290054d3c5564d3121f8a",
+  bookIds: [64, 65],
+  fileIds: [76, 77, 78, 79],
+  questionIds: Array.from({ length: 30 }, (_, index) => 2886 + index),
+  bookItemIds: Array.from({ length: 60 }, (_, index) => 6302 + index),
+  newKeys: [],
+  newQuestions: [],
+  answerChoiceRevisions: [
+    { key: "10:27", choiceIndex: 5, beforeSelectedChoiceHash: "e5be3d52c574998fb0bc7e930f1cb6f66cb6234eb58a842d82ff69da0f4c588c",
+      afterSelectedChoiceHash: "62660b7013a99c57a8b7ea7835c5740880250eb3ba2d71ae0ec4618c718d578c" },
+    { key: "10:28", choiceIndex: 3, beforeSelectedChoiceHash: "2c85a2103978ac2d520848acaf39f2058fc1ae8ae6c4e2fbf0f942a3b1cb4430",
+      afterSelectedChoiceHash: "d92522241f426aac5650197060235fc667c5ee720c0ff6b9b5b2c7a74fefdd5e" },
+    { key: "10:29", choiceIndex: 3, beforeSelectedChoiceHash: "7832355e6224a05919e529a133965c662486571b479af130602a1fa0a7c9feb1",
+      afterSelectedChoiceHash: "6d6cc853c5a3bde42e24d40bc058e8d43dddc6132046e7acd2b18f996cd8ede8" },
+    { key: "12:34", choiceIndex: 2, beforeSelectedChoiceHash: "a6463d590384bffdf3d2ec2d11a3d58752614c1c3406c743f04025c119c7509e",
+      afterSelectedChoiceHash: "faab5aef76a0e31bef1dc423641a79e0b60938edcdf69194bc63e734ca7114f6" },
+    { key: "13:36", choiceIndex: 5, beforeSelectedChoiceHash: "1017389400fa044bc47f5ef4a9f140a3d62f43bebeedece83635d947f6ea6fe4",
+      afterSelectedChoiceHash: "a5dd3c2ecf00280f35acfbb975b59d829554c65b2b29de046ccae219907db4ef" },
+    { key: "15:42", choiceIndex: 4, beforeSelectedChoiceHash: "f286fe1aa759c2b1a05fe6475a36a17c53cb2daa163ab6fc65aef68d9176b7d6",
+      afterSelectedChoiceHash: "24ff37d8d2d1be35a62f4b0d3e1f652cc49a02bf93194352e5ba1746d4fce1f2" },
+    { key: "16:44", choiceIndex: 2, beforeSelectedChoiceHash: "927ddac56768ff45829157f8f9b8f66659f7459387add5314582bd2124d2c828",
+      afterSelectedChoiceHash: "eafcb18cecdf307a4614808bdcd0bcf114288d3089f91a3cc099e4ed0195b5b9" },
+    { key: "16:45", choiceIndex: 2, beforeSelectedChoiceHash: "05d0ec116d0a70d93af62abbfe298b3c736653f063549c191912c8743ed6e76b",
+      afterSelectedChoiceHash: "9e8ff7e101d885cfc1a20153d75905b29ad1ebaf12ba01d0821a7f4024d1e317" },
+    { key: "6:17", choiceIndex: 1, beforeSelectedChoiceHash: "ceee342087fcc66edd633465fecd1e17d1397e96852faa2b2a6f532dfb8eac55",
+      afterSelectedChoiceHash: "a4660f50a5b32198566bcf81278a0284a391bc7778c28028bbdab6f8656a6fb2" },
+    { key: "6:19", choiceIndex: 1, beforeSelectedChoiceHash: "37d3b557214a3d1a2f88f85df7ce177b2141a27639dada83b5a33142a734e7fd",
+      afterSelectedChoiceHash: "bf697374940a933b87422c72f081436331315a714be2bfb1a0deb5b94fa0d9a7" },
+    { key: "8:23", choiceIndex: 3, beforeSelectedChoiceHash: "3f539356870d822e3562a30eb087b654a6fb03f8b7d6664322855db13051b3f6",
+      afterSelectedChoiceHash: "491dcec895ef601a6102f9fcf1c054722885093fc61c54aa2626ca8aec66a16d" },
+    { key: "9:25", choiceIndex: 5, beforeSelectedChoiceHash: "df6dd7637318effe57c250863f136c64252f8af46c1f46e1e2363cfefd1d8d8f",
+      afterSelectedChoiceHash: "fd2bb5f9e24e64bb8bd9aa4ce76f8797e09f5c77be47df07e3626d741d3d9edf" },
+  ],
 }] as const;
 
 const EXISTING_CORPUS_MIGRATION_HISTORICAL_RECOVERY = {
@@ -32701,10 +32746,12 @@ function buildMigrationOperations(
   for (const [key, beforeQuestion] of [...beforeByKey].sort(([left], [right]) => compareCorpusQuestionKeys(left, right))) {
     const question = currentByKey.get(key)!;
     const binding = bindings.get(question.targetSubject)!;
+    const beforeBinding = [...bindings.values()].find((candidate) => candidate.book.id === beforeQuestion.book_id);
+    if (!beforeBinding) throw new Error(`${key} migration 기존 책 binding이 없습니다`);
     if (assertMigrationAnswerEquivalent(beforeQuestion, question, choiceRevisions.get(key))) {
       consumedChoiceRevisions.add(key);
     }
-    const items = migrationItemsForQuestion(before, beforeQuestion, binding);
+    const items = migrationItemsForQuestion(before, beforeQuestion, beforeBinding);
     const afterQuestion = { ...beforeQuestion, ...questionMigrationFields(question, binding) };
     const afterProblem = { ...items.problem, ...itemMigrationFields(question, binding, "문제") };
     const afterSolution = { ...items.solution, ...itemMigrationFields(question, binding, "해설") };
